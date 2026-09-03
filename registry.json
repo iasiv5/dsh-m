@@ -1,4 +1,26 @@
 {
   "version": 1,
-  "plugins": []
+  "plugins": [
+    {
+      "id": "dsh-skins",
+      "name": "DSH Skins",
+      "description": "DeepSeek Harness Web 界面主题/皮肤管理插件，可切换多种视觉风格。",
+      "category": "ui",
+      "tags": ["主题", "美化"],
+      "source": "github",
+      "github": "iasiv5/skins",
+      "homepage": "https://github.com/iasiv5/skins"
+    },
+    {
+      "id": "dsh-web-search",
+      "name": "DSH Web Search",
+      "description": "多提供商网页搜索（SearXNG → Tavily → Brave → 免密 DuckDuckGo 自动回退）与 URL 内容抽取，接入 web_search 工具缝。",
+      "category": "search",
+      "tags": ["搜索", "web"],
+      "source": "npm",
+      "npm": "dsh-web-search",
+      "github": "haibinwang9/dsh-web-search",
+      "homepage": "https://github.com/haibinwang9/dsh-web-search"
+    }
+  ]
 }
