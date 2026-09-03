@@ -1,22 +1,33 @@
 {
   "name": "dsh-m",
-  "version": "0.0.3",
-  "description": "Marketplace / registry of install addresses for DeepSeek Harness (DSH) plugins. Name reserved — real CLI coming.",
+  "version": "0.0.2",
+  "description": "DSH Marketplace — 个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件",
   "license": "MIT",
-  "main": "index.js",
+  "type": "module",
+  "main": "lib/host.js",
+  "exports": {
+    ".": "./lib/host.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
   "files": [
-    "index.js",
-    "README.md"
+    "lib",
+    "cordis.patch.yml",
+    "registry.json",
+    "README.md",
+    "DESIGN.md",
+    "LICENSE"
   ],
   "keywords": [
     "dsh",
+    "dsh-plugin",
     "deepseek-harness",
-    "plugin",
     "marketplace",
     "registry"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -25,5 +36,41 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iasiv5/dsh-m.git"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "npm run build"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.0"
   }
 }
