@@ -551,6 +551,13 @@ function MarketPanel({ onClose }) {
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape" && onClose) onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(t);
@@ -591,28 +598,54 @@ function MarketPanel({ onClose }) {
   );
 }
 
-// ---------- 侧栏入口 ----------
-function MarketEntry({ wide }) {
+// ---------- 侧栏入口（命令式挂载，规避宿主 React 与 bundle React 的双实例 state 问题） ----------
+function mountPanel() {
+  if (typeof document === "undefined") return;
+  ensureCss();
+  if (document.getElementById("dshm-panel-root")) return;
+  const container = document.createElement("div");
+  container.id = "dshm-panel-root";
+  document.body.appendChild(container);
+  // react-dom 可能为 CJS 或 ESM namespace，做一层互操作
+  const rdom = rd && rd.default && (rd.default.createRoot || rd.default.render) ? rd.default : rd;
+  let root = null;
+  const close = () => {
+    try {
+      if (root && typeof root.unmount === "function") root.unmount();
+      else if (rdom && typeof rdom.unmountComponentAtNode === "function") rdom.unmountComponentAtNode(container);
+    } catch {
+      /* ignore */
+    }
+    container.remove();
+  };
+  if (rdom && typeof rdom.createRoot === "function") {
+    root = rdom.createRoot(container);
+    root.render(h(MarketPanel, { onClose: close }));
+  } else if (rdom && typeof rdom.render === "function") {
+    rdom.render(h(MarketPanel, { onClose: close }), container);
+  } else {
+    container.remove();
+  }
+}
+
+function MarketEntry(props) {
   useEffect(() => ensureCss(), []);
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, close]);
-  const portal =
-    open && typeof document !== "undefined"
-      ? rd.createPortal(h(MarketPanel, { onClose: close }), document.body)
-      : null;
   return h(
     "button",
-    { className: "dshm-btn dshm-entry", onClick: () => setOpen(true), title: "DSH Marketplace", style: { margin: "4px" } },
+    {
+      className: "dshm-btn dshm-entry",
+      onClick: () => {
+        try {
+          mountPanel();
+        } catch (e) {
+          console.error("[dsh-m] 打开市场面板失败:", e);
+        }
+      },
+      title: "DSH Marketplace",
+      style: { margin: "4px" },
+    },
     "🛍",
-    wide ? " DSH 市场" : null,
+    props && props.wide ? " DSH 市场" : null,
   );
 }
 
@@ -781,8 +814,10 @@ function apply(ctx) {
   ctx.effect(() => ensureCss(), "dshm-style");
   slots.inject("sidebar.footer.action", () =>
     slots.register(
-      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: "DSH 市场" },
-      MarketEntry,
+      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: () => "DSH 市场" },
+      function DshmMarketEntry(actionProps) {
+        return h(MarketEntry, actionProps);
+      },
     ),
   );
   // 对话区内 dshm_* 工具结果的自定义卡片
