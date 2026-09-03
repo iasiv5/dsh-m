@@ -1,0 +1,20 @@
+name: Debug OIDC claims
+on:
+  push:
+    tags:
+      - 'debug-*'
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Dump OIDC claims
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken();
+            const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString('utf8'));
+            const interesting = ['repository','repository_owner','ref','ref_type','workflow','job_workflow_ref','environment','actor','event_name'];
+            for (const k of interesting) console.log(`${k} = ${JSON.stringify(payload[k])}`);
