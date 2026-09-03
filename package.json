@@ -1,6 +1,6 @@
 {
   "name": "dsh-m",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Marketplace / registry of install addresses for DeepSeek Harness (DSH) plugins. Name reserved — real CLI coming.",
   "license": "MIT",
   "main": "index.js",
