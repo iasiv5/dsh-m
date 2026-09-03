@@ -13,14 +13,15 @@ import {
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { scheduleRestart, servingPort, trustedRestartRequest } from './core/restart.js'
 import type { RegistryConfig } from './core/registry.js'
+import { registerTools } from './tools.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../package.json') as { name: string; version: string }
 
 export const name = 'dshm'
 
-// M3 将改为 ['tools'] 并注册 dshm_* 工具
-export const inject: string[] = []
+// dshm_* 七个工具（src/tools.ts）
+export const inject: string[] = ['tools']
 
 export interface Config extends RegistryConfig {}
 
@@ -34,6 +35,8 @@ export function apply(ctx: Context, config: Config): void {
   const cfg: Config = { ...config }
   // 卸载前的 live-disable 依赖 loader（skillhub 同款）
   bindLoaderHost(ctx as unknown as LoaderHost)
+  // dshm_* 七个 agent 工具 + systemPrompt 注入
+  registerTools(ctx, cfg)
 
   // 本地 API：单路由 + method 分发（skillhub 同款）
   ctx.inject(['webServer'], (c) => {

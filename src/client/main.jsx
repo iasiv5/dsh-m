@@ -616,6 +616,162 @@ function MarketEntry({ wide }) {
   );
 }
 
+// ---------- 工具卡片视图（tool.call.toolview slots） ----------
+// props 契约移植自 skillhub：payload 从 props 中寻找含 items 数组的节点；args 读 block.call.argsRaw。
+function registerSlot(slots, options, component) {
+  const next = { ...options };
+  if (next.id == null && next.key != null) next.id = String(next.key);
+  if (next.key == null && next.id != null) next.key = next.id;
+  return slots.register(next, component);
+}
+
+function pickPayload(props) {
+  const found = [];
+  const visit = (node, depth) => {
+    if (!node || depth > 6) return;
+    if (typeof node === "string") {
+      const t = node.trim();
+      if ((t.startsWith("{") || t.startsWith("[")) && t.length > 8) {
+        try {
+          visit(JSON.parse(t), depth + 1);
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+    if (typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const x of node) visit(x, depth + 1);
+      return;
+    }
+    if (Array.isArray(node.items)) found.push(node);
+    for (const key of ["block", "meta", "result", "resultView", "view", "data", "value", "payload", "content", "message"]) {
+      if (node[key] != null) visit(node[key], depth + 1);
+    }
+  };
+  visit(props, 0);
+  return found.find((x) => x && Array.isArray(x.items)) || null;
+}
+
+function parseToolArgs(props) {
+  const block = props?.block;
+  const raw = (block && "kind" in block ? block.call?.argsRaw : block?.argsRaw) || "";
+  if (!raw || typeof raw !== "string") return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function ToolCardRow({ it, onInstalled }) {
+  const [busy, setBusy] = useState(false);
+  const install = async (e) => {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const res = await api("install", { id: it.id });
+      onInstalled({ ...it, installed: true, installedPkg: res.pkg, installedVersion: res.version });
+    } catch {
+      /* 安装失败静默：对话区文本已给出结果 */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return h(
+    "div",
+    { className: "dshm-card", style: { cursor: "default" } },
+    h(Icon, { entry: it }),
+    h(
+      "div",
+      { className: "dshm-meta" },
+      h(
+        "div",
+        { className: "dshm-top" },
+        h("span", { className: "dshm-name" }, it.name),
+        h("span", { className: "dshm-badge info" }, it.source === "npm" ? "npm" : "github"),
+        it.installed ? h("span", { className: "dshm-badge" }, "已安装") : null,
+      ),
+      h("div", { className: "dshm-desc" }, it.description),
+      h("div", { className: "dshm-sub" }, `${it.id} · ${(it.tags || []).join("、") || it.category}`),
+      h(
+        "div",
+        { className: "dshm-actions" },
+        !it.installed
+          ? h("button", { className: "dshm-btn primary sm", disabled: busy, onClick: install }, busy ? h(Spin) : "安装")
+          : null,
+      ),
+    ),
+  );
+}
+
+function SearchToolView(props) {
+  useEffect(() => ensureCss(), []);
+  const payload = pickPayload(props);
+  const args = parseToolArgs(props);
+  const query = String(payload?.query || args.query || "").trim();
+  const fromTool = Array.isArray(payload?.items) && payload.items.length ? payload.items : null;
+  const running = !!(props?.block && !("kind" in props.block));
+  const [items, setItems] = useState(fromTool || []);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (fromTool) setItems(fromTool);
+  }, [fromTool]);
+  useEffect(() => {
+    if (fromTool || running) return;
+    let live = true;
+    api("search", { query, category: args.category, limit: args.limit })
+      .then((d) => {
+        if (live) setItems(d.items || []);
+      })
+      .catch((e) => {
+        if (live) {
+          setItems([]);
+          setErr((e && e.message) || String(e));
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [query, running, !!fromTool]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (running) return null;
+  if (!items.length) return err ? h("div", { className: "dshm-err" }, err) : null;
+  return h(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: "8px" } },
+    items.map((it) =>
+      h(ToolCardRow, {
+        key: it.id,
+        it,
+        onInstalled: (next) => setItems((cur) => cur.map((x) => (x.id === next.id ? next : x))),
+      }),
+    ),
+  );
+}
+
+function ListToolView(props) {
+  useEffect(() => ensureCss(), []);
+  const payload = pickPayload(props);
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) return null;
+  return h(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" } },
+    items.map((it) =>
+      h(
+        "div",
+        { key: it.pkg, className: "dshm-row" },
+        h("span", { style: { fontWeight: 600 } }, it.name),
+        h("span", { className: "dshm-hint" }, `(${it.pkg})`),
+        h("span", { className: "dshm-hint" }, `v${it.version || "?"}`),
+        it.registryId ? h("span", { className: "dshm-badge" }, "市场") : h("span", { className: "dshm-badge info" }, "非市场"),
+        it.outdated ? h("span", { className: "dshm-badge warn" }, `可升级${it.latestVersion ? ` → v${it.latestVersion}` : ""}`) : null,
+      ),
+    ),
+  );
+}
+
 // ---------- loader 契约：factory 返回 { inject, apply } ----------
 const inject = ["slots"];
 
@@ -628,5 +784,15 @@ function apply(ctx) {
       { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: "DSH 市场" },
       MarketEntry,
     ),
+  );
+  // 对话区内 dshm_* 工具结果的自定义卡片
+  slots.inject("tool.call.toolview", () =>
+    registerSlot(slots, { name: "tool.call.toolview", key: "dshm_search" }, SearchToolView),
+  );
+  slots.inject("tool.call.toolview", () =>
+    registerSlot(slots, { name: "tool.call.toolview", key: "dshm_list" }, ListToolView),
+  );
+  slots.inject("tool.call.toolview", () =>
+    registerSlot(slots, { name: "tool.call.toolview", key: "dshm_outdated" }, ListToolView),
   );
 }
