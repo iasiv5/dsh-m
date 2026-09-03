@@ -1,0 +1,25 @@
+{
+  "name": "dsh-m",
+  "version": "0.0.1",
+  "description": "Marketplace / registry of install addresses for DeepSeek Harness (DSH) plugins. Name reserved — real CLI coming.",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "marketplace",
+    "registry"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}
