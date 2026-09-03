@@ -5,6 +5,9 @@
   "license": "MIT",
   "type": "module",
   "main": "lib/host.js",
+  "bin": {
+    "dshm": "./lib/cli.js"
+  },
   "exports": {
     ".": "./lib/host.js",
     "./client": "./lib/client.js",

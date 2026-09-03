@@ -16,12 +16,19 @@ function step(name) {
 rmSync(lib, { recursive: true, force: true })
 mkdirSync(lib, { recursive: true })
 
-// 1) host + core: tsc
-step('tsc (host/core)')
+// 1) host + core + cli: tsc
+step('tsc (host/core/cli)')
 execFileSync(join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json'], {
   cwd: root,
   stdio: 'inherit',
 })
+
+// bin 产物确保 shebang（tsc 会保留源码 shebang，此处兜底）
+const cliPath = join(lib, 'cli.js')
+let cliSrc = readFileSync(cliPath, 'utf8')
+if (!cliSrc.startsWith('#!')) {
+  writeFileSync(cliPath, '#!/usr/bin/env node\n' + cliSrc)
+}
 
 // 2) client: esbuild → CJS bundle with react/react-dom external (resolved via
 //    the module-loader's `require` inside the factory), wrapped like skillhub.
