@@ -77,7 +77,51 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, cfg: Config)
     const method = String(body.method || url.searchParams.get('method') || 'ping')
     switch (method) {
       case 'ping':
-        return sendJson(res, 200, { ok: true, plugin: pkg.name, version: pkg.version, node: process.version })
+        return sendJson(res, 200, {
+          ok: true,
+          plugin: pkg.name,
+          version: pkg.version,
+          node: process.version,
+          boot: `${process.pid}`,
+        })
+
+      case 'self-check': {
+        try {
+          const { npmLatest } = await import('./core/versions.js')
+          const latest = await npmLatest(pkg.name, cfg.timeoutMs ?? 20_000)
+          const { isNewerVersion } = await import('./core/versions.js')
+          return sendJson(res, 200, {
+            ok: true,
+            current: pkg.version,
+            latest: latest.version,
+            outdated: isNewerVersion(latest.version, pkg.version),
+          })
+        } catch (err) {
+          return sendJson(res, 200, {
+            ok: true,
+            current: pkg.version,
+            latest: null,
+            outdated: false,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+
+      case 'self-upgrade': {
+        const { npmLatest } = await import('./core/versions.js')
+        const latest = await npmLatest(pkg.name, cfg.timeoutMs ?? 20_000)
+        const result = await withMutationLock(async () => {
+          const { addDshPlugin } = await import('./core/dsh-cli.js')
+          return addDshPlugin(`${pkg.name}@${latest.version}`)
+        })
+        return sendJson(res, 200, {
+          ok: true,
+          pkg: pkg.name,
+          version: latest.version,
+          usedAllowAllBuilds: result.usedAllowAllBuilds,
+          needsRestart: true,
+        })
+      }
 
       case 'registry': {
         const loaded = await loadRegistrySafe(cfg, boolArg(body.force))

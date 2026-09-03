@@ -37,6 +37,9 @@ await build({
   external: ['react', 'react-dom'],
   legalComments: 'none',
   minify: false,
+  // 入口无 export，返回值由 footer 的 `return { inject, apply }` 提供；
+  // esbuild 看不到 footer，会把顶层声明当未使用摇掉，必须关掉 tree-shaking。
+  treeShaking: false,
   outfile: join(lib, 'client.js'),
   banner: {
     js: [
@@ -62,6 +65,9 @@ if (!client.startsWith('window.__ModuleLoader__.load({')) {
 }
 if (!/return \{ inject, apply \};\s*\}\s*,\s*\}\);?\s*$/.test(client)) {
   throw new Error('client.js factory does not return { inject, apply }')
+}
+for (const marker of ['dshm-overlay', 'MarketPanel', 'InstalledTab', 'SettingsTab', 'RestartBanner']) {
+  if (!client.includes(marker)) throw new Error(`client.js 缺少组件标记: ${marker}（tree-shaking 可能未关闭）`)
 }
 writeFileSync(join(lib, '.keep'), '')
 console.log('[dsh-m] build ok: lib/host.js + lib/client.js')
