@@ -1,0 +1,33 @@
+name: Registry check
+
+on:
+  push:
+    branches: [main]
+    paths: ['registry.json', 'scripts/validate-registry.mjs', '.github/workflows/registry.yml']
+  pull_request:
+    paths: ['registry.json']
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org/'
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate registry
+        run: node scripts/validate-registry.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
