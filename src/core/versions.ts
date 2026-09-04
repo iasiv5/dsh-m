@@ -12,6 +12,33 @@ export interface NpmLatest {
   tarball?: string
 }
 
+/** 精确版本 metadata（Task 8 integrity 校验使用，与 NpmLatest 同形）。 */
+export type NpmVersionMetadata = NpmLatest
+
+/** 精确 semver：接受 prerelease/build metadata，拒绝 v 前缀、range、tag 与脏尾缀。 */
+const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+
+export function isExactVersion(version: string): boolean {
+  return EXACT_VERSION_RE.test(version)
+}
+
+/** 读取该精确版本的 dist metadata（不使用 /latest endpoint）；integrity 缺失由调用方拒绝安装。 */
+export async function npmVersion(pkg: string, version: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmVersionMetadata> {
+  if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
+  if (!isExactVersion(version)) throw new Error(`不是精确版本（拒绝 range/tag/前缀）: ${version}`)
+  const data = await fetchJsonLimited<{
+    version?: unknown
+    dist?: { integrity?: unknown; tarball?: unknown }
+  }>(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/${version}`, { timeoutMs, signal })
+  const resolved = typeof data.version === 'string' ? data.version : ''
+  if (!resolved) throw new Error(`npm 未返回版本: ${pkg}@${version}`)
+  return {
+    version: resolved,
+    integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
+    tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
+  }
+}
+
 export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmLatest> {
   // 允许 scoped 包名：@scope/name（isSafePkgName 同款字符集）
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)

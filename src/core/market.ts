@@ -5,9 +5,11 @@
  * TTL cache、共享全局 deadline）；unavailable 返回结构化空页；host/cli namespace 贯穿。
  */
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { addDshPlugin } from './dsh-cli.js'
-import { dshHome, webProfileDir } from './env.js'
+import { addDshPlugin, removeDshPlugin, runCommand } from './dsh-cli.js'
+import { dshHome, installTimeoutMs, webProfileDir } from './env.js'
+import { assertNpmIntegrity, readPnpmLockIntegrity, restoreSnapshots, snapshotFiles } from './npm-integrity.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
   readProfileDeps,
@@ -23,7 +25,7 @@ import {
   type RegistryEntry,
   type RegistryState,
 } from './registry.js'
-import { githubLatestTag as defaultGithubLatestTag, isNewerVersion, npmLatest as defaultNpmLatest } from './versions.js'
+import { githubLatestTag as defaultGithubLatestTag, isNewerVersion, npmLatest as defaultNpmLatest, npmVersion } from './versions.js'
 
 // ---------- 契约类型 ----------
 
@@ -542,6 +544,22 @@ export async function listInstalledWithMeta(
 
 // ---------- 安装 / 升级 ----------
 
+/** 安装路径可注入依赖（测试用；生产走真实实现）。 */
+export interface InstallDeps extends Partial<MarketDeps> {
+  addDshPlugin?: typeof addDshPlugin
+  removeDshPlugin?: typeof removeDshPlugin
+  readProfileDeps?: typeof readProfileDeps
+  npmVersion?: typeof npmVersion
+  readLockIntegrity?: typeof readPnpmLockIntegrity
+  profileDir?: string
+  /** 恢复快照后的 pnpm install --frozen-lockfile（可注入） */
+  restoreInstall?: (profileDir: string) => Promise<unknown>
+}
+
+async function defaultRestoreInstall(profileDir: string): Promise<unknown> {
+  return runCommand('pnpm', ['--dir', profileDir, 'install', '--frozen-lockfile'], { timeoutMs: installTimeoutMs() })
+}
+
 export interface InstallResult {
   id: string
   pkg: string
@@ -558,7 +576,7 @@ export async function installFromRegistry(
   id: string,
   cfg: RegistryConfig = {},
   opts: { version?: string } & RegistryRuntimeOptions = {},
-  deps?: Partial<MarketDeps>,
+  deps?: InstallDeps,
 ): Promise<InstallResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })
   if (loaded.status === 'unavailable') {
@@ -573,33 +591,100 @@ export async function installEntry(
   entry: RegistryEntry,
   cfg: RegistryConfig = {},
   opts: { version?: string } & RegistryRuntimeOptions = {},
-  _deps?: Partial<MarketDeps>,
+  deps?: InstallDeps,
 ): Promise<InstallResult> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
+  const d = {
+    npmLatest: deps?.npmLatest ?? defaultNpmLatest,
+    npmVersion: deps?.npmVersion ?? npmVersion,
+    addDshPlugin: deps?.addDshPlugin ?? addDshPlugin,
+    removeDshPlugin: deps?.removeDshPlugin ?? removeDshPlugin,
+    readProfileDeps: deps?.readProfileDeps ?? readProfileDeps,
+    readLockIntegrity: deps?.readLockIntegrity ?? readPnpmLockIntegrity,
+    restoreInstall: deps?.restoreInstall ?? defaultRestoreInstall,
+  }
+  const profileDir = deps?.profileDir ?? webProfileDir()
   if (entry.source === 'npm' && entry.npm) {
-    const version = opts.version && /^\d+\.\d+\.\d+/.test(opts.version) ? opts.version : (await defaultNpmLatest(entry.npm, timeoutMs, opts.signal)).version
-    const spec = `${entry.npm}@${version}`
-    const res = await addDshPlugin(spec)
-    // 安装后校验：落盘版本必须与意图一致（integrity 校验由 Task 8 接入）
-    const deps = await readProfileDeps(webProfileDir())
-    const specInProfile = deps[entry.npm]
-    if (specInProfile === undefined) throw new Error(`安装后未在 profile 依赖中找到 ${entry.npm}`)
-    return {
-      id: entry.id,
-      pkg: entry.npm,
-      spec,
-      version,
-      usedAllowAllBuilds: res.usedAllowAllBuilds,
-      needsRestart: true,
-      output: res.output.slice(-800),
+    const pkg = entry.npm
+    // npm：无论 latest 还是用户指定 exact，都先读取该精确版本的 dist metadata
+    let version: string
+    let expectedIntegrity: string | undefined
+    if (opts.version) {
+      const meta = await d.npmVersion(pkg, opts.version, timeoutMs, opts.signal)
+      version = meta.version
+      expectedIntegrity = meta.integrity
+    } else {
+      const latest = await d.npmLatest(pkg, timeoutMs, opts.signal)
+      version = latest.version
+      expectedIntegrity = latest.integrity
+    }
+    if (!expectedIntegrity) throw new Error(`npm metadata 缺少 dist integrity：${pkg}@${version}，拒绝安装`)
+    const spec = `${pkg}@${version}`
+    // 安装前快照：失败时 best-effort 依赖回滚的依据
+    const snapshots = await snapshotFiles([
+      join(profileDir, 'package.json'),
+      join(profileDir, 'pnpm-lock.yaml'),
+      join(profileDir, 'pnpm-workspace.yaml'),
+    ])
+    try {
+      const res = await d.addDshPlugin(spec)
+      const depsNow = await d.readProfileDeps(profileDir)
+      if (depsNow[pkg] === undefined) throw new Error(`安装后未在 profile 依赖中找到 ${pkg}`)
+      if (depsNow[pkg] !== version) throw new Error(`profile 依赖版本 ${depsNow[pkg]} 与目标 ${version} 不一致`)
+      let lockText: string
+      try {
+        lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
+      } catch {
+        throw new Error('安装后未找到 pnpm-lock.yaml，无法核对 integrity')
+      }
+      const actual = d.readLockIntegrity(lockText, pkg, version)
+      assertNpmIntegrity(expectedIntegrity, actual, pkg, version)
+      return {
+        id: entry.id,
+        pkg,
+        spec,
+        version,
+        usedAllowAllBuilds: res.usedAllowAllBuilds,
+        needsRestart: true,
+        output: res.output.slice(-800),
+      }
+    } catch (err) {
+      // best-effort rollback：原子恢复 manifest/lock/workspace 快照，再 frozen-lockfile 重装
+      let rollbackError: string | null = null
+      try {
+        await restoreSnapshots(snapshots)
+        await d.restoreInstall(profileDir)
+      } catch (rerr) {
+        rollbackError = rerr instanceof Error ? rerr.message : String(rerr)
+        // 原先不存在该依赖且恢复安装失败：尝试移除
+        const originallyAbsent = snapshots[0] && snapshots[0].existed && (() => {
+          try {
+            return !JSON.parse(snapshots[0].bytes!.toString('utf8'))?.dependencies?.[pkg]
+          } catch {
+            return false
+          }
+        })()
+        if (originallyAbsent) {
+          try {
+            await d.removeDshPlugin(pkg)
+            rollbackError = null
+          } catch (rmErr) {
+            rollbackError = `${rollbackError}；移除 ${pkg} 也失败（${rmErr instanceof Error ? rmErr.message : String(rmErr)}）`
+          }
+        }
+      }
+      if (rollbackError) {
+        throw new Error(`integrity 校验失败（${err instanceof Error ? err.message : String(err)}）；依赖回滚也失败（${rollbackError}），profile 可能需要人工修复`)
+      }
+      throw new Error(`integrity 校验失败，已回滚到安装前状态：${err instanceof Error ? err.message : String(err)}`)
     }
   }
   if (entry.github) {
     const { tag, sha } = await defaultGithubLatestTag(entry.github, timeoutMs, opts.signal)
     const spec = `github:${entry.github}#${sha}`
-    const res = await addDshPlugin(spec)
-    const deps = await readProfileDeps(webProfileDir())
-    const pkgKey = Object.keys(deps).find((k) => deps[k] === spec || deps[k].startsWith(`github:${entry.github}#`))
+    const res = await d.addDshPlugin(spec)
+    const depsNow = await d.readProfileDeps(profileDir)
+    const pkgKey = Object.keys(depsNow).find((k) => depsNow[k] === spec || depsNow[k].startsWith(`github:${entry.github}#`))
     if (!pkgKey) throw new Error(`安装后未在 profile 依赖中找到 ${entry.github}`)
     void tag
     return {
@@ -642,7 +727,7 @@ export async function upgradePlugin(
   pkg: string,
   cfg: RegistryConfig = {},
   opts: RegistryRuntimeOptions = {},
-  deps?: Partial<MarketDeps>,
+  deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })
   if (loaded.status === 'unavailable') {
