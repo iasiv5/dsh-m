@@ -87,7 +87,7 @@ const CSS = `
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
-.dshm-entry{display:flex;align-items:center;gap:8px;width:100%;min-width:0;height:42px;padding:0 10px 0 8px;border:0;background:none;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:14px;line-height:22px;text-align:left;cursor:pointer;border-radius:8px}
+.dshm-entry{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:calc(100% + 4px);height:42px;margin:4px -2px;padding:0 10px 0 8px;border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:14px;line-height:22px;cursor:pointer;overflow:hidden}
 .dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-entry svg{flex:none;width:16px;height:16px}
 .dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
