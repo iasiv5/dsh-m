@@ -44,9 +44,11 @@ export interface RegistryConfig {
 }
 
 const REPO = 'iasiv5/dsh-m'
+// raw 优先：jsDelivr 对 @main 有 CDN 缓存（可 stale 数小时），raw 始终反映 main 最新内容；
+// jsDelivr 降为备用线路（可通过 purge.jsdelivr.net 手动清缓存）。
 const DEFAULT_URLS: Array<{ source: LoadedRegistry['source']; url: string }> = [
-  { source: 'jsdelivr', url: `https://cdn.jsdelivr.net/gh/${REPO}@main/registry.json` },
   { source: 'raw', url: `https://raw.githubusercontent.com/${REPO}/main/registry.json` },
+  { source: 'jsdelivr', url: `https://cdn.jsdelivr.net/gh/${REPO}@main/registry.json` },
 ]
 
 // ---------- 校验 ----------
