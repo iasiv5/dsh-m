@@ -128,12 +128,12 @@ const CSS = `
 .dshm-panel{width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-3,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
 .dshm-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
 .dshm-title{font-weight:700;font-size:15px;margin-right:6px}
-.dshm-tabs{display:flex;align-items:center;gap:16px}
-.dshm-tab{height:30px;padding:0;border:0;background:inherit;color:var(--dsw-alias-label-tertiary,#7b8088);font:inherit;font-size:13px;font-weight:500;cursor:pointer}
-.dshm-tab:hover{color:var(--dsw-alias-label-primary,inherit)}
-.dshm-tab.on{background:inherit;color:var(--dsw-alias-state-business-primary,#4d6bfe)}
-.dshm-count{font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,#9ca3af);margin-left:2px}
-.dshm-tab.on .dshm-count{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
+.dshm-seg{display:inline-flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2,#e2e4e8);border-radius:9px;background:var(--dsw-alias-bg-layer-1,#f5f6f8)}
+.dshm-seg button{appearance:none;border:0;background:transparent;height:28px;padding:0 14px;border-radius:7px;font:inherit;font-size:12px;color:var(--dsw-alias-label-tertiary,#7b8088);cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .15s,color .15s,box-shadow .15s}
+.dshm-seg button:hover{color:var(--dsw-alias-label-secondary,#4b5058)}
+.dshm-seg button.on{background:var(--dsw-alias-bg-layer-3,#fff);color:var(--dsw-alias-label-primary,#17191c);font-weight:600;box-shadow:var(--dsw-shadow-lv1,0 2px 8px rgb(20 24 32 / 8%))}
+.dshm-seg .dshm-count{font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,#9ca3af);margin:0}
+.dshm-seg button.on .dshm-count{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dshm-spacer{flex:1}
 .dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
@@ -326,9 +326,6 @@ function MarketTab({ notify, onCount }) {
   const [cat, setCat] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  useEffect(() => {
-    if (onCount) onCount(((data && data.items) || []).length);
-  }, [data, onCount]);
 
   const items = useMemo(() => {
     const list = (data && data.items) || [];
@@ -507,14 +504,11 @@ function uninstallGuard(it) {
 }
 
 // ---------- 已装页 ----------
-function InstalledTab({ notify, onCount }) {
-  const { loading, data, error, reload } = useAsync(() => api("installed"), []);
+function InstalledTab({ notify, installed }) {
+  const { loading, data, error, reload } = installed;
   const [openPkg, setOpenPkg] = useState(null);
   const [readmePkg, setReadmePkg] = useState(null);
   const [busyPkg, setBusyPkg] = useState(null);
-  useEffect(() => {
-    if (onCount) onCount(((data && data.items) || []).length);
-  }, [data, onCount]);
 
   const doUninstall = async (it) => {
     setBusyPkg(it.pkg);
@@ -760,8 +754,13 @@ const TABS = [
 
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
-  const [counts, setCounts] = useState({});
-  const setCount = useCallback((key, n) => setCounts((c) => (c[key] === n ? c : { ...c, [key]: n })), []);
+  // 数据在面板层取一次：页签切换零请求，计数由数据派生（未就绪就隐藏数字，不显示假 0）
+  const market = useAsync((force) => api("market", force ? { force: true } : {}), []);
+  const installed = useAsync(() => api("installed"), []);
+  const counts = {
+    market: market.data ? market.data.items.length : null,
+    installed: installed.data ? installed.data.items.length : null,
+  };
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
@@ -792,9 +791,16 @@ function MarketPanel({ onClose }) {
         h("span", { className: "dshm-title" }, lookup("title.full")),
         h(
           "div",
-          { className: "dshm-tabs" },
+          { className: "dshm-seg", role: "tablist" },
           TABS.map(([key, labelKey, countKey]) =>
-            h("button", { key, className: `dshm-tab${tab === key ? " on" : ""}`, onClick: () => setTab(key) },
+            h("button", {
+              key,
+              type: "button",
+              role: "tab",
+              "aria-selected": tab === key,
+              className: tab === key ? "on" : "",
+              onClick: () => setTab(key),
+            },
               lookup(labelKey),
               countKey && counts[countKey] != null ? h("span", { className: "dshm-count" }, String(counts[countKey])) : null,
             ),
@@ -806,14 +812,13 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, onCount: (n) => setCount("market", n) }) : null,
-        tab === "installed" ? h(InstalledTab, { notify, onCount: (n) => setCount("installed", n) }) : null,
+        tab === "market" ? h(MarketTab, { notify, market }) : null,
+        tab === "installed" ? h(InstalledTab, { notify, installed }) : null,
         tab === "settings" ? h(SettingsTab, { notify }) : null,
       ),
       toast
         ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-error-secondary,#fee2e2)", color: "var(--dsw-alias-state-error-primary,#b91c1c)" } : null },
             h("span", { className: "dshm-banner-text" }, toast.text))
-
         : null,
       banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null) }) : null,
     ),
