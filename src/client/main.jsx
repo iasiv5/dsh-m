@@ -91,6 +91,8 @@ const CSS = `
 .dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-entry svg{flex:none;width:16px;height:16px}
 .dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+[data-slot="sidebar.footer.action"]{display:flex!important;flex-direction:column;width:100%;min-width:0}
+[data-slot="sidebar.footer.action"]>*{flex:none;min-width:0}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
 `;
 
@@ -747,9 +749,9 @@ function MarketIcon() {
     h("rect", { x: "1.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
     h("rect", { x: "8.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
     h("rect", { x: "1.75", y: "8.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
-    // 右下：放大镜
-    h("circle", { cx: "10.6", cy: "10.6", r: "3.05", stroke: "currentColor", strokeWidth: "1.4" }),
-    h("path", { d: "M12.9 12.9 14.6 14.6", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
+    // 右下：放大镜（收一点，光学尺寸与其他宫格图标一致）
+    h("circle", { cx: "10.5", cy: "10.5", r: "2.9", stroke: "currentColor", strokeWidth: "1.4" }),
+    h("path", { d: "M12.6 12.6 14.3 14.3", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
   );
 }
 
