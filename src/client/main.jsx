@@ -10,6 +10,9 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
+// 市场面板 pure state（Node tests 直接覆盖）
+const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice } = require("./market-state.js");
+
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
   "market.title": "插件市场",
@@ -53,6 +56,11 @@ const ZH = {
   "settings.trust.hint": "⚠️ 自定义收录清单未经官方 CI 校验，条目来源请确认可信后再安装。",
   "settings.cache.hint": "切换后旧自定义源缓存将被清理（默认缓存保留）；自定义源失败时保留其最近一次成功缓存。",
   "settings.warnings": "维护提示",
+  "notice.default": "官方默认收录清单 · 共 {count} 条", "notice.custom": "自定义收录清单 · 共 {count} 条",
+  "notice.stale": "来源为本地缓存（共 {count} 条），可用「强制刷新」更新", "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
+  "market.page.prev": "上一页", "market.page.next": "下一页", "market.page.info": "第 {page} / {pages} 页 · 共 {total} 条",
+  "market.perf": "收录超过 200 条：仅查询当前页的最新版本（每页 50 条），如需全部请用搜索/分类过滤",
+  "notice.toolview.err": "收录清单暂不可用",
   "self.upgraded": "dsh-m 已更新到 v{v}，重启后生效", "self.failed": "自更新失败：{err}",
   "registry.refreshed": "收录清单已强制刷新",
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
@@ -116,6 +124,11 @@ const EN = {
   "settings.trust.hint": "⚠️ Custom registries are not validated by official CI. Only install entries from sources you trust.",
   "settings.cache.hint": "Old custom-source caches are cleaned after switching (the default cache is kept); a failed custom source keeps its last good cache.",
   "settings.warnings": "Maintenance notice",
+  "notice.default": "Official default registry · {count} listings", "notice.custom": "Custom registry · {count} listings",
+  "notice.stale": "Served from local cache ({count} listings) — force refresh to update", "notice.unavailable": "Registry unavailable · check the address in Settings",
+  "market.page.prev": "Previous", "market.page.next": "Next", "market.page.info": "Page {page} / {pages} · {total} listings",
+  "market.perf": "200+ listings: latest versions are queried for the current page only (50 per page); use search/category filters",
+  "notice.toolview.err": "Registry temporarily unavailable",
   "self.upgraded": "dsh-m updated to v{v} — restart to take effect", "self.failed": "Self-update failed: {err}",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
@@ -282,6 +295,60 @@ function useAsync(fn, deps) {
     run(false);
   }, [run]);
   return { ...state, reload: run };
+}
+
+// ---------- 市场数据唯一 owner（服务端分页 + generation/abort） ----------
+function useMarketData() {
+  const [query, setQuery] = useState(() => normalizeMarketQuery({}));
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const genRef = useRef(0);
+  const abortRef = useRef(null);
+  const queryRef = useRef(query);
+
+  const fetchPage = useCallback((nextQuery, force) => {
+    const gen = ++genRef.current;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setLoading(true);
+    setError(null);
+    const params = {
+      query: nextQuery.query || undefined,
+      category: nextQuery.category || undefined,
+      offset: nextQuery.offset,
+      limit: nextQuery.limit,
+      ...(force ? { force: true } : {}),
+    };
+    return api("market", params, ac.signal)
+      .then((raw) => {
+        if (genRef.current !== gen || ac.signal.aborted) return;
+        setData(normalizeMarketResponse(raw));
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (genRef.current !== gen || ac.signal.aborted) return;
+        setError(String((e && e.message) || e));
+        setLoading(false);
+      });
+  }, []);
+
+  const updateQuery = useCallback((patch, opts = {}) => {
+    const next = resetPageOnFilterChange(queryRef.current, normalizeMarketQuery({ ...queryRef.current, ...patch }));
+    queryRef.current = next;
+    setQuery(next);
+    if (opts.fetch !== false) fetchPage(next, opts.force);
+  }, [fetchPage]);
+
+  const reload = useCallback((force) => fetchPage(queryRef.current, force), [fetchPage]);
+
+  useEffect(() => {
+    fetchPage(queryRef.current, false);
+    return () => abortRef.current?.abort();
+  }, [fetchPage]);
+
+  return { query, data, loading, error, reload, updateQuery };
 }
 
 // ---------- 通用小组件 ----------
@@ -563,24 +630,29 @@ function RestartBanner({ note, onDone }) {
   );
 }
 
-// ---------- 市场页 ----------
-function MarketTab({ notify, onCount }) {
-  const { loading, data, error, reload } = useAsync((force) => api("market", force ? { force: true } : {}), []);
-  const [q, setQ] = useState("");
-  const [cat, setCat] = useState(null);
+// ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props） ----------
+function MarketTab({ notify, market }) {
+  const { data, loading, error, reload, query, updateQuery } = market;
   const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [qInput, setQInput] = useState(query.query);
+  const debounceRef = useRef(null);
 
-  const items = useMemo(() => {
-    const list = (data && data.items) || [];
-    const kw = q.trim().toLowerCase();
-    return list.filter((it) => {
-      if (cat && it.category !== cat) return false;
-      if (!kw) return true;
-      const hay = `${it.id} ${it.name} ${it.description} ${(it.tags || []).join(" ")}`.toLowerCase();
-      return hay.includes(kw);
-    });
-  }, [data, q, cat]);
+  // 服务端分页数据
+  const items = (data && data.items) || [];
+  const total = (data && data.total) || 0;
+  const limit = (data && data.limit) || MARKET_PAGE_SIZE;
+  const offset = (data && data.offset) || 0;
+  const page = total > 0 ? Math.floor(offset / limit) + 1 : 1;
+  const pages = total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
+  const counts = (data && data.categoryCounts) || {};
+  const notice = data ? registryNotice(data.registryState, total) : null;
+
+  const onSearchInput = (value) => {
+    setQInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => updateQuery({ query: value }), 300);
+  };
 
   const doInstall = async (it, version) => {
     setBusyId(it.id);
@@ -603,26 +675,31 @@ function MarketTab({ notify, onCount }) {
   return h(
     React.Fragment,
     null,
+    notice
+      ? h("div", { className: notice.key === "notice.unavailable" ? "dshm-err" : "dshm-hint" },
+          lookup(notice.key, { count: notice.count }))
+      : null,
+    total > 200 ? h("div", { className: "dshm-hint" }, lookup("market.perf")) : null,
     h(
       "div",
       { className: "dshm-row" },
       h("input", {
         className: "dshm-input",
         placeholder: lookup("search.ph"),
-        value: q,
-        onChange: (e) => setQ(e.target.value),
+        value: qInput,
+        onChange: (e) => onSearchInput(e.target.value),
       }),
       h("button", { className: "dshm-btn", onClick: () => reload(true), title: lookup("settings.policy.v") }, loading ? Spin() : `↻ ${lookup("common.refresh")}`),
     ),
     h(
       "div",
       { className: "dshm-chips" },
-      h("button", { className: `dshm-chip${cat === null ? " on" : ""}`, onClick: () => setCat(null) }, lookup("cat.all")),
+      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, offset: 0 }) }, lookup("cat.all")),
       CATEGORIES.map((key) => {
-        const n = ((data && data.items) || []).filter((it) => it.category === key).length;
+        const n = typeof counts[key] === "number" ? counts[key] : 0;
         return h(
           "button",
-          { key, className: `dshm-chip${cat === key ? " on" : ""}`, onClick: () => setCat(cat === key ? null : key) },
+          { key, className: `dshm-chip${query.category === key ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === key ? null : key, offset: 0 }) },
           `${lookup("cat." + key)}${n ? ` ${n}` : ""}`,
         );
       }),
@@ -635,51 +712,70 @@ function MarketTab({ notify, onCount }) {
         : items.length === 0
           ? h("div", { className: "dshm-empty" }, lookup("market.empty"))
           : h(
-              "div",
-              { className: "dshm-cards" },
-              items.map((it) => Card({
-                key: it.id,
-                icon: h(Icon, { entry: it }),
-                name: it.name,
-                badges: [
-                  it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
-                  it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
-                  h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
-                ],
-                desc: it.description,
-                sub: [
-                  it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
-                  it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
-                  it.latestError ? lookup("version.failed") : null,
-                ].filter(Boolean).join(" · "),
-                links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
-                open: openId === it.id,
-                onToggle: () => setOpenId(openId === it.id ? null : it.id),
-                detail: DetailRows([
-                  [lookup("detail.id"), it.id],
-                  [lookup("detail.source"), it.source === "npm"
-                    ? h(ExtLink, { href: `https://www.npmjs.com/package/${it.npm}` }, `npm · ${it.npm}`)
-                    : h(ExtLink, { href: `https://github.com/${it.github}` }, `GitHub · ${it.github}`)],
-                  [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError || "—"],
-                  [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
-                  [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
-                  it.latestError ? [lookup("version.failed"), it.latestError] : null,
-                ]),
-                actions: [
-                  it.installed
-                    ? h("span", { className: "dshm-hint", key: "hint" }, lookup("manage.hint"))
-                    : h("button", {
-                        key: "install",
-                        className: "dshm-btn primary sm",
-                        disabled: busyId === it.id,
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          doInstall(it);
+              React.Fragment,
+              null,
+              h(
+                "div",
+                { className: "dshm-cards" },
+                items.map((it) => Card({
+                  key: it.id,
+                  icon: h(Icon, { entry: it }),
+                  name: it.name,
+                  badges: [
+                    it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
+                    it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
+                    h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
+                  ],
+                  desc: it.description,
+                  sub: [
+                    it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
+                    it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
+                    it.latestError ? lookup("version.failed") : null,
+                  ].filter(Boolean).join(" · "),
+                  links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
+                  open: openId === it.id,
+                  onToggle: () => setOpenId(openId === it.id ? null : it.id),
+                  detail: DetailRows([
+                    [lookup("detail.id"), it.id],
+                    [lookup("detail.source"), it.source === "npm"
+                      ? h(ExtLink, { href: `https://www.npmjs.com/package/${it.npm}` }, `npm · ${it.npm}`)
+                      : h(ExtLink, { href: `https://github.com/${it.github}` }, `GitHub · ${it.github}`)],
+                    [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError || "—"],
+                    [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
+                    [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
+                    it.latestError ? [lookup("version.failed"), it.latestError] : null,
+                  ]),
+                  actions: [
+                    it.installed
+                      ? h("span", { className: "dshm-hint", key: "hint" }, lookup("manage.hint"))
+                      : h("button", {
+                          key: "install",
+                          className: "dshm-btn primary sm",
+                          disabled: busyId === it.id,
+                          onClick: (e) => {
+                            e.stopPropagation();
+                            doInstall(it);
+                          },
                         },
-                      },
-                      busyId === it.id ? h(Spin) : lookup("action.install")),
-                ],
-              })),
+                        busyId === it.id ? h(Spin) : lookup("action.install")),
+                  ],
+                })),
+              ),
+              pages > 1
+                ? h("div", { className: "dshm-row", style: { justifyContent: "center", marginTop: "4px" } },
+                    h("button", {
+                      className: "dshm-btn sm",
+                      disabled: page <= 1 || loading,
+                      onClick: () => updateQuery({ offset: Math.max(0, offset - limit) }),
+                    }, lookup("market.page.prev")),
+                    h("span", { className: "dshm-hint" }, lookup("market.page.info", { page, pages, total })),
+                    h("button", {
+                      className: "dshm-btn sm",
+                      disabled: page >= pages || loading,
+                      onClick: () => updateQuery({ offset: Math.min(total - 1, offset + limit) }),
+                    }, lookup("market.page.next")),
+                  )
+                : null,
             ),
   );
 }
@@ -1170,16 +1266,16 @@ const TABS = [
 
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
-  // 数据在面板层取一次：页签切换零请求，计数由数据派生（未就绪就隐藏数字，不显示假 0）
-  const market = useAsync((force) => api("market", force ? { force: true } : {}), []);
+  // 市场数据唯一 owner：服务端分页 + query generation + AbortController（Task 7）
+  const market = useMarketData();
   const installed = useAsync(() => api("installed"), []);
-  // registry 配置应用后：先刷新市场页，再刷新已装页（顺序执行，旧请求由 useAsync 覆盖）
+  // registry 配置应用后：先刷新市场页，再刷新已装页（顺序执行，旧请求被 generation 丢弃）
   const onRegistryChanged = useCallback(async () => {
-    await market.reload(false).catch(() => undefined);
+    await market.reload(false);
     await installed.reload().catch(() => undefined);
   }, [market, installed]);
   const counts = {
-    market: market.data ? market.data.items.length : null,
+    market: market.data ? market.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
   };
   const [banner, setBanner] = useState(null); // { text } | null
@@ -1419,10 +1515,10 @@ function SearchToolView(props) {
       .then((d) => {
         if (live) setItems(d.items || []);
       })
-      .catch((e) => {
+      .catch(() => {
         if (live) {
           setItems([]);
-          setErr((e && e.message) || String(e));
+          setErr(lookup("notice.toolview.err"));
         }
       });
     return () => {
