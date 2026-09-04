@@ -25,9 +25,9 @@ npm install -g dsh-m          # 或 dsh plugin --profile web add dsh-m@<version>
 
 | 视图 | 能力 |
 |---|---|
-| **市场** | 收录卡片流；关键词搜索、分类筛选、标签；卡片展开详情与「安装」；npm 源锁定最新精确版本，GitHub 源锁定 release/tag 指向的 commit |
+| **市场** | 收录卡片流；关键词搜索、分类筛选（服务端过滤 + 分页，每页 50 条，1,000 条清单也只探测当前页）；卡片展开详情与「安装」；npm 源锁定最新精确版本，GitHub 源锁定 release/tag 指向的 commit |
 | **已装** | web profile 实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断） |
-| **设置** | 收录清单缓存状态与强制刷新、registry 源覆盖、dsh-m 自更新 |
+| **设置** | registry 地址草稿 +「校验并应用 / 恢复默认 / 下载默认 registry.json / 检查条目可达性」；配置地址、生效来源与状态一目了然；强制刷新；dsh-m 自更新 |
 
 安装 / 卸载 / 升级完成后出现「⚡ 一键重启」横幅——重启走 systemd 单元（同源校验，兜底 detached helper），按 boot id 轮询直至服务恢复。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
@@ -53,6 +53,8 @@ dshm upgrade --pkg dsh-web-search --yes
 dshm uninstall --pkg dsh-web-search --yes
 dshm restart --yes
 ```
+
+清单不可用时 `registry` / `search` / `outdated` 打印配置与实际生效地址并退出码 1；`list` 仍列出已装插件。CLI 固定独立缓存命名空间，不影响 Web 端。
 
 ## 收录清单（registry）
 

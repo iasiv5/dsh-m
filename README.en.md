@@ -25,9 +25,9 @@ The default registry includes DSH Skins, DSH Web Search, the Lark / QQ / Weixin 
 
 | View | Capabilities |
 |---|---|
-| **Market** | Card flow with search, category filters and tags; expandable details; "Install" — npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
+| **Market** | Card flow with search and category filters (server-side filtering + pagination, 50 per page — even a 1,000-entry registry probes the current page only); expandable details; "Install" — npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
 | **Installed** | What your web profile actually has, annotated "via market / non-market"; update badges, upgrade, two-step confirm uninstall; 📖 README preview (64KB cap) |
-| **Settings** | Registry cache status + force refresh, registry source override, dsh-m self-update |
+| **Settings** | Registry address draft with "Validate & apply / Restore default / Download default registry.json / Check entries reachability"; configured vs active address and status at a glance; force refresh; dsh-m self-update |
 
 After any mutation a "⚡ Restart" banner appears — restart goes through the systemd unit (same-origin checked, detached-helper fallback) and polls by boot id until the service is back. Installs stream live pnpm progress (resolve → download → link → build).
 
@@ -53,6 +53,8 @@ dshm upgrade --pkg dsh-web-search --yes
 dshm uninstall --pkg dsh-web-search --yes
 dshm restart --yes
 ```
+
+When the registry is unavailable, `registry` / `search` / `outdated` print the configured vs active address and exit 1; `list` still shows installed plugins. The CLI uses its own cache namespace and never touches the Web side's.
 
 ## Registry
 
