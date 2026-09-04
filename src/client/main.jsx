@@ -71,7 +71,10 @@ const CSS = `
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
-.dshm-entry{display:inline-flex;align-items:center;gap:6px}
+.dshm-entry{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:0;background:none;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;border-radius:8px}
+.dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
+.dshm-entry svg{flex:none;width:16px;height:16px}
+.dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
 `;
 
@@ -669,7 +672,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-head" },
-        h("span", { className: "dshm-title" }, "🛍 DSH 市场"),
+        h("span", { className: "dshm-title" }, "插件市场"),
         TABS.map(([key, label]) =>
           h("button", { key, className: `dshm-tab${tab === key ? " on" : ""}`, onClick: () => setTab(key) }, label),
         ),
@@ -722,12 +725,33 @@ function mountPanel() {
   }
 }
 
+// 同系列线性图标（16×16 / stroke currentColor / 1.4，与 PlazaIcon 同约定）：应用商店店面
+function MarketIcon() {
+  return h("svg", { viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
+    // 雨棚
+    h("path", {
+      d: "M2.6 2h10.8l.9 3.1c.3 1-.5 2-1.6 2H3.3c-1.1 0-1.9-1-1.6-2L2.6 2Z",
+      stroke: "currentColor", strokeWidth: "1.4", strokeLinejoin: "round",
+    }),
+    // 店体
+    h("path", {
+      d: "M3.4 7.2V13a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V7.2",
+      stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round",
+    }),
+    // 门
+    h("path", {
+      d: "M6.4 14v-3.2a1 1 0 0 1 1-1h1.2a1 1 0 0 1 1 1V14",
+      stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round",
+    }),
+  );
+}
+
 function MarketEntry(props) {
   useEffect(() => ensureCss(), []);
   return h(
     "button",
     {
-      className: "dshm-btn dshm-entry",
+      className: "dshm-entry",
       onClick: () => {
         try {
           mountPanel();
@@ -735,11 +759,10 @@ function MarketEntry(props) {
           console.error("[dsh-m] 打开市场面板失败:", e);
         }
       },
-      title: "DSH Marketplace",
-      style: { margin: "4px" },
+      title: "插件市场",
     },
-    "🛍",
-    props && props.wide ? " DSH 市场" : null,
+    h(MarketIcon),
+    props && props.wide ? h("span", null, "插件市场") : null,
   );
 }
 
@@ -908,7 +931,7 @@ function apply(ctx) {
   ctx.effect(() => ensureCss(), "dshm-style");
   slots.inject("sidebar.footer.action", () =>
     slots.register(
-      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: () => "DSH 市场" },
+      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: () => "插件市场" },
       function DshmMarketEntry(actionProps) {
         return h(MarketEntry, actionProps);
       },
