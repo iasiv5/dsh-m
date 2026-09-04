@@ -24,7 +24,8 @@ const ZH = {
   "action.install": "安装", "action.upgrade": "升级", "action.uninstall": "卸载",
   "confirm.uninstall": "确认卸载？", "confirm.unlink": "确认移除本地引用？", "confirm.core": "⚠️ 确认卸载核心包？",
   "detail.id": "收录 id", "detail.source": "来源", "detail.latest": "最新", "detail.installed": "已装", "detail.tags": "标签",
-  "detail.pkg": "包名", "detail.spec": "安装 spec", "detail.listed": "收录", "detail.listed.no": "不在收录清单中", "detail.path": "路径", "detail.note": "注意",
+  "detail.pkg": "包名", "detail.spec": "安装 spec", "detail.listed": "收录", "detail.listed.no": "不在收录清单中", "detail.path": "路径", "detail.note": "注意", "detail.links": "详情",
+  "link.home": "官网",
   "manage.hint": "已安装，可在「已装」页管理",
   "version.failed": "版本查询失败",
   "src.npm": "npm", "src.github": "github", "src.link": "本地 link", "src.file": "本地 file", "src.unknown": "未知",
@@ -52,7 +53,7 @@ const ZH = {
   "restart.hint.done": "已请求重启 DSH web（via {via}）。服务几秒内恢复，之后让用户刷新页面即可。",
   "phase.resolving": "解析依赖", "phase.downloading": "下载", "phase.linking": "链接安装", "phase.building": "构建脚本", "phase.ready": "准备中",
   "readme.show": "📖 README", "readme.hide": "收起 README", "readme.loading": "加载 README… ", "readme.none": "（该插件没有 README）",
-  "readme.truncated": "\n\n…（超过 64KB 已截断，完整内容见插件目录）",
+  "readme.truncated": "…（超过 64KB 已截断，完整内容见插件目录）",
   "warn.unlink": "卸载只移除 profile 对本地目录的引用（{path}），不会删除目录本身。",
   "warn.core": "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
   "profile.hint": "web profile：{path}",
@@ -71,7 +72,8 @@ const EN = {
   "action.install": "Install", "action.upgrade": "Upgrade", "action.uninstall": "Uninstall",
   "confirm.uninstall": "Confirm uninstall?", "confirm.unlink": "Confirm remove link?", "confirm.core": "⚠️ Remove core package?",
   "detail.id": "Listing id", "detail.source": "Source", "detail.latest": "Latest", "detail.installed": "Installed", "detail.tags": "Tags",
-  "detail.pkg": "Package", "detail.spec": "Spec", "detail.listed": "Listed", "detail.listed.no": "Not in the registry", "detail.path": "Path", "detail.note": "Note",
+  "detail.pkg": "Package", "detail.spec": "Spec", "detail.listed": "Listed", "detail.listed.no": "Not in the registry", "detail.path": "Path", "detail.note": "Note", "detail.links": "Details",
+  "link.home": "Homepage",
   "manage.hint": "Installed — manage it on the Installed tab",
   "version.failed": "version lookup failed",
   "src.npm": "npm", "src.github": "github", "src.link": "local link", "src.file": "local file", "src.unknown": "unknown",
@@ -99,7 +101,7 @@ const EN = {
   "restart.hint.done": "Restart requested (via {via}). The service will be back in seconds; ask the user to refresh afterwards.",
   "phase.resolving": "Resolving", "phase.downloading": "Downloading", "phase.linking": "Linking", "phase.building": "Building", "phase.ready": "Preparing",
   "readme.show": "📖 README", "readme.hide": "Hide README", "readme.loading": "Loading README… ", "readme.none": "(No README)",
-  "readme.truncated": "\n\n…(truncated at 64KB — see the plugin directory for full content)",
+  "readme.truncated": "…(truncated at 64KB — see the plugin directory for full content)",
   "warn.unlink": "Uninstalling only removes the profile's reference to the local directory ({path}); the directory itself is kept.",
   "warn.core": "This is a core/archive package installed via file:. Uninstalling may affect DSH features and requires manual restore.",
   "profile.hint": "web profile: {path}",
@@ -175,7 +177,30 @@ const CSS = `
 .dshm-spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dsw-alias-border-l2,#c7d2fe);border-top-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-radius:50%;animation:dshm-rot .8s linear infinite;vertical-align:-2px}
 @keyframes dshm-rot{to{transform:rotate(360deg)}}
 .dshm-others{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px dashed var(--dsw-alias-border-l2,#e2e4e8);border-radius:10px;color:var(--dsw-alias-label-caption,#9ca3af);font-size:12px;line-height:18px}
-.dshm-readme{max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#4b5563);margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.dshm-readme{max-height:280px;overflow:auto;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:10px 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#4b5563);margin:0}
+.dshm-readme.md{font-family:inherit;white-space:normal;word-break:break-word}
+.dshm-readme.md h1,.dshm-readme.md h2,.dshm-readme.md h3,.dshm-readme.md h4,.dshm-readme.md h5,.dshm-readme.md h6{margin:8px 0 4px;font-weight:700;line-height:1.4;color:var(--dsw-alias-label-primary,inherit)}
+.dshm-readme.md h1{font-size:15px}.dshm-readme.md h2{font-size:14px}.dshm-readme.md h3{font-size:13px}.dshm-readme.md h4,.dshm-readme.md h5,.dshm-readme.md h6{font-size:12px}
+.dshm-readme.md>:first-child{margin-top:0}
+.dshm-readme.md p{margin:4px 0}
+.dshm-readme.md a{color:var(--dsw-alias-state-business-primary,#4d6bfe);text-decoration:none}
+.dshm-readme.md a:hover{text-decoration:underline}
+.dshm-readme.md code{background:rgba(127,127,127,.16);border-radius:4px;padding:1px 4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.dshm-readme.md pre{background:rgba(127,127,127,.12);border:1px solid var(--dsw-alias-border-l2,transparent);border-radius:8px;padding:8px 10px;overflow:auto;margin:6px 0}
+.dshm-readme.md pre code{background:transparent;padding:0;font-size:11px;line-height:16px}
+.dshm-readme.md img{max-height:20px;max-width:100%;vertical-align:middle}
+.dshm-readme.md ul,.dshm-readme.md ol{margin:4px 0;padding-left:20px}
+.dshm-readme.md li{margin:2px 0}
+.dshm-readme.md blockquote{margin:6px 0;padding:2px 10px;border-left:3px solid var(--dsw-alias-border-l2,#cbd5e1);color:var(--dsw-alias-label-caption,#6b7280)}
+.dshm-readme.md table{border-collapse:collapse;margin:6px 0;font-size:11px}
+.dshm-readme.md th,.dshm-readme.md td{border:1px solid var(--dsw-alias-border-l2,#cbd5e1);padding:3px 8px;text-align:left}
+.dshm-readme.md th{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.1))}
+.dshm-readme.md hr{border:0;border-top:1px solid var(--dsw-alias-border-l2,#cbd5e1);margin:8px 0}
+.dshm-readme.md .dshm-md-note{margin-top:8px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-l2,#cbd5e1);color:var(--dsw-alias-label-caption,#9ca3af);font-size:11px}
+.dshm-links{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
+.dshm-links-k,.dshm-links-sep{color:var(--dsw-alias-label-caption,#9ca3af)}
+.dshm-links a{color:var(--dsw-alias-state-business-primary,#4d6bfe);text-decoration:none;font-weight:500}
+.dshm-links a:hover{text-decoration:underline}
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
@@ -247,6 +272,194 @@ function Icon({ entry }) {
 
 function Spin() {
   return h("span", { className: "dshm-spin" });
+}
+
+// ---------- 极简 Markdown 渲染（零依赖，输出 React 元素；文本经 React 天然转义，链接只放行安全协议） ----------
+function safeUrl(u) {
+  const t = String(u || "").trim();
+  if (/^(https?:\/\/|mailto:)/i.test(t)) return t;
+  if (/^[/#]/.test(t)) return t;
+  return "#";
+}
+
+// 外链统一 target/rel，且阻止冒泡（卡片点击会折叠详情）
+function ExtLink({ href, className, children }) {
+  return h(
+    "a",
+    {
+      className: className || "dshm-md-a",
+      href: safeUrl(href),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      onClick: (e) => e.stopPropagation(),
+    },
+    children,
+  );
+}
+
+function MdImg({ src, alt }) {
+  return h("img", {
+    className: "dshm-md-img",
+    src: safeUrl(src),
+    alt: alt || "",
+    referrerPolicy: "no-referrer",
+    onError: (e) => {
+      e.currentTarget.style.display = "none";
+    },
+  });
+}
+
+// 行内语法（按优先级）：徽章链接 [![a](i)](l) · 图片 · 链接 · `code` · **粗体** · ~~删除~~ · *斜体* · <autolink> · 裸 URL
+function mdInline(text, kb) {
+  const re = /(\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\))|(!\[[^\]]*\]\([^)]*\))|(\[[^\]]*\]\([^)]*\))|(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*\s][^*]*\*)|(<https?:\/\/[^>\s]+>)|(https?:\/\/[^\s<>()\[\]{}"'「」【】]+[^\s<>()\[\]{}"'「」【】.,;:!?…，。；：！？）】」"')])/g;
+  const src = String(text);
+  const nodes = [];
+  let last = 0;
+  let m;
+  let i = 0;
+  while ((m = re.exec(src))) {
+    if (m.index > last) nodes.push(src.slice(last, m.index));
+    const tok = m[0];
+    const k = `${kb}-${i++}`;
+    if (tok.startsWith("[![")) {
+      // [![徽章](img)](link)：badge 常见嵌套，图在链内
+      const im = /^!\[([^\]]*)\]\(([^)]*)\)/.exec(tok.slice(1));
+      const lm = /\]\(([^)]*)\)\s*$/.exec(tok);
+      const img = h(MdImg, { src: im && im[2], alt: im && im[1] });
+      const href = lm && lm[1];
+      nodes.push(href && safeUrl(href) !== "#" ? h(ExtLink, { key: k, href }, img) : h("span", { key: k }, img));
+    } else if (tok.startsWith("![") || tok.startsWith("<![")) {
+      const im = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(tok);
+      nodes.push(h(MdImg, { key: k, src: im && im[2], alt: im && im[1] }));
+    } else if (tok.startsWith("[")) {
+      const lm = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(tok);
+      nodes.push(h(ExtLink, { key: k, href: lm && lm[2] }, mdInline(lm ? lm[1] : tok, k)));
+    } else if (tok.startsWith("`")) {
+      nodes.push(h("code", { key: k }, tok.slice(1, -1)));
+    } else if (tok.startsWith("**")) {
+      nodes.push(h("strong", { key: k }, mdInline(tok.slice(2, -2), k)));
+    } else if (tok.startsWith("~~")) {
+      nodes.push(h("del", { key: k }, mdInline(tok.slice(2, -2), k)));
+    } else if (tok.startsWith("*")) {
+      nodes.push(h("em", { key: k }, mdInline(tok.slice(1, -1), k)));
+    } else if (tok.startsWith("<")) {
+      const u = tok.slice(1, -1);
+      nodes.push(h(ExtLink, { key: k, href: u }, u));
+    } else {
+      nodes.push(h(ExtLink, { key: k, href: tok }, tok.length > 72 ? `${tok.slice(0, 69)}…` : tok));
+    }
+    last = m.index + tok.length;
+  }
+  if (last < src.length) nodes.push(src.slice(last));
+  return nodes;
+}
+
+// 块级语法：围栏代码 · ATX 标题 · 分隔线 · 引用 · 无序/有序列表 · GFM 表格 · 段落
+function mdBlocks(lines, kb) {
+  const out = [];
+  let i = 0;
+  let n = 0;
+  const isFence = (s) => /^\s*```/.test(s);
+  const isHeading = (s) => /^#{1,6}\s+/.test(s);
+  const isHr = (s) => /^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(s);
+  const isQuote = (s) => /^\s*>/.test(s);
+  const isUl = (s) => /^\s*[-*+]\s+/.test(s);
+  const isOl = (s) => /^\s*\d+[.)]\s+/.test(s);
+  const isTableRow = (s) => s.includes("|") && /^\s*\|/.test(s);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const k = `${kb}-b${n++}`;
+    if (isFence(line)) {
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) buf.push(lines[i++]);
+      i++; // 闭合 ```（缺失则到尾部）
+      out.push(h("pre", { key: k }, h("code", null, buf.join("\n"))));
+      continue;
+    }
+    if (isHeading(line)) {
+      const hm = /^(#{1,6})\s+(.*)$/.exec(line);
+      out.push(h(`h${hm[1].length}`, { key: k }, mdInline(hm[2], k)));
+      i++;
+      continue;
+    }
+    if (isHr(line)) {
+      out.push(h("hr", { key: k }));
+      i++;
+      continue;
+    }
+    if (isQuote(line)) {
+      const buf = [];
+      while (i < lines.length && isQuote(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      out.push(h("blockquote", { key: k }, mdBlocks(buf, k)));
+      continue;
+    }
+    if (isUl(line) || isOl(line)) {
+      const ordered = isOl(line);
+      const re = ordered ? /^\s*\d+[.)]\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
+      const items = [];
+      while (i < lines.length && (ordered ? isOl(lines[i]) : isUl(lines[i]))) {
+        items.push(h("li", { key: `li${items.length}` }, mdInline(re.exec(lines[i])[1], `${k}-${items.length}`)));
+        i++;
+      }
+      out.push(h(ordered ? "ol" : "ul", { key: k }, items));
+      continue;
+    }
+    if (isTableRow(line) && i + 1 < lines.length && lines[i + 1].includes("-") && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+      const cells = (s) => s.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      const head = cells(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && isTableRow(lines[i])) {
+        rows.push(cells(lines[i]));
+        i++;
+      }
+      out.push(
+        h("table", { key: k },
+          h("thead", null, h("tr", null, head.map((c, x) => h("th", { key: x }, mdInline(c, `${k}h${x}`))))),
+          h("tbody", null, rows.map((r, y) => h("tr", { key: y }, r.map((c, x) => h("td", { key: x }, mdInline(c, `${k}${y}x${x}`)))))),
+        ),
+      );
+      continue;
+    }
+    // 段落：收集到空行或下一个块结构为止
+    const buf = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() && !isFence(lines[i]) && !isHeading(lines[i]) && !isHr(lines[i]) && !isQuote(lines[i]) && !isUl(lines[i]) && !isOl(lines[i])) {
+      buf.push(lines[i]);
+      i++;
+    }
+    out.push(h("p", { key: k }, mdInline(buf.join(" "), k)));
+  }
+  return out;
+}
+
+function renderMarkdown(src) {
+  return mdBlocks(String(src || "").replace(/\r\n?/g, "\n").split("\n"), "md");
+}
+
+// ---------- 「详情」官方外链（GitHub / npm / homepage） ----------
+function officialLinks({ npm, github, homepage }) {
+  const links = [];
+  if (github) links.push(["GitHub", `https://github.com/${github}`]);
+  if (npm) links.push(["npm", `https://www.npmjs.com/package/${npm}`]);
+  if (!links.length && homepage) links.push([lookup("link.home"), homepage]);
+  return links;
+}
+
+function LinksRow(props) {
+  const links = officialLinks(props);
+  if (!links.length) return null;
+  const kids = [];
+  links.forEach(([label, href], idx) => {
+    if (idx) kids.push(h("span", { key: `sep${idx}`, className: "dshm-links-sep" }, "·"));
+    kids.push(h(ExtLink, { key: label, href }, label));
+  });
+  return h("div", { className: "dshm-links" }, h("span", { className: "dshm-links-k" }, `${lookup("detail.links")}：`), ...kids);
 }
 
 function TwoStepButton({ label, confirmLabel, className, onConfirm, disabled }) {
@@ -407,11 +620,14 @@ function MarketTab({ notify, onCount }) {
                   it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
                   it.latestError ? lookup("version.failed") : null,
                 ].filter(Boolean).join(" · "),
+                links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
                 open: openId === it.id,
                 onToggle: () => setOpenId(openId === it.id ? null : it.id),
                 detail: DetailRows([
                   [lookup("detail.id"), it.id],
-                  [lookup("detail.source"), it.source === "npm" ? `npm · ${it.npm}` : `GitHub · ${it.github}`],
+                  [lookup("detail.source"), it.source === "npm"
+                    ? h(ExtLink, { href: `https://www.npmjs.com/package/${it.npm}` }, `npm · ${it.npm}`)
+                    : h(ExtLink, { href: `https://github.com/${it.github}` }, `GitHub · ${it.github}`)],
                   [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError || "—"],
                   [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
                   [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
@@ -483,10 +699,15 @@ function ReadmeBlock({ pkg }) {
       live = false;
     };
   }, [pkg]);
-  if (state.loading) return h("div", { className: "dshm-hint" }, "加载 README… ", Spin());
+  if (state.loading) return h("div", { className: "dshm-hint" }, lookup("readme.loading"), Spin());
   if (state.err) return h("div", { className: "dshm-err" }, state.err);
-  if (!state.text) return h("div", { className: "dshm-hint" }, "（该插件没有 README）");
-  return h("pre", { className: "dshm-readme" }, state.text + (state.truncated ? "\n\n…（超过 64KB 已截断，完整内容见插件目录）" : ""));
+  if (!state.text) return h("div", { className: "dshm-hint" }, lookup("readme.none"));
+  return h(
+    "div",
+    { className: "dshm-readme md", onClick: (e) => e.stopPropagation() },
+    renderMarkdown(state.text),
+    state.truncated ? h("div", { className: "dshm-md-note" }, lookup("readme.truncated")) : null,
+  );
 }
 
 // ---------- 卸载护栏（方案 B：全放开 + 上下文警告） ----------
@@ -579,6 +800,10 @@ function InstalledTab({ notify, installed }) {
             `v${it.version || "?"}`,
             { npm: lookup("src.npm"), github: lookup("src.github"), link: lookup("src.link"), file: lookup("src.file"), unknown: lookup("src.unknown") }[it.source] || it.source,
           ].join(" · "),
+          links: h(LinksRow, {
+            npm: it.source === "npm" ? it.pkg : null,
+            github: it.registryGithub || it.githubRepo || (it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null),
+          }),
           open: openPkg === it.pkg,
           onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
           detail: readmePkg === it.pkg
@@ -714,13 +939,13 @@ function DetailRows(rows) {
     { className: "dshm-kv" },
     list.flatMap(([k, v]) => [
       h("span", { className: "k", key: `${k}-k` }, k),
-      h("span", { key: `${k}-v`, style: { wordBreak: "break-all" } }, String(v)),
+      h("span", { key: `${k}-v`, style: { wordBreak: "break-all" } }, v),
     ]),
   );
 }
 
 // ---------- 卡片（市场/已装共用） ----------
-function Card({ icon, name, badges, desc, sub, open, onToggle, detail, actions }) {
+function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions }) {
   return h(
     "div",
     {
@@ -739,6 +964,7 @@ function Card({ icon, name, badges, desc, sub, open, onToggle, detail, actions }
       h("div", { className: "dshm-top" }, h("span", { className: "dshm-name" }, name), ...badges.filter(Boolean)),
       h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : null }, desc),
       sub ? h("div", { className: "dshm-sub" }, sub) : null,
+      links || null,
       open ? h("div", { className: "dshm-detail" }, detail) : null,
       open && actions && actions.length ? h("div", { className: "dshm-actions" }, ...actions) : null,
     ),
@@ -966,6 +1192,7 @@ function ToolCardRow({ it, onInstalled }) {
       ),
       h("div", { className: "dshm-desc" }, it.description),
       h("div", { className: "dshm-sub" }, `${it.id} · ${(it.tags || []).join("、") || it.category}`),
+      h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
       h(
         "div",
         { className: "dshm-actions" },
