@@ -7,9 +7,12 @@ import { Buffer } from 'node:buffer'
 
 export class HttpError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** 非 2xx 响应的 headers（供上层识别限流等场景）；body-cap/协议类错误无 headers */
+  headers?: Headers
+  constructor(status: number, message: string, headers?: Headers) {
     super(message)
     this.status = status
+    this.headers = headers
   }
 }
 
@@ -124,7 +127,7 @@ export async function fetchJsonLimitedMeta<T = unknown>(url: string, opts: Fetch
     ...opts,
     headers: { accept: 'application/json', ...opts.headers },
   })
-  if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status}`)
+  if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status}`, res.headers)
   let text: string
   try {
     text = decodeUtf8Fatal(res.buffer)
@@ -145,7 +148,7 @@ export async function fetchJsonLimited<T = unknown>(url: string, opts: FetchOpti
 
 export async function fetchTextLimited(url: string, opts: FetchOptions = {}): Promise<string> {
   const res = await fetchLimited(url, opts)
-  if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status}`)
+  if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status}`, res.headers)
   try {
     return decodeUtf8Fatal(res.buffer)
   } catch {

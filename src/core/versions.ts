@@ -4,7 +4,21 @@
  * GitHub：优先最新 release/tag（更新提示只跟稳定版走，不跟 main HEAD——中间提交可能不稳定）；
  * 未认证限额 60 次/小时，自用足够。
  */
-import { fetchJsonLimited, type HttpError } from './httpx.js'
+import { fetchJsonLimited, HttpError } from './httpx.js'
+
+/** GitHub 匿名限额（60 次/小时/IP）用尽时返回可读提示（含重置等待分钟数），否则 null。 */
+function githubRateLimitMessage(err: unknown): string | null {
+  if (err instanceof HttpError && err.status === 403 && err.headers?.get('x-ratelimit-remaining') === '0') {
+    const resetSec = Number(err.headers.get('x-ratelimit-reset'))
+    const waitMin = Number.isFinite(resetSec) && resetSec > 0
+      ? Math.max(1, Math.ceil((resetSec * 1000 - Date.now()) / 60_000))
+      : null
+    return waitMin
+      ? `GitHub API 匿名限额已用尽（60 次/小时），约 ${waitMin} 分钟后自动重置`
+      : 'GitHub API 匿名限额已用尽（60 次/小时），请稍后重试'
+  }
+  return null
+}
 
 export interface NpmLatest {
   version: string
@@ -77,6 +91,7 @@ export interface GithubTag {
 export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<GithubTag> {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
   const headers = { accept: 'application/vnd.github+json' }
+  try {
 
   // 1) 最新 release（404 = 仓库从未发过 release → 回退 tags）
   try {
@@ -102,6 +117,11 @@ export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?:
   const sha = first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : ''
   if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`tag 信息无效: ${repo}`)
   return { tag: name, sha }
+  } catch (err) {
+    const rateLimit = githubRateLimitMessage(err)
+    if (rateLimit) throw new Error(rateLimit)
+    throw err
+  }
 }
 
 export function isNewerVersion(candidate: string, current: string): boolean {

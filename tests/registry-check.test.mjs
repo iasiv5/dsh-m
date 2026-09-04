@@ -2,7 +2,7 @@
  * Task 4：Registry 条目可达性诊断（probe 统计、稳定顺序、并发、deadline、abort、截断）。
  * 运行：npm run build && node --test tests/registry-check.test.mjs
  */
-import { describe, it } from 'node:test'
+import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { checkRegistryEntries, defaultRegistryCheckDeps } from '../lib/core/registry-check.js'
@@ -178,6 +178,25 @@ describe('checkRegistryEntries：issue 截断与顺序', () => {
     // 条目顺序 z → a；字段顺序 npm → github → homepage → icon（icon 可达不产生 issue）
     assert.deepEqual(keys.filter((k) => k.startsWith('z:')), ['z:npm', 'z:github', 'z:homepage'])
     assert.deepEqual(keys.filter((k) => k.startsWith('a:')), ['a:npm', 'a:github', 'a:homepage'])
+  })
+})
+
+describe('GitHub 限流的可读呈现', () => {
+  const realFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = realFetch
+  })
+
+  it('403 + x-ratelimit-remaining:0 → issue 为限额提示（含等待时间）而非 HTTP 403', async () => {
+    globalThis.fetch = async () => new Response('{}', {
+      status: 403,
+      headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) },
+    })
+    const registry = registryOf([entry({ id: 'gh', source: 'github', npm: undefined, github: 'o/r' })])
+    const res = await checkRegistryEntries(registry, { deadlineMs: 10_000 }, defaultRegistryCheckDeps())
+    assert.equal(res.failed, 1)
+    assert.match(res.issues[0].message, /限额已用尽/)
+    assert.ok(!/HTTP 403$/.test(res.issues[0].message))
   })
 })
 
