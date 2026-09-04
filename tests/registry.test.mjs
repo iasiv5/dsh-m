@@ -2,17 +2,25 @@
  * Task 1：严格 v1 schema、地址解析、容量边界与 registrySummary 契约。
  * 运行：npm run build && node --test tests/registry.test.mjs
  */
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { createServer } from 'node:http'
 
 import {
   CATEGORIES,
   MAX_REGISTRY_BYTES,
   MAX_PLUGINS,
+  commitActiveSource,
+  loadDefaultRegistry,
+  loadRegistry,
+  loadRegistryCandidate,
   parseRegistryAddress,
+  readRegistryFile,
   registrySummary,
   validateRegistry,
 } from '../lib/core/registry.js'
@@ -375,5 +383,369 @@ describe('registrySummary', () => {
       registry: { version: 1, plugins: [] },
     })
     assert.deepEqual(summary, { isDefault: true, status: 'stale', stale: true })
+  })
+})
+
+// ---------- Task 2：loader、本地 fd 读取与分源 cache ----------
+
+let cacheRoot = ''
+function setCacheDir() {
+  cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-reg-'))
+  process.env.DSHM_CACHE_DIR = cacheRoot
+}
+function nsDir(ns) {
+  return join(cacheRoot, ns)
+}
+function cacheFile(ns, key) {
+  return join(nsDir(ns), `${key}.json`)
+}
+function writeCacheFixture(ns, key, registry, extra = {}) {
+  mkdirSync(nsDir(ns), { recursive: true })
+  writeFileSync(cacheFile(ns, key), JSON.stringify({
+    version: 2,
+    namespace: ns,
+    cacheKey: key,
+    configuredAddress: extra.configuredAddress ?? '',
+    activeAddress: extra.activeAddress ?? null,
+    source: extra.source ?? 'custom-url',
+    fetchedAt: extra.fetchedAt ?? new Date().toISOString(),
+    registry,
+  }, null, 2))
+}
+function writeLocalRegistry(file, plugins) {
+  writeFileSync(file, JSON.stringify({ version: 1, plugins }, null, 2))
+  return file
+}
+function localEntry(i) {
+  return entry({ id: `local-${i}`, npm: `local-pkg-${i}` })
+}
+
+async function startRegistryServer() {
+  const hits = { count: 0 }
+  const server = createServer((req, res) => {
+    hits.count += 1
+    const u = req.url || '/'
+    if (u === '/a.json' || u === '/b.json') {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify(reg([localEntry(u === '/a.json' ? 1 : 2)])))
+    } else {
+      res.writeHead(500)
+      res.end()
+    }
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() || { port: 0 }).port
+  return {
+    port,
+    hits,
+    url: (p) => `http://127.0.0.1:${port}${p}`,
+    close: () =>
+      new Promise((r) => {
+        // 先断掉 keep-alive 连接，确保 close 之后新请求确实失败
+        server.closeAllConnections()
+        server.close(() => r())
+      }),
+  }
+}
+
+async function getDeadPort() {
+  const server = createServer()
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() || { port: 0 }).port
+  await new Promise((r) => server.close(r))
+  return port
+}
+
+let server
+beforeEach(() => {
+  setCacheDir()
+})
+afterEach(async () => {
+  if (server) {
+    await server.close()
+    server = undefined
+  }
+  delete process.env.DSHM_CACHE_DIR
+  if (cacheRoot) rmSync(cacheRoot, { recursive: true, force: true })
+})
+
+describe('Task 2：本地文件加载', () => {
+  it('绝对路径与 file:// 都加载为 custom-file', async () => {
+    const file = writeLocalRegistry(join(cacheRoot, 'local.json'), [localEntry(1), localEntry(2)])
+    const loaded = await loadRegistry({ registryUrl: file }, { force: true })
+    assert.equal(loaded.status, 'ready')
+    assert.equal(loaded.source, 'custom-file')
+    assert.equal(loaded.isDefault, false)
+    assert.equal(loaded.count, 2)
+    assert.equal(loaded.activeAddress, file)
+
+    const viaUrl = await loadRegistry({ registryUrl: `file://${file}` }, { force: true })
+    assert.equal(viaUrl.status, 'ready')
+    assert.equal(viaUrl.source, 'custom-file')
+    assert.equal(parseRegistryAddress(file).cacheKey, parseRegistryAddress(`file://${file}`).cacheKey)
+  })
+
+  it('非法/缺失 custom 文件返回空 registry + unavailable，不出现官方条目', async () => {
+    const bad = join(cacheRoot, 'bad.json')
+    writeFileSync(bad, JSON.stringify({ version: 1, plugins: [entry({ oops: true })] }))
+    for (const url of [bad, join(cacheRoot, 'missing.json')]) {
+      const loaded = await loadRegistry({ registryUrl: url }, { force: true })
+      assert.equal(loaded.status, 'unavailable')
+      assert.equal(loaded.source, 'custom-unavailable')
+      assert.equal(loaded.registry.plugins.length, 0)
+      assert.ok(loaded.errors.length > 0)
+    }
+  })
+
+  it('2 MiB 精确通过、2 MiB+1 拒绝（本地文件）', async () => {
+    // 700 条接近上限的条目（homepage 2020 字符 + description 500）→ 略低于 2 MiB，
+    // 差额用合法 JSON 空白精确补齐到 MAX_REGISTRY_BYTES
+    const plugins = Array.from({ length: 700 }, (_, i) => entry({
+      id: `pad-${i}`,
+      npm: `pad-pkg-${i}`,
+      name: 'n'.repeat(100),
+      description: 'x'.repeat(500),
+      homepage: `https://example.com/${'a'.repeat(2000)}`,
+    }))
+    const base = JSON.stringify({ version: 1, plugins }, null, 2)
+    const deficit = MAX_REGISTRY_BYTES - Buffer.byteLength(base, 'utf8')
+    assert.ok(deficit > 0, `基础文档应低于 2 MiB，实际超出 ${-deficit}`)
+    const text = base.slice(0, base.lastIndexOf('}')) + ' '.repeat(deficit) + '}'
+    assert.equal(Buffer.byteLength(text, 'utf8'), MAX_REGISTRY_BYTES)
+    const file = join(cacheRoot, 'exact.json')
+    writeFileSync(file, text)
+    const okParsed = validateRegistry(JSON.parse(text))
+    assert.equal(okParsed.ok, true, okParsed.errors.slice(0, 2).join('; '))
+    const okLoaded = await loadRegistry({ registryUrl: file }, { force: true })
+    assert.equal(okLoaded.status, 'ready', okLoaded.errors.join('; '))
+
+    // +1 拒绝：换一个路径（不同 cacheKey），避免回退到上一案例的合法 cache
+    const bigFile = join(cacheRoot, 'exact-plus.json')
+    writeFileSync(bigFile, text + ' ')
+    const tooBig = await loadRegistry({ registryUrl: bigFile }, { force: true })
+    assert.equal(tooBig.status, 'unavailable')
+    assert.ok(tooBig.errors.join().includes('上限'))
+  })
+
+  it('stat 后文件增长被 fd 复核拒绝（可控 fixture）', async () => {
+    const file = join(cacheRoot, 'grow.json')
+    writeFileSync(file, 'x'.repeat(MAX_REGISTRY_BYTES - 5))
+    await assert.rejects(
+      () => readRegistryFile(file, { afterStat: () => { writeFileSync(file, 'x'.repeat(MAX_REGISTRY_BYTES + 5)) } }),
+      (err) => /上限|超过/.test(err instanceof Error ? err.message : String(err)),
+    )
+  })
+})
+
+describe('Task 2：远程加载与 cache 回退', () => {
+  it('loopback HTTP registry 可加载，记录最终 URL', async () => {
+    server = await startRegistryServer()
+    const loaded = await loadRegistry({ registryUrl: server.url('/a.json') }, { force: true })
+    assert.equal(loaded.status, 'ready')
+    assert.equal(loaded.source, 'custom-url')
+    assert.equal(loaded.activeAddress, server.url('/a.json'))
+    assert.equal(loaded.count, 1)
+  })
+
+  it('custom 失败回退同源 cache（stale），无 cache 才 unavailable', async () => {
+    server = await startRegistryServer()
+    const url = server.url('/a.json')
+    const first = await loadRegistry({ registryUrl: url }, { force: true })
+    assert.equal(first.status, 'ready')
+    await server.close()
+
+    const stale = await loadRegistry({ registryUrl: url }, { force: true })
+    assert.equal(stale.status, 'stale')
+    assert.equal(stale.source, 'custom-cache')
+    assert.equal(stale.count, 1)
+
+    const deadPort = await getDeadPort()
+    const fresh = await loadRegistry({ registryUrl: `http://127.0.0.1:${deadPort}/a.json` }, { force: true })
+    assert.equal(fresh.status, 'unavailable')
+    assert.equal(fresh.registry.plugins.length, 0)
+  })
+
+  it('force 绕过 TTL，普通读取遵循 cacheTtlMin', async () => {
+    server = await startRegistryServer()
+    const url = server.url('/a.json')
+    await loadRegistry({ registryUrl: url }, { force: true })
+    assert.equal(server.hits.count, 1)
+    const cached = await loadRegistry({ registryUrl: url, cacheTtlMin: 60 }, {})
+    assert.equal(cached.status, 'stale')
+    assert.equal(server.hits.count, 1, 'TTL 内不应发起网络请求')
+    await loadRegistry({ registryUrl: url }, { force: true })
+    assert.equal(server.hits.count, 2)
+  })
+
+  it('candidate 只写候选 cache，绝不 prune 旧 source', async () => {
+    server = await startRegistryServer()
+    const oldAddr = parseRegistryAddress(server.url('/b.json'))
+    writeCacheFixture('host', oldAddr.cacheKey, reg([localEntry(9)]), { configuredAddress: oldAddr.normalized })
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(8)]), { source: 'default-cache' })
+
+    const candidate = await loadRegistryCandidate({ registryUrl: server.url('/a.json') })
+    assert.equal(candidate.status, 'ready')
+    assert.equal(candidate.source, 'custom-url')
+    assert.ok(existsSync(cacheFile('host', oldAddr.cacheKey)), 'candidate 不得删除旧 source cache')
+    assert.ok(existsSync(cacheFile('host', defAddr.cacheKey)), 'candidate 不得删除 default cache')
+    const newAddr = parseRegistryAddress(server.url('/a.json'))
+    assert.ok(existsSync(cacheFile('host', newAddr.cacheKey)), '候选 cache 已写入')
+  })
+
+  it('commitActiveSource 之后才清理旧 source，并写入 accepted metadata', async () => {
+    server = await startRegistryServer()
+    const aAddr = parseRegistryAddress(server.url('/a.json'))
+    const bAddr = parseRegistryAddress(server.url('/b.json'))
+    writeCacheFixture('host', aAddr.cacheKey, reg([localEntry(1)]), { configuredAddress: aAddr.normalized })
+    // B 曾作为候选加载成功过 → 已有候选 cache
+    writeCacheFixture('host', bAddr.cacheKey, reg([localEntry(2)]), { configuredAddress: bAddr.normalized })
+    const result = await commitActiveSource(bAddr, 'host')
+    assert.equal(result.metadataCommitted, true)
+    assert.equal(result.pruned, true)
+    assert.equal(result.warning, null)
+    assert.ok(!existsSync(cacheFile('host', aAddr.cacheKey)), '旧 custom cache 应被清理')
+    assert.ok(existsSync(cacheFile('host', bAddr.cacheKey)), '当前 cache 保留')
+    const meta = JSON.parse(readFileSync(join(nsDir('host'), 'active-source.json'), 'utf8'))
+    assert.equal(meta.version, 1)
+    assert.equal(meta.configuredAddress, bAddr.normalized)
+    assert.equal(meta.cacheKey, bAddr.cacheKey)
+  })
+
+  it('切回已被清理的 A 离线返回 unavailable', async () => {
+    server = await startRegistryServer()
+    const aUrl = server.url('/a.json')
+    const aAddr = parseRegistryAddress(aUrl)
+    writeCacheFixture('host', aAddr.cacheKey, reg([localEntry(1)]))
+    await commitActiveSource(parseRegistryAddress(server.url('/b.json')), 'host')
+    assert.ok(!existsSync(cacheFile('host', aAddr.cacheKey)))
+    await server.close()
+    const loaded = await loadRegistry({ registryUrl: aUrl }, { force: true })
+    assert.equal(loaded.status, 'unavailable')
+    assert.equal(loaded.source, 'custom-unavailable')
+  })
+
+  it('CLI namespace 与 Host namespace 互不删除', async () => {
+    server = await startRegistryServer()
+    const aAddr = parseRegistryAddress(server.url('/a.json'))
+    writeCacheFixture('host', aAddr.cacheKey, reg([localEntry(1)]))
+    writeCacheFixture('cli', aAddr.cacheKey, reg([localEntry(1)]))
+
+    const cliLoad = await loadRegistry({ registryUrl: server.url('/b.json') }, { force: true, namespace: 'cli' })
+    assert.equal(cliLoad.status, 'ready')
+    assert.ok(existsSync(cacheFile('host', aAddr.cacheKey)), 'host namespace 的 A cache 不得被 CLI 读取删除')
+    assert.ok(!existsSync(cacheFile('cli', aAddr.cacheKey)), 'cli namespace 的旧 cache 被清理')
+    assert.ok(!existsSync(join(nsDir('cli'), 'active-source.json')), 'cli namespace 不写 accepted metadata')
+  })
+
+  it('default 与 custom cache 不串用；旧单文件 cache 与损坏 cache 被忽略', async () => {
+    // 旧单文件 cache 写在 cacheDir() 根，新 loader 不读它
+    mkdirSync(cacheRoot, { recursive: true })
+    writeFileSync(join(cacheRoot, 'registry.json'), JSON.stringify({ fetchedAt: new Date().toISOString(), source: 'raw', registry: reg([localEntry(1)]) }))
+    const deadPort = await getDeadPort()
+    const loaded = await loadRegistry({ registryUrl: `http://127.0.0.1:${deadPort}/a.json` }, { force: true })
+    assert.equal(loaded.status, 'unavailable')
+    assert.equal(loaded.source, 'custom-unavailable')
+
+    // 损坏 cache 忽略
+    const deadAddr = parseRegistryAddress(`http://127.0.0.1:${deadPort}/a.json`)
+    mkdirSync(nsDir('host'), { recursive: true })
+    writeFileSync(cacheFile('host', deadAddr.cacheKey), '{broken json')
+    const corrupt = await loadRegistry({ registryUrl: deadAddr.normalized }, { force: true })
+    assert.equal(corrupt.status, 'unavailable')
+
+    // default TTL 命中走 default cache，不产生 custom cache
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(7)]), { source: 'default-cache' })
+    const defLoaded = await loadRegistry({ cacheTtlMin: 60 }, {})
+    assert.equal(defLoaded.status, 'stale')
+    assert.equal(defLoaded.source, 'default-cache')
+    assert.equal(defLoaded.isDefault, true)
+    assert.equal(defLoaded.count, 1)
+  })
+
+  it('错误 namespace 的 cache 不串读', async () => {
+    const deadPort = await getDeadPort()
+    const addr = parseRegistryAddress(`http://127.0.0.1:${deadPort}/a.json`)
+    writeCacheFixture('cli', addr.cacheKey, reg([localEntry(1)]))
+    const loaded = await loadRegistry({ registryUrl: addr.normalized }, { force: true, namespace: 'host' })
+    assert.equal(loaded.status, 'unavailable')
+  })
+
+  it('cache 目标为 symlink 时拒绝写入，加载本身成功', async () => {
+    server = await startRegistryServer()
+    const addr = parseRegistryAddress(server.url('/a.json'))
+    mkdirSync(nsDir('host'), { recursive: true })
+    const target = join(cacheRoot, 'symlink-target.json')
+    writeFileSync(target, 'KEEP')
+    symlinkSync(target, cacheFile('host', addr.cacheKey))
+    const loaded = await loadRegistry({ registryUrl: server.url('/a.json') }, { force: true })
+    assert.equal(loaded.status, 'ready')
+    assert.ok(existsSync(target))
+    assert.equal(readFileSync(target, 'utf8'), 'KEEP')
+  })
+
+  it('并发写同一 cache key 不产生半写 JSON', async () => {
+    server = await startRegistryServer()
+    const url = server.url('/a.json')
+    const results = await Promise.all(Array.from({ length: 10 }, () => loadRegistry({ registryUrl: url }, { force: true })))
+    assert.ok(results.every((r) => r.status === 'ready'))
+    const addr = parseRegistryAddress(url)
+    const raw = JSON.parse(readFileSync(cacheFile('host', addr.cacheKey), 'utf8'))
+    assert.equal(raw.version, 2)
+    assert.equal(raw.registry.plugins.length, 1)
+  })
+
+  it('commitActiveSource metadata 失败 → 不 prune、返回 warning、旧 cache 保留', async () => {
+    const aAddr = parseRegistryAddress('https://example.com/a.json')
+    const bAddr = parseRegistryAddress('https://example.com/b.json')
+    writeCacheFixture('host', aAddr.cacheKey, reg([localEntry(1)]))
+    // active-source.json 变成目录 → metadata rename 失败
+    mkdirSync(nsDir('host'), { recursive: true })
+    mkdirSync(join(nsDir('host'), 'active-source.json'), { recursive: true })
+    const result = await commitActiveSource(bAddr, 'host')
+    assert.equal(result.metadataCommitted, false)
+    assert.equal(result.pruned, false)
+    assert.ok(result.warning)
+    assert.ok(existsSync(cacheFile('host', aAddr.cacheKey)), 'metadata 失败不得 prune')
+  })
+
+  it('commitActiveSource prune 失败 → metadata 有效、返回 warning', async () => {
+    const aAddr = parseRegistryAddress('https://example.com/a.json')
+    const bAddr = parseRegistryAddress('https://example.com/b.json')
+    writeCacheFixture('host', aAddr.cacheKey, reg([localEntry(1)]))
+    mkdirSync(nsDir('host'), { recursive: true })
+    // 不可删除的占位目录（.json 后缀目录）让 prune 失败
+    mkdirSync(join(nsDir('host'), 'zz-blocker.json'), { recursive: true })
+    mkdirSync(join(nsDir('host'), 'zz-blocker.json', 'inner'))
+    const result = await commitActiveSource(bAddr, 'host')
+    assert.equal(result.metadataCommitted, true)
+    assert.equal(result.pruned, false)
+    assert.ok(result.warning)
+  })
+
+  it('恢复默认的 commit 会清理 custom cache、保留 default cache', async () => {
+    const customAddr = parseRegistryAddress('https://example.com/a.json')
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', customAddr.cacheKey, reg([localEntry(1)]))
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(2)]), { source: 'default-cache' })
+    const result = await commitActiveSource(defAddr, 'host')
+    assert.equal(result.metadataCommitted, true)
+    assert.equal(result.pruned, true)
+    assert.ok(!existsSync(cacheFile('host', customAddr.cacheKey)))
+    assert.ok(existsSync(cacheFile('host', defAddr.cacheKey)))
+    const meta = JSON.parse(readFileSync(join(nsDir('host'), 'active-source.json'), 'utf8'))
+    assert.equal(meta.configuredAddress, '')
+  })
+
+  it('loadDefaultRegistry 走 default cache（TTL 内不联网）且从不 prune', async () => {
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(5)]), { source: 'default-cache' })
+    const customAddr = parseRegistryAddress('https://example.com/a.json')
+    writeCacheFixture('host', customAddr.cacheKey, reg([localEntry(6)]))
+    const loaded = await loadDefaultRegistry({ cacheTtlMin: 60 })
+    assert.equal(loaded.source, 'default-cache')
+    assert.ok(existsSync(cacheFile('host', customAddr.cacheKey)), 'loadDefaultRegistry 不做 prune')
+    await rm(cacheFile('host', defAddr.cacheKey))
   })
 })

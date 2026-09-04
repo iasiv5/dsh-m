@@ -1,16 +1,15 @@
 /**
  * registry（DESIGN.md §2）：官方 curated registry.json + 单地址自定义覆盖（整体覆盖，不合并）。
- * Task 1 范围：严格 v1 schema、地址解析（RegistryAddress）、状态契约（RegistryState/
- * LoadedRegistry 非 nullable）与 registrySummary。分源 cache / candidate-commit loader
- * 在 Task 2 接管 loadRegistry；当前保留旧 fallback 行为但输出新状态形状。
+ * Task 1：严格 v1 schema、地址解析、状态契约。Task 2：分源 loader、namespace/cacheKey v2
+ * 原子 cache、fd 级本地读取、candidate 与 active prune 分离、commitActiveSource。
  */
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { isAbsolute, normalize } from 'node:path'
-import { join } from 'node:path'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { isAbsolute, join, normalize } from 'node:path'
+import { constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
+import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { cacheDir } from './env.js'
-import { fetchJsonLimited, type HttpError } from './httpx.js'
+import { decodeUtf8Fatal, fetchJsonLimitedMeta, type HttpError } from './httpx.js'
 
 export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'media', 'other'] as const
 export type Category = (typeof CATEGORIES)[number]
@@ -357,40 +356,137 @@ function bundledSnapshot(): Registry {
   return { version: 1, plugins: [] }
 }
 
-// ---------- 缓存（Task 1 过渡实现；Task 2 替换为 namespace/cacheKey v2 原子 cache） ----------
+// ---------- 本地文件 fd 读取（TOCTOU 防护 + 实时 2 MiB cap） ----------
 
-interface CacheFile {
-  fetchedAt: string
-  source: RegistrySource
-  registry: Registry
+export interface ReadRegistryFileHooks {
+  /** 测试注入点：首次 fstat 之后、读取之前触发（模拟 stat 后文件增长/替换） */
+  afterStat?: () => Promise<void> | void
 }
 
-const KNOWN_SOURCES: ReadonlySet<string> = new Set([
-  'default-raw', 'default-jsdelivr', 'default-cache', 'bundled',
-  'custom-url', 'custom-file', 'custom-cache', 'custom-unavailable',
-])
-
-function cachePath(): string {
-  return join(cacheDir(), 'registry.json')
-}
-
-function readCache(): CacheFile | null {
+export async function readRegistryFile(path: string, hooks: ReadRegistryFileHooks = {}): Promise<Buffer> {
+  const real = await realpath(path)
+  // realpath 之后仍可能被换成 symlink：O_NOFOLLOW 在最终路径上兜底
+  const fh = await open(real, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW)
   try {
-    const raw = JSON.parse(readFileSync(cachePath(), 'utf8')) as CacheFile
-    if (!raw || typeof raw !== 'object' || !raw.registry || !Array.isArray(raw.registry.plugins)) return null
-    if (typeof raw.fetchedAt !== 'string' || typeof raw.source !== 'string' || !KNOWN_SOURCES.has(raw.source)) return null
-    return raw
-  } catch {
-    return null
+    const st = await fh.stat()
+    if (!st.isFile()) throw new Error('本地 registry 不是普通文件')
+    if (st.size > MAX_REGISTRY_BYTES) throw new Error(`本地 registry 超过 ${MAX_REGISTRY_BYTES} 字节上限`)
+    await hooks.afterStat?.()
+    const chunks: Buffer[] = []
+    let total = 0
+    const buf = Buffer.alloc(64 * 1024)
+    for (;;) {
+      const { bytesRead } = await fh.read(buf, 0, buf.length, null)
+      if (bytesRead === 0) break
+      total += bytesRead
+      if (total > MAX_REGISTRY_BYTES) throw new Error(`本地 registry 读取超过 ${MAX_REGISTRY_BYTES} 字节上限`)
+      chunks.push(Buffer.from(buf.subarray(0, bytesRead)))
+    }
+    const st2 = await fh.stat()
+    if (!st2.isFile() || st2.ino !== st.ino || st2.size !== total) {
+      throw new Error('本地 registry 读取期间发生变化，已拒绝本次内容')
+    }
+    return Buffer.concat(chunks)
+  } finally {
+    await fh.close().catch(() => undefined)
   }
 }
 
-function writeCache(file: CacheFile): void {
+// ---------- namespace / cacheKey v2 原子 cache ----------
+
+export interface CacheFile {
+  version: 2
+  namespace: RegistryCacheNamespace
+  cacheKey: string
+  configuredAddress: string
+  activeAddress: string | null
+  source: RegistrySource
+  fetchedAt: string
+  registry: Registry
+}
+
+interface AcceptedSourceMetadata {
+  version: 1
+  namespace: 'host'
+  configuredAddress: string
+  cacheKey: string
+  savedAt: string
+}
+
+const CACHE_FILE_VERSION = 2
+const DEFAULT_CACHE_KEY = 'default'
+const ACTIVE_SOURCE_FILE = 'active-source.json'
+
+function nsDir(namespace: RegistryCacheNamespace): string {
+  return join(cacheDir(), namespace)
+}
+
+function cacheFilePath(namespace: RegistryCacheNamespace, cacheKey: string): string {
+  return join(nsDir(namespace), `${cacheKey}.json`)
+}
+
+function cacheDirSyncMode(): void {
+  mkdirSync(cacheDir(), { recursive: true, mode: 0o700 })
+}
+
+/** 同 key 写锁：进程内串行化同一 cache 文件的写入。 */
+const writeLocks = new Map<string, Promise<unknown>>()
+
+function withKeyLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const prev = writeLocks.get(key) ?? Promise.resolve()
+  const next = prev.then(task, task)
+  const tail = next.catch(() => undefined)
+  writeLocks.set(key, tail)
+  void tail.finally(() => {
+    if (writeLocks.get(key) === tail) writeLocks.delete(key)
+  })
+  return next
+}
+
+/** 原子写：0600 临时文件（O_CREAT|O_EXCL）→ fsync → rename。目标为 symlink 时拒绝。 */
+async function atomicWriteJson(target: string, dir: string, value: unknown): Promise<boolean> {
+  return withKeyLock(target, async () => {
+    try {
+      await mkdir(dir, { recursive: true, mode: 0o700 })
+      cacheDirSyncMode()
+      let existing: Awaited<ReturnType<typeof lstat>> | null = null
+      try {
+        existing = await lstat(target)
+      } catch {
+        /* not exists */
+      }
+      if (existing && existing.isSymbolicLink()) return false
+      const tmp = join(dir, `.${target.split('/').pop() ?? 'cache'}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`)
+      const fh = await open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
+      try {
+        await fh.write(Buffer.from(JSON.stringify(value, null, 2), 'utf8'))
+        await fh.sync()
+      } finally {
+        await fh.close().catch(() => undefined)
+      }
+      await rename(tmp, target)
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
+async function writeCacheFile(file: CacheFile): Promise<boolean> {
+  return atomicWriteJson(cacheFilePath(file.namespace, file.cacheKey), nsDir(file.namespace), file)
+}
+
+async function readCacheFile(namespace: RegistryCacheNamespace, cacheKey: string): Promise<CacheFile | null> {
   try {
-    mkdirSync(cacheDir(), { recursive: true })
-    writeFileSync(cachePath(), JSON.stringify(file, null, 2))
+    const raw = JSON.parse(await readFile(cacheFilePath(namespace, cacheKey), 'utf8')) as CacheFile | null
+    if (!raw || typeof raw !== 'object') return null
+    if (raw.version !== CACHE_FILE_VERSION || raw.namespace !== namespace || raw.cacheKey !== cacheKey) return null
+    if (typeof raw.fetchedAt !== 'string' || !raw.registry || !Array.isArray(raw.registry.plugins)) return null
+    const re = validateRegistry(raw.registry)
+    if (!re.ok || !re.registry) return null
+    return { ...raw, registry: re.registry }
   } catch {
-    /* 缓存写失败不致命 */
+    return null
   }
 }
 
@@ -400,7 +496,62 @@ function cacheFresh(file: CacheFile, ttlMin: number): boolean {
   return Date.now() - t < ttlMin * 60_000
 }
 
-// ---------- 加载（Task 1 过渡：旧行为 + 新状态形状；Task 2 重写为分源 loader） ----------
+/** 清理 namespace 内非 default、非当前 custom 的 cache 文件（不动 metadata）。 */
+async function pruneCaches(namespace: RegistryCacheNamespace, keepCustomKey: string | null): Promise<boolean> {
+  try {
+    const dir = nsDir(namespace)
+    const entries = await readdir(dir).catch(() => [] as string[])
+    const keep = new Set([`${DEFAULT_CACHE_KEY}.json`, ACTIVE_SOURCE_FILE])
+    if (keepCustomKey) keep.add(`${keepCustomKey}.json`)
+    for (const name of entries) {
+      if (keep.has(name) || !name.endsWith('.json')) continue
+      await rm(join(dir, name), { force: true }).catch(() => {
+        throw new Error(`无法删除 ${name}`)
+      })
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+export interface ActiveSourceCommitResult {
+  metadataCommitted: boolean
+  pruned: boolean
+  warning: string | null
+}
+
+/**
+ * settings update 成功后由 controller 调用：先写 accepted metadata（仅 host namespace），
+ * 再 prune 非当前 custom cache。metadata 失败 → 不 prune；prune 失败 → 保留旧 cache；
+ * 都只返回 warning，不反向撤销已成功的 settings update。
+ */
+export async function commitActiveSource(
+  address: RegistryAddress,
+  namespace: RegistryCacheNamespace,
+): Promise<ActiveSourceCommitResult> {
+  let metadataCommitted = true
+  if (namespace === 'host') {
+    const meta: AcceptedSourceMetadata = {
+      version: 1,
+      namespace: 'host',
+      configuredAddress: address.normalized,
+      cacheKey: address.cacheKey,
+      savedAt: new Date().toISOString(),
+    }
+    metadataCommitted = await atomicWriteJson(join(nsDir('host'), ACTIVE_SOURCE_FILE), nsDir('host'), meta)
+  }
+  if (!metadataCommitted) {
+    return { metadataCommitted: false, pruned: false, warning: 'accepted-source 元数据写入失败，已跳过旧 cache 清理（新配置仍生效）' }
+  }
+  const pruned = await pruneCaches(namespace, address.kind === 'default' ? null : address.cacheKey)
+  if (!pruned) {
+    return { metadataCommitted: true, pruned: false, warning: '旧来源 cache 清理失败（不影响新配置生效）' }
+  }
+  return { metadataCommitted: true, pruned: true, warning: null }
+}
+
+// ---------- 加载 ----------
 
 function buildState(params: {
   configuredAddress: string
@@ -417,7 +568,7 @@ function buildState(params: {
     source: params.source,
     status: params.status,
     isDefault: params.configuredAddress === '',
-    stale: params.status !== 'ready',
+    stale: params.status === 'stale',
     fetchedAt: params.fetchedAt,
     errors: params.errors,
     count: params.count,
@@ -432,12 +583,63 @@ const DEFAULT_URLS: Array<{ source: RegistrySource; url: string }> = [
   { source: 'default-jsdelivr', url: `https://cdn.jsdelivr.net/gh/${REPO}@main/registry.json` },
 ]
 
-function cachedLoaded(file: CacheFile, configured: string, errors: string[]): LoadedRegistry {
+export interface RegistryLoadOptions {
+  force?: boolean
+  signal?: AbortSignal
+  namespace?: RegistryCacheNamespace
+  prune?: boolean
+  deadlineMs?: number
+}
+
+function attemptTimeoutMs(cfg: RegistryConfig, opts: RegistryLoadOptions, startedAt: number): number {
+  const per = cfg.timeoutMs ?? 20_000
+  if (!opts.deadlineMs || !Number.isFinite(opts.deadlineMs)) return per
+  const remaining = opts.deadlineMs - (Date.now() - startedAt)
+  return Math.max(1, Math.min(per, remaining))
+}
+
+function errorMessage(err: unknown): string {
+  const he = err as HttpError
+  if (he && typeof he.status === 'number') return `HTTP ${he.status}`
+  return err instanceof Error ? err.message : String(err)
+}
+
+async function fetchRegistryFromUrl(
+  url: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<{ registry: Registry; finalUrl: string }> {
+  const { data, finalUrl } = await fetchJsonLimitedMeta(url, { timeoutMs, maxBytes: MAX_REGISTRY_BYTES, signal })
+  const parsed = validateRegistry(data)
+  if (!parsed.ok || !parsed.registry) {
+    throw new Error(`registry 校验失败 — ${parsed.errors.slice(0, 3).join('; ')}`)
+  }
+  return { registry: parsed.registry, finalUrl }
+}
+
+async function readRegistryFromPath(path: string): Promise<Registry> {
+  const buf = await readRegistryFile(path)
+  let data: unknown
+  try {
+    data = JSON.parse(decodeUtf8Fatal(buf))
+  } catch (err) {
+    throw new Error(err instanceof Error && /UTF-8|decode/i.test(err.message) ? '本地 registry 不是合法 UTF-8' : '本地 registry 不是合法 JSON')
+  }
+  const parsed = validateRegistry(data)
+  if (!parsed.ok || !parsed.registry) {
+    throw new Error(`registry 校验失败 — ${parsed.errors.slice(0, 3).join('; ')}`)
+  }
+  return parsed.registry
+}
+
+function loadedFromCacheFile(file: CacheFile, configuredAddress: string, errors: string[]): LoadedRegistry {
+  // cache 命中是“stale 供应”：source 报告 cache 来源，而不是当初抓取用的 raw/jsdelivr/url/file
+  const source: RegistrySource = file.source.startsWith('custom') ? 'custom-cache' : 'default-cache'
   return {
     ...buildState({
-      configuredAddress: configured,
-      activeAddress: null,
-      source: configured === '' ? 'default-cache' : 'custom-cache',
+      configuredAddress,
+      activeAddress: file.activeAddress,
+      source,
       status: 'stale',
       fetchedAt: file.fetchedAt,
       errors,
@@ -447,60 +649,185 @@ function cachedLoaded(file: CacheFile, configured: string, errors: string[]): Lo
   }
 }
 
-export async function loadRegistry(cfg: RegistryConfig = {}, opts: { force?: boolean } = {}): Promise<LoadedRegistry> {
+interface DefaultChainOptions {
+  namespace: RegistryCacheNamespace
+  includeBundled: boolean
+}
+
+/** default 链：raw → jsDelivr → default cache →（可选）bundled。从不 prune。 */
+async function loadDefaultChain(
+  cfg: RegistryConfig,
+  opts: RegistryLoadOptions,
+  chain: DefaultChainOptions,
+): Promise<LoadedRegistry> {
   const errors: string[] = []
-  const timeoutMs = cfg.timeoutMs ?? 20_000
-  const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
-  const configured = typeof cfg.registryUrl === 'string' ? cfg.registryUrl.trim() : ''
-
-  const cached = readCache()
-
-  if (!opts.force && cached && cacheFresh(cached, ttlMin)) return cachedLoaded(cached, configured, errors)
-
-  const candidates: Array<{ source: RegistrySource; url: string }> = []
-  if (configured !== '') candidates.push({ source: 'custom-url', url: configured })
-  candidates.push(...DEFAULT_URLS)
-
-  for (const candidate of candidates) {
+  const startedAt = Date.now()
+  for (const candidate of DEFAULT_URLS) {
     try {
-      const raw = await fetchJsonLimited(candidate.url, { timeoutMs })
-      const parsed = validateRegistry(raw)
-      if (!parsed.ok || !parsed.registry) {
-        errors.push(`${candidate.source}: registry 校验失败 — ${parsed.errors.slice(0, 3).join('; ')}`)
-        continue
-      }
+      const { registry, finalUrl } = await fetchRegistryFromUrl(candidate.url, attemptTimeoutMs(cfg, opts, startedAt), opts.signal)
       const fetchedAt = new Date().toISOString()
-      writeCache({ fetchedAt, source: candidate.source, registry: parsed.registry })
+      await writeCacheFile({
+        version: CACHE_FILE_VERSION,
+        namespace: chain.namespace,
+        cacheKey: DEFAULT_CACHE_KEY,
+        configuredAddress: '',
+        activeAddress: finalUrl,
+        source: candidate.source,
+        fetchedAt,
+        registry,
+      })
       return {
         ...buildState({
-          configuredAddress: configured,
-          activeAddress: candidate.source === 'custom-url' ? configured : candidate.url,
+          configuredAddress: '',
+          activeAddress: finalUrl,
           source: candidate.source,
           status: 'ready',
           fetchedAt,
           errors,
-          count: parsed.registry.plugins.length,
+          count: registry.plugins.length,
         }),
-        registry: parsed.registry,
+        registry,
       }
     } catch (err) {
-      const he = err as HttpError
-      errors.push(`${candidate.source}: ${he?.status ? `HTTP ${he.status}` : err instanceof Error ? err.message : String(err)}`)
+      errors.push(`${candidate.source}: ${errorMessage(err)}`)
     }
   }
-
-  if (cached) return cachedLoaded(cached, configured, errors)
-  const bundled = bundledSnapshot()
+  const cached = await readCacheFile(chain.namespace, DEFAULT_CACHE_KEY)
+  if (cached) return loadedFromCacheFile(cached, '', errors)
+  if (chain.includeBundled) {
+    const bundled = bundledSnapshot()
+    return {
+      ...buildState({
+        configuredAddress: '',
+        activeAddress: null,
+        source: 'bundled',
+        status: 'stale',
+        fetchedAt: null,
+        errors,
+        count: bundled.plugins.length,
+      }),
+      registry: bundled,
+    }
+  }
   return {
     ...buildState({
-      configuredAddress: configured,
+      configuredAddress: '',
       activeAddress: null,
       source: 'bundled',
-      status: 'stale',
+      status: 'unavailable',
       fetchedAt: null,
       errors,
-      count: bundled.plugins.length,
+      count: 0,
     }),
-    registry: bundled,
+    registry: { version: 1, plugins: [] },
   }
+}
+
+interface CustomChainOptions {
+  namespace: RegistryCacheNamespace
+  /** 失败时是否回退当前 source 的 cache（candidate 与 active 都允许，只是 stale 语义） */
+  allowCacheFallback: boolean
+}
+
+/** custom 链：只尝试该 source 自身，失败只读同 sourceKey cache；没有数据 → unavailable。 */
+async function loadCustomChain(
+  address: RegistryAddress,
+  cfg: RegistryConfig,
+  opts: RegistryLoadOptions,
+  chain: CustomChainOptions,
+): Promise<LoadedRegistry> {
+  const errors: string[] = []
+  const source: RegistrySource = address.kind === 'url' ? 'custom-url' : 'custom-file'
+  const startedAt = Date.now()
+  try {
+    const result =
+      address.kind === 'url'
+        ? await fetchRegistryFromUrl(address.normalized, attemptTimeoutMs(cfg, opts, startedAt), opts.signal)
+        : { registry: await readRegistryFromPath(address.normalized), finalUrl: address.normalized }
+    const fetchedAt = new Date().toISOString()
+    await writeCacheFile({
+      version: CACHE_FILE_VERSION,
+      namespace: chain.namespace,
+      cacheKey: address.cacheKey,
+      configuredAddress: address.normalized,
+      activeAddress: result.finalUrl,
+      source,
+      fetchedAt,
+      registry: result.registry,
+    })
+    return {
+      ...buildState({
+        configuredAddress: address.normalized,
+        activeAddress: result.finalUrl,
+        source,
+        status: 'ready',
+        fetchedAt,
+        errors,
+        count: result.registry.plugins.length,
+      }),
+      registry: result.registry,
+    }
+  } catch (err) {
+    errors.push(`${source}: ${errorMessage(err)}`)
+  }
+  if (chain.allowCacheFallback) {
+    const cached = await readCacheFile(chain.namespace, address.cacheKey)
+    if (cached) return loadedFromCacheFile(cached, address.normalized, errors)
+  }
+  return {
+    ...buildState({
+      configuredAddress: address.normalized,
+      activeAddress: null,
+      source: 'custom-unavailable',
+      status: 'unavailable',
+      fetchedAt: null,
+      errors,
+      count: 0,
+    }),
+    registry: { version: 1, plugins: [] },
+  }
+}
+
+/** active 读取：default/custom 各自 fallback；网络成功后可在本 namespace 内 prune。 */
+export async function loadRegistry(cfg: RegistryConfig = {}, opts: RegistryLoadOptions = {}): Promise<LoadedRegistry> {
+  const namespace = opts.namespace ?? 'host'
+  const address = parseRegistryAddress(cfg.registryUrl)
+  const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
+  if (!opts.force) {
+    const cacheKey = address.kind === 'default' ? DEFAULT_CACHE_KEY : address.cacheKey
+    const cached = await readCacheFile(namespace, cacheKey)
+    if (cached && cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, address.normalized, [])
+  }
+  if (address.kind === 'default') {
+    const loaded = await loadDefaultChain(cfg, opts, { namespace, includeBundled: true })
+    if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, null)
+    return loaded
+  }
+  const loaded = await loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true })
+  if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, address.cacheKey)
+  return loaded
+}
+
+/** candidate 读取：apply 前校验专用。只写候选 cache、绝不 prune；default 不落 bundled。 */
+export async function loadRegistryCandidate(
+  cfg: RegistryConfig,
+  opts: Omit<RegistryLoadOptions, 'prune'> = {},
+): Promise<LoadedRegistry> {
+  const namespace = opts.namespace ?? 'host'
+  const address = parseRegistryAddress(cfg.registryUrl)
+  if (address.kind === 'default') {
+    return loadDefaultChain(cfg, opts, { namespace, includeBundled: false })
+  }
+  return loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true })
+}
+
+/** default 显式加载（下载/主动刷新）。写 default cache，从不 prune。 */
+export async function loadDefaultRegistry(cfg: RegistryConfig = {}, opts: RegistryLoadOptions = {}): Promise<LoadedRegistry> {
+  const namespace = opts.namespace ?? 'host'
+  const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
+  if (!opts.force) {
+    const cached = await readCacheFile(namespace, DEFAULT_CACHE_KEY)
+    if (cached && cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, '', [])
+  }
+  return loadDefaultChain(cfg, opts, { namespace, includeBundled: true })
 }
