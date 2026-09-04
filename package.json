@@ -20,7 +20,7 @@
     "registry.json",
     "README.md",
     "README.en.md",
-    "DESIGN.md",
+    "docs/DESIGN.md",
     "LICENSE"
   ],
   "keywords": [

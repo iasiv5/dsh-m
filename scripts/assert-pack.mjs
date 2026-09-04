@@ -12,7 +12,7 @@ const REQUIRED = [
   'registry.json',
   'README.md',
   'README.en.md',
-  'DESIGN.md',
+  'docs/DESIGN.md',
   'cordis.patch.yml',
   'package.json',
 ]
