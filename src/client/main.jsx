@@ -66,6 +66,12 @@ const CSS = `
 .dshm-kv .k{color:var(--dsw-alias-label-caption,#6b7280)}
 .dshm-spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dsw-alias-border-l2,#c7d2fe);border-top-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-radius:50%;animation:dshm-rot .8s linear infinite;vertical-align:-2px}
 @keyframes dshm-rot{to{transform:rotate(360deg)}}
+.dshm-others{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px dashed var(--dsw-alias-border-l2,#e2e4e8);border-radius:10px;color:var(--dsw-alias-label-caption,#9ca3af);font-size:12px;line-height:18px}
+.dshm-readme{max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:10px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,#4b5563);margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
+.dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
+.dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
+.dshm-entry{display:inline-flex;align-items:center;gap:6px}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
 `;
 
@@ -263,6 +269,7 @@ function MarketTab({ notify }) {
         );
       }),
     ),
+    busyId ? h(ProgressLine, { key: "prog" }) : null,
     loading && !data
       ? h("div", { className: "dshm-empty" }, "加载收录清单中… ", Spin())
       : error
@@ -316,10 +323,81 @@ function MarketTab({ notify }) {
   );
 }
 
+// ---------- 安装进度（轮询 host status 端点，pnpm ndjson） ----------
+const PHASE_LABEL = { resolving: "解析依赖", downloading: "下载", linking: "链接安装", building: "构建脚本" };
+
+function ProgressLine() {
+  const [st, setSt] = useState(null);
+  useEffect(() => {
+    let live = true;
+    const tick = async () => {
+      try {
+        const d = await api("status");
+        if (live) setSt(d);
+      } catch {
+        /* 瞬时失败忽略 */
+      }
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => {
+      live = false;
+      clearInterval(iv);
+    };
+  }, []);
+  if (!st) return null;
+  const pct = st.total ? Math.min(100, Math.round((st.done / st.total) * 100)) : null;
+  const phaseLabel = PHASE_LABEL[st.phase] || "准备中";
+  return h(
+    "div",
+    { className: "dshm-prog" },
+    Spin(),
+    h("span", null, `${st.target} · ${phaseLabel}${st.done ? ` ${st.done}${st.total ? "/" + st.total : ""}` : ""}`),
+    pct !== null ? h("span", { className: "bar" }, h("i", { style: { width: pct + "%" } })) : null,
+    st.currentPackage ? h("span", { className: "dshm-hint" }, String(st.currentPackage).slice(0, 44)) : null,
+  );
+}
+
+// ---------- README 预览 ----------
+function ReadmeBlock({ pkg }) {
+  const [state, setState] = useState({ loading: true, text: "", err: "", truncated: false });
+  useEffect(() => {
+    let live = true;
+    api("readme", { pkg })
+      .then((d) => live && setState({ loading: false, text: d.readme, err: "", truncated: d.truncated }))
+      .catch((e) => live && setState({ loading: false, text: "", err: String((e && e.message) || e) }));
+    return () => {
+      live = false;
+    };
+  }, [pkg]);
+  if (state.loading) return h("div", { className: "dshm-hint" }, "加载 README… ", Spin());
+  if (state.err) return h("div", { className: "dshm-err" }, state.err);
+  if (!state.text) return h("div", { className: "dshm-hint" }, "（该插件没有 README）");
+  return h("pre", { className: "dshm-readme" }, state.text + (state.truncated ? "\n\n…（超过 64KB 已截断，完整内容见插件目录）" : ""));
+}
+
+// ---------- 卸载护栏（方案 B：全放开 + 上下文警告） ----------
+function uninstallGuard(it) {
+  if (it.source === "link") {
+    return {
+      confirm: "确认移除本地引用？",
+      warn: `卸载只移除 profile 对本地目录的引用（${it.path}），不会删除目录本身。`,
+    };
+  }
+  if (it.source === "file") {
+    return {
+      confirm: "⚠️ 确认卸载核心包？",
+      warn: "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
+    };
+  }
+  return { confirm: "确认卸载？", warn: null };
+}
+
 // ---------- 已装页 ----------
 function InstalledTab({ notify }) {
   const { loading, data, error, reload } = useAsync(() => api("installed"), []);
   const [openPkg, setOpenPkg] = useState(null);
+  const [readmePkg, setReadmePkg] = useState(null);
   const [busyPkg, setBusyPkg] = useState(null);
 
   const doUninstall = async (it) => {
@@ -364,57 +442,73 @@ function InstalledTab({ notify }) {
   return h(
     React.Fragment,
     null,
-    h("div", { className: "dshm-hint" }, `web profile：${data.profileDir}${data.others ? ` · 另有 ${data.others} 个非 dsh 依赖未列出` : ""}`),
+    h("div", { className: "dshm-hint" }, `web profile：${data.profileDir}`),
+    data.others > 0
+      ? h("div", { className: "dshm-others" }, `另有 ${data.others} 个非 dsh 依赖（未识别为插件），已默认折叠。`)
+      : null,
+    busyPkg ? h(ProgressLine, { key: "prog" }) : null,
     h(
       "div",
       { className: "dshm-cards" },
-      items.map((it) => Card({
-        key: it.pkg,
-        icon: h(Icon, { entry: { name: it.name, github: it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null, icon: null } }),
-        name: it.name,
-        badges: [
-          it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `可升级${it.latestVersion ? ` → v${it.latestVersion}` : ""}`) : null,
-          it.registryId ? h("span", { className: "dshm-badge", key: "r" }, "市场安装") : h("span", { className: "dshm-badge info", key: "r" }, "非市场安装"),
-        ],
-        desc: it.description || "（无描述）",
-        sub: [
-          `v${it.version || "?"}`,
-          { npm: "npm", github: "github", link: "本地 link", file: "本地 file", unknown: "未知" }[it.source] || it.source,
-        ].join(" · "),
-        open: openPkg === it.pkg,
-        onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
-        detail: DetailRows([
-          ["包名", it.pkg],
-          ["安装 spec", it.spec],
-          ["最新", it.latestVersion ? `v${it.latestVersion}` : "—"],
-          ["收录", it.registryId || "不在收录清单中"],
-          ["路径", it.path],
-        ]),
-        actions: [
-          it.outdated
-            ? h("button", {
-                key: "up",
-                className: "dshm-btn primary sm",
-                disabled: busyPkg === it.pkg,
-                onClick: (e) => {
-                  e.stopPropagation();
-                  doUpgrade(it);
-                },
+      items.map((it) => {
+        const guard = uninstallGuard(it);
+        return Card({
+          key: it.pkg,
+          icon: h(Icon, { entry: { name: it.name, github: it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null, icon: null } }),
+          name: it.name,
+          badges: [
+            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `可升级${it.latestVersion ? ` → v${it.latestVersion}` : ""}`) : null,
+            it.registryId ? h("span", { className: "dshm-badge", key: "r" }, "市场安装") : h("span", { className: "dshm-badge info", key: "r" }, "非市场安装"),
+          ],
+          desc: it.description || "（无描述）",
+          sub: [
+            `v${it.version || "?"}`,
+            { npm: "npm", github: "github", link: "本地 link", file: "本地 file", unknown: "未知" }[it.source] || it.source,
+          ].join(" · "),
+          open: openPkg === it.pkg,
+          onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
+          detail: readmePkg === it.pkg
+            ? h(ReadmeBlock, { pkg: it.pkg })
+            : DetailRows([
+                ["包名", it.pkg],
+                ["安装 spec", it.spec],
+                ["最新", it.latestVersion ? `v${it.latestVersion}` : "—"],
+                ["收录", it.registryId || "不在收录清单中"],
+                ["路径", it.path],
+                guard.warn ? ["注意", guard.warn] : null,
+              ]),
+          actions: [
+            h("button", {
+              key: "rd",
+              className: "dshm-btn sm",
+              onClick: (e) => {
+                e.stopPropagation();
+                setReadmePkg(readmePkg === it.pkg ? null : it.pkg);
               },
-              busyPkg === it.pkg ? h(Spin) : "升级")
-            : null,
-          it.registryId || it.source === "npm"
-            ? h(TwoStepButton, {
-                key: "un",
-                label: "卸载",
-                confirmLabel: "确认卸载？",
-                className: "dshm-btn sm",
-                disabled: busyPkg === it.pkg,
-                onConfirm: () => doUninstall(it),
-              })
-            : null,
-        ],
-      })),
+            }, readmePkg === it.pkg ? "收起 README" : "📖 README"),
+            it.outdated
+              ? h("button", {
+                  key: "up",
+                  className: "dshm-btn primary sm",
+                  disabled: busyPkg === it.pkg,
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    doUpgrade(it);
+                  },
+                },
+                busyPkg === it.pkg ? h(Spin) : "升级")
+              : null,
+            h(TwoStepButton, {
+              key: "un",
+              label: "卸载",
+              confirmLabel: guard.confirm,
+              className: "dshm-btn sm",
+              disabled: busyPkg === it.pkg,
+              onConfirm: () => doUninstall(it),
+            }),
+          ],
+        });
+      }),
     ),
   );
 }

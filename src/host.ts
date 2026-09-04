@@ -147,6 +147,19 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, cfg: Config)
         return sendJson(res, 200, { ok: true, ...result })
       }
 
+      case 'readme': {
+        const target = String(body.pkg || '').trim()
+        if (!target) return sendJson(res, 400, { ok: false, error: '缺少 pkg' })
+        const { readInstalledPluginReadme } = await import('./core/installed.js')
+        const result = await readInstalledPluginReadme(target)
+        return sendJson(res, 200, { ok: true, ...result })
+      }
+
+      case 'status': {
+        const { publicInstallStatus } = await import('./core/dsh-cli.js')
+        return sendJson(res, 200, { ok: true, ...publicInstallStatus() })
+      }
+
       case 'install': {
         const id = String(body.id || '').trim()
         if (!id) return sendJson(res, 400, { ok: false, error: '缺少 id' })

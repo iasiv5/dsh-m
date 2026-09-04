@@ -2,7 +2,7 @@
  * 已装插件识别（DESIGN.md §3）：profile 的 package.json 是唯一事实源，
  * 不引入额外状态文件。移植自 skillhub installed-plugins.ts（去 README 暂缓）。
  */
-import { readFile } from 'node:fs/promises'
+import { open, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { isSafePluginTarget, removeDshPlugin, type PluginRunner } from './dsh-cli.js'
 import { webProfileDir } from './env.js'
@@ -153,4 +153,57 @@ export async function removeInstalledPlugin(
   if (!raw || !('dsh' in raw)) throw new Error(`不是 dsh 插件: ${key}`)
   await removeDshPlugin(key, deps)
   return { pkg: key }
+}
+
+// ---------- README 预览（借鉴 skillhub，64KB 截断） ----------
+
+const README_MAX_BYTES = 64 * 1024
+const README_FILES = ['README.md', 'README.markdown', 'README']
+
+export interface PluginReadme {
+  pkg: string
+  name: string
+  readme: string
+  truncated: boolean
+}
+
+/** 限量读取文本文件：只读前 limit 字节，超限标记 truncated。 */
+async function readTextLimited(path: string, limit: number): Promise<{ text: string; truncated: boolean } | null> {
+  let fh
+  try {
+    fh = await open(path, 'r')
+  } catch {
+    return null
+  }
+  try {
+    const buf = Buffer.alloc(limit + 1)
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
+    return {
+      text: buf.subarray(0, Math.min(bytesRead, limit)).toString('utf8'),
+      truncated: bytesRead > limit,
+    }
+  } finally {
+    await fh.close().catch(() => undefined)
+  }
+}
+
+/** 读取单个已安装插件的 README（UTF-8，≤64KB，超限截断）。pkg 必须来自 profile 依赖。 */
+export async function readInstalledPluginReadme(
+  pkg: string,
+  profileDir: string = webProfileDir(),
+): Promise<PluginReadme> {
+  const key = String(pkg || '').trim()
+  if (!isSafePkgName(key)) throw new Error(`无效插件包名: ${pkg}`)
+  const root = resolve(profileDir)
+  const deps = await readProfileDeps(root)
+  if (!(key in deps)) throw new Error(`web profile 未安装该插件: ${key}`)
+  const dir = resolvePluginDir(root, key, deps[key])
+  if (!dir) throw new Error(`无法解析插件目录: ${key}`)
+  const raw = await readPkgJson(dir)
+  const name = raw && typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : key
+  for (const file of README_FILES) {
+    const text = await readTextLimited(join(dir, file), README_MAX_BYTES)
+    if (text) return { pkg: key, name, readme: text.text, truncated: text.truncated }
+  }
+  return { pkg: key, name, readme: '', truncated: false }
 }
