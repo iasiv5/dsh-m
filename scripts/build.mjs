@@ -62,7 +62,7 @@ await build({
 
 // 3) sanity checks
 step('verify')
-for (const f of ['host.js', 'client.js']) {
+for (const f of ['host.js', 'client.js', 'cli.js']) {
   const p = join(lib, f)
   statSync(p)
 }

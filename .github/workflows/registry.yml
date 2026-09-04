@@ -3,9 +3,23 @@ name: Registry check
 on:
   push:
     branches: [main]
-    paths: ['registry.json', 'scripts/validate-registry.mjs', '.github/workflows/registry.yml']
+    paths:
+      - 'registry.json'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/registry.yml'
   pull_request:
-    paths: ['registry.json']
+    paths:
+      - 'registry.json'
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/registry.yml'
   workflow_dispatch:
 
 jobs:
@@ -27,7 +41,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Node tests
+        run: npm test
+
       - name: Validate registry
         run: node scripts/validate-registry.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert npm pack contents
+        run: npm pack --dry-run --json | node scripts/assert-pack.mjs

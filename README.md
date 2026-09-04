@@ -8,7 +8,7 @@
 
 [English](./README.en.md) · 中文
 
-个人自用的 DeepSeek Harness (DSH) 插件市场：**收录 · 安装 · 卸载 · 升级**，全部本机完成。以 DSH web 插件形态运行——侧栏「插件市场」打开三视图面板，同时提供 `dshm_*` agent 工具与 `dshm` CLI。
+可自定义收录清单（Registry）的 DeepSeek Harness (DSH) 插件市场：**收录 · 安装 · 卸载 · 升级**，全部本机完成。以 DSH web 插件形态运行——侧栏「插件市场」打开三视图面板，同时提供 `dshm_*` agent 工具与 `dshm` CLI。
 
 ## 30 秒上手
 
@@ -19,7 +19,7 @@ npm install -g dsh-m          # 或 dsh plugin --profile web add dsh-m@<version>
 1. 安装后**重启 DSH Web**（一键重启亦可）。
 2. 刷新页面，点击侧栏底部的「**插件市场**」。
 
-收录清单里的首批插件：DSH Skins、DSH Web Search、Lark / QQ / 微信 / 企业微信 / 钉钉通道桥，以及 dsh-m 自身。
+默认收录清单里的插件包括：DSH Skins、DSH Web Search、Lark / QQ / 微信 / 企业微信 / 钉钉通道桥，以及 dsh-m 自身。
 
 ## 界面（侧栏「插件市场」）
 
@@ -56,9 +56,19 @@ dshm restart --yes
 
 ## 收录清单（registry）
 
-`registry.json` 手工 curated，运行时经 **raw.githubusercontent / jsDelivr `@main`** 分发（本地 60 分钟 TTL 缓存 + 包内快照兜底）——收录更新与插件发版**解耦**。收录 / 修订直接改 `registry.json` 发 PR，CI 自动校验：schema、npm 包与 GitHub 仓库存在性、重复 id、URL 可达性。
+`registry.json` 手工 curated，运行时经 **raw.githubusercontent / jsDelivr `@main`** 分发（本地 60 分钟 TTL 缓存 + 包内快照兜底）——收录更新与插件发版**解耦**。收录 / 修订直接改 `registry.json` 发 PR，CI 自动校验：严格 schema、npm 包与 GitHub 仓库存在性、重复 id、URL 可达性。
 
-安全基线：拉取仅 HTTPS + 体积上限 + 超时；npm 安装按 lock integrity 校验 + 装后版本核对；GitHub 安装强制锁定 commit SHA；pnpm 构建脚本被拦时按策略放行并明确报告。
+**自定义收录清单（可覆盖官方清单）**：设置页支持单一自定义 registry 地址，**整体覆盖**默认清单（不合并）：
+
+1. 「下载默认 registry.json」得到一份官方清单副本；
+2. 自行编辑副本（增删条目）；
+3. 在设置页填入副本地址并「校验并应用」——支持 **HTTPS URL**、本机**绝对路径 / `file://`**（HTTP 仅限 127.0.0.1/localhost 本机调试）；
+4. 校验失败（字段错误、路径不存在、超过 2 MiB / 1,000 条等）不会保存配置，当前生效清单保持不变；应用成功**即时生效，无需重启**（仅首次部署新版本 dsh-m 需要一次重启）；
+5. 「恢复默认」一键回到官方清单。
+
+规则与边界：严格 v1 schema（未知字段 / 非法 ID / 超限 / 重复一律拒绝，不截断）；副本是独立快照，**不会自动同步**官方新条目；自定义源失败时保留其最近一次成功缓存，绝不静默回退官方清单；切换后旧自定义源缓存会被清理（默认缓存保留）；自定义清单未经官方 CI 校验，请确认来源可信再安装；完整本地路径只在设置页显示，工具与卡片只显示短状态。
+
+安全基线：拉取仅 HTTPS（loopback HTTP 除外）+ 重定向逐跳校验 + 体积上限 + 超时；npm 安装按精确版本 dist integrity 对照 pnpm lockfile 校验，不一致 fail closed 并回滚；GitHub 安装强制锁定 commit SHA；pnpm 构建脚本被拦时按策略放行并明确报告。
 
 ## 开发
 
@@ -75,14 +85,17 @@ node scripts/validate-registry.mjs
 
 ## FAQ
 
-**为什么 GitHub 来源的更新提示不走 main HEAD？**
+**1. 为什么 GitHub 来源的更新提示不走 main HEAD？**
 main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优先 `releases/latest`，无 release 回退 tags 列表），安装时锁定 tag 指向的 commit SHA。
 
-**卸载会删我的数据吗？**
+**2. 卸载 dsh-m 会删我的数据吗？**
 不会。只移除 profile 中的包引用（卸载前先下线运行中的界面），并把疑似残留路径报告给你。
 
-**支持第三方皮肤吗？**
-支持。全部配色来自 DSH 主题语义 token（`state-*` / `brand-*` / `bg-overlay` 等），官方深浅色与第三方皮肤均已验证。
+**3. 自定义清单会让市场变慢吗？**
+收录超过 200 条时会提示性能边界。市场列表是服务端分页（每页 50 条），1,000 条清单第一页也只查询当前页的最新版本，浏览仍然流畅。
+
+**4. 自定义源挂了怎么办？**
+优先使用该源最近一次成功的缓存并标记「缓存来源」；完全没有缓存时市场显示「收录清单不可用」，已安装插件仍可正常管理。修正地址或恢复默认即可。
 
 ## License
 
