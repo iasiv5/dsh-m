@@ -49,12 +49,17 @@ export function parseSpecSource(spec: string): PluginSource {
   return 'unknown'
 }
 
-/** 解析依赖的包目录：普通依赖限制在 profile node_modules 内；link:/file: 仅接受绝对路径。 */
+/**
+ * 解析依赖的包目录：
+ * - `link:` 是活的开发目录符号链接，解析真实目标（已装页展示本地路径有价值）；
+ * - 其余（npm / github / file-tarball / file-dir）pnpm 都会把内容物化到 node_modules/<pkg>，
+ *   统一从那里读。skillhub 同款语义——file: 特判回 tarball 路径是错的（读不到 package.json）。
+ */
 export function resolvePluginDir(profileDir: string, pkg: string, spec: string): string | null {
   if (!isSafePkgName(pkg)) return null
   const source = parseSpecSource(spec)
-  if (source === 'link' || source === 'file') {
-    const target = String(spec).slice(spec.indexOf(':') + 1).trim()
+  if (source === 'link') {
+    const target = String(spec).slice('link:'.length).trim()
     if (!target.startsWith('/') || target.includes('\0')) return null
     return resolve(target)
   }
