@@ -895,7 +895,7 @@ if grep -q "'src/**'" .github/workflows/registry.yml && test -f scripts/assert-p
   - Verify: `lib/host.js`、`lib/client.js`、`lib/cli.js`、`registry.json`
   - Runtime: 当前 DSH Web `http://127.0.0.1:3080`
 - **接口契约**：
-  - Consumes: Task 1–9 全部产物；当前 profile 的 `dsh-m` link 指向 `/home/ubuntu/workspace/dsh-m`。
+  - Consumes: Task 1–9 全部产物；当前 profile 的 `dsh-m` link 指向本地 workspace（dsh-m 仓库目录）。
   - Produces: 自动验证结果、用户确认后的单次 Host 部署重启结果和浏览器验收记录；不自动 push、不自动发布 npm。
 - **验证范围**：schema、loader/cache、HTTP、controller/API、diagnose、market page、integrity、CLI、CI、pack、live settings 和已有 README/详情 UI 回归。
 
@@ -910,7 +910,7 @@ grep '"dsh-m"' ~/.dsh/profiles/web/package.json
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080
 ```
 
-- Expected: Node 满足 `>=22`；profile 显示 `link:/home/ubuntu/workspace/dsh-m`；现有 DSH Web 返回 `200`。profile 不是 link 时停止运行时验收，不自动修改 profile。
+- Expected: Node 满足 `>=22`；profile 显示 `link:` 指向本地 dsh-m 仓库目录；现有 DSH Web 返回 `200`。profile 不是 link 时停止运行时验收，不自动修改 profile。
 
 #### Step 2: 运行全量自动验证
 

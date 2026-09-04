@@ -179,9 +179,9 @@ describe('host-api：协议防护', () => {
     const res = await callApi(dispatcher, {
       headers: {
         'content-type': 'application/json',
-        origin: 'https://ob-harness.online',
+        origin: 'https://proxy.example.com',
         host: '127.0.0.1:8080',
-        'x-forwarded-host': 'ob-harness.online',
+        'x-forwarded-host': 'proxy.example.com',
       },
       body: { method: 'registry' },
     })

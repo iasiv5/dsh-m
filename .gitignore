@@ -7,3 +7,5 @@ node_modules/
 lib/
 .research-skillhub/
 research-dshmarketplace/
+.env*
+.DS_Store
