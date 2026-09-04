@@ -21,6 +21,72 @@
       "npm": "dsh-web-search",
       "github": "haibinwang9/dsh-web-search",
       "homepage": "https://github.com/haibinwang9/dsh-web-search"
+    },
+    {
+      "id": "deepseek-harness-lark",
+      "name": "DeepSeek Harness Lark",
+      "description": "飞书 / Lark 文本与图片通道插件：把飞书消息桥接进 DeepSeek Harness 对话。",
+      "category": "other",
+      "tags": ["飞书", "Lark", "通道"],
+      "source": "npm",
+      "npm": "deepseek-harness-lark",
+      "github": "sliverp/DeepSeek-harness-lark",
+      "homepage": "https://github.com/sliverp/DeepSeek-harness-lark"
+    },
+    {
+      "id": "deepseek-harness-qqbot",
+      "name": "DeepSeek Harness QQBot",
+      "description": "QQ Bot 文本与图片通道插件：把 QQ 机器人消息桥接进 DeepSeek Harness 对话。",
+      "category": "other",
+      "tags": ["QQ", "通道"],
+      "source": "npm",
+      "npm": "deepseek-harness-qqbot",
+      "github": "sliverp/DeepSeek-harness-qqbot",
+      "homepage": "https://github.com/sliverp/DeepSeek-harness-qqbot"
+    },
+    {
+      "id": "deepseek-harness-weixin",
+      "name": "DeepSeek Harness Weixin",
+      "description": "微信通道插件：扫码登录，收发文本与图片消息，桥接进 DeepSeek Harness 对话。",
+      "category": "other",
+      "tags": ["微信", "通道"],
+      "source": "npm",
+      "npm": "deepseek-harness-weixin",
+      "github": "sliverp/DeepSeek-harness-weixin",
+      "homepage": "https://github.com/sliverp/DeepSeek-harness-weixin"
+    },
+    {
+      "id": "deepseek-harness-wecom",
+      "name": "DeepSeek Harness WeCom",
+      "description": "企业微信 AI Bot 文本与图片通道桥，桥接进 DeepSeek Harness 对话。",
+      "category": "other",
+      "tags": ["企业微信", "通道"],
+      "source": "npm",
+      "npm": "deepseek-harness-wecom",
+      "github": "sliverp/DeepSeek-harness-wecom",
+      "homepage": "https://github.com/sliverp/DeepSeek-harness-wecom"
+    },
+    {
+      "id": "deepseek-harness-dingtalk",
+      "name": "DeepSeek Harness DingTalk",
+      "description": "钉钉 Stream 文本与图片通道插件，桥接进 DeepSeek Harness 对话。",
+      "category": "other",
+      "tags": ["钉钉", "通道"],
+      "source": "npm",
+      "npm": "deepseek-harness-dingtalk",
+      "github": "sliverp/DeepSeek-harness-dingtalk",
+      "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
+    },
+    {
+      "id": "dsh-m",
+      "name": "DSH Marketplace",
+      "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
+      "category": "market",
+      "tags": ["市场", "插件管理"],
+      "source": "npm",
+      "npm": "dsh-m",
+      "github": "iasiv5/dsh-m",
+      "homepage": "https://github.com/iasiv5/dsh-m"
     }
   ]
 }
