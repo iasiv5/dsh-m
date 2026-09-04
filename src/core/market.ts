@@ -36,6 +36,8 @@ export interface MarketResult {
 
 export interface InstalledItem extends InstalledPlugin {
   registryId?: string
+  registryGithub?: string | null
+  registryIcon?: string | null
   latestVersion?: string
   outdated: boolean
 }
@@ -107,7 +109,11 @@ export async function listInstalledWithMeta(cfg: RegistryConfig = {}): Promise<{
   for (const it of installed) {
     const entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [it]))
     const item: InstalledItem = { ...it, outdated: false }
-    if (entry) item.registryId = entry.id
+    if (entry) {
+      item.registryId = entry.id
+      item.registryGithub = entry.github ?? null
+      item.registryIcon = entry.icon ?? null
+    }
     try {
       if (!entry && it.source === 'npm') {
         const latest = await npmLatest(it.pkg, timeoutMs)

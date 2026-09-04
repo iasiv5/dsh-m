@@ -10,28 +10,117 @@ const { useState, useEffect, useCallback, useMemo } = React;
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
-// ---------- i18n（skillhub 同款：host locale.register + client lookup） ----------
-const ZH = { "market.title": "插件市场" };
-const EN = { "market.title": "Plugin Marketplace" };
+// ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
+const ZH = {
+  "market.title": "插件市场",
+  "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
+  "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.media": "多媒体", "cat.other": "其他",
+  "search.ph": "搜索名称 / 描述 / 标签…",
+  "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
+  "market.loading": "加载收录清单中… ", "market.empty": "没有匹配的收录条目",
+  "installed.loading": "读取 web profile 中… ", "installed.empty": "web profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
+  "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
+  "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装",
+  "action.install": "安装", "action.upgrade": "升级", "action.uninstall": "卸载",
+  "confirm.uninstall": "确认卸载？", "confirm.unlink": "确认移除本地引用？", "confirm.core": "⚠️ 确认卸载核心包？",
+  "detail.id": "收录 id", "detail.source": "来源", "detail.latest": "最新", "detail.installed": "已装", "detail.tags": "标签",
+  "detail.pkg": "包名", "detail.spec": "安装 spec", "detail.listed": "收录", "detail.listed.no": "不在收录清单中", "detail.path": "路径", "detail.note": "注意",
+  "manage.hint": "已安装，可在「已装」页管理",
+  "version.failed": "版本查询失败",
+  "src.npm": "npm", "src.github": "github", "src.link": "本地 link", "src.file": "本地 file", "src.unknown": "未知",
+  "sub.latest": "最新 v{v}", "sub.head": "HEAD {sha}", "sub.installed": "已装 v{v}",
+  "settings.registry": "收录清单（registry）", "settings.source": "当前来源", "settings.updated": "更新时间",
+  "settings.count": "条目数", "settings.count.v": "{n} 条", "settings.policy": "缓存策略",
+  "settings.policy.v": "TTL 60 分钟；设置 registryUrl 可覆盖源", "settings.remotehint": "远端提示",
+  "settings.force": "强制刷新", "settings.self": "dsh-m 自身", "settings.current": "当前版本",
+  "settings.npmlatest": "npm 最新", "settings.lookupfailed": "查询失败：{err}", "settings.upgradeself": "升级 dsh-m",
+  "settings.upgradehint": "升级后同样需要重启生效", "settings.about": "关于",
+  "settings.about.text": "DSH Marketplace（dsh-m）— 个人自用的 DeepSeek Harness 插件市场。收录、安装、卸载、升级，全部本机完成。",
+  "src.override": "自定义源", "src.jsdelivr": "jsDelivr（@main）", "src.raw": "raw.githubusercontent（@main）", "src.cache": "本地缓存", "src.bundled": "包内快照（兜底）",
+  "self.upgraded": "dsh-m 已更新到 v{v}，重启后生效", "self.failed": "自更新失败：{err}",
+  "registry.refreshed": "收录清单已强制刷新",
+  "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
+  "notify.uninstalled": "已卸载 {pkg}", "notify.livedisabled": "（已先下线运行中的界面）",
+  "notify.leftovers": "；检测到疑似残留数据：{paths}",
+  "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
+  "failed.install": "安装失败：{err}", "failed.uninstall": "卸载失败：{err}", "failed.upgrade": "升级失败：{err}", "failed.selfupdate": "自更新失败：{err}",
+  "failed.load": "加载失败：{err}", "failed.read": "读取失败：{err}", "failed.open": "打开市场面板失败:",
+  "banner.done": "变更完成，需要重启 DSH Web 后生效。",
+  "restart.doing": "正在请求重启…", "restart.waiting": "已请求重启，等待 DSH Web 恢复…",
+  "restart.now": "⚡ 一键重启", "restart.failed": "重启失败：{err}",
+  "restart.timeout": "重启超时，请手动检查 dsh web 服务状态",
+  "restart.hint.done": "已请求重启 DSH web（via {via}）。服务几秒内恢复，之后让用户刷新页面即可。",
+  "phase.resolving": "解析依赖", "phase.downloading": "下载", "phase.linking": "链接安装", "phase.building": "构建脚本", "phase.ready": "准备中",
+  "readme.show": "📖 README", "readme.hide": "收起 README", "readme.loading": "加载 README… ", "readme.none": "（该插件没有 README）",
+  "readme.truncated": "\n\n…（超过 64KB 已截断，完整内容见插件目录）",
+  "warn.unlink": "卸载只移除 profile 对本地目录的引用（{path}），不会删除目录本身。",
+  "warn.core": "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
+  "profile.hint": "web profile：{path}",
+  "title.panel": "插件市场", "title.full": "DeepSeek Harness 插件市场",
+};
+const EN = {
+  "market.title": "Plugin Marketplace", "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
+  "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
+  "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.media": "Media", "cat.other": "Other",
+  "search.ph": "Search name, description, tags…",
+  "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
+  "market.loading": "Loading listings… ", "market.empty": "No matching listings",
+  "installed.loading": "Reading web profile… ", "installed.empty": "No DSH plugins installed in this web profile", "installed.none": "Not installed",
+  "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
+  "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market",
+  "action.install": "Install", "action.upgrade": "Upgrade", "action.uninstall": "Uninstall",
+  "confirm.uninstall": "Confirm uninstall?", "confirm.unlink": "Confirm remove link?", "confirm.core": "⚠️ Remove core package?",
+  "detail.id": "Listing id", "detail.source": "Source", "detail.latest": "Latest", "detail.installed": "Installed", "detail.tags": "Tags",
+  "detail.pkg": "Package", "detail.spec": "Spec", "detail.listed": "Listed", "detail.listed.no": "Not in the registry", "detail.path": "Path", "detail.note": "Note",
+  "manage.hint": "Installed — manage it on the Installed tab",
+  "version.failed": "version lookup failed",
+  "src.npm": "npm", "src.github": "github", "src.link": "local link", "src.file": "local file", "src.unknown": "unknown",
+  "sub.latest": "Latest v{v}", "sub.head": "HEAD {sha}", "sub.installed": "Installed v{v}",
+  "settings.registry": "Registry", "settings.source": "Source", "settings.updated": "Updated",
+  "settings.count": "Listings", "settings.count.v": "{n} listings", "settings.policy": "Caching",
+  "settings.policy.v": "60 min TTL; override via registryUrl", "settings.remotehint": "Remote notice",
+  "settings.force": "Force refresh", "settings.self": "dsh-m itself", "settings.current": "Current version",
+  "settings.npmlatest": "npm latest", "settings.lookupfailed": "lookup failed: {err}", "settings.upgradeself": "Upgrade dsh-m",
+  "settings.upgradehint": "A restart is required after upgrading", "settings.about": "About",
+  "settings.about.text": "DSH Marketplace (dsh-m) — your personal DeepSeek Harness plugin marketplace. Browse, install, uninstall and upgrade, all local.",
+  "src.override": "Custom source", "src.jsdelivr": "jsDelivr (@main)", "src.raw": "raw.githubusercontent (@main)", "src.cache": "Local cache", "src.bundled": "Bundled snapshot (fallback)",
+  "self.upgraded": "dsh-m updated to v{v} — restart to take effect", "self.failed": "Self-update failed: {err}",
+  "registry.refreshed": "Registry force-refreshed",
+  "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
+  "notify.uninstalled": "Uninstalled {pkg}", "notify.livedisabled": " (live UI disabled first)",
+  "notify.leftovers": "; possible leftover data: {paths}",
+  "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgradehint": " (note: this plugin ran build scripts)",
+  "failed.install": "Install failed: {err}", "failed.uninstall": "Uninstall failed: {err}", "failed.upgrade": "Upgrade failed: {err}", "failed.selfupdate": "Self-update failed: {err}",
+  "failed.load": "Load failed: {err}", "failed.read": "Read failed: {err}", "failed.open": "Failed to open the marketplace panel:",
+  "banner.done": "Changes applied. Restart DSH Web to take effect.",
+  "restart.doing": "Requesting restart…", "restart.waiting": "Restart requested, waiting for DSH Web…",
+  "restart.now": "⚡ Restart", "restart.failed": "Restart failed: {err}",
+  "restart.timeout": "Restart timed out — check the dsh web service manually",
+  "restart.hint.done": "Restart requested (via {via}). The service will be back in seconds; ask the user to refresh afterwards.",
+  "phase.resolving": "Resolving", "phase.downloading": "Downloading", "phase.linking": "Linking", "phase.building": "Building", "phase.ready": "Preparing",
+  "readme.show": "📖 README", "readme.hide": "Hide README", "readme.loading": "Loading README… ", "readme.none": "(No README)",
+  "readme.truncated": "\n\n…(truncated at 64KB — see the plugin directory for full content)",
+  "warn.unlink": "Uninstalling only removes the profile's reference to the local directory ({path}); the directory itself is kept.",
+  "warn.core": "This is a core/archive package installed via file:. Uninstalling may affect DSH features and requires manual restore.",
+  "profile.hint": "web profile: {path}",
+  "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
+};
 function browserLang() {
   const lang = (typeof document !== "undefined" && document.documentElement.lang)
     || (typeof navigator !== "undefined" && navigator.language)
     || "zh";
   return /^en\b/i.test(String(lang)) ? "en" : "zh";
 }
-function lookup(key) {
+function interpolate(tpl, params) {
+  if (!params) return String(tpl)
+  return String(tpl).replace(/\{(\w+)\}/g, (_, k) => (params[k] != null ? String(params[k]) : `{${k}}`))
+}
+function lookup(key, params) {
   const dict = browserLang() === "en" ? EN : ZH;
-  return dict[key] || ZH[key] || key;
+  return interpolate(dict[key] ?? ZH[key] ?? key, params);
 }
 
-const CATEGORIES = [
-  ["market", "市场"],
-  ["tools", "工具"],
-  ["ui", "界面"],
-  ["search", "搜索"],
-  ["media", "多媒体"],
-  ["other", "其他"],
-];
+const CATEGORIES = ["market", "tools", "ui", "search", "media", "other"];
 
 // ---------- 样式（跟随 DSH Web 主题变量，深浅色自适应） ----------
 const CSS = `
@@ -39,9 +128,12 @@ const CSS = `
 .dshm-panel{width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-3,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
 .dshm-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb)}
 .dshm-title{font-weight:700;font-size:15px;margin-right:6px}
-.dshm-tab{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:0;padding:5px 2px;font:inherit;font-size:13px;cursor:pointer}
+.dshm-tabs{display:flex;align-items:center;gap:16px}
+.dshm-tab{height:30px;padding:0;border:0;background:inherit;color:var(--dsw-alias-label-tertiary,#7b8088);font:inherit;font-size:13px;font-weight:500;cursor:pointer}
 .dshm-tab:hover{color:var(--dsw-alias-label-primary,inherit)}
-.dshm-tab.on{color:var(--dsw-alias-label-primary,inherit);border-bottom-color:var(--dsw-alias-label-primary,#111827);font-weight:650}
+.dshm-tab.on{background:inherit;color:var(--dsw-alias-state-business-primary,#4d6bfe)}
+.dshm-count{font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,#9ca3af);margin-left:2px}
+.dshm-tab.on .dshm-count{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dshm-spacer{flex:1}
 .dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
@@ -197,7 +289,7 @@ function RestartBanner({ note, onDone }) {
       const deadline = Date.now() + 90_000;
       for (;;) {
         await new Promise((r) => setTimeout(r, 2000));
-        if (Date.now() > deadline) throw new Error("重启超时，请手动检查 dsh web 服务状态");
+        if (Date.now() > deadline) throw new Error(lookup("restart.timeout"));
         try {
           const ping = await api("ping");
           if (ping.boot !== ping0.boot) break;
@@ -216,24 +308,27 @@ function RestartBanner({ note, onDone }) {
     "div",
     { className: "dshm-banner" },
     h("span", { className: "dshm-banner-text" },
-      phase === "restarting" ? "正在请求重启…" :
-      phase === "waiting" ? "已请求重启，等待 DSH Web 恢复…" :
-      err ? `重启失败：${err}` :
-      note || "本次变更需要重启 DSH Web 后生效。"),
-    phase === "idle" && !err ? h("button", { className: "dshm-btn primary sm", onClick: restart }, "⚡ 一键重启") : null,
+      phase === "restarting" ? lookup("restart.doing") :
+      phase === "waiting" ? lookup("restart.waiting") :
+      err ? lookup("restart.failed", { err }) :
+      note || lookup("banner.done")),
+    phase === "idle" && !err ? h("button", { className: "dshm-btn primary sm", onClick: restart }, lookup("restart.now")) : null,
     phase === "restarting" || phase === "waiting" ? Spin() : null,
-    phase === "idle" && err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, "知道了") : null,
-    phase === "idle" && !err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, "稍后") : null,
+    phase === "idle" && err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, lookup("common.ok")) : null,
+    phase === "idle" && !err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, lookup("common.later")) : null,
   );
 }
 
 // ---------- 市场页 ----------
-function MarketTab({ notify }) {
+function MarketTab({ notify, onCount }) {
   const { loading, data, error, reload } = useAsync((force) => api("market", force ? { force: true } : {}), []);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState(null);
   const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  useEffect(() => {
+    if (onCount) onCount(((data && data.items) || []).length);
+  }, [data, onCount]);
 
   const items = useMemo(() => {
     const list = (data && data.items) || [];
@@ -252,12 +347,12 @@ function MarketTab({ notify }) {
       const res = await api("install", { id: it.id, ...(version ? { version } : {}) });
       notify({
         kind: "ok",
-        text: `已安装 ${res.pkg}${res.version ? ` v${res.version}` : ""}` +
-          (res.usedAllowAllBuilds ? "（注意：该插件执行了构建脚本，已按策略放行）" : ""),
+        text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
+          (res.usedAllowAllBuilds ? lookup("notify.allowbuilds") : ""),
       });
       await reload(false);
     } catch (e) {
-      notify({ kind: "err", text: `安装失败：${(e && e.message) || e}` });
+      notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
     } finally {
       setBusyId(null);
     }
@@ -271,32 +366,32 @@ function MarketTab({ notify }) {
       { className: "dshm-row" },
       h("input", {
         className: "dshm-input",
-        placeholder: "搜索名称 / 描述 / 标签…",
+        placeholder: lookup("search.ph"),
         value: q,
         onChange: (e) => setQ(e.target.value),
       }),
-      h("button", { className: "dshm-btn", onClick: () => reload(true), title: "强制刷新（跳过缓存）" }, loading ? Spin() : "↻ 刷新"),
+      h("button", { className: "dshm-btn", onClick: () => reload(true), title: lookup("settings.policy.v") }, loading ? Spin() : `↻ ${lookup("common.refresh")}`),
     ),
     h(
       "div",
       { className: "dshm-chips" },
-      h("button", { className: `dshm-chip${cat === null ? " on" : ""}`, onClick: () => setCat(null) }, "全部"),
-      CATEGORIES.map(([key, label]) => {
+      h("button", { className: `dshm-chip${cat === null ? " on" : ""}`, onClick: () => setCat(null) }, lookup("cat.all")),
+      CATEGORIES.map((key) => {
         const n = ((data && data.items) || []).filter((it) => it.category === key).length;
         return h(
           "button",
           { key, className: `dshm-chip${cat === key ? " on" : ""}`, onClick: () => setCat(cat === key ? null : key) },
-          `${label}${n ? ` ${n}` : ""}`,
+          `${lookup("cat." + key)}${n ? ` ${n}` : ""}`,
         );
       }),
     ),
     busyId ? h(ProgressLine, { key: "prog" }) : null,
     loading && !data
-      ? h("div", { className: "dshm-empty" }, "加载收录清单中… ", Spin())
+      ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())
       : error
-        ? h("div", { className: "dshm-err" }, `加载失败：${error}`)
+        ? h("div", { className: "dshm-err" }, lookup("failed.load", { err: error }))
         : items.length === 0
-          ? h("div", { className: "dshm-empty" }, "没有匹配的收录条目")
+          ? h("div", { className: "dshm-empty" }, lookup("market.empty"))
           : h(
               "div",
               { className: "dshm-cards" },
@@ -305,29 +400,29 @@ function MarketTab({ notify }) {
                 icon: h(Icon, { entry: it }),
                 name: it.name,
                 badges: [
-                  it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, "可升级") : null,
-                  it.installed ? h("span", { className: "dshm-badge", key: "i" }, "已安装") : null,
+                  it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
+                  it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
                   h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
                 ],
                 desc: it.description,
                 sub: [
-                  it.latestVersion ? `最新 v${it.latestVersion}` : it.latestSha ? `HEAD ${it.latestSha.slice(0, 7)}` : null,
-                  it.installedVersion ? `已装 v${it.installedVersion}` : null,
-                  it.latestError ? `版本查询失败` : null,
+                  it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
+                  it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
+                  it.latestError ? lookup("version.failed") : null,
                 ].filter(Boolean).join(" · "),
                 open: openId === it.id,
                 onToggle: () => setOpenId(openId === it.id ? null : it.id),
                 detail: DetailRows([
-                  ["收录 id", it.id],
-                  ["来源", it.source === "npm" ? `npm · ${it.npm}` : `GitHub · ${it.github}`],
-                  ["最新", it.latestVersion ? `v${it.latestVersion}` : it.latestSha ? it.latestSha : it.latestError || "—"],
-                  ["已装", it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : "未安装"],
-                  ["标签", (it.tags || []).join("、") || "—"],
-                  it.latestError ? ["提示", `版本查询失败：${it.latestError}`] : null,
+                  [lookup("detail.id"), it.id],
+                  [lookup("detail.source"), it.source === "npm" ? `npm · ${it.npm}` : `GitHub · ${it.github}`],
+                  [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestSha ? it.latestSha : it.latestError || "—"],
+                  [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
+                  [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
+                  it.latestError ? [lookup("version.failed"), it.latestError] : null,
                 ]),
                 actions: [
                   it.installed
-                    ? h("span", { className: "dshm-hint", key: "hint" }, "已安装，可在「已装」页管理")
+                    ? h("span", { className: "dshm-hint", key: "hint" }, lookup("manage.hint"))
                     : h("button", {
                         key: "install",
                         className: "dshm-btn primary sm",
@@ -337,7 +432,7 @@ function MarketTab({ notify }) {
                           doInstall(it);
                         },
                       },
-                      busyId === it.id ? h(Spin) : "安装"),
+                      busyId === it.id ? h(Spin) : lookup("action.install")),
                 ],
               })),
             ),
@@ -345,7 +440,7 @@ function MarketTab({ notify }) {
 }
 
 // ---------- 安装进度（轮询 host status 端点，pnpm ndjson） ----------
-const PHASE_LABEL = { resolving: "解析依赖", downloading: "下载", linking: "链接安装", building: "构建脚本" };
+const PHASE_LABEL = { resolving: "phase.resolving", downloading: "phase.downloading", linking: "phase.linking", building: "phase.building" };
 
 function ProgressLine() {
   const [st, setSt] = useState(null);
@@ -368,7 +463,7 @@ function ProgressLine() {
   }, []);
   if (!st) return null;
   const pct = st.total ? Math.min(100, Math.round((st.done / st.total) * 100)) : null;
-  const phaseLabel = PHASE_LABEL[st.phase] || "准备中";
+  const phaseLabel = lookup(PHASE_LABEL[st.phase] || "phase.ready");
   return h(
     "div",
     { className: "dshm-prog" },
@@ -401,25 +496,25 @@ function ReadmeBlock({ pkg }) {
 function uninstallGuard(it) {
   if (it.source === "link") {
     return {
-      confirm: "确认移除本地引用？",
-      warn: `卸载只移除 profile 对本地目录的引用（${it.path}），不会删除目录本身。`,
+      confirm: lookup("confirm.unlink"),
+      warn: lookup("warn.unlink", { path: it.path }),
     };
   }
   if (it.source === "file") {
-    return {
-      confirm: "⚠️ 确认卸载核心包？",
-      warn: "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
-    };
+    return { confirm: lookup("confirm.core"), warn: lookup("warn.core") };
   }
-  return { confirm: "确认卸载？", warn: null };
+  return { confirm: lookup("confirm.uninstall"), warn: null };
 }
 
 // ---------- 已装页 ----------
-function InstalledTab({ notify }) {
+function InstalledTab({ notify, onCount }) {
   const { loading, data, error, reload } = useAsync(() => api("installed"), []);
   const [openPkg, setOpenPkg] = useState(null);
   const [readmePkg, setReadmePkg] = useState(null);
   const [busyPkg, setBusyPkg] = useState(null);
+  useEffect(() => {
+    if (onCount) onCount(((data && data.items) || []).length);
+  }, [data, onCount]);
 
   const doUninstall = async (it) => {
     setBusyPkg(it.pkg);
@@ -427,12 +522,13 @@ function InstalledTab({ notify }) {
       const res = await api("uninstall", { pkg: it.pkg });
       notify({
         kind: "ok",
-        text: `已卸载 ${res.pkg}${res.liveDisabled ? "（已先下线运行中的界面）" : ""}` +
-          (res.leftovers && res.leftovers.length ? `；检测到疑似残留数据：${res.leftovers.join("、")}` : ""),
+        text: lookup("notify.uninstalled", { pkg: res.pkg }) +
+          (res.liveDisabled ? lookup("notify.livedisabled") : "") +
+          (res.leftovers && res.leftovers.length ? lookup("notify.leftovers", { paths: res.leftovers.join(", ") }) : ""),
       });
       await reload();
     } catch (e) {
-      notify({ kind: "err", text: `卸载失败：${(e && e.message) || e}` });
+      notify({ kind: "err", text: lookup("failed.uninstall", { err: (e && e.message) || e }) });
     } finally {
       setBusyPkg(null);
     }
@@ -444,28 +540,31 @@ function InstalledTab({ notify }) {
       const res = await api("upgrade", { pkg: it.pkg });
       notify({
         kind: "ok",
-        text: `已升级 ${res.pkg}${res.fromVersion ? `（v${res.fromVersion} → ${res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "最新"}）` : ""}` +
-          (res.usedAllowAllBuilds ? "（注意：该插件执行了构建脚本）" : ""),
+        text: lookup("notify.upgraded", {
+          pkg: res.pkg,
+          from: res.fromVersion ? `v${res.fromVersion}` : "—",
+          to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest",
+        }) + (res.usedAllowAllBuilds ? lookup("notify.upgradehint") : ""),
       });
       await reload();
     } catch (e) {
-      notify({ kind: "err", text: `升级失败：${(e && e.message) || e}` });
+      notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
     } finally {
       setBusyPkg(null);
     }
   };
 
-  if (loading && !data) return h("div", { className: "dshm-empty" }, "读取 web profile 中… ", Spin());
-  if (error) return h("div", { className: "dshm-err" }, `读取失败：${error}`);
+  if (loading && !data) return h("div", { className: "dshm-empty" }, lookup("installed.loading"), Spin());
+  if (error) return h("div", { className: "dshm-err" }, lookup("failed.read", { err: error }));
   const items = (data && data.items) || [];
-  if (!items.length) return h("div", { className: "dshm-empty" }, `web profile 尚未安装任何 dsh 插件（${data.profileDir}）`);
+  if (!items.length) return h("div", { className: "dshm-empty" }, `${lookup("installed.empty")} (${data.profileDir})`);
 
   return h(
     React.Fragment,
     null,
-    h("div", { className: "dshm-hint" }, `web profile：${data.profileDir}`),
+    h("div", { className: "dshm-hint" }, lookup("profile.hint", { path: data.profileDir })),
     data.others > 0
-      ? h("div", { className: "dshm-others" }, `另有 ${data.others} 个非 dsh 依赖（未识别为插件），已默认折叠。`)
+      ? h("div", { className: "dshm-others" }, lookup("installed.others", { n: data.others }))
       : null,
     busyPkg ? h(ProgressLine, { key: "prog" }) : null,
     h(
@@ -475,28 +574,28 @@ function InstalledTab({ notify }) {
         const guard = uninstallGuard(it);
         return Card({
           key: it.pkg,
-          icon: h(Icon, { entry: { name: it.name, github: it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null, icon: null } }),
+          icon: h(Icon, { entry: { name: it.name, github: it.registryGithub || it.githubRepo || (it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null), icon: null } }),
           name: it.name,
           badges: [
-            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `可升级${it.latestVersion ? ` → v${it.latestVersion}` : ""}`) : null,
-            it.registryId ? h("span", { className: "dshm-badge", key: "r" }, "市场安装") : h("span", { className: "dshm-badge info", key: "r" }, "非市场安装"),
+            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${it.latestVersion ? `v${it.latestVersion}` : ""}`.trim()) : null,
+            it.registryId ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market")) : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
           ],
           desc: it.description || "（无描述）",
           sub: [
             `v${it.version || "?"}`,
-            { npm: "npm", github: "github", link: "本地 link", file: "本地 file", unknown: "未知" }[it.source] || it.source,
+            { npm: lookup("src.npm"), github: lookup("src.github"), link: lookup("src.link"), file: lookup("src.file"), unknown: lookup("src.unknown") }[it.source] || it.source,
           ].join(" · "),
           open: openPkg === it.pkg,
           onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
           detail: readmePkg === it.pkg
             ? h(ReadmeBlock, { pkg: it.pkg })
             : DetailRows([
-                ["包名", it.pkg],
-                ["安装 spec", it.spec],
-                ["最新", it.latestVersion ? `v${it.latestVersion}` : "—"],
-                ["收录", it.registryId || "不在收录清单中"],
-                ["路径", it.path],
-                guard.warn ? ["注意", guard.warn] : null,
+                [lookup("detail.pkg"), it.pkg],
+                [lookup("detail.spec"), it.spec],
+                [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : "—"],
+                [lookup("detail.listed"), it.registryId || lookup("detail.listed.no")],
+                [lookup("detail.path"), it.path],
+                guard.warn ? [lookup("detail.note"), guard.warn] : null,
               ]),
           actions: [
             h("button", {
@@ -506,7 +605,7 @@ function InstalledTab({ notify }) {
                 e.stopPropagation();
                 setReadmePkg(readmePkg === it.pkg ? null : it.pkg);
               },
-            }, readmePkg === it.pkg ? "收起 README" : "📖 README"),
+            }, readmePkg === it.pkg ? lookup("readme.hide") : lookup("readme.show")),
             it.outdated
               ? h("button", {
                   key: "up",
@@ -517,11 +616,11 @@ function InstalledTab({ notify }) {
                     doUpgrade(it);
                   },
                 },
-                busyPkg === it.pkg ? h(Spin) : "升级")
+                busyPkg === it.pkg ? h(Spin) : lookup("action.upgrade"))
               : null,
             h(TwoStepButton, {
               key: "un",
-              label: "卸载",
+              label: lookup("action.uninstall"),
               confirmLabel: guard.confirm,
               className: "dshm-btn sm",
               disabled: busyPkg === it.pkg,
@@ -545,7 +644,7 @@ function SettingsTab({ notify }) {
     setBusy(true);
     try {
       await reg.reload(true);
-      notify({ kind: "ok", text: "收录清单已强制刷新" });
+      notify({ kind: "ok", text: lookup("registry.refreshed") });
     } finally {
       setBusy(false);
     }
@@ -555,10 +654,10 @@ function SettingsTab({ notify }) {
     setUpgrading(true);
     try {
       const res = await api("self-upgrade");
-      notify({ kind: "ok", text: `dsh-m 已更新到 v${res.version}，重启后生效` });
+      notify({ kind: "ok", text: lookup("self.upgraded", { v: res.version }) });
       await self.reload();
     } catch (e) {
-      notify({ kind: "err", text: `自更新失败：${(e && e.message) || e}` });
+      notify({ kind: "err", text: lookup("failed.selfupdate", { err: (e && e.message) || e }) });
     } finally {
       setUpgrading(false);
     }
@@ -567,44 +666,42 @@ function SettingsTab({ notify }) {
   return h(
     React.Fragment,
     null,
-    Section("收录清单（registry）",
+    Section(lookup("settings.registry"),
       h("div", { className: "dshm-kv" },
-        h("span", { className: "k" }, "当前来源"), h("span", null, regSourceLabel(reg.data)),
-        h("span", { className: "k" }, "更新时间"), h("span", null, fmtDate(reg.data && reg.data.fetchedAt)),
-        h("span", { className: "k" }, "条目数"), h("span", null, reg.data ? `${reg.data.plugins.length} 条` : "—"),
-        h("span", { className: "k" }, "缓存策略"), h("span", null, "TTL 60 分钟；设置 registryUrl 可覆盖源"),
+        h("span", { className: "k" }, lookup("settings.source")), h("span", null, regSourceLabel(reg.data)),
+        h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(reg.data && reg.data.fetchedAt)),
+        h("span", { className: "k" }, lookup("settings.count")), h("span", null, reg.data ? lookup("settings.count.v", { n: reg.data.plugins.length }) : "—"),
+        h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
       ),
       reg.data && reg.data.errors && reg.data.errors.length
-        ? h("div", { className: "dshm-err" }, `远端提示：${reg.data.errors.join("；")}`)
+        ? h("div", { className: "dshm-err" }, `${lookup("settings.remotehint")}：${reg.data.errors.join("；")}`)
         : null,
       h("div", { className: "dshm-actions" },
-        h("button", { className: "dshm-btn sm", disabled: busy || reg.loading, onClick: refresh }, busy || reg.loading ? h(Spin) : "强制刷新"),
+        h("button", { className: "dshm-btn sm", disabled: busy || reg.loading, onClick: refresh }, busy || reg.loading ? h(Spin) : lookup("settings.force")),
       ),
     ),
-    Section("dsh-m 自身",
+    Section(lookup("settings.self"),
       h("div", { className: "dshm-kv" },
-        h("span", { className: "k" }, "当前版本"), h("span", null, self.data ? `v${self.data.current}` : "—"),
-        h("span", { className: "k" }, "npm 最新"), h("span", null, self.data ? (self.data.latest ? `v${self.data.latest}` : `查询失败${self.data.error ? `：${self.data.error}` : ""}`) : "…"),
+        h("span", { className: "k" }, lookup("settings.current")), h("span", null, self.data ? `v${self.data.current}` : "—"),
+        h("span", { className: "k" }, lookup("settings.npmlatest")), h("span", null, self.data ? (self.data.latest ? `v${self.data.latest}` : lookup("settings.lookupfailed", { err: self.data.error || "" })) : "…"),
       ),
       self.data && self.data.outdated
         ? h("div", { className: "dshm-actions" },
-            h("button", { className: "dshm-btn primary sm", disabled: upgrading, onClick: upgradeSelf }, upgrading ? h(Spin) : "升级 dsh-m"),
-            h("span", { className: "dshm-hint" }, "升级后同样需要重启生效"),
+            h("button", { className: "dshm-btn primary sm", disabled: upgrading, onClick: upgradeSelf }, upgrading ? h(Spin) : lookup("settings.upgradeself")),
+            h("span", { className: "dshm-hint" }, lookup("settings.upgradehint")),
           )
         : null,
     ),
-    Section("关于",
-      h("div", { className: "dshm-hint" },
-        "DSH Marketplace（dsh-m）— 个人自用的 DeepSeek Harness 插件市场。收录、安装、卸载、升级，全部本机完成。",
-      ),
+    Section(lookup("settings.about"),
+      h("div", { className: "dshm-hint" }, lookup("settings.about.text")),
     ),
   );
 }
 
 function regSourceLabel(data) {
   if (!data) return "—";
-  const map = { override: "自定义源", jsdelivr: "jsDelivr（@main）", raw: "raw.githubusercontent（@main）", cache: "本地缓存", bundled: "包内快照（兜底）" };
-  return map[data.source] || data.source;
+  const map = { override: "src.override", jsdelivr: "src.jsdelivr", raw: "src.raw", cache: "src.cache", bundled: "src.bundled" };
+  return lookup(map[data.source] || data.source);
 }
 
 function Section(title, ...children) {
@@ -656,13 +753,15 @@ function Card({ icon, name, badges, desc, sub, open, onToggle, detail, actions }
 
 // ---------- 面板（3 视图容器） ----------
 const TABS = [
-  ["market", "市场"],
-  ["installed", "已装"],
-  ["settings", "设置"],
+  ["market", "tab.market", "market"],
+  ["installed", "tab.installed", "installed"],
+  ["settings", "tab.settings", null],
 ];
 
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
+  const [counts, setCounts] = useState({});
+  const setCount = useCallback((key, n) => setCounts((c) => (c[key] === n ? c : { ...c, [key]: n })), []);
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
@@ -679,7 +778,7 @@ function MarketPanel({ onClose }) {
   }, [toast]);
   const notify = useCallback(({ kind, text }) => {
     setToast({ kind, text });
-    if (kind === "ok") setBanner({ text: "变更完成，需要重启 DSH Web 后生效。" });
+    if (kind === "ok") setBanner({ text: lookup("banner.done") });
   }, []);
   return h(
     "div",
@@ -690,23 +789,31 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-head" },
-        h("span", { className: "dshm-title" }, `DeepSeek Harness ${lookup("market.title")}`),
-        TABS.map(([key, label]) =>
-          h("button", { key, className: `dshm-tab${tab === key ? " on" : ""}`, onClick: () => setTab(key) }, label),
+        h("span", { className: "dshm-title" }, lookup("title.full")),
+        h(
+          "div",
+          { className: "dshm-tabs" },
+          TABS.map(([key, labelKey, countKey]) =>
+            h("button", { key, className: `dshm-tab${tab === key ? " on" : ""}`, onClick: () => setTab(key) },
+              lookup(labelKey),
+              countKey && counts[countKey] != null ? h("span", { className: "dshm-count" }, String(counts[countKey])) : null,
+            ),
+          ),
         ),
         h("span", { className: "dshm-spacer" }),
-        h("button", { className: "dshm-btn", onClick: onClose }, "关闭"),
+        h("button", { className: "dshm-btn", onClick: onClose }, lookup("common.close")),
       ),
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify }) : null,
-        tab === "installed" ? h(InstalledTab, { notify }) : null,
+        tab === "market" ? h(MarketTab, { notify, onCount: (n) => setCount("market", n) }) : null,
+        tab === "installed" ? h(InstalledTab, { notify, onCount: (n) => setCount("installed", n) }) : null,
         tab === "settings" ? h(SettingsTab, { notify }) : null,
       ),
       toast
         ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-error-secondary,#fee2e2)", color: "var(--dsw-alias-state-error-primary,#b91c1c)" } : null },
             h("span", { className: "dshm-banner-text" }, toast.text))
+
         : null,
       banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null) }) : null,
     ),

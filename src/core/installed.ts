@@ -24,6 +24,8 @@ export interface InstalledPlugin {
   /** package.json 含 dsh 字段即视为 dsh 插件 */
   dsh: boolean
   path: string
+  /** package.json repository 解析出的 github owner/repo（头像用） */
+  githubRepo?: string | null
 }
 
 export interface InstalledPluginsResult {
@@ -72,6 +74,19 @@ interface PkgJson {
   description?: unknown
   homepage?: unknown
   dsh?: unknown
+  repository?: unknown
+}
+
+/** 从 repository 字段（字符串或 {url}，git+/ssh/https 形态）提取 github owner/repo。 */
+export function githubRepoFromRepository(raw: unknown): string | null {
+  let url = ''
+  if (typeof raw === 'string') url = raw
+  else if (raw && typeof raw === 'object') {
+    const u = (raw as { url?: unknown }).url
+    if (typeof u === 'string') url = u
+  }
+  const m = /github\.com[/:]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?$/i.exec(url.trim())
+  return m ? `${m[1]}/${m[2]}` : null
 }
 
 export async function readPkgJson(dir: string): Promise<PkgJson | null> {
@@ -104,6 +119,7 @@ function sanitizePkgJson(raw: PkgJson, fallbackName: string): Omit<InstalledPlug
     description: typeof raw.description === 'string' ? raw.description.trim().slice(0, 500) : '',
     homepage: typeof raw.homepage === 'string' && /^https?:\/\//i.test(raw.homepage) ? raw.homepage.slice(0, 300) : '',
     path: '',
+    githubRepo: githubRepoFromRepository(raw.repository),
   }
 }
 
@@ -132,6 +148,7 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
       source: parseSpecSource(spec),
       dsh: true,
       path: dir as string,
+      githubRepo: githubRepoFromRepository(raw.repository),
     })
   }
   return { items, others, profileDir: root }
