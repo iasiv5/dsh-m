@@ -4,3 +4,6 @@ node_modules/
 *.tgz
 .npmrc*
 .tmp/
+lib/
+.research-skillhub/
+research-dshmarketplace/
