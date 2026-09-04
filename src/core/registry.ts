@@ -576,8 +576,11 @@ function buildState(params: {
 }
 
 const REPO = 'iasiv5/dsh-m'
-// raw 优先：jsDelivr 对 @main 有 CDN 缓存（可 stale 数小时），raw 始终反映 main 最新内容；
-// jsDelivr 降为备用线路（可通过 purge.jsdelivr.net 手动清缓存）。
+// 默认源两条网络线路（用户可见名称为「GitHub 镜像（备用）」，无需理解 jsDelivr 是什么）：
+// - raw.githubusercontent：GitHub 原始文件，准实时，永远优先；
+// - jsDelivr（cdn.jsdelivr.net，GitHub 内容的免费 CDN 镜像）：仅当 raw 拉不到时启用——
+//   覆盖大陆可达性与 GitHub 故障两类场景，代价是 CDN 缓存可能滞后数小时
+//   （可用 purge.jsdelivr.net 手动清缓存）。再往下还有本地缓存与包内快照兜底。
 const DEFAULT_URLS: Array<{ source: RegistrySource; url: string }> = [
   { source: 'default-raw', url: `https://raw.githubusercontent.com/${REPO}/main/registry.json` },
   { source: 'default-jsdelivr', url: `https://cdn.jsdelivr.net/gh/${REPO}@main/registry.json` },

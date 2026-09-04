@@ -64,7 +64,7 @@ dshm restart --yes
 
 ## 收录清单（registry）
 
-`registry.json` 手工 curated，运行时经 **raw.githubusercontent / jsDelivr `@main`** 分发（本地 60 分钟 TTL 缓存 + 包内快照兜底）——收录更新与插件发版**解耦**。收录 / 修订直接改 `registry.json` 发 PR，CI 自动校验：严格 schema、npm 包与 GitHub 仓库存在性、重复 id、URL 可达性。
+`registry.json` 手工 curated，运行时按 **GitHub 原始文件（raw @main）→ GitHub 镜像（jsDelivr CDN，备用线路）→ 本地 60 分钟 TTL 缓存 → 包内快照** 的顺序获取——收录更新与插件发版**解耦**，push 后最多等一个缓存周期（可在设置页强制刷新）。收录 / 修订直接改 `registry.json` 发 PR，CI 自动校验：严格 schema、npm 包与 GitHub 仓库存在性、重复 id、URL 可达性。
 
 **自定义收录清单（可覆盖官方清单）**：设置页支持单一自定义 registry 地址，**整体覆盖**默认清单（不合并）：
 

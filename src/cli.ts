@@ -84,6 +84,20 @@ function sourceLabel(s: string): string {
   return { npm: 'npm', github: 'github', link: '本地 link', file: '本地 file', unknown: '未知' }[s] || s
 }
 
+/** registry 来源的用户友好名称（CLI 本地终端可见）。 */
+function registrySourceLabel(s: string): string {
+  return {
+    'default-raw': 'GitHub 原始文件（@main）',
+    'default-jsdelivr': 'GitHub 镜像（备用）',
+    'default-cache': '默认清单缓存',
+    bundled: '包内快照（兜底）',
+    'custom-url': '自定义 URL 源',
+    'custom-file': '本地文件源',
+    'custom-cache': '自定义源（缓存）',
+    'custom-unavailable': '自定义源（不可用）',
+  }[s] || s
+}
+
 function addressLines(state: { configuredAddress: string; activeAddress: string | null }): string[] {
   return [
     `配置地址：${state.configuredAddress === '' ? '（默认官方清单）' : state.configuredAddress}`,
@@ -175,7 +189,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         out(`  ${it.description}`)
       }
       const s = result.registryState
-      out(`\n来源：${s.source}${s.stale ? '（缓存）' : ''} · 更新：${s.fetchedAt ?? '—'} · 共 ${result.total} 条`)
+      out(`\n来源：${registrySourceLabel(s.source)}${s.stale ? '（缓存）' : ''} · 更新：${s.fetchedAt ?? '—'} · 共 ${result.total} 条`)
       return 0
     }
 
@@ -224,7 +238,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         for (const line of unavailableLines(loaded)) err(line)
         return 1
       }
-      out(`来源：${loaded.source} · 更新时间：${loaded.fetchedAt ?? '—'} · 条目：${loaded.count}`)
+      out(`来源：${registrySourceLabel(loaded.source)} · 更新时间：${loaded.fetchedAt ?? '—'} · 条目：${loaded.count}`)
       for (const line of addressLines(loaded)) out(line)
       for (const e of loaded.registry.plugins) {
         out(`  • ${e.id} · ${e.name} · ${e.category} · ${e.source === 'npm' ? e.npm : e.github}`)

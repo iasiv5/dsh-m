@@ -15,7 +15,7 @@
 
 ### 2.1 载体与分发（v1.1 可自定义 registry 定稿）
 - repo 内**单文件 `registry.json`**，手工 curated，版本号**不写死**（运行时实查 npm/GitHub）。
-- **默认源**获取顺序：raw.githubusercontent `@main` → jsDelivr `@main` → 默认 TTL 缓存 → npm 包内快照兜底。收录更新与插件发版**解耦**。
+- **默认源**获取顺序：raw.githubusercontent `@main` → jsDelivr `@main` → 默认 TTL 缓存 → npm 包内快照兜底。jsDelivr 是 GitHub 内容的免费 CDN 镜像，仅作 raw 拉取失败时的**备用线路**（覆盖大陆可达性与 GitHub 故障；CDN 缓存可能滞后数小时，可用 purge.jsdelivr.net 手动清理）。收录更新与插件发版**解耦**。
 - **自定义覆盖源（单一地址，整体覆盖，不合并）**：`registryUrl` 为空 = 官方默认清单；非空 = 一个 HTTPS URL（或 loopback HTTP，仅本机管理员信任边界，不承诺 DNS rebinding 防护）或 DSH Web 主机上的本地普通文件（绝对路径 / `file://`，`realpath` + `O_NOFOLLOW` 同 fd 读取与复核，严格 UTF-8，2 MiB 原始字节上限）。自定义源失败只回退**该源自己的缓存**，绝不静默改用官方清单；无可缓存数据时返回空清单 + 不可用状态。
 - **「新增插件」流程**：设置页下载默认 `registry.json` → 用户自行编辑副本 → 填入副本地址「校验并应用」。副本是独立快照，不自动同步官方新条目。
 - **严格 v1 schema**：顶层只允许 `version/plugins`，条目只允许 `id/name/description/category/tags/source/npm/github/homepage/icon`；未知字段、非法 ID/npm/GitHub/URL、重复 ID/tag、字段超限、`plugins` 超过 1,000 条均拒绝整份清单（不截断、不部分加载）；超过 200 条提示性能边界。

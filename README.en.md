@@ -64,7 +64,7 @@ When the registry is unavailable, `registry` / `search` / `outdated` print the c
 
 ## Registry
 
-`registry.json` is hand-curated and served at runtime via **raw.githubusercontent / jsDelivr `@main`** (local 60-min TTL cache + bundled snapshot fallback) — listing updates are decoupled from plugin releases. To add or amend a listing, edit `registry.json` and open a PR; CI validates the strict schema, npm/GitHub existence, duplicate ids and URL reachability.
+`registry.json` is hand-curated and fetched at runtime in order: **GitHub raw (`@main`) → GitHub mirror (jsDelivr CDN, backup line) → local 60-min TTL cache → bundled snapshot** — listing updates are decoupled from plugin releases. To add or amend a listing, edit `registry.json` and open a PR; CI validates the strict schema, npm/GitHub existence, duplicate ids and URL reachability.
 
 **Custom registry (overrides the official one)**: the Settings tab supports a single custom registry address that **replaces** the default registry (no merging):
 
