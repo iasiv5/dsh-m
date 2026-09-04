@@ -12,14 +12,20 @@
 
 ## 30 秒上手
 
-```sh
-npm install -g dsh-m          # 或 dsh plugin --profile web add dsh-m@<version>
+**把下面整段贴给 agent 即可完成安装**：
+
+```text
+安装并启用 DSH 插件 dsh-m：
+1. 执行 `dsh plugin --profile web add dsh-m`
+2. 重启 DSH Web 使插件加载（本机：`systemctl --user restart dsh-web.service`；或按你的部署方式重启）
+3. 轮询 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080`，直到恢复 200
+4. 执行 `curl -s -X POST http://127.0.0.1:3080/dshm -H 'content-type: application/json' -d '{"method":"ping"}'`，确认返回 `plugin: dsh-m`
+5. 完成后提醒我刷新页面，点击侧栏底部的「插件市场」
 ```
 
-1. 安装后**重启 DSH Web**（一键重启亦可）。
-2. 刷新页面，点击侧栏底部的「**插件市场**」。
+> `npm install -g dsh-m` 只安装 `dshm` CLI（终端管理用），**不会**把插件注册进 web profile；与上面插件安装不冲突，可并存。
 
-默认收录清单里的插件包括：DSH Skins、DSH Web Search、Lark / QQ / 微信 / 企业微信 / 钉钉通道桥，以及 dsh-m 自身。
+默认收录清单里的插件包括：DSH Skins、ModSearch、Lark / QQ / 微信 / 企业微信 / 钉钉通道桥，以及 dsh-m 自身。
 
 ## 界面（侧栏「插件市场」）
 

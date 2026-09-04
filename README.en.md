@@ -12,14 +12,20 @@ A DeepSeek Harness (DSH) plugin marketplace with a customizable registry: **brow
 
 ## Quick start
 
-```sh
-npm install -g dsh-m          # or: dsh plugin --profile web add dsh-m@<version>
+**Paste this whole block to your agent to install:**
+
+```text
+Install and enable the DSH plugin dsh-m:
+1. Run `dsh plugin --profile web add dsh-m`
+2. Restart DSH Web to load the plugin (on this machine: `systemctl --user restart dsh-web.service`; or restart it your usual way)
+3. Poll `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080` until it returns 200 again
+4. Run `curl -s -X POST http://127.0.0.1:3080/dshm -H 'content-type: application/json' -d '{"method":"ping"}'` and confirm the reply has `plugin: dsh-m`
+5. Then remind me to refresh the page and click "Plugin Marketplace" at the bottom of the sidebar
 ```
 
-1. **Restart DSH Web** after installing (one-click restart works too).
-2. Refresh the page and click "**Plugin Marketplace**" at the bottom of the sidebar.
+> `npm install -g dsh-m` installs only the `dshm` CLI (terminal management) — it does **not** register the plugin into the web profile; it can coexist with the plugin install above.
 
-The default registry includes DSH Skins, DSH Web Search, the Lark / QQ / Weixin / WeCom / DingTalk channel bridges, and dsh-m itself.
+The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeCom / DingTalk channel bridges, and dsh-m itself.
 
 ## Panel
 
