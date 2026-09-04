@@ -68,7 +68,7 @@ const CSS = `
 .dshm-name{flex:1;min-width:0;font-weight:600;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dshm-badge{flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-state-success-tertiary,#ecfdf5);color:var(--dsw-alias-state-success-primary,#047857)}
 .dshm-badge.warn{background:var(--dsw-alias-state-warning-tertiary,#fffbeb);color:var(--dsw-alias-state-warning-primary,#b45309)}
-.dshm-badge.info{background:var(--dsw-alias-bg-layer-4,#eef2ff);color:var(--dsw-alias-label-secondary,#4b5563)}
+.dshm-badge.info{background:var(--dsw-alias-brand-primary,#4f46e5);color:#fff;border:0}
 .dshm-badge.err{background:var(--dsw-alias-state-danger-tertiary,#fef2f2);color:var(--dsw-alias-state-danger-primary,#dc2626)}
 .dshm-desc{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px;line-height:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dshm-sub{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
@@ -740,24 +740,15 @@ function mountPanel() {
   }
 }
 
-// 同系列线性图标（16×16 / stroke currentColor / 1.4，与 PlazaIcon 同约定）：应用商店店面
+// 同系列线性图标（16×16 / stroke currentColor / 1.4，与 PlazaIcon 同约定）：宫格 + 放大镜
 function MarketIcon() {
   return h("svg", { viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
-    // 雨棚
-    h("path", {
-      d: "M2.6 2h10.8l.9 3.1c.3 1-.5 2-1.6 2H3.3c-1.1 0-1.9-1-1.6-2L2.6 2Z",
-      stroke: "currentColor", strokeWidth: "1.4", strokeLinejoin: "round",
-    }),
-    // 店体
-    h("path", {
-      d: "M3.4 7.2V13a1 1 0 0 0 1 1h7.2a1 1 0 0 0 1-1V7.2",
-      stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round",
-    }),
-    // 门
-    h("path", {
-      d: "M6.4 14v-3.2a1 1 0 0 1 1-1h1.2a1 1 0 0 1 1 1V14",
-      stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round",
-    }),
+    h("rect", { x: "1.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
+    h("rect", { x: "8.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
+    h("rect", { x: "1.75", y: "8.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
+    // 右下：放大镜
+    h("circle", { cx: "10.6", cy: "10.6", r: "3.05", stroke: "currentColor", strokeWidth: "1.4" }),
+    h("path", { d: "M12.9 12.9 14.6 14.6", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
   );
 }
 
