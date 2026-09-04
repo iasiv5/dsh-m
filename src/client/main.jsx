@@ -9,6 +9,21 @@ const { useState, useEffect, useCallback, useMemo } = React;
 
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
+
+// ---------- i18n（skillhub 同款：host locale.register + client lookup） ----------
+const ZH = { "market.title": "插件市场" };
+const EN = { "market.title": "Plugin Marketplace" };
+function browserLang() {
+  const lang = (typeof document !== "undefined" && document.documentElement.lang)
+    || (typeof navigator !== "undefined" && navigator.language)
+    || "zh";
+  return /^en\b/i.test(String(lang)) ? "en" : "zh";
+}
+function lookup(key) {
+  const dict = browserLang() === "en" ? EN : ZH;
+  return dict[key] || ZH[key] || key;
+}
+
 const CATEGORIES = [
   ["market", "市场"],
   ["tools", "工具"],
@@ -26,7 +41,7 @@ const CSS = `
 .dshm-title{font-weight:700;font-size:15px;margin-right:6px}
 .dshm-tab{border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:8px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
 .dshm-tab:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
-.dshm-tab.on{background:var(--dsw-alias-bg-layer-4,#eef2ff);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-border-l2,#e5e7eb);font-weight:600}
+.dshm-tab.on{background:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-color:transparent;color:#fff;font-weight:600}
 .dshm-spacer{flex:1}
 .dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
@@ -42,7 +57,7 @@ const CSS = `
 .dshm-input:focus{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dshm-chips{display:flex;flex-wrap:wrap;gap:6px}
 .dshm-chip{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:2px 10px;font:inherit;font-size:11px;cursor:pointer}
-.dshm-chip.on{background:var(--dsw-alias-bg-layer-4,#eef2ff);color:var(--dsw-alias-label-primary,inherit);border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
+.dshm-chip.on{background:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);color:#fff;font-weight:600}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -71,7 +86,7 @@ const CSS = `
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
-.dshm-entry{display:flex;align-items:center;gap:8px;width:100%;min-width:0;padding:6px 8px;border:0;background:none;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer;border-radius:8px}
+.dshm-entry{display:flex;align-items:center;gap:8px;width:100%;min-width:0;height:42px;padding:0 10px 0 8px;border:0;background:none;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:14px;line-height:22px;text-align:left;cursor:pointer;border-radius:8px}
 .dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-entry svg{flex:none;width:16px;height:16px}
 .dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -672,7 +687,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-head" },
-        h("span", { className: "dshm-title" }, "插件市场"),
+        h("span", { className: "dshm-title" }, `DeepSeek Harness ${lookup("market.title")}`),
         TABS.map(([key, label]) =>
           h("button", { key, className: `dshm-tab${tab === key ? " on" : ""}`, onClick: () => setTab(key) }, label),
         ),
@@ -762,7 +777,7 @@ function MarketEntry(props) {
       title: "插件市场",
     },
     h(MarketIcon),
-    props && props.wide ? h("span", null, "插件市场") : null,
+    props && props.wide ? h("span", null, lookup("market.title")) : null,
   );
 }
 
@@ -929,9 +944,20 @@ function apply(ctx) {
   const slots = ctx.slots;
   if (!slots) return;
   ctx.effect(() => ensureCss(), "dshm-style");
+  // 双语：向宿主注册 locale 字典（侧栏 label 随系统语言切换）
+  ctx.inject(["locale"], (c) => {
+    if (!c.locale || typeof c.locale.register !== "function") return;
+    c.effect(() => {
+      try {
+        return c.locale.register("dshm", { zh: ZH, en: EN });
+      } catch {
+        return () => {};
+      }
+    }, "dshm-locale");
+  });
   slots.inject("sidebar.footer.action", () =>
     slots.register(
-      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, label: () => "插件市场" },
+      { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, locale: "dshm", label: () => lookup("market.title") },
       function DshmMarketEntry(actionProps) {
         return h(MarketEntry, actionProps);
       },
