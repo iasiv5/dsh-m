@@ -5,7 +5,7 @@
 const React = require("react");
 const rd = require("react-dom");
 const h = React.createElement;
-const { useState, useEffect, useCallback, useMemo } = React;
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
@@ -38,6 +38,21 @@ const ZH = {
   "settings.upgradehint": "升级后同样需要重启生效", "settings.about": "关于",
   "settings.about.text": "DSH Marketplace（dsh-m）— 个人自用的 DeepSeek Harness 插件市场。收录、安装、卸载、升级，全部本机完成。",
   "src.override": "自定义源", "src.jsdelivr": "jsDelivr（@main）", "src.raw": "raw.githubusercontent（@main）", "src.cache": "本地缓存", "src.bundled": "包内快照（兜底）",
+  "src.default.raw": "raw.githubusercontent（@main）", "src.default.jsdelivr": "jsDelivr（@main）", "src.default.cache": "默认清单缓存",
+  "src.custom.url": "自定义 URL 源", "src.custom.file": "本地文件源", "src.custom.cache": "自定义源（缓存）", "src.custom.unavailable": "自定义源（不可用）",
+  "settings.address": "Registry 地址", "settings.address.hint": "空 = 官方默认清单；支持 HTTPS URL 或本机绝对路径 / file://。整体覆盖默认清单，不做合并。",
+  "settings.configured": "配置地址", "settings.activecfg": "当前生效配置", "settings.effective": "生效来源",
+  "settings.status.label": "配置状态", "settings.status.loading": "加载中", "settings.status.ready": "已生效", "settings.status.pending": "待写入（校验已通过）", "settings.status.rejected": "已拒绝（保持旧配置）", "settings.status.unavailable": "不可用",
+  "settings.apply": "校验并应用", "settings.apply.applying": "校验中…", "settings.apply.ok": "Registry 地址已生效（无需重启）", "settings.apply.failed": "应用失败：{err}",
+  "settings.reset": "恢复默认", "settings.reset.ok": "已恢复默认收录清单",
+  "settings.download": "下载默认 registry.json", "settings.download.downloading": "下载中…", "settings.download.ok": "默认清单已下载（当前配置不变）", "settings.download.failed": "下载失败：{err}",
+  "settings.diagnose": "检查条目可达性", "settings.diagnose.running": "诊断中…", "settings.diagnose.failed": "诊断失败：{err}",
+  "settings.diagnose.result": "探测 {checked} 项 · 通过 {passed} · 失败 {failed}{trunc}",
+  "settings.diagnose.truncated": "（仅显示前 100 条问题）",
+  "settings.diagnose.none": "未发现问题",
+  "settings.trust.hint": "⚠️ 自定义收录清单未经官方 CI 校验，条目来源请确认可信后再安装。",
+  "settings.cache.hint": "切换后旧自定义源缓存将被清理（默认缓存保留）；自定义源失败时保留其最近一次成功缓存。",
+  "settings.warnings": "维护提示",
   "self.upgraded": "dsh-m 已更新到 v{v}，重启后生效", "self.failed": "自更新失败：{err}",
   "registry.refreshed": "收录清单已强制刷新",
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
@@ -86,6 +101,21 @@ const EN = {
   "settings.upgradehint": "A restart is required after upgrading", "settings.about": "About",
   "settings.about.text": "DSH Marketplace (dsh-m) — your personal DeepSeek Harness plugin marketplace. Browse, install, uninstall and upgrade, all local.",
   "src.override": "Custom source", "src.jsdelivr": "jsDelivr (@main)", "src.raw": "raw.githubusercontent (@main)", "src.cache": "Local cache", "src.bundled": "Bundled snapshot (fallback)",
+  "src.default.raw": "raw.githubusercontent (@main)", "src.default.jsdelivr": "jsDelivr (@main)", "src.default.cache": "Default registry cache",
+  "src.custom.url": "Custom URL source", "src.custom.file": "Local file source", "src.custom.cache": "Custom source (cache)", "src.custom.unavailable": "Custom source (unavailable)",
+  "settings.address": "Registry address", "settings.address.hint": "Empty = official default registry; accepts an HTTPS URL or a local absolute path / file://. Replaces (not merges) the default registry. Live effect.",
+  "settings.configured": "Configured address", "settings.activecfg": "Active config", "settings.effective": "Effective source",
+  "settings.status.label": "Config status", "settings.status.loading": "Loading", "settings.status.ready": "Applied", "settings.status.pending": "Pending write (validated)", "settings.status.rejected": "Rejected (previous config kept)", "settings.status.unavailable": "Unavailable",
+  "settings.apply": "Validate & apply", "settings.apply.applying": "Validating…", "settings.apply.ok": "Registry address applied (no restart needed)", "settings.apply.failed": "Apply failed: {err}",
+  "settings.reset": "Restore default", "settings.reset.ok": "Restored to the default registry",
+  "settings.download": "Download default registry.json", "settings.download.downloading": "Downloading…", "settings.download.ok": "Default registry downloaded (current config unchanged)", "settings.download.failed": "Download failed: {err}",
+  "settings.diagnose": "Check entries reachability", "settings.diagnose.running": "Checking…", "settings.diagnose.failed": "Diagnose failed: {err}",
+  "settings.diagnose.result": "Probes {checked} · passed {passed} · failed {failed}{trunc}",
+  "settings.diagnose.truncated": " (showing first 100 issues)",
+  "settings.diagnose.none": "No issues found",
+  "settings.trust.hint": "⚠️ Custom registries are not validated by official CI. Only install entries from sources you trust.",
+  "settings.cache.hint": "Old custom-source caches are cleaned after switching (the default cache is kept); a failed custom source keeps its last good cache.",
+  "settings.warnings": "Maintenance notice",
   "self.upgraded": "dsh-m updated to v{v} — restart to take effect", "self.failed": "Self-update failed: {err}",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
@@ -222,11 +252,12 @@ function ensureCss() {
 }
 
 // ---------- 本地 API（host: /dshm, method 分发） ----------
-async function api(method, params) {
+async function api(method, params, signal) {
   const res = await fetch(API, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ method, ...(params || {}) }),
+    ...(signal ? { signal } : {}),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) throw new Error(data.error || `API ${res.status}`);
@@ -557,6 +588,7 @@ function MarketTab({ notify, onCount }) {
       const res = await api("install", { id: it.id, ...(version ? { version } : {}) });
       notify({
         kind: "ok",
+        needsRestart: true,
         text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
           (res.usedAllowAllBuilds ? lookup("notify.allowbuilds") : ""),
       });
@@ -737,6 +769,7 @@ function InstalledTab({ notify, installed }) {
       const res = await api("uninstall", { pkg: it.pkg });
       notify({
         kind: "ok",
+        needsRestart: true,
         text: lookup("notify.uninstalled", { pkg: res.pkg }) +
           (res.liveDisabled ? lookup("notify.livedisabled") : "") +
           (res.leftovers && res.leftovers.length ? lookup("notify.leftovers", { paths: res.leftovers.join(", ") }) : ""),
@@ -755,6 +788,7 @@ function InstalledTab({ notify, installed }) {
       const res = await api("upgrade", { pkg: it.pkg });
       notify({
         kind: "ok",
+        needsRestart: true,
         text: lookup("notify.upgraded", {
           pkg: res.pkg,
           from: res.fromVersion ? `v${res.fromVersion}` : "—",
@@ -853,51 +887,200 @@ function InstalledTab({ notify, installed }) {
 }
 
 // ---------- 设置页 ----------
-function SettingsTab({ notify }) {
+function regSourceLabel(data) {
+  if (!data) return "—";
+  const map = {
+    "default-raw": "src.default.raw",
+    "default-jsdelivr": "src.default.jsdelivr",
+    "default-cache": "src.default.cache",
+    bundled: "src.bundled",
+    "custom-url": "src.custom.url",
+    "custom-file": "src.custom.file",
+    "custom-cache": "src.custom.cache",
+    "custom-unavailable": "src.custom.unavailable",
+    // 旧字段兼容
+    override: "src.override", jsdelivr: "src.jsdelivr", raw: "src.raw", cache: "src.cache",
+  };
+  return lookup(map[data.source] || data.source);
+}
+
+function configStatusLabel(status) {
+  return lookup(`settings.status.${status || "loading"}` || "settings.status.loading");
+}
+
+function SettingsTab({ notify, onRegistryChanged }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
+  const cfgState = useAsync(() => api("registry-config"), []);
   const self = useAsync(() => api("self-check"), []);
   const [busy, setBusy] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
+  const [draftAddress, setDraftAddress] = useState(null); // null = 尚未从 configuredAddress 初始化
+  const [applying, setApplying] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [diagnosing, setDiagnosing] = useState(false);
+  const [applyError, setApplyError] = useState(null);
+  const [diagnosticResult, setDiagnosticResult] = useState(null);
+  const diagnoseAbort = useRef(null);
+
+  const cfgData = cfgState.data;
+  useEffect(() => {
+    if (draftAddress === null && cfgData) setDraftAddress(cfgData.registryUrl ?? "");
+  }, [cfgData, draftAddress]);
+  // 关闭/切换设置页时中止诊断请求
+  useEffect(() => () => diagnoseAbort.current?.abort(), []);
 
   const refresh = async () => {
     setBusy(true);
     try {
       await reg.reload(true);
-      notify({ kind: "ok", text: lookup("registry.refreshed") });
+      notify({ kind: "ok", text: lookup("registry.refreshed"), needsRestart: false });
     } finally {
       setBusy(false);
     }
   };
 
-  const upgradeSelf = async () => {
-    setUpgrading(true);
+  const reloadRegistryState = async () => {
+    await cfgState.reload().catch(() => undefined);
+  };
+
+  const applyAddress = async (raw) => {
+    setApplying(true);
+    setApplyError(null);
     try {
-      const res = await api("self-upgrade");
-      notify({ kind: "ok", text: lookup("self.upgraded", { v: res.version }) });
-      await self.reload();
+      await api("registry-config-apply", { registryUrl: raw });
+      setDraftAddress(typeof raw === "string" ? raw.trim() : "");
+      notify({ kind: "ok", text: raw.trim() === "" ? lookup("settings.reset.ok") : lookup("settings.apply.ok"), needsRestart: false });
+      // 先同步配置状态，再让父层按顺序重载市场/已装
+      await reloadRegistryState();
+      onRegistryChanged?.();
     } catch (e) {
-      notify({ kind: "err", text: lookup("failed.selfupdate", { err: (e && e.message) || e }) });
+      const message = String((e && e.message) || e);
+      setApplyError(message);
+      await reloadRegistryState().catch(() => undefined);
     } finally {
-      setUpgrading(false);
+      setApplying(false);
     }
   };
+
+  const downloadDefault = async () => {
+    setDownloading(true);
+    try {
+      const res = await api("registry-default-download");
+      const text = JSON.stringify(res.registry, null, 2);
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "registry.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      notify({ kind: "ok", text: lookup("settings.download.ok"), needsRestart: false });
+    } catch (e) {
+      notify({ kind: "err", text: lookup("settings.download.failed", { err: (e && e.message) || e }) });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const runDiagnose = async () => {
+    diagnoseAbort.current?.abort();
+    const ac = new AbortController();
+    diagnoseAbort.current = ac;
+    setDiagnosing(true);
+    setDiagnosticResult(null);
+    try {
+      const res = await api("registry-diagnose", {}, ac.signal);
+      if (!ac.signal.aborted) setDiagnosticResult(res.check);
+    } catch (e) {
+      if (!ac.signal.aborted) notify({ kind: "err", text: lookup("settings.diagnose.failed", { err: (e && e.message) || e }) });
+    } finally {
+      if (!ac.signal.aborted) setDiagnosing(false);
+    }
+  };
+
+  const snap = cfgData || {};
+  const state = snap.registryState || (reg.data ? reg.data.registryState : null) || null;
 
   return h(
     React.Fragment,
     null,
     Section(lookup("settings.registry"),
-      h("div", { className: "dshm-kv" },
-        h("span", { className: "k" }, lookup("settings.source")), h("span", null, regSourceLabel(reg.data)),
-        h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(reg.data && reg.data.fetchedAt)),
-        h("span", { className: "k" }, lookup("settings.count")), h("span", null, reg.data ? lookup("settings.count.v", { n: reg.data.plugins.length }) : "—"),
-        h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
+      h("div", { className: "dshm-row", style: { flexDirection: "column", alignItems: "stretch", gap: "4px" } },
+        h("div", { className: "dshm-hint" }, lookup("settings.address")),
+        h("div", { className: "dshm-row" },
+          h("input", {
+            className: "dshm-input",
+            placeholder: lookup("settings.address.hint"),
+            value: draftAddress ?? "",
+            onChange: (e) => setDraftAddress(e.target.value),
+            spellcheck: "false",
+          }),
+        ),
+        h("div", { className: "dshm-hint" }, lookup("settings.address.hint")),
       ),
-      reg.data && reg.data.errors && reg.data.errors.length
-        ? h("div", { className: "dshm-err" }, `${lookup("settings.remotehint")}：${reg.data.errors.join("；")}`)
-        : null,
       h("div", { className: "dshm-actions" },
+        h("button", {
+          className: "dshm-btn primary sm",
+          disabled: applying || diagnosing || draftAddress === null,
+          onClick: () => applyAddress(draftAddress ?? ""),
+        }, applying ? h("span", null, lookup("settings.apply.applying"), " ", h(Spin)) : lookup("settings.apply")),
+        h("button", {
+          className: "dshm-btn sm",
+          disabled: applying || draftAddress === null || (draftAddress ?? "").trim() === "",
+          onClick: () => applyAddress(""),
+        }, lookup("settings.reset")),
+        h("button", {
+          className: "dshm-btn sm",
+          disabled: downloading,
+          onClick: downloadDefault,
+        }, downloading ? h("span", null, lookup("settings.download.downloading"), " ", h(Spin)) : lookup("settings.download")),
+        h("button", {
+          className: "dshm-btn sm",
+          disabled: diagnosing || applying,
+          onClick: runDiagnose,
+        }, diagnosing ? h("span", null, lookup("settings.diagnose.running"), " ", h(Spin)) : lookup("settings.diagnose")),
         h("button", { className: "dshm-btn sm", disabled: busy || reg.loading, onClick: refresh }, busy || reg.loading ? h(Spin) : lookup("settings.force")),
       ),
+      applyError ? h("div", { className: "dshm-err" }, lookup("settings.apply.failed", { err: applyError })) : null,
+      h("div", { className: "dshm-kv", style: { marginTop: "4px" } },
+        h("span", { className: "k" }, lookup("settings.configured")), h("span", { style: { wordBreak: "break-all" } }, snap.registryUrl === "" || snap.registryUrl ? `${snap.registryUrl === "" ? "（默认）" : snap.registryUrl}` : "—"),
+        h("span", { className: "k" }, lookup("settings.activecfg")), h("span", { style: { wordBreak: "break-all" } }, snap.activeConfigAddress === "" || snap.activeConfigAddress ? `${snap.activeConfigAddress === "" ? "（默认）" : snap.activeConfigAddress}` : "—"),
+        h("span", { className: "k" }, lookup("settings.status.label")), h("span", null, configStatusLabel(snap.configStatus)),
+        h("span", { className: "k" }, lookup("settings.effective")), h("span", null, regSourceLabel(state)),
+        h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(state && state.fetchedAt)),
+        h("span", { className: "k" }, lookup("settings.count")), h("span", null, state ? lookup("settings.count.v", { n: state.count ?? 0 }) : "—"),
+        h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
+      ),
+      state && state.stale && state.status !== "unavailable"
+        ? h("div", { className: "dshm-hint" }, lookup("settings.cache.hint"))
+        : null,
+      state && !state.isDefault
+        ? h("div", { className: "dshm-hint" }, lookup("settings.trust.hint"))
+        : null,
+      snap.warnings && snap.warnings.length
+        ? h("div", { className: "dshm-hint" }, `${lookup("settings.warnings")}：${snap.warnings.join("；")}`)
+        : null,
+      state && state.errors && state.errors.length
+        ? h("div", { className: "dshm-err" }, `${lookup("settings.remotehint")}：${state.errors.slice(0, 5).join("；")}`)
+        : null,
+      diagnosticResult
+        ? h("div", { className: "dshm-hint", style: { wordBreak: "break-all" } },
+            lookup("settings.diagnose.result", {
+              checked: diagnosticResult.checked ?? 0,
+              passed: diagnosticResult.passed ?? 0,
+              failed: diagnosticResult.failed ?? 0,
+              trunc: diagnosticResult.truncated ? lookup("settings.diagnose.truncated") : "",
+            }),
+            diagnosticResult.issues && diagnosticResult.issues.length
+              ? h("div", { style: { marginTop: "4px" } },
+                  diagnosticResult.issues.slice(0, 100).map((iss, i) =>
+                    h("div", { key: i, className: "dshm-err" }, `· [${iss.id}] ${iss.field}: ${iss.message}`)),
+                )
+              : h("div", null, lookup("settings.diagnose.none")),
+          )
+        : null,
     ),
     Section(lookup("settings.self"),
       h("div", { className: "dshm-kv" },
@@ -915,12 +1098,19 @@ function SettingsTab({ notify }) {
       h("div", { className: "dshm-hint" }, lookup("settings.about.text")),
     ),
   );
-}
 
-function regSourceLabel(data) {
-  if (!data) return "—";
-  const map = { override: "src.override", jsdelivr: "src.jsdelivr", raw: "src.raw", cache: "src.cache", bundled: "src.bundled" };
-  return lookup(map[data.source] || data.source);
+  async function upgradeSelf() {
+    setUpgrading(true);
+    try {
+      const res = await api("self-upgrade");
+      notify({ kind: "ok", text: lookup("self.upgraded", { v: res.version }), needsRestart: true });
+      await self.reload();
+    } catch (e) {
+      notify({ kind: "err", text: lookup("failed.selfupdate", { err: (e && e.message) || e }) });
+    } finally {
+      setUpgrading(false);
+    }
+  }
 }
 
 function Section(title, ...children) {
@@ -983,6 +1173,11 @@ function MarketPanel({ onClose }) {
   // 数据在面板层取一次：页签切换零请求，计数由数据派生（未就绪就隐藏数字，不显示假 0）
   const market = useAsync((force) => api("market", force ? { force: true } : {}), []);
   const installed = useAsync(() => api("installed"), []);
+  // registry 配置应用后：先刷新市场页，再刷新已装页（顺序执行，旧请求由 useAsync 覆盖）
+  const onRegistryChanged = useCallback(async () => {
+    await market.reload(false).catch(() => undefined);
+    await installed.reload().catch(() => undefined);
+  }, [market, installed]);
   const counts = {
     market: market.data ? market.data.items.length : null,
     installed: installed.data ? installed.data.items.length : null,
@@ -1001,9 +1196,10 @@ function MarketPanel({ onClose }) {
     const t = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(t);
   }, [toast]);
-  const notify = useCallback(({ kind, text }) => {
+  // needsRestart 为 true 才出重启横幅（安装/卸载/升级/自更新）；registry 配置只 toast
+  const notify = useCallback(({ kind, text, needsRestart }) => {
     setToast({ kind, text });
-    if (kind === "ok") setBanner({ text: lookup("banner.done") });
+    if (kind === "ok" && needsRestart) setBanner({ text: lookup("banner.done") });
   }, []);
   return h(
     "div",
@@ -1040,7 +1236,7 @@ function MarketPanel({ onClose }) {
         { className: "dshm-body" },
         tab === "market" ? h(MarketTab, { notify, market }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed }) : null,
-        tab === "settings" ? h(SettingsTab, { notify }) : null,
+        tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
       ),
       toast
         ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-error-secondary,#fee2e2)", color: "var(--dsw-alias-state-error-primary,#b91c1c)" } : null },
