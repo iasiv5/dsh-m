@@ -89,6 +89,17 @@
       "homepage": "https://github.com/hxy91819/dsh-auth"
     },
     {
+      "id": "dsh-copilot-auth",
+      "name": "DSH Copilot Auth",
+      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步，中英双语。",
+      "category": "tools",
+      "tags": ["Copilot", "认证", "模型接入"],
+      "source": "npm",
+      "npm": "@inventec/dsh-copilot-auth",
+      "github": "iasiv5/dsh-copilot-auth",
+      "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
+    },
+    {
       "id": "dsh-m",
       "name": "DSH Marketplace",
       "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
