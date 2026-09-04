@@ -12,15 +12,15 @@
       "homepage": "https://github.com/iasiv5/skins"
     },
     {
-      "id": "dsh-web-search",
-      "name": "DSH Web Search",
-      "description": "多提供商网页搜索（SearXNG → Tavily → Brave → 免密 DuckDuckGo 自动回退）与 URL 内容抽取，接入 web_search 工具缝。",
+      "id": "modsearch",
+      "name": "ModSearch",
+      "description": "免费网页搜索、X 搜索与页面抓取插件，支持 Firecrawl、Tavily、Exa 等引擎自动故障切换。",
       "category": "search",
-      "tags": ["搜索", "web"],
+      "tags": ["搜索", "网页抓取", "X"],
       "source": "npm",
-      "npm": "dsh-web-search",
-      "github": "haibinwang9/dsh-web-search",
-      "homepage": "https://github.com/haibinwang9/dsh-web-search"
+      "npm": "@liustack/modsearch",
+      "github": "liustack/modsearch",
+      "homepage": "https://github.com/liustack/modsearch"
     },
     {
       "id": "deepseek-harness-lark",
