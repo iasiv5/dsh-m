@@ -23,7 +23,7 @@ const ZH = {
   "market.loading": "加载收录清单中… ", "market.empty": "没有匹配的收录条目",
   "installed.loading": "读取 web profile 中… ", "installed.empty": "web profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
   "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
-  "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装",
+  "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装", "badge.custom": "自定义",
   "action.install": "安装", "action.upgrade": "升级", "action.uninstall": "卸载",
   "confirm.uninstall": "确认卸载？", "confirm.unlink": "确认移除本地引用？", "confirm.core": "⚠️ 确认卸载核心包？",
   "detail.id": "收录 id", "detail.source": "来源", "detail.latest": "最新", "detail.installed": "已装", "detail.tags": "标签",
@@ -39,11 +39,12 @@ const ZH = {
   "settings.force": "强制刷新", "settings.self": "dsh-m 自身", "settings.current": "当前版本",
   "settings.npmlatest": "npm 最新", "settings.lookupfailed": "查询失败：{err}", "settings.upgradeself": "升级 dsh-m",
   "settings.upgradehint": "升级后同样需要重启生效", "settings.about": "关于",
-  "settings.about.text": "DSH Marketplace（dsh-m）— 可自定义收录清单的个人 DSH 插件市场：浏览、安装、卸载、升级，全部本机完成。默认使用官方清单，可下载副本自行编辑后整体覆盖，应用即时生效；同包提供 7 个 dshm_* agent 工具与 dshm CLI。",
+  "settings.about.text": "个人 DSH 插件市场：收录、安装、卸载、升级全部本机完成；收录清单支持自定义覆盖，应用即时生效。",
   "src.override": "自定义源", "src.jsdelivr": "jsDelivr（@main）", "src.raw": "raw.githubusercontent（@main）", "src.cache": "本地缓存", "src.bundled": "包内快照（兜底）",
   "src.default.raw": "raw.githubusercontent（@main）", "src.default.jsdelivr": "jsDelivr（@main）", "src.default.cache": "默认清单缓存",
   "src.custom.url": "自定义 URL 源", "src.custom.file": "本地文件源", "src.custom.cache": "自定义源（缓存）", "src.custom.unavailable": "自定义源（不可用）",
   "settings.address": "Registry 地址", "settings.address.hint": "空 = 官方默认清单；支持 HTTPS URL 或本机绝对路径 / file://。整体覆盖默认清单，不做合并。",
+  "settings.address.ph": "https://example.com/registry.json 或 /path/to/registry.json",
   "settings.configured": "配置地址", "settings.activecfg": "当前生效配置", "settings.effective": "生效来源",
   "settings.status.label": "配置状态", "settings.status.loading": "加载中", "settings.status.ready": "已生效", "settings.status.pending": "待写入（校验已通过）", "settings.status.rejected": "已拒绝（保持旧配置）", "settings.status.unavailable": "不可用",
   "settings.apply": "校验并应用", "settings.apply.applying": "校验中…", "settings.apply.ok": "Registry 地址已生效（无需重启）", "settings.apply.failed": "应用失败：{err}",
@@ -91,7 +92,7 @@ const EN = {
   "market.loading": "Loading listings… ", "market.empty": "No matching listings",
   "installed.loading": "Reading web profile… ", "installed.empty": "No DSH plugins installed in this web profile", "installed.none": "Not installed",
   "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
-  "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market",
+  "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market", "badge.custom": "Custom",
   "action.install": "Install", "action.upgrade": "Upgrade", "action.uninstall": "Uninstall",
   "confirm.uninstall": "Confirm uninstall?", "confirm.unlink": "Confirm remove link?", "confirm.core": "⚠️ Remove core package?",
   "detail.id": "Listing id", "detail.source": "Source", "detail.latest": "Latest", "detail.installed": "Installed", "detail.tags": "Tags",
@@ -107,11 +108,12 @@ const EN = {
   "settings.force": "Force refresh", "settings.self": "dsh-m itself", "settings.current": "Current version",
   "settings.npmlatest": "npm latest", "settings.lookupfailed": "lookup failed: {err}", "settings.upgradeself": "Upgrade dsh-m",
   "settings.upgradehint": "A restart is required after upgrading", "settings.about": "About",
-  "settings.about.text": "DSH Marketplace (dsh-m) — a personal DSH plugin marketplace with a customizable registry: browse, install, uninstall and upgrade, all local. Uses the official registry by default; download a copy, edit it and apply to override — live effect. Also ships 7 dshm_* agent tools and the dshm CLI.",
+  "settings.about.text": "A personal DSH plugin marketplace — browse, install, uninstall and upgrade, all local; registry overrides apply live.",
   "src.override": "Custom source", "src.jsdelivr": "jsDelivr (@main)", "src.raw": "raw.githubusercontent (@main)", "src.cache": "Local cache", "src.bundled": "Bundled snapshot (fallback)",
   "src.default.raw": "raw.githubusercontent (@main)", "src.default.jsdelivr": "jsDelivr (@main)", "src.default.cache": "Default registry cache",
   "src.custom.url": "Custom URL source", "src.custom.file": "Local file source", "src.custom.cache": "Custom source (cache)", "src.custom.unavailable": "Custom source (unavailable)",
   "settings.address": "Registry address", "settings.address.hint": "Empty = official default registry; accepts an HTTPS URL or a local absolute path / file://. Replaces (not merges) the default registry. Live effect.",
+  "settings.address.ph": "https://example.com/registry.json or /path/to/registry.json",
   "settings.configured": "Configured address", "settings.activecfg": "Active config", "settings.effective": "Effective source",
   "settings.status.label": "Config status", "settings.status.loading": "Loading", "settings.status.ready": "Applied", "settings.status.pending": "Pending write (validated)", "settings.status.rejected": "Rejected (previous config kept)", "settings.status.unavailable": "Unavailable",
   "settings.apply": "Validate & apply", "settings.apply.applying": "Validating…", "settings.apply.ok": "Registry address applied (no restart needed)", "settings.apply.failed": "Apply failed: {err}",
@@ -215,8 +217,16 @@ const CSS = `
 .dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309);font-size:12px}
 .dshm-banner .dshm-banner-text{flex:1}
 .dshm-row{display:flex;align-items:center;gap:8px}
-.dshm-kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:12px}
+.dshm-kv{display:grid;grid-template-columns:110px 1fr;gap:7px 12px;font-size:12px}
 .dshm-kv .k{color:var(--dsw-alias-label-caption,#6b7280)}
+.dshm-section{padding:14px 2px;border-bottom:1px dashed var(--dsw-alias-border-l2,#e5e7eb);display:flex;flex-direction:column;gap:10px}
+.dshm-section:last-child{border-bottom:0;padding-bottom:2px}
+.dshm-section-title{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:var(--dsw-alias-label-primary,inherit)}
+.dshm-section-title::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
+.dshm-section-sub{margin-left:auto;font-weight:400;font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af)}
+.dshm-note{border-left:3px solid var(--dsw-alias-border-l2,#cbd5e1);padding:3px 10px;color:var(--dsw-alias-label-caption,#9ca3af);font-size:11px;line-height:17px;word-break:break-word}
+.dshm-note.warn{border-left-color:var(--dsw-alias-state-warn-primary,#b45309)}
+.dshm-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.12));padding:1px 7px;border-radius:5px;word-break:break-all}
 .dshm-spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dsw-alias-border-l2,#c7d2fe);border-top-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-radius:50%;animation:dshm-rot .8s linear infinite;vertical-align:-2px}
 @keyframes dshm-rot{to{transform:rotate(360deg)}}
 .dshm-others{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px dashed var(--dsw-alias-border-l2,#e2e4e8);border-radius:10px;color:var(--dsw-alias-label-caption,#9ca3af);font-size:12px;line-height:18px}
@@ -1004,6 +1014,8 @@ function configStatusLabel(status) {
   return lookup(`settings.status.${status || "loading"}` || "settings.status.loading");
 }
 
+const STATUS_BADGE = { ready: "", pending: "info", rejected: "warn", unavailable: "err", loading: "info" };
+
 function SettingsTab({ notify, onRegistryChanged }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
   const cfgState = useAsync(() => api("registry-config"), []);
@@ -1104,17 +1116,14 @@ function SettingsTab({ notify, onRegistryChanged }) {
     null,
     Section(lookup("settings.registry"),
       h("div", { className: "dshm-row", style: { flexDirection: "column", alignItems: "stretch", gap: "4px" } },
-        h("div", { className: "dshm-hint" }, lookup("settings.address")),
-        h("div", { className: "dshm-row" },
-          h("input", {
-            className: "dshm-input",
-            placeholder: lookup("settings.address.hint"),
-            value: draftAddress ?? "",
-            onChange: (e) => setDraftAddress(e.target.value),
-            spellcheck: "false",
-          }),
-        ),
-        h("div", { className: "dshm-hint" }, lookup("settings.address.hint")),
+        h("input", {
+          className: "dshm-input",
+          placeholder: lookup("settings.address.ph"),
+          value: draftAddress ?? "",
+          onChange: (e) => setDraftAddress(e.target.value),
+          spellcheck: "false",
+        }),
+        h("div", { className: "dshm-note" }, lookup("settings.address.hint")),
       ),
       h("div", { className: "dshm-actions" },
         h("button", {
@@ -1141,22 +1150,26 @@ function SettingsTab({ notify, onRegistryChanged }) {
       ),
       applyError ? h("div", { className: "dshm-err" }, lookup("settings.apply.failed", { err: applyError })) : null,
       h("div", { className: "dshm-kv", style: { marginTop: "4px" } },
-        h("span", { className: "k" }, lookup("settings.configured")), h("span", { style: { wordBreak: "break-all" } }, snap.registryUrl === "" || snap.registryUrl ? `${snap.registryUrl === "" ? "（默认）" : snap.registryUrl}` : "—"),
-        h("span", { className: "k" }, lookup("settings.activecfg")), h("span", { style: { wordBreak: "break-all" } }, snap.activeConfigAddress === "" || snap.activeConfigAddress ? `${snap.activeConfigAddress === "" ? "（默认）" : snap.activeConfigAddress}` : "—"),
-        h("span", { className: "k" }, lookup("settings.status.label")), h("span", null, configStatusLabel(snap.configStatus)),
-        h("span", { className: "k" }, lookup("settings.effective")), h("span", null, regSourceLabel(state)),
+        h("span", { className: "k" }, lookup("settings.configured")),
+        h("span", null, snap.registryUrl ? h("span", { className: "dshm-code" }, snap.registryUrl) : h("span", { className: "dshm-hint" }, "（默认）")),
+        h("span", { className: "k" }, lookup("settings.activecfg")),
+        h("span", null, snap.activeConfigAddress ? h("span", { className: "dshm-code" }, snap.activeConfigAddress) : h("span", { className: "dshm-hint" }, "（默认）")),
+        h("span", { className: "k" }, lookup("settings.status.label")),
+        h("span", null, h("span", { className: `dshm-badge ${STATUS_BADGE[snap.configStatus] || ""}` }, configStatusLabel(snap.configStatus))),
+        h("span", { className: "k" }, lookup("settings.effective")),
+        h("span", null, regSourceLabel(state), state && !state.isDefault ? h("span", { className: "dshm-badge info", style: { marginLeft: "6px" } }, lookup("badge.custom")) : null),
         h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(state && state.fetchedAt)),
         h("span", { className: "k" }, lookup("settings.count")), h("span", null, state ? lookup("settings.count.v", { n: state.count ?? 0 }) : "—"),
         h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
       ),
       state && state.stale && state.status !== "unavailable"
-        ? h("div", { className: "dshm-hint" }, lookup("settings.cache.hint"))
+        ? h("div", { className: "dshm-note" }, lookup("settings.cache.hint"))
         : null,
       state && !state.isDefault
-        ? h("div", { className: "dshm-hint" }, lookup("settings.trust.hint"))
+        ? h("div", { className: "dshm-note warn" }, lookup("settings.trust.hint"))
         : null,
       snap.warnings && snap.warnings.length
-        ? h("div", { className: "dshm-hint" }, `${lookup("settings.warnings")}：${snap.warnings.join("；")}`)
+        ? h("div", { className: "dshm-note warn" }, `${lookup("settings.warnings")}：${snap.warnings.join("；")}`)
         : null,
       state && state.errors && state.errors.length
         ? h("div", { className: "dshm-err" }, `${lookup("settings.remotehint")}：${state.errors.slice(0, 5).join("；")}`)
@@ -1174,7 +1187,7 @@ function SettingsTab({ notify, onRegistryChanged }) {
                   diagnosticResult.issues.slice(0, 100).map((iss, i) =>
                     h("div", { key: i, className: "dshm-err" }, `· [${iss.id}] ${iss.field}: ${iss.message}`)),
                 )
-              : h("div", null, lookup("settings.diagnose.none")),
+              : h("div", { className: "dshm-note" }, lookup("settings.diagnose.none")),
           )
         : null,
     ),
@@ -1209,11 +1222,14 @@ function SettingsTab({ notify, onRegistryChanged }) {
   }
 }
 
-function Section(title, ...children) {
+function Section(title, sub, ...children) {
   return h(
     "div",
-    { style: { display: "flex", flexDirection: "column", gap: "8px" } },
-    h("div", { style: { fontWeight: 600, fontSize: "13px" } }, title),
+    { className: "dshm-section" },
+    h("div", { className: "dshm-section-title" },
+      title,
+      sub ? h("span", { className: "dshm-section-sub" }, sub) : null,
+    ),
     ...children,
   );
 }
