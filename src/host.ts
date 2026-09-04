@@ -2,17 +2,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import {
-  installFromRegistry,
-  listInstalledWithMeta,
-  listMarket,
-  uninstallPlugin,
-  upgradePlugin,
-  withMutationLock,
-} from './core/market.js'
+import { withMutationLock } from './core/market.js'
+import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
-import { scheduleRestart, servingPort, trustedRestartRequest } from './core/restart.js'
-import type { RegistryConfig } from './core/registry.js'
+import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
 import { registerTools } from './tools.js'
 
 const require = createRequire(import.meta.url)
@@ -23,22 +16,54 @@ export const name = 'dshm'
 // dshm_* 七个工具（src/tools.ts）
 export const inject: string[] = ['tools']
 
-export interface Config extends RegistryConfig {}
+export interface Config {
+  registryUrl?: string
+  timeoutMs?: number
+  cacheTtlMin?: number
+}
 
 export const Config: Schema<Config> = Schema.object({
-  registryUrl: Schema.string().description('registry 源覆盖（默认 jsDelivr @main）'),
+  registryUrl: Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）'),
   timeoutMs: Schema.number().default(20000).description('上游请求超时（毫秒）'),
   cacheTtlMin: Schema.number().default(60).description('registry 缓存时长（分钟）'),
 })
 
 export function apply(ctx: Context, config: Config): void {
-  const cfg: Config = { ...config }
   // 卸载前的 live-disable 依赖 loader（skillhub 同款）
   bindLoaderHost(ctx as unknown as LoaderHost)
-  // dshm_* 七个 agent 工具 + systemPrompt 注入
-  registerTools(ctx, cfg)
 
-  // 本地 API：单路由 + method 分发（skillhub 同款）
+  // registry controller：active config / configured / pending / rejected 分离 + generation fence；
+  // tools 与 Host API 共用同一 active config object（apply 原地更新字段，live 生效）
+  const controller = createRegistryController(config)
+  registerTools(ctx, controller.config)
+
+  // 设置页（GUI 设置卡片的宿主命名空间）：applies 'live'，scope 提供 get/update/watch
+  ctx.inject(['settings'], (c) => {
+    const settings = (
+      c as unknown as {
+        settings: {
+          register: (
+            ns: string,
+            schema: Schema<Config>,
+            options?: { base?: Config; applies?: 'live' | 'restart' },
+          ) => {
+            get(): Config
+            update(patch: object): Promise<void>
+            watch(callback: (next: Config, prev: Config) => void): () => void
+          }
+        }
+      }
+    ).settings
+    const scope = settings.register('dshm', Config, { base: config, applies: 'live' })
+    const store: RegistrySettingsStore = {
+      get: () => scope.get(),
+      update: (patch) => scope.update(patch),
+      watch: (callback) => scope.watch(callback),
+    }
+    controller.attachStore(store)
+  })
+
+  // 本地 API：单路由 + method 分发（防护与状态映射在 core/host-api.ts）
   ctx.inject(['webServer'], (c) => {
     const server = (
       c as unknown as {
@@ -51,193 +76,13 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
+    const handleApi = createApiDispatcher({ controller, pkg, onMutation: withMutationLock })
     server.register({
       kind: 'exact',
       path: '/dshm',
       handler: (req, res) => {
-        void handleApi(req, res, cfg)
+        void handleApi(req, res)
       },
     })
   })
-
-  // 设置页（GUI 设置卡片的宿主命名空间）
-  ctx.inject(['settings'], (c) => {
-    const settings = (
-      c as unknown as {
-        settings: {
-          register: (ns: string, schema: Schema<Config>, options?: { base?: Config }) => void
-        }
-      }
-    ).settings
-    settings.register('dshm', Config, { base: config })
-  })
-}
-
-async function handleApi(req: IncomingMessage, res: ServerResponse, cfg: Config): Promise<void> {
-  try {
-    const url = new URL(req.url || '/', 'http://127.0.0.1')
-    const body = req.method === 'POST' ? await readBody(req) : {}
-    const method = String(body.method || url.searchParams.get('method') || 'ping')
-    switch (method) {
-      case 'ping':
-        return sendJson(res, 200, {
-          ok: true,
-          plugin: pkg.name,
-          version: pkg.version,
-          node: process.version,
-          boot: `${process.pid}`,
-        })
-
-      case 'self-check': {
-        try {
-          const { npmLatest } = await import('./core/versions.js')
-          const latest = await npmLatest(pkg.name, cfg.timeoutMs ?? 20_000)
-          const { isNewerVersion } = await import('./core/versions.js')
-          return sendJson(res, 200, {
-            ok: true,
-            current: pkg.version,
-            latest: latest.version,
-            outdated: isNewerVersion(latest.version, pkg.version),
-          })
-        } catch (err) {
-          return sendJson(res, 200, {
-            ok: true,
-            current: pkg.version,
-            latest: null,
-            outdated: false,
-            error: err instanceof Error ? err.message : String(err),
-          })
-        }
-      }
-
-      case 'self-upgrade': {
-        const { npmLatest } = await import('./core/versions.js')
-        const latest = await npmLatest(pkg.name, cfg.timeoutMs ?? 20_000)
-        const result = await withMutationLock(async () => {
-          const { addDshPlugin } = await import('./core/dsh-cli.js')
-          return addDshPlugin(`${pkg.name}@${latest.version}`)
-        })
-        return sendJson(res, 200, {
-          ok: true,
-          pkg: pkg.name,
-          version: latest.version,
-          usedAllowAllBuilds: result.usedAllowAllBuilds,
-          needsRestart: true,
-        })
-      }
-
-      case 'registry': {
-        const loaded = await loadRegistrySafe(cfg, boolArg(body.force))
-        return sendJson(res, 200, {
-          ok: true,
-          plugins: loaded.registry.plugins,
-          source: loaded.source,
-          fetchedAt: loaded.fetchedAt,
-          errors: loaded.errors,
-        })
-      }
-
-      case 'market': {
-        const result = await listMarket(cfg, { force: boolArg(body.force) })
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'installed': {
-        const result = await listInstalledWithMeta(cfg)
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'readme': {
-        const target = String(body.pkg || '').trim()
-        if (!target) return sendJson(res, 400, { ok: false, error: '缺少 pkg' })
-        const { readInstalledPluginReadme } = await import('./core/installed.js')
-        const result = await readInstalledPluginReadme(target)
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'status': {
-        const { publicInstallStatus } = await import('./core/dsh-cli.js')
-        return sendJson(res, 200, { ok: true, ...publicInstallStatus() })
-      }
-
-      case 'install': {
-        const id = String(body.id || '').trim()
-        if (!id) return sendJson(res, 400, { ok: false, error: '缺少 id' })
-        const version = typeof body.version === 'string' ? body.version : undefined
-        const result = await withMutationLock(() => installFromRegistry(id, cfg, { version }))
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'uninstall': {
-        const target = String(body.pkg || '').trim()
-        if (!target) return sendJson(res, 400, { ok: false, error: '缺少 pkg' })
-        const result = await withMutationLock(() => uninstallPlugin(target, cfg))
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'upgrade': {
-        const target = String(body.pkg || '').trim()
-        if (!target) return sendJson(res, 400, { ok: false, error: '缺少 pkg' })
-        const result = await withMutationLock(() => upgradePlugin(target, cfg))
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      case 'restart': {
-        if (!trustedRestartRequest(req)) {
-          return sendJson(res, 403, { ok: false, error: '拒绝跨源重启请求' })
-        }
-        const result = scheduleRestart(servingPort(req))
-        return sendJson(res, 200, { ok: true, ...result })
-      }
-
-      default:
-        return sendJson(res, 404, { ok: false, error: `未知 method: ${method}` })
-    }
-  } catch (err) {
-    return sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
-  }
-}
-
-async function loadRegistrySafe(cfg: Config, force?: boolean) {
-  const { loadRegistry } = await import('./core/registry.js')
-  return loadRegistry(cfg, { force })
-}
-
-function boolArg(v: unknown): boolean {
-  return v === true || v === 'true' || v === 1 || v === '1'
-}
-
-function readBody(req: IncomingMessage, maxBytes = 1 << 20): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let size = 0
-    req.on('data', (c: Buffer) => {
-      size += c.length
-      if (size > maxBytes) {
-        reject(new Error('请求体过大'))
-        req.destroy()
-        return
-      }
-      chunks.push(c)
-    })
-    req.on('end', () => {
-      if (!chunks.length) return resolve({})
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
-      } catch {
-        resolve({})
-      }
-    })
-    req.on('error', reject)
-  })
-}
-
-function sendJson(res: ServerResponse, status: number, value: unknown): void {
-  const body = JSON.stringify(value)
-  res.writeHead(status, {
-    'content-type': 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(body),
-    'cache-control': 'no-store',
-  })
-  res.end(body)
 }
