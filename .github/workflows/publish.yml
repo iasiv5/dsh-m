@@ -20,6 +20,9 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org/'
 
+      - name: Install deps (prepare/build toolchain)
+        run: npm ci --no-audit --no-fund
+
       - name: Ensure npm >= 11.5.5 (trusted publishing requirement)
         run: npm install -g npm@latest
 
