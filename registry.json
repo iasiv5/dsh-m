@@ -78,6 +78,17 @@
       "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
     },
     {
+      "id": "dsh-auth",
+      "name": "DSH Auth",
+      "description": "DSH Web 管理员认证插件：Argon2id 口令、可撤销会话、双语界面，经 Caddy forward_auth 边缘保护页面/API/下载/SSE/WebSocket，Harness 保持仅回环监听。",
+      "category": "tools",
+      "tags": ["认证", "安全"],
+      "source": "npm",
+      "npm": "dsh-auth",
+      "github": "hxy91819/dsh-auth",
+      "homepage": "https://github.com/hxy91819/dsh-auth"
+    },
+    {
       "id": "dsh-m",
       "name": "DSH Marketplace",
       "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
