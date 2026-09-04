@@ -45,13 +45,13 @@ const CSS = `
 .dshm-spacer{flex:1}
 .dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
-.dshm-err{color:var(--dsw-alias-state-danger-primary,#dc2626);font-size:12px;line-height:18px}
+.dshm-err{color:var(--dsw-alias-state-error-primary,#b91c1c);font-size:12px;line-height:18px}
 .dshm-btn{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-3,#fff);color:var(--dsw-alias-label-primary,inherit);border-radius:8px;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
 .dshm-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-btn:disabled{opacity:.5;cursor:default}
 .dshm-btn.primary{background:var(--dsw-alias-interactive-bg-selected,#4f46e5);border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);color:#fff}
 .dshm-btn.primary:hover{filter:brightness(1.08)}
-.dshm-btn.danger{color:var(--dsw-alias-state-danger-primary,#dc2626);border-color:var(--dsw-alias-state-danger-primary,#dc2626)}
+.dshm-btn.danger{color:var(--dsw-alias-state-error-primary,#b91c1c);border-color:var(--dsw-alias-state-error-primary,#b91c1c)}
 .dshm-btn.sm{padding:3px 9px;font-size:11px}
 .dshm-input{flex:1;min-width:120px;border:1px solid var(--dsw-alias-border-l2,#c7d2fe);background:var(--dsw-alias-bg-layer-2,transparent);color:var(--dsw-alias-label-primary,inherit);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;outline:none}
 .dshm-input:focus{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
@@ -67,14 +67,14 @@ const CSS = `
 .dshm-top{display:flex;align-items:center;gap:8px;min-width:0}
 .dshm-name{flex:1;min-width:0;font-weight:600;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dshm-badge{flex:none;font-size:11px;line-height:16px;padding:0 6px;border-radius:999px;background:var(--dsw-alias-state-success-tertiary,#ecfdf5);color:var(--dsw-alias-state-success-primary,#047857)}
-.dshm-badge.warn{background:var(--dsw-alias-state-warning-tertiary,#fffbeb);color:var(--dsw-alias-state-warning-primary,#b45309)}
-.dshm-badge.info{background:var(--dsw-alias-brand-primary,#4f46e5);color:#fff;border:0}
-.dshm-badge.err{background:var(--dsw-alias-state-danger-tertiary,#fef2f2);color:var(--dsw-alias-state-danger-primary,#dc2626)}
+.dshm-badge.warn{background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309)}
+.dshm-badge.info{background:var(--dsw-alias-state-business-tertiary,#eef2ff);color:var(--dsw-alias-state-business-primary,#4338ca)}
+.dshm-badge.err{background:var(--dsw-alias-state-error-secondary,#fee2e2);color:var(--dsw-alias-state-error-primary,#b91c1c)}
 .dshm-desc{color:var(--dsw-alias-label-tertiary,#6b7280);font-size:12px;line-height:18px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dshm-sub{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
 .dshm-detail{margin-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-.dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warning-tertiary,#fffbeb);color:var(--dsw-alias-state-warning-primary,#b45309);font-size:12px}
+.dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309);font-size:12px}
 .dshm-banner .dshm-banner-text{flex:1}
 .dshm-row{display:flex;align-items:center;gap:8px}
 .dshm-kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;font-size:12px}
@@ -702,7 +702,7 @@ function MarketPanel({ onClose }) {
         tab === "settings" ? h(SettingsTab, { notify }) : null,
       ),
       toast
-        ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-danger-tertiary,#fef2f2)", color: "var(--dsw-alias-state-danger-primary,#dc2626)" } : null },
+        ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-error-secondary,#fee2e2)", color: "var(--dsw-alias-state-error-primary,#b91c1c)" } : null },
             h("span", { className: "dshm-banner-text" }, toast.text))
         : null,
       banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null) }) : null,
