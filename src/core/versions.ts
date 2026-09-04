@@ -1,9 +1,10 @@
 /**
  * 最新版本解析（DESIGN.md §3：版本不写死，运行时实查）。
  * npm：registry /latest（pnpm 安装本身会按 lock integrity 校验 tarball）。
- * GitHub：api.github.com 解析 HEAD commit SHA（未认证限额 60 次/小时，自用足够）。
+ * GitHub：优先最新 release/tag（更新提示只跟稳定版走，不跟 main HEAD——中间提交可能不稳定）；
+ * 未认证限额 60 次/小时，自用足够。
  */
-import { fetchJsonLimited } from './httpx.js'
+import { fetchJsonLimited, type HttpError } from './httpx.js'
 
 export interface NpmLatest {
   version: string
@@ -27,15 +28,52 @@ export async function npmLatest(pkg: string, timeoutMs = 20_000): Promise<NpmLat
   }
 }
 
-export async function githubHeadSha(repo: string, timeoutMs = 20_000): Promise<string> {
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
-  const data = await fetchJsonLimited<{ sha?: unknown }>(`https://api.github.com/repos/${repo}/commits/HEAD`, {
+export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000): Promise<string> {
+  // commits/{ref} 会自动解引用 annotated tag，返回的才是可用于 #sha 锁定的 commit
+  const data = await fetchJsonLimited<{ sha?: unknown }>(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(tag)}`, {
     timeoutMs,
     headers: { accept: 'application/vnd.github+json' },
   })
   const sha = typeof data.sha === 'string' ? data.sha : ''
-  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`GitHub 未返回有效 SHA: ${repo}`)
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`GitHub 未返回有效 SHA: ${repo}@${tag}`)
   return sha
+}
+
+export interface GithubTag {
+  tag: string
+  /** tag 指向的 commit SHA（可直接用于 github:owner/repo#sha 锁定） */
+  sha: string
+}
+
+/** GitHub 来源的“最新稳定点”：优先最新 release（排除 draft/prerelease），无则回退 tags 列表首项。 */
+export async function githubLatestTag(repo: string, timeoutMs = 20_000): Promise<GithubTag> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
+  const headers = { accept: 'application/vnd.github+json' }
+
+  // 1) 最新 release（404 = 仓库从未发过 release → 回退 tags）
+  try {
+    const rel = await fetchJsonLimited<{ tag_name?: unknown }>(
+      `https://api.github.com/repos/${repo}/releases/latest`,
+      { timeoutMs, headers },
+    )
+    const tag = typeof rel.tag_name === 'string' ? rel.tag_name.trim() : ''
+    if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs) }
+  } catch (err) {
+    const status = (err as HttpError).status
+    if (status !== 404) throw err
+  }
+
+  // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）
+  const tags = await fetchJsonLimited<Array<{ name?: unknown; commit?: { sha?: unknown } }>>(
+    `https://api.github.com/repos/${repo}/tags`,
+    { timeoutMs, headers },
+  )
+  if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
+  const first = tags[0]
+  const name = typeof first.name === 'string' ? first.name : ''
+  const sha = first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : ''
+  if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`tag 信息无效: ${repo}`)
+  return { tag: name, sha }
 }
 
 export function isNewerVersion(candidate: string, current: string): boolean {

@@ -14,10 +14,11 @@ import {
 } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig, type RegistryEntry } from './registry.js'
-import { githubHeadSha, isNewerVersion, npmLatest } from './versions.js'
+import { githubLatestTag, isNewerVersion, npmLatest } from './versions.js'
 
 export interface MarketItem extends RegistryEntry {
   latestVersion?: string
+  latestTag?: string
   latestSha?: string
   installed: boolean
   installedPkg?: string
@@ -36,6 +37,7 @@ export interface MarketResult {
 
 export interface InstalledItem extends InstalledPlugin {
   registryId?: string
+  latestTag?: string
   registryGithub?: string | null
   registryIcon?: string | null
   latestVersion?: string
@@ -78,7 +80,8 @@ export async function listMarket(cfg: RegistryConfig = {}, opts: { force?: boole
         item.latestVersion = latest.version
         if (inst?.version && isNewerVersion(latest.version, inst.version)) item.outdated = true
       } else if (entry.github) {
-        const sha = await githubHeadSha(entry.github, timeoutMs)
+        const { tag, sha } = await githubLatestTag(entry.github, timeoutMs)
+        item.latestTag = tag
         item.latestSha = sha
         if (inst && !inst.spec.includes(sha)) item.outdated = true
       }
@@ -126,7 +129,8 @@ export async function listInstalledWithMeta(cfg: RegistryConfig = {}): Promise<{
       } else if (it.source === 'github') {
         const m = /^github:([^#]+)/.exec(it.spec)
         if (m) {
-          const sha = await githubHeadSha(m[1], timeoutMs)
+          const { tag, sha } = await githubLatestTag(m[1], timeoutMs)
+          item.latestTag = tag
           item.outdated = !it.spec.includes(sha)
         }
       }
@@ -186,7 +190,7 @@ export async function installEntry(
     }
   }
   if (entry.github) {
-    const sha = await githubHeadSha(entry.github, timeoutMs)
+    const { tag, sha } = await githubLatestTag(entry.github, timeoutMs)
     const spec = `github:${entry.github}#${sha}`
     const res = await addDshPlugin(spec)
     const deps = await readProfileDeps(webProfileDir())

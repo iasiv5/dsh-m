@@ -403,7 +403,7 @@ function MarketTab({ notify, onCount }) {
                 ],
                 desc: it.description,
                 sub: [
-                  it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
+                  it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
                   it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
                   it.latestError ? lookup("version.failed") : null,
                 ].filter(Boolean).join(" · "),
@@ -412,7 +412,7 @@ function MarketTab({ notify, onCount }) {
                 detail: DetailRows([
                   [lookup("detail.id"), it.id],
                   [lookup("detail.source"), it.source === "npm" ? `npm · ${it.npm}` : `GitHub · ${it.github}`],
-                  [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestSha ? it.latestSha : it.latestError || "—"],
+                  [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError || "—"],
                   [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
                   [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
                   it.latestError ? [lookup("version.failed"), it.latestError] : null,
@@ -571,7 +571,7 @@ function InstalledTab({ notify, installed }) {
           icon: h(Icon, { entry: { name: it.name, github: it.registryGithub || it.githubRepo || (it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null), icon: null } }),
           name: it.name,
           badges: [
-            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${it.latestVersion ? `v${it.latestVersion}` : ""}`.trim()) : null,
+            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : "")}`.trim()) : null,
             it.registryId ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market")) : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
           ],
           desc: it.description || "（无描述）",
@@ -586,7 +586,7 @@ function InstalledTab({ notify, installed }) {
             : DetailRows([
                 [lookup("detail.pkg"), it.pkg],
                 [lookup("detail.spec"), it.spec],
-                [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : "—"],
+                [lookup("detail.latest"), it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : "—")],
                 [lookup("detail.listed"), it.registryId || lookup("detail.listed.no")],
                 [lookup("detail.path"), it.path],
                 guard.warn ? [lookup("detail.note"), guard.warn] : null,

@@ -223,6 +223,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
         version: it.version,
         source: it.source,
         latestVersion: it.latestVersion ?? null,
+        latestTag: it.latestTag ?? null,
         outdated: it.outdated,
       }))
       return cloneJson({ items, outdatedCount: items.filter((it) => it.outdated).length })
@@ -306,7 +307,7 @@ interface SearchOut {
   total?: number
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; outdated?: boolean; registryId?: string | null }>
+  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null }>
 }
 interface InstallOut {
   pkg?: string
@@ -368,7 +369,7 @@ function renderOutdated(out: ListOut): string {
   const outdated = (out.items || []).filter((it) => it.outdated)
   if (!out.items?.length) return 'web profile 没有已装插件。'
   if (!outdated.length) return `全部 ${out.items.length} 个插件均已是最新版本。对用户一句短话。`
-  const lines = outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}`)
+  const lines = outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}`)
   return [
     `${outdated.length}/${out.items.length} 个插件可升级：`,
     lines.join('\n'),
