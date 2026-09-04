@@ -19,6 +19,7 @@
     "cordis.patch.yml",
     "registry.json",
     "README.md",
+    "README.en.md",
     "DESIGN.md",
     "LICENSE"
   ],
