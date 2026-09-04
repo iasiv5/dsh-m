@@ -1223,6 +1223,11 @@ function SettingsTab({ notify, onRegistryChanged }) {
 }
 
 function Section(title, sub, ...children) {
+  // 兼容无 sub 的调用：第一个参数不是字符串时视为 children，避免内容被塞进标题行右侧
+  if (sub != null && typeof sub !== "string") {
+    children = [sub, ...children];
+    sub = null;
+  }
   return h(
     "div",
     { className: "dshm-section" },
