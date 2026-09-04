@@ -12,13 +12,13 @@ export interface NpmLatest {
   tarball?: string
 }
 
-export async function npmLatest(pkg: string, timeoutMs = 20_000): Promise<NpmLatest> {
+export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmLatest> {
   // 允许 scoped 包名：@scope/name（isSafePkgName 同款字符集）
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   const data = await fetchJsonLimited<{
     version?: unknown
     dist?: { integrity?: unknown; tarball?: unknown }
-  }>(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/latest`, { timeoutMs })
+  }>(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/latest`, { timeoutMs, signal })
   const version = typeof data.version === 'string' ? data.version : ''
   if (!version) throw new Error(`npm 未返回版本: ${pkg}`)
   return {
@@ -28,10 +28,11 @@ export async function npmLatest(pkg: string, timeoutMs = 20_000): Promise<NpmLat
   }
 }
 
-export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000): Promise<string> {
+export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<string> {
   // commits/{ref} 会自动解引用 annotated tag，返回的才是可用于 #sha 锁定的 commit
   const data = await fetchJsonLimited<{ sha?: unknown }>(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(tag)}`, {
     timeoutMs,
+    signal,
     headers: { accept: 'application/vnd.github+json' },
   })
   const sha = typeof data.sha === 'string' ? data.sha : ''
@@ -46,7 +47,7 @@ export interface GithubTag {
 }
 
 /** GitHub 来源的“最新稳定点”：优先最新 release（排除 draft/prerelease），无则回退 tags 列表首项。 */
-export async function githubLatestTag(repo: string, timeoutMs = 20_000): Promise<GithubTag> {
+export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<GithubTag> {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
   const headers = { accept: 'application/vnd.github+json' }
 
@@ -54,10 +55,10 @@ export async function githubLatestTag(repo: string, timeoutMs = 20_000): Promise
   try {
     const rel = await fetchJsonLimited<{ tag_name?: unknown }>(
       `https://api.github.com/repos/${repo}/releases/latest`,
-      { timeoutMs, headers },
+      { timeoutMs, signal, headers },
     )
     const tag = typeof rel.tag_name === 'string' ? rel.tag_name.trim() : ''
-    if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs) }
+    if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs, signal) }
   } catch (err) {
     const status = (err as HttpError).status
     if (status !== 404) throw err
@@ -66,7 +67,7 @@ export async function githubLatestTag(repo: string, timeoutMs = 20_000): Promise
   // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）
   const tags = await fetchJsonLimited<Array<{ name?: unknown; commit?: { sha?: unknown } }>>(
     `https://api.github.com/repos/${repo}/tags`,
-    { timeoutMs, headers },
+    { timeoutMs, signal, headers },
   )
   if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
   const first = tags[0]

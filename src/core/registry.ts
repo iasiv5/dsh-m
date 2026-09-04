@@ -114,8 +114,8 @@ export interface RegistryConfig {
   cacheTtlMin?: number
 }
 
-export function registrySummary(loaded: LoadedRegistry): RegistrySummary {
-  return { isDefault: loaded.isDefault, status: loaded.status, stale: loaded.stale }
+export function registrySummary(state: RegistryState): RegistrySummary {
+  return { isDefault: state.isDefault, status: state.status, stale: state.stale }
 }
 
 // ---------- 地址解析 ----------

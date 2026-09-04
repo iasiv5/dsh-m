@@ -5,8 +5,16 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { installTimeoutMs } from './core/env.js'
-import { installFromRegistry, listInstalledWithMeta, uninstallPlugin, upgradePlugin, withMutationLock } from './core/market.js'
-import type { RegistryConfig, RegistryEntry } from './core/registry.js'
+import {
+  installFromRegistry,
+  listInstalledWithMeta,
+  listMarket,
+  uninstallPlugin,
+  upgradePlugin,
+  withMutationLock,
+  type InstalledResult,
+} from './core/market.js'
+import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
 import { scheduleRestart } from './core/restart.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
@@ -18,8 +26,21 @@ export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   other: '其他',
 }
 
+/** 可注入 market 依赖（测试用；生产走真实 core）。 */
+export interface ToolMarketDeps {
+  listMarket?: typeof listMarket
+  listInstalledWithMeta?: typeof listInstalledWithMeta
+  installFromRegistry?: typeof installFromRegistry
+  uninstallPlugin?: typeof uninstallPlugin
+  upgradePlugin?: typeof upgradePlugin
+}
+
 function cloneJson(value: unknown) {
   return JSON.parse(JSON.stringify(value))
+}
+
+function summaryOf(state: RegistryState): { isDefault: boolean; status: string; stale: boolean } {
+  return { isDefault: state.isDefault, status: state.status, stale: state.stale }
 }
 
 function matchInstalledByEntry(
@@ -36,8 +57,15 @@ function matchInstalledByEntry(
   })
 }
 
-export function registerTools(ctx: Context, cfg: RegistryConfig): void {
+export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarketDeps = {}): void {
   const timeoutMs = cfg.timeoutMs ?? 20_000
+  const m = {
+    listMarket: deps.listMarket ?? listMarket,
+    listInstalledWithMeta: deps.listInstalledWithMeta ?? listInstalledWithMeta,
+    installFromRegistry: deps.installFromRegistry ?? installFromRegistry,
+    uninstallPlugin: deps.uninstallPlugin ?? uninstallPlugin,
+    upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
+  }
 
   ctx.tools.register(defineTool({
     name: 'dshm_search',
@@ -69,42 +97,43 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
     }),
     timeoutMs: timeoutMs + 5000,
     async execute(args) {
-      const registry = await import('./core/registry.js')
-      const installed = await import('./core/installed.js')
-      const loaded = await registry.loadRegistry(cfg)
-      const inst = await installed.listInstalledPlugins()
-      const query = String(args.query || '').trim().toLowerCase()
-      const category = typeof args.category === 'string' && args.category ? args.category : null
-      let items = loaded.registry.plugins.filter((e) => {
-        if (category && e.category !== category) return false
-        if (!query) return true
-        const hay = `${e.id} ${e.name} ${e.description} ${e.tags.join(' ')}`.toLowerCase()
-        return hay.includes(query)
+      const category = typeof args.category === 'string' && args.category ? (args.category as RegistryEntry['category']) : null
+      const rawLimit = Number(args.limit)
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? clamp(rawLimit, 1, 80) : undefined
+      // metadata-only：agent 卡片不需要 latest；与 Host GUI 共用 host namespace
+      const result = await m.listMarket(cfg, {
+        query: String(args.query || ''),
+        category,
+        offset: 0,
+        limit,
+        withLatest: false,
+        namespace: 'host',
       })
-      const total = items.length
-      const limit = Number.isFinite(Number(args.limit)) && Number(args.limit) > 0 ? clamp(Number(args.limit), 1, 80) : total
-      items = items.slice(0, limit)
+      const installed = await import('./core/installed.js')
+      const inst = await installed.listInstalledPlugins()
+      const merged = result.items.map((e) => {
+        const i = matchInstalledByEntry(e, inst.items)
+        return { ...e, installed: Boolean(i), installedPkg: i?.pkg, installedVersion: i?.version }
+      })
       return cloneJson({
         query: String(args.query || ''),
         category,
-        total,
-        items: items.map((e) => {
-          const i = matchInstalledByEntry(e, inst.items)
-          return {
-            id: e.id,
-            name: e.name,
-            description: e.description,
-            category: e.category,
-            tags: e.tags,
-            source: e.source,
-            npm: e.npm,
-            github: e.github,
-            homepage: e.homepage,
-            installed: Boolean(i),
-            installedPkg: i?.pkg,
-            installedVersion: i?.version,
-          }
-        }),
+        total: result.total,
+        registry: summaryOf(result.registryState),
+        items: merged.map((e) => ({
+          id: e.id,
+          name: e.name,
+          description: e.description,
+          category: e.category,
+          tags: e.tags,
+          source: e.source,
+          npm: e.npm,
+          github: e.github,
+          homepage: e.homepage,
+          installed: e.installed,
+          installedPkg: e.installedPkg,
+          installedVersion: e.installedVersion,
+        })),
       })
     },
   }))
@@ -127,8 +156,9 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
     }),
     timeoutMs: timeoutMs + 5000,
     async execute() {
-      const result = await listInstalledWithMeta(cfg)
+      const result: InstalledResult = await m.listInstalledWithMeta(cfg, { namespace: 'host' })
       return cloneJson({
+        registry: summaryOf(result.registryState),
         profileDir: result.profileDir,
         others: result.others,
         items: result.items.map((it) => ({
@@ -168,7 +198,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
       const id = String(args.id || '').trim()
       if (!id) throw new Error('缺少收录 id')
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
-      return cloneJson(await withMutationLock(() => installFromRegistry(id, cfg, { version })))
+      return cloneJson(await withMutationLock(() => m.installFromRegistry(id, cfg, { version, namespace: 'host' })))
     },
   }))
 
@@ -194,7 +224,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
-      return cloneJson(await withMutationLock(() => uninstallPlugin(target, cfg)))
+      return cloneJson(await withMutationLock(() => m.uninstallPlugin(target, cfg, { namespace: 'host' })))
     },
   }))
 
@@ -216,7 +246,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
     },
     timeoutMs: timeoutMs + 10_000,
     async execute() {
-      const result = await listInstalledWithMeta(cfg)
+      const result: InstalledResult = await m.listInstalledWithMeta(cfg, { namespace: 'host' })
       const items = result.items.map((it) => ({
         pkg: it.pkg,
         name: it.name,
@@ -226,7 +256,11 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
         latestTag: it.latestTag ?? null,
         outdated: it.outdated,
       }))
-      return cloneJson({ items, outdatedCount: items.filter((it) => it.outdated).length })
+      return cloneJson({
+        registry: summaryOf(result.registryState),
+        items,
+        outdatedCount: items.filter((it) => it.outdated).length,
+      })
     },
   }))
 
@@ -252,7 +286,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig): void {
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
-      return cloneJson(await withMutationLock(() => upgradePlugin(target, cfg)))
+      return cloneJson(await withMutationLock(() => m.upgradePlugin(target, cfg, { namespace: 'host' })))
     },
   }))
 
