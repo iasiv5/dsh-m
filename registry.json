@@ -2,6 +2,17 @@
   "version": 1,
   "plugins": [
     {
+      "id": "dsh-m",
+      "name": "DSH Marketplace",
+      "description": "可自定义 Registry 内容的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，一站搞定。",
+      "category": "market",
+      "tags": ["市场", "插件管理"],
+      "source": "npm",
+      "npm": "dsh-m",
+      "github": "iasiv5/dsh-m",
+      "homepage": "https://github.com/iasiv5/dsh-m"
+    },
+    {
       "id": "dsh-skins",
       "name": "DSH Skins",
       "description": "DeepSeek Harness Web 界面主题/皮肤管理插件，可切换多种视觉风格。",
@@ -22,17 +33,6 @@
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
       "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
-    },
-    {
-      "id": "dsh-m",
-      "name": "DSH Marketplace",
-      "description": "可自定义 Registry 内容的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，一站搞定。",
-      "category": "market",
-      "tags": ["市场", "插件管理"],
-      "source": "npm",
-      "npm": "dsh-m",
-      "github": "iasiv5/dsh-m",
-      "homepage": "https://github.com/iasiv5/dsh-m"
     },
     {
       "id": "dsh-skip-browser-auth",
