@@ -10,6 +10,11 @@
 
 可自定义收录清单（Registry）的 DeepSeek Harness (DSH) 插件市场：**收录 · 安装 · 卸载 · 升级**，全部本机完成。以 DSH web 插件形态运行——侧栏「插件市场」打开三视图面板，同时提供 `dshm_*` agent 工具与 `dshm` CLI。
 
+<div align="center">
+  <img src="./docs/images/marketplace.webp" alt="侧栏「插件市场」面板——市场视图：收录卡片流、关键词搜索与分类筛选" width="100%">
+  <p><sub>侧栏「插件市场」· 市场视图：收录卡片流 · 搜索 · 分类筛选 · 展开即装</sub></p>
+</div>
+
 ## 30 秒上手
 
 **把下面整段贴给 agent 即可完成安装**：
