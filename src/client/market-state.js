@@ -6,7 +6,7 @@
 
 export const MARKET_PAGE_SIZE = 50
 
-const CATEGORIES = ['market', 'tools', 'ui', 'search', 'media', 'other']
+const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
 
 function toSafeInt(value, fallback, min, max) {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback

@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 
 import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin } from '../lib/core/market.js'
 
-const CATEGORIES = ['market', 'tools', 'ui', 'search', 'media', 'other']
+const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function makeThousand() {
@@ -15,7 +15,7 @@ function makeThousand() {
     id: `p-${i}`,
     name: `P${i}`,
     description: `d${i}`,
-    category: CATEGORIES[i % 6],
+    category: CATEGORIES[i % 5],
     tags: [],
     source: 'npm',
     npm: `pkg-${i}`,
@@ -136,7 +136,7 @@ describe('listMarket：服务端分页', () => {
     assert.equal(last.items.length, 50)
 
     const cat = await listMarket(cfg, { category: 'market', withLatest: false, limit: 5 }, deps)
-    assert.equal(cat.total, 167)
+    assert.equal(cat.total, 200)
     assert.ok(cat.items.every((it) => it.category === 'market'))
   })
 
@@ -387,7 +387,7 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
       ['search'],
       { listMarket: async () => ({
         items: [], total: 0, offset: 0, limit: 80,
-        categoryCounts: { market: 0, tools: 0, ui: 0, search: 0, media: 0, other: 0 },
+        categoryCounts: { market: 0, tools: 0, ui: 0, search: 0, other: 0 },
         registryState: unavailableLoaded('/tmp/custom.json'),
         installedComplete: false, latestComplete: false, latestTimedOut: false,
       }) },

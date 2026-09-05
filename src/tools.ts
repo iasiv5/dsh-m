@@ -22,7 +22,6 @@ export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   tools: '工具',
   ui: '界面',
   search: '搜索',
-  media: '多媒体',
   other: '其他',
 }
 

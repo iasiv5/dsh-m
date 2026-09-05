@@ -87,7 +87,7 @@ function setup(overrides = {}) {
           total: 2,
           offset: opts?.offset ?? 0,
           limit: opts?.limit ?? 50,
-          categoryCounts: { market: 0, tools: 2, ui: 0, search: 0, media: 0, other: 0 },
+          categoryCounts: { market: 0, tools: 2, ui: 0, search: 0, other: 0 },
           registryState: {
             configuredAddress: '', activeAddress: null, source: 'bundled', status: 'stale',
             isDefault: true, stale: true, fetchedAt: null, errors: [], count: 2,

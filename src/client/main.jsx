@@ -17,7 +17,7 @@ const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normali
 const ZH = {
   "market.title": "插件市场",
   "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
-  "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.media": "多媒体", "cat.other": "其他",
+  "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.other": "其他",
   "search.ph": "搜索名称 / 描述 / 标签…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
   "market.loading": "加载收录清单中… ", "market.empty": "没有匹配的收录条目",
@@ -86,7 +86,7 @@ const ZH = {
 const EN = {
   "market.title": "Plugin Marketplace", "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
-  "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.media": "Media", "cat.other": "Other",
+  "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.other": "Other",
   "search.ph": "Search name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
   "market.loading": "Loading listings… ", "market.empty": "No matching listings",
@@ -167,7 +167,7 @@ function lookup(key, params) {
   return interpolate(dict[key] ?? ZH[key] ?? key, params);
 }
 
-const CATEGORIES = ["market", "tools", "ui", "search", "media", "other"];
+const CATEGORIES = ["market", "tools", "ui", "search", "other"];
 
 // ---------- 样式（跟随 DSH Web 主题变量，深浅色自适应） ----------
 const CSS = `

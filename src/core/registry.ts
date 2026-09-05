@@ -11,7 +11,7 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'nod
 import { cacheDir } from './env.js'
 import { decodeUtf8Fatal, fetchJsonLimitedMeta, type HttpError } from './httpx.js'
 
-export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'media', 'other'] as const
+export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other'] as const
 export type Category = (typeof CATEGORIES)[number]
 
 /** 容量上限：2 MiB 是原始 UTF-8 bytes（不是字符数）；条目超限拒绝整份清单。 */

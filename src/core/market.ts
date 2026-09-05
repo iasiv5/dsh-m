@@ -137,7 +137,7 @@ export async function mapWithConcurrency<T, R>(
 }
 
 function zeroCounts(): CategoryCounts {
-  return { market: 0, tools: 0, ui: 0, search: 0, media: 0, other: 0 }
+  return { market: 0, tools: 0, ui: 0, search: 0, other: 0 }
 }
 
 function clampLimit(raw: unknown, max: number): number {

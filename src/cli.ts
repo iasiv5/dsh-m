@@ -118,7 +118,7 @@ const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
 用法：dshm <命令> [参数]
 
 只读命令：
-  dshm search [--query 关键词] [--category market|tools|ui|search|media|other] [--limit N]
+  dshm search [--query 关键词] [--category market|tools|ui|search|other] [--limit N]
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
