@@ -105,6 +105,29 @@ export function assertNpmIntegrity(expected: string, actual: string | null, pkg:
   }
 }
 
+/**
+ * 解析 pnpm lockfile v9 顶层的 `overrides:` 映射（键可带引号，值为版本串）。
+ * 无该区块返回 {}。只认 pnpm 自己生成的两空格顶层缩进；单条目解析失败即停（宁可少配，
+ * 不可错配）。frozen 自愈用它把 lockfile 记录的 overrides 还原进 manifest（2026-09-05 事故）。
+ */
+export function readPnpmLockOverrides(lockText: string): Record<string, string> {
+  const lines = lockText.split(/\r?\n/)
+  const start = lines.findIndex((l) => l.trim() === 'overrides:')
+  const result: Record<string, string> = {}
+  if (start === -1) return result
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!
+    if (line.trim() === '') continue
+    if (!/^\s{2}\S/.test(line)) break
+    const m = /^\s{2}(?:'([^']+)'|"([^"]+)"|([^\s:][^:]*?))\s*:\s*(.+?)\s*$/.exec(line)
+    if (!m) break
+    const key = m[1] ?? m[2] ?? m[3]
+    if (key === undefined) break
+    result[key] = m[4]!
+  }
+  return result
+}
+
 // ---------- best-effort 快照恢复 ----------
 
 export interface ProfileFileSnapshot {
@@ -127,6 +150,8 @@ async function atomicWriteFile(path: string, bytes: Buffer): Promise<void> {
   await rm(path, { force: true })
   await rename(tmp, path)
 }
+
+export { atomicWriteFile }
 
 /** 记录 profile 关键文件的字节快照（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）。 */
 export async function snapshotFiles(paths: string[]): Promise<ProfileFileSnapshot[]> {

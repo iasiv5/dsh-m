@@ -53,6 +53,20 @@ export async function npmVersion(pkg: string, version: string, timeoutMs = 20_00
   }
 }
 
+/**
+ * 拉取完整 packument（NO_MATCHING_VERSION 退避重试前的预热/校验原语）。
+ * 返回该包已知的全部版本号；解析不出 versions 时返回空列表（不抛）。
+ */
+export async function npmPackument(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<{ versions: string[] }> {
+  if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
+  const data = await fetchJsonLimited<{ versions?: unknown }>(
+    `https://registry.npmjs.org/${encodeURIComponent(pkg)}`,
+    { timeoutMs, signal, maxBytes: 8 * 1024 * 1024 },
+  )
+  const versions = data?.versions !== null && typeof data?.versions === 'object' ? Object.keys(data.versions as object) : []
+  return { versions }
+}
+
 export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmLatest> {
   // 允许 scoped 包名：@scope/name（isSafePkgName 同款字符集）
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
