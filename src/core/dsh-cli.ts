@@ -345,6 +345,46 @@ export function rewritePnpmError(err: unknown): Error {
   return err instanceof Error ? err : new Error(text)
 }
 
+/**
+ * 失败摘要：命令失败时从完整输出里提取可诊断的行，而不是盲取末尾。
+ * 2026-09-05 实证（dsh-better-sidebar 安装失败）：pnpm ndjson 错误行 ~1.2KB，
+ * 错误码/信息/hint 在行首，尾截 800 只剩纯栈帧——`ERR_PNPM_IGNORED_BUILDS`
+ * 与 `node-pty` 关键字全部丢失，isPrepareBlocked 匹配不到，
+ * dangerouslyAllowAllBuilds 自愈重试从未触发，用户只看到一屏栈。
+ * 优先级：ndjson 错误行（code — message — hint）→ 含 ERR_ 码的行 + 尾部 → 纯尾部。
+ */
+export function errorDigest(out: string, maxChars = 800): string {
+  const text = out.trim()
+  if (text === '') return ''
+  if (text.length <= maxChars) return text
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim()
+    if (!line.startsWith('{') || !line.includes('"level":"error"')) continue
+    try {
+      const doc = JSON.parse(line) as {
+        code?: unknown
+        hint?: unknown
+        err?: { message?: unknown; code?: unknown }
+      }
+      const code = typeof doc.code === 'string' && doc.code !== '' ? doc.code
+        : typeof doc.err?.code === 'string' ? doc.err.code : null
+      const message = typeof doc.err?.message === 'string' ? doc.err.message : null
+      const hint = typeof doc.hint === 'string' ? doc.hint : null
+      const parts = [code, message, hint].filter((p): p is string => p !== null && p !== '')
+      if (parts.length > 0) return parts.join(' — ')
+    } catch {
+      /* 非 JSON 行，继续向前找 */
+    }
+  }
+  const errCodeLines = lines.filter((l) => /ERR_[A-Z0-9_]+/.test(l)).slice(-5)
+  if (errCodeLines.length > 0) {
+    const digest = [...errCodeLines, text.slice(-maxChars)].join('\n').slice(-maxChars * 2)
+    return digest
+  }
+  return text.slice(-maxChars)
+}
+
 export async function runCommand(
   command: string,
   args: string[],
@@ -405,7 +445,7 @@ export async function runCommand(
     child.on('error', (err) => finish(err))
     child.on('close', (code) => {
       if (code === 0) finish()
-      else finish(new Error(`命令失败 (exit ${code}): ${out.trim().slice(-800) || 'no output'}`))
+      else finish(new Error(`命令失败 (exit ${code}): ${errorDigest(out) || 'no output'}`))
     })
   })
 }
