@@ -1,6 +1,6 @@
 {
   "name": "dsh-m",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "DSH Marketplace — 个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件",
   "license": "MIT",
   "type": "module",

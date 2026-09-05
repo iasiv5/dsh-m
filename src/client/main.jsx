@@ -215,6 +215,7 @@ const CSS = `
 .dshm-detail{margin-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309);font-size:12px}
+.dshm-banner.err{background:rgba(239,68,68,.13);color:var(--dsw-alias-state-error-primary,#b91c1c)}
 .dshm-banner .dshm-banner-text{flex:1;max-height:140px;overflow:auto;overscroll-behavior:contain;white-space:pre-wrap;word-break:break-word;line-height:18px}
 .dshm-row{display:flex;align-items:center;gap:8px}
 .dshm-kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:12px;align-items:baseline}
@@ -1314,7 +1315,8 @@ function MarketPanel({ onClose }) {
   }, [onClose]);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 6000);
+    // err 文案可能带回滚/自愈长报告，6s 读不完；ok 6s、err 15s
+    const t = setTimeout(() => setToast(null), toast.kind === "err" ? 15000 : 6000);
     return () => clearTimeout(t);
   }, [toast]);
   // needsRestart 为 true 才出重启横幅（安装/卸载/升级/自更新）；registry 配置只 toast
@@ -1360,7 +1362,7 @@ function MarketPanel({ onClose }) {
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
       ),
       toast
-        ? h("div", { className: `dshm-banner`, style: toast.kind === "err" ? { background: "var(--dsw-alias-state-error-secondary,#fee2e2)", color: "var(--dsw-alias-state-error-primary,#b91c1c)" } : null },
+        ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
             h("span", { className: "dshm-banner-text" }, toast.text))
         : null,
       banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null) }) : null,
