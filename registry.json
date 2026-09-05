@@ -15,7 +15,7 @@
     {
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
-      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步，中英双语。",
+      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步。",
       "category": "tools",
       "tags": ["Copilot", "认证", "模型接入"],
       "source": "npm",
@@ -26,13 +26,24 @@
     {
       "id": "dsh-m",
       "name": "DSH Marketplace",
-      "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
+      "description": "可自定义 Registry 内容的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，一站搞定。",
       "category": "market",
       "tags": ["市场", "插件管理"],
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
       "homepage": "https://github.com/iasiv5/dsh-m"
+    },
+    {
+      "id": "dsh-skip-browser-auth",
+      "name": "DSH Skip Browser Auth",
+      "description": "在已适配版本上替换官方 Connection 提供方，跳过 BrowserAuth，不再需要输入烦人的Token。（当前已适配：0.1.2-rc.1）",
+      "category": "tools",
+      "tags": ["BrowserAuth", "连接", "安全"],
+      "source": "npm",
+      "npm": "@iasiv5/dsh-skip-browser-auth",
+      "github": "iasiv5/dsh-skip-browser-auth",
+      "homepage": "https://github.com/iasiv5/dsh-skip-browser-auth"
     },
     {
       "id": "modsearch",
