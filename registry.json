@@ -7,9 +7,10 @@
       "description": "DeepSeek Harness Web 界面主题/皮肤管理插件，可切换多种视觉风格。",
       "category": "ui",
       "tags": ["主题", "美化"],
-      "source": "github",
-      "github": "iasiv5/skins",
-      "homepage": "https://github.com/iasiv5/skins"
+      "source": "npm",
+      "npm": "@iasiv5/dsh-skins",
+      "github": "iasiv5/dsh-skins",
+      "homepage": "https://github.com/iasiv5/dsh-skins"
     },
     {
       "id": "modsearch",
