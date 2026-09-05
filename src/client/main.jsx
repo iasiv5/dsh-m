@@ -261,6 +261,10 @@ const CSS = `
 .dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-entry svg{flex:none;width:16px;height:16px}
 .dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 收起（rail）态：与宿主设置入口 / dsh-skins 同几何——36×36 圆形、margin 8/10、
+   图标 18、内容水平居中。缺这套会导致收起时图标偏离轴线且行距不齐（实测左偏 ~4px）。 */
+.dshm-entry.rail{width:36px;height:36px;margin:8px 0 10px;padding:0;justify-content:center;border-radius:50%;gap:0}
+.dshm-entry.rail svg{width:18px;height:18px}
 [data-slot="sidebar.footer.action"]{display:flex!important;flex-direction:column;width:100%;min-width:0}
 [data-slot="sidebar.footer.action"]>*{flex:none;min-width:0}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
@@ -1408,10 +1412,11 @@ function MarketIcon() {
 
 function MarketEntry(props) {
   useEffect(() => ensureCss(), []);
+  const rail = !(props && props.wide);
   return h(
     "button",
     {
-      className: "dshm-entry",
+      className: rail ? "dshm-entry rail" : "dshm-entry",
       onClick: () => {
         try {
           mountPanel();
