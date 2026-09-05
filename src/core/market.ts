@@ -758,6 +758,18 @@ export interface InstallResult {
   output: string
 }
 
+/**
+ * 旧版 dsh CLI（save-prefix ^）安装后会把依赖写成 `^x.y.z` 而非精确版本
+ * （2026-09-05 实机实证：升级报「profile 依赖版本 ^0.2.5 与目标 0.2.5 不一致」）。
+ * 仅当 spec 恰好锚定在目标精确版本上（v 本身 / ^v / ~v）才放行；真正的精确性
+ * 不靠 manifest 字符串，而由紧随其后的 lockfile importer 精确解析 + integrity
+ * 比对保证——其它任何 spec 仍然 fail closed。
+ */
+function specAnchoredAtVersion(spec: string, version: string): boolean {
+  const s = String(spec || '').trim()
+  return s === version || s === `^${version}` || s === `~${version}`
+}
+
 /** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。 */
 export async function installFromRegistry(
   id: string,
@@ -824,7 +836,12 @@ export async function installEntry(
       phase = 'verify'
       const depsNow = await d.readProfileDeps(profileDir)
       if (depsNow[pkg] === undefined) throw new Error(`安装后未在 profile 依赖中找到 ${pkg}`)
-      if (depsNow[pkg] !== version) throw new Error(`profile 依赖版本 ${depsNow[pkg]} 与目标 ${version} 不一致`)
+      if (depsNow[pkg] !== version) {
+        if (!specAnchoredAtVersion(depsNow[pkg], version)) {
+          throw new Error(`profile 依赖版本 ${depsNow[pkg]} 与目标 ${version} 不一致`)
+        }
+        healNotes.push(`安装链把依赖写成 range（${depsNow[pkg]}，旧版 CLI save-prefix 行为）；精确性由 lockfile integrity 校验继续保证`)
+      }
       let lockText: string
       try {
         lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')

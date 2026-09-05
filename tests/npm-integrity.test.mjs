@@ -203,6 +203,31 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     assert.equal(res.needsRestart, true)
   })
 
+  it('旧版 CLI 写入锚定 range（^1.2.3）→ 放行，lockfile integrity 继续兜底', async () => {
+    const fakeAdd = async () => {
+      writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '^1.2.3' } }))
+      writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
+      return { output: 'ok', usedAllowAllBuilds: false }
+    }
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '^1.2.3' }) }))
+    assert.equal(res.version, '1.2.3')
+    assert.match(res.output, /\[dsh-m 自愈\] 安装链把依赖写成 range（\^1\.2\.3/)
+  })
+
+  it('~ 锚定 range 同样放行；漂移 spec（1.2.4）仍 fail closed', async () => {
+    const fakeAdd = async () => {
+      writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '~1.2.3' } }))
+      writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
+      return { output: 'ok', usedAllowAllBuilds: false }
+    }
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '~1.2.3' }) }))
+    assert.equal(res.version, '1.2.3')
+    await assert.rejects(
+      () => installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '1.2.4' }) })),
+      (err) => /1\.2\.4 与目标 1\.2\.3 不一致/.test(err.message),
+    )
+  })
+
   it('integrity mismatch → 抛错并 best-effort 回滚到原字节', async () => {
     const originalPkg = JSON.stringify({ dependencies: { existing: '^1.0.0' } })
     const originalLock = 'lockfileVersion: \'9.0\'\npackages:\n  existing@1.0.0:\n    resolution: {integrity: old}\n'
