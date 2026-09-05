@@ -121,6 +121,17 @@
       "npm": "deepseek-harness-dingtalk",
       "github": "sliverp/DeepSeek-harness-dingtalk",
       "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
+    },
+    {
+      "id": "dsh-better-sidebar",
+      "name": "DSH Better Sidebar",
+      "description": "开放的侧边栏底座，支持三方拓展注册新侧边栏页面。内置文件渲染编辑/终端/侧边对话/Git/子代理页面。",
+      "category": "ui",
+      "tags": ["侧边栏", "文件编辑", "终端", "Git"],
+      "source": "npm",
+      "npm": "dsh-better-sidebar",
+      "github": "omdsh-dev/DSH-better-sidebar",
+      "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
     }
   ]
 }
