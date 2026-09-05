@@ -13,6 +13,28 @@
       "homepage": "https://github.com/iasiv5/dsh-skins"
     },
     {
+      "id": "dsh-copilot-auth",
+      "name": "DSH Copilot Auth",
+      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步，中英双语。",
+      "category": "tools",
+      "tags": ["Copilot", "认证", "模型接入"],
+      "source": "npm",
+      "npm": "@inventec/dsh-copilot-auth",
+      "github": "iasiv5/dsh-copilot-auth",
+      "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
+    },
+    {
+      "id": "dsh-m",
+      "name": "DSH Marketplace",
+      "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
+      "category": "market",
+      "tags": ["市场", "插件管理"],
+      "source": "npm",
+      "npm": "dsh-m",
+      "github": "iasiv5/dsh-m",
+      "homepage": "https://github.com/iasiv5/dsh-m"
+    },
+    {
       "id": "modsearch",
       "name": "ModSearch",
       "description": "免费网页搜索、X 搜索与页面抓取插件，支持 Firecrawl、Tavily、Exa 等引擎自动故障切换。",
@@ -22,6 +44,17 @@
       "npm": "@liustack/modsearch",
       "github": "liustack/modsearch",
       "homepage": "https://github.com/liustack/modsearch"
+    },
+    {
+      "id": "dsh-auth",
+      "name": "DSH Auth",
+      "description": "DSH Web 管理员认证插件：Argon2id 口令、可撤销会话、双语界面，经 Caddy forward_auth 边缘保护页面/API/下载/SSE/WebSocket，Harness 保持仅回环监听。",
+      "category": "tools",
+      "tags": ["认证", "安全"],
+      "source": "npm",
+      "npm": "dsh-auth",
+      "github": "hxy91819/dsh-auth",
+      "homepage": "https://github.com/hxy91819/dsh-auth"
     },
     {
       "id": "deepseek-harness-lark",
@@ -77,39 +110,6 @@
       "npm": "deepseek-harness-dingtalk",
       "github": "sliverp/DeepSeek-harness-dingtalk",
       "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
-    },
-    {
-      "id": "dsh-auth",
-      "name": "DSH Auth",
-      "description": "DSH Web 管理员认证插件：Argon2id 口令、可撤销会话、双语界面，经 Caddy forward_auth 边缘保护页面/API/下载/SSE/WebSocket，Harness 保持仅回环监听。",
-      "category": "tools",
-      "tags": ["认证", "安全"],
-      "source": "npm",
-      "npm": "dsh-auth",
-      "github": "hxy91819/dsh-auth",
-      "homepage": "https://github.com/hxy91819/dsh-auth"
-    },
-    {
-      "id": "dsh-copilot-auth",
-      "name": "DSH Copilot Auth",
-      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步，中英双语。",
-      "category": "tools",
-      "tags": ["Copilot", "认证", "模型接入"],
-      "source": "npm",
-      "npm": "@inventec/dsh-copilot-auth",
-      "github": "iasiv5/dsh-copilot-auth",
-      "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
-    },
-    {
-      "id": "dsh-m",
-      "name": "DSH Marketplace",
-      "description": "个人自用的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，含 Web 界面、agent 工具与 CLI。",
-      "category": "market",
-      "tags": ["市场", "插件管理"],
-      "source": "npm",
-      "npm": "dsh-m",
-      "github": "iasiv5/dsh-m",
-      "homepage": "https://github.com/iasiv5/dsh-m"
     }
   ]
 }
