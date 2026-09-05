@@ -62,7 +62,7 @@ describe('validateRegistry：官方清单', () => {
     const parsed = validateRegistry(raw)
     assert.equal(parsed.ok, true, parsed.errors.join('; '))
     assert.ok(parsed.registry)
-    assert.equal(parsed.registry.plugins.length, 11)
+    assert.equal(parsed.registry.plugins.length, 12)
   })
 })
 
