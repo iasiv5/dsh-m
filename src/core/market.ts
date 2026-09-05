@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { addDshPlugin, removeDshPlugin, runCommand } from './dsh-cli.js'
+import { addDshPlugin, removeDshPlugin, removePatchedDependencyEntries, runCommand } from './dsh-cli.js'
 import { dshHome, installTimeoutMs, webProfileDir } from './env.js'
 import { assertNpmIntegrity, readPnpmLockIntegrity, restoreSnapshots, snapshotFiles } from './npm-integrity.js'
 import {
@@ -707,15 +707,24 @@ export interface UninstallResult {
   leftovers: string[]
 }
 
-/** 卸载：live-disable → pnpm remove → 报告疑似残留（DESIGN.md §3：删包不删数据）。 */
+export interface UninstallDeps {
+  removePatchedEntries?: typeof removePatchedDependencyEntries
+  removeInstalled?: typeof removeInstalledPlugin
+}
+
+/** 卸载：live-disable → 摘除该包补丁条目 → pnpm remove → 报告疑似残留（DESIGN.md §3：删包不删数据）。 */
 export async function uninstallPlugin(
   pkg: string,
   _cfg: RegistryConfig = {},
   _opts: RegistryRuntimeOptions = {},
+  deps: UninstallDeps = {},
 ): Promise<UninstallResult> {
   const liveDisabled = await setLivePluginDisabled(pkg, true)
-  await removeInstalledPlugin(pkg)
-  return { pkg, liveDisabled, needsRestart: true, leftovers: leftoverCandidates(pkg) }
+  // 依赖移除后残留的 patchedDependencies 条目会让 pnpm 以 ERR_PNPM_UNUSED_PATCH 整单失败，先摘掉
+  const patchCleanup = (deps.removePatchedEntries ?? removePatchedDependencyEntries)(webProfileDir(), pkg)
+  await (deps.removeInstalled ?? removeInstalledPlugin)(pkg)
+  const leftovers = [...new Set([...leftoverCandidates(pkg), ...patchCleanup.orphanedPatchFiles])]
+  return { pkg, liveDisabled, needsRestart: true, leftovers }
 }
 
 export interface UpgradeResult extends InstallResult {

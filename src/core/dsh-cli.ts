@@ -12,6 +12,129 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { installTimeoutMs, WEB_PROFILE, webProfileDir } from './env.js'
 import { createProgressTracker, type ProgressPhase, type ProgressTracker } from './progress.js'
 
+/** pnpm patchedDependencies 条目键与目标包匹配：`pkg` 或 `pkg@任意版本/区间`。 */
+function matchesPatchedKey(key: string, pkg: string): boolean {
+  return key === pkg || key.startsWith(`${pkg}@`)
+}
+
+export interface PatchedEntriesCleanup {
+  /** 是否改写了任何配置文件 */
+  changed: boolean
+  /** 因条目被摘除而失去宿主的补丁文件（保留在磁盘，仅报告） */
+  orphanedPatchFiles: string[]
+}
+
+/**
+ * 摘除 profile 里目标包的 pnpm 补丁条目：pnpm-workspace.yaml 顶层
+ * `patchedDependencies` 与 package.json 的 `pnpm.patchedDependencies` 两处。
+ * 卸载场景下依赖被移除后，残留补丁条目会让 pnpm 以 ERR_PNPM_UNUSED_PATCH
+ * 拒绝整个 remove/install。只精确匹配目标包的键（`pkg` / `pkg@ver`），
+ * 其他包的补丁不动；补丁文件本体保留在磁盘（删包不删数据，DESIGN.md §3）。
+ */
+export function removePatchedDependencyEntries(
+  profileDirectory: string,
+  pkg: string,
+  deps: {
+    existsSync?: typeof existsSync
+    readFileSync?: typeof readFileSync
+    writeFileSync?: typeof writeFileSync
+  } = {},
+): PatchedEntriesCleanup {
+  const target = String(pkg || '').trim()
+  if (!target || !isSafePluginTarget(target)) return { changed: false, orphanedPatchFiles: [] }
+  const exists = deps.existsSync ?? existsSync
+  const read = deps.readFileSync ?? readFileSync
+  const write = deps.writeFileSync ?? writeFileSync
+  const orphanedPatchFiles: string[] = []
+  let changed = false
+
+  // --- pnpm-workspace.yaml（pnpm≥10 补丁配置落点；行级手术，只摘匹配键） ---
+  const wsFile = join(profileDirectory, 'pnpm-workspace.yaml')
+  let ws = ''
+  try {
+    ws = read(wsFile, 'utf8')
+  } catch {
+    /* 无文件则跳过 */
+  }
+  if (ws) {
+    const srcLines = ws.split('\n')
+    let start = -1
+    for (let i = 0; i < srcLines.length; i++) {
+      if (/^patchedDependencies:\s*$/.test(srcLines[i])) {
+        start = i
+        break
+      }
+    }
+    if (start >= 0) {
+      // 块边界：下一个顶层键（无缩进行）或文件尾
+      let end = srcLines.length
+      for (let i = start + 1; i < srcLines.length; i++) {
+        if (/^\S/.test(srcLines[i])) {
+          end = i
+          break
+        }
+      }
+      const keptBlock: string[] = []
+      for (const line of srcLines.slice(start + 1, end)) {
+        // 条目行：缩进键 + `:` + 补丁文件路径（键可带引号）
+        const m = /^\s+(["']?)([^"':]+?)\1\s*:\s*(.+?)\s*$/.exec(line)
+        if (m && matchesPatchedKey(m[2].trim(), target)) {
+          changed = true
+          const file = resolve(profileDirectory, m[3].trim())
+          if (exists(file)) orphanedPatchFiles.push(file)
+        } else {
+          keptBlock.push(line)
+        }
+      }
+      if (changed) {
+        // 块内条目被摘空 → 连 `patchedDependencies:` 头一起移除，避免留下空映射
+        const stillHasEntry = keptBlock.some((l) => /^\s+\S/.test(l))
+        const next = stillHasEntry
+          ? [...srcLines.slice(0, start + 1), ...keptBlock, ...srcLines.slice(end)]
+          : [...srcLines.slice(0, start), ...srcLines.slice(end)]
+        write(wsFile, next.join('\n'))
+      }
+    }
+  }
+
+  // --- package.json#pnpm.patchedDependencies（pnpm<10 落点，兼容清理） ---
+  const pkgJsonFile = join(profileDirectory, 'package.json')
+  let raw = ''
+  try {
+    raw = read(pkgJsonFile, 'utf8')
+  } catch {
+    /* 无文件则跳过 */
+  }
+  if (raw) {
+    try {
+      const doc = JSON.parse(raw) as { pnpm?: { patchedDependencies?: Record<string, unknown> } }
+      const patched = doc?.pnpm?.patchedDependencies
+      if (patched && typeof patched === 'object') {
+        let touched = false
+        for (const [key, file] of Object.entries(patched)) {
+          if (!matchesPatchedKey(key, target)) continue
+          delete patched[key]
+          touched = true
+          changed = true
+          if (typeof file === 'string') {
+            const abs = resolve(profileDirectory, file)
+            if (exists(abs)) orphanedPatchFiles.push(abs)
+          }
+        }
+        if (touched) {
+          if (Object.keys(patched).length === 0) delete doc.pnpm!.patchedDependencies
+          if (Object.keys(doc.pnpm!).length === 0) delete doc.pnpm
+          write(pkgJsonFile, `${JSON.stringify(doc, null, 2)}\n`)
+        }
+      }
+    } catch {
+      /* package.json 不是合法 JSON：不动 */
+    }
+  }
+
+  return { changed, orphanedPatchFiles }
+}
+
 const TARGET_RE = /^[A-Za-z0-9@:./_#+-]+$/
 const NDJSON_COMMANDS = new Set(['add', 'remove', 'install'])
 
@@ -210,6 +333,9 @@ function writeDangerouslyAllowAllBuilds(profileDirectory: string): boolean {
 
 export function rewritePnpmError(err: unknown): Error {
   const text = err instanceof Error ? err.message : String(err)
+  if (/ERR_PNPM_UNUSED_PATCH/.test(text)) {
+    return new Error('profile 的补丁配置（patchedDependencies）里存在不再使用的条目，pnpm 拒绝执行。卸载时 dsh-m 会自动摘除目标包自己的补丁条目；仍报此错通常是其他包留有失效补丁，请手工清理 profile 的 pnpm-workspace.yaml。')
+  }
   if (isPrepareBlocked(text)) {
     return new Error('该插件需要执行构建脚本（prepare），pnpm 默认拦截。dsh-m 已写入 profile 的 dangerouslyAllowAllBuilds 并重试；若仍失败请检查 web profile 是否可写。')
   }

@@ -215,7 +215,7 @@ const CSS = `
 .dshm-detail{margin-top:8px;border-top:1px dashed var(--dsw-alias-border-l2,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309);font-size:12px}
-.dshm-banner .dshm-banner-text{flex:1}
+.dshm-banner .dshm-banner-text{flex:1;max-height:140px;overflow:auto;overscroll-behavior:contain;white-space:pre-wrap;word-break:break-word;line-height:18px}
 .dshm-row{display:flex;align-items:center;gap:8px}
 .dshm-kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:12px;align-items:baseline}
 .dshm-kv .k{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px}

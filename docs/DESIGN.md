@@ -66,7 +66,7 @@
 - **安装（npm 源）**：装最新版并以**精确版本锁定**（不用 `^` 范围；用户指定版本必须为精确 semver，经该精确版本 endpoint 查询）。安装前对 profile 的 `package.json` / `pnpm-lock.yaml` / `pnpm-workspace.yaml` 做字节快照；安装后核验 importer 依赖为该精确版本，并在 lockfile `packages` 条目中比对与 npm dist 一致的 `resolution.integrity`——缺失或不一致 **fail closed** 并执行 **best-effort dependency rollback**（原子恢复快照 + `pnpm install --frozen-lockfile`；恢复失败同时报告两类错误并提示人工修复）。不声称 node_modules 与间接依赖已字节级回滚。
 - **安装（GitHub 源）**：解析并**锁定 commit SHA**（`github:owner/repo#sha`），skillhub 同款。
 - **已装识别**：读 profile `package.json` dependencies，与 registry 匹配 → 标注「市场安装」；不匹配的也列出，标注「非市场安装 / 来源未知」。卸载/升级对两类都可用。
-- **卸载**：live-disable（先让 client bundle 下线，避免 404）→ `dsh plugin remove`。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
+- **卸载**：live-disable（先让 client bundle 下线，避免 404）→ 摘除该包在 profile 的补丁条目（`pnpm-workspace.yaml` 顶层 `patchedDependencies` 与 `package.json#pnpm.patchedDependencies`；依赖移除后残留条目会令 pnpm 以 `ERR_PNPM_UNUSED_PATCH` 整单失败，只精确匹配 `pkg` / `pkg@ver`，补丁文件本体保留并计入残留报告）→ `dsh plugin remove`。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
 - **升级**：**按需检查**（`dshm_outdated` / `dshm_list` 时实时比对本地版本 vs npm latest / GitHub main），半自动——展示升级计划，确认后执行。**不做后台定时器**。
 - **自更新**：dsh-m 对自己同样做版本比对 + 提示升级（设置页呈现）。
 - **重启**：内置**一键重启**，复用 skillhub 验证过的重启路径（本机 `dsh-web.service` 是转发 shim，不新建 systemd 单元、不监听 3080）。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅，工具返回重启提示。
