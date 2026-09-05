@@ -11,7 +11,7 @@ English · [中文](./README.md)
 A DeepSeek Harness (DSH) plugin marketplace with a customizable registry: **browse, install, uninstall, upgrade** — all local. Ships as a DSH web plugin: the "Plugin Marketplace" sidebar entry opens a three-view panel, backed by seven `dshm_*` agent tools and the `dshm` CLI.
 
 <div align="center">
-  <img src="./docs/images/marketplace.webp" alt="Plugin Marketplace panel — Market view: curated card flow with search and category filters" width="100%">
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp" alt="Plugin Marketplace panel — Market view: curated card flow with search and category filters" width="100%">
   <p><sub>The "Plugin Marketplace" panel · Market view: curated cards · search · category filters · one-click install</sub></p>
 </div>
 
