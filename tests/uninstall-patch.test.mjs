@@ -5,7 +5,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -108,26 +108,47 @@ nodeLinker: hoisted
   })
 })
 
-describe('uninstallPlugin × 补丁清理', () => {
+describe('uninstallPlugin × 补丁清理（Task 6：事务注入）', () => {
   it('先摘补丁条目再移除插件，孤儿补丁并入 leftovers', async () => {
+    const dir = fixture({
+      'package.json': JSON.stringify({ name: 'p', dependencies: { 'dsh-web-search': '^0.1.2' } }),
+      'node_modules/dsh-web-search/package.json': JSON.stringify({ name: 'dsh-web-search', version: '0.1.2', dsh: {} }),
+    })
     const calls = []
-    const res = await uninstallPlugin('dsh-web-search', {}, {}, {
-      removePatchedEntries: (profileDir, pkg) => {
-        calls.push(['patch', profileDir, pkg])
-        return { changed: true, orphanedPatchFiles: ['/profile/patches/dsh-web-search.patch'] }
-      },
-      removeInstalled: async (pkg) => {
+    const runner = {
+      add: async () => { throw new Error('不应调用 add') },
+      remove: async (pkg) => {
         calls.push(['remove', pkg])
-        return { pkg }
+        // 移除依赖（verify gone 通过）
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'p', dependencies: {} }))
+        return { class: 'ok', output: 'removed' }
+      },
+      frozenInstall: async () => ({ class: 'ok', output: 'frozen' }),
+      rebuildInstall: async () => ({ class: 'ok', output: 'rebuilt' }),
+    }
+    const res = await uninstallPlugin('dsh-web-search', {}, {}, {
+      transaction: {
+        profileDir: dir,
+        runner: () => runner,
+        setLiveDisabled: async (pkg, flag) => {
+          calls.push(['live', pkg, flag])
+          return true
+        },
+        stripPatchedEntries: (profileDir, pkg) => {
+          calls.push(['patch', profileDir, pkg])
+          return { changed: true, orphanedPatchFiles: ['/profile/patches/dsh-web-search.patch'] }
+        },
       },
     })
-    assert.deepEqual(calls, [
-      ['patch', calls[0][1], 'dsh-web-search'],
-      ['remove', 'dsh-web-search'],
-    ], '补丁摘除必须发生在 pnpm remove 之前')
+    const kinds = calls.map((c) => c[0])
+    assert.equal(kinds.indexOf('live') < kinds.indexOf('patch'), true, 'live-disable 先于摘补丁')
+    assert.equal(kinds.indexOf('patch') < kinds.indexOf('remove'), true, '补丁摘除必须发生在 pnpm remove 之前')
     assert.equal(res.pkg, 'dsh-web-search')
+    assert.equal(res.liveDisabled, true)
     assert.ok(res.leftovers.includes('/profile/patches/dsh-web-search.patch'))
     assert.equal(res.needsRestart, true)
+    assert.ok(Array.isArray(res.healActions))
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

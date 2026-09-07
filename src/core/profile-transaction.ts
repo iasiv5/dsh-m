@@ -33,7 +33,7 @@ import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { webProfileDir } from './env.js'
-import { isSafePkgName } from './installed.js'
+import { isSafePkgName, resolvePluginDir } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
 import { npmPackument } from './versions.js'
 import {
@@ -668,6 +668,168 @@ async function installNpm(
   }
 }
 
+// ---------- install-github 门（Task 5） ----------
+
+/** 从快照 manifest（宽容）读依赖表：github 前态比对用；无/坏 → {}。 */
+function snapshotDepsOf(snapshot: ProfileFileSnapshot | undefined): Record<string, string> {
+  if (!snapshot?.existed || snapshot.bytes === null) return {}
+  try {
+    const parsed: unknown = JSON.parse(snapshot.bytes.toString('utf8'))
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const deps = (parsed as { dependencies?: unknown }).dependencies
+    if (deps === null || deps === undefined || typeof deps !== 'object' || Array.isArray(deps)) return {}
+    const out: Record<string, string> = {}
+    for (const [name, spec] of Object.entries(deps as Record<string, unknown>)) {
+      if (typeof spec === 'string' && spec !== '') out[name] = spec
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+async function installGithub(
+  req: Extract<TransactionRequest, { kind: 'install-github' }>,
+  d: ResolvedDeps,
+  snapshots: ProfileFileSnapshot[],
+): Promise<TransactionResult> {
+  const heal: HealAction[] = []
+  const spec = `github:${req.repo}#${req.sha}`
+  try {
+    // github 门无 B3：retryable-lag 不适用，一律按 hard-fail 处置（分类消费矩阵 github 行）
+    const addOut = await d.runner.add(spec, req.signal)
+    if (addOut.class !== 'ok') {
+      const failure: TransactionFailure = req.signal?.aborted
+        ? { code: 'ABORTED', note: addOut.output }
+        : { code: 'ADD_FAILED', note: addOut.output }
+      return rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+    }
+    // verify（契约 8）：存在键 k 使 depsNow[k] === spec 且 snapshotDeps[k] !== spec（相对前态变化）
+    const depsNow = await strictReadDeps(d)
+    const prevDeps = snapshotDepsOf(snapshots[0])
+    const key = Object.keys(depsNow).find((k) => depsNow[k] === spec && prevDeps[k] !== spec)
+    if (key === undefined) {
+      throw new DomainFailure({
+        code: 'GITHUB_SPEC_MISMATCH',
+        note: `安装后未在 profile 依赖中找到受 SHA 锁定的新 spec（${spec}）；已存在的同 spec 旧依赖不算命中`,
+      })
+    }
+    return committed(req.kind, heal, addOut.output, {
+      pkg: key,
+      spec,
+      sha: req.sha,
+      tag: req.tag,
+      usedAllowAllBuilds: addOut.usedAllowAllBuilds === true,
+    })
+  } catch (err) {
+    if (err instanceof DomainFailure) {
+      return rollbackAndConverge(d, req.kind, err.failure, heal, snapshots)
+    }
+    const failure: TransactionFailure = isAbortish(err, req.signal)
+      ? { code: 'ABORTED', note: errText(err) }
+      : { code: 'INTERNAL_ERROR', note: errText(err) }
+    return rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+  }
+}
+
+// ---------- uninstall 门（Task 5；定序写死：validate → 快照 → live-disable → 摘补丁 → remove → verify gone） ----------
+
+/** validate（严格读取）：全部 rejected，零写入零快照。返回 null 表示通过。 */
+async function validateUninstall(
+  req: Extract<TransactionRequest, { kind: 'uninstall' }>,
+  d: ResolvedDeps,
+): Promise<RejectedResult | null> {
+  let depsNow: Record<string, string>
+  try {
+    depsNow = await strictReadDeps(d)
+  } catch (err) {
+    if (err instanceof DomainFailure) return rejected(err.failure, req.kind)
+    return rejected({ code: 'PROFILE_MANIFEST_UNREADABLE', note: errText(err) }, req.kind)
+  }
+  if (!(req.pkg in depsNow)) {
+    return rejected({ code: 'NOT_INSTALLED', note: `web profile 未安装该插件: ${req.pkg}` }, req.kind)
+  }
+  const dir = resolvePluginDir(d.profileDir, req.pkg, depsNow[req.pkg])
+  if (dir === null) {
+    return rejected({ code: 'PLUGIN_METADATA_UNREADABLE', note: `无法解析插件目录: ${req.pkg}` }, req.kind)
+  }
+  let raw: string
+  try {
+    raw = await readFile(join(dir, 'package.json'), 'utf8')
+  } catch (err) {
+    return rejected({ code: 'PLUGIN_METADATA_UNREADABLE', note: `插件 package.json 读取失败（${dir}）：${errText(err)}` }, req.kind)
+  }
+  let meta: unknown
+  try {
+    meta = JSON.parse(raw)
+  } catch (err) {
+    return rejected({ code: 'PLUGIN_METADATA_UNREADABLE', note: `插件 package.json 不是合法 JSON（${dir}）：${errText(err)}` }, req.kind)
+  }
+  if (meta === null || typeof meta !== 'object' || Array.isArray(meta) || !('dsh' in (meta as Record<string, unknown>))) {
+    return rejected({ code: 'NOT_DSH_PLUGIN', note: `不是 dsh 插件: ${req.pkg}` }, req.kind)
+  }
+  return null
+}
+
+/** 卸载回滚：统一回滚后 live 尽力反向（补偿动作记录在案，不改变终态）。 */
+async function rollbackWithLiveReverse(
+  req: Extract<TransactionRequest, { kind: 'uninstall' }>,
+  d: ResolvedDeps,
+  failure: TransactionFailure,
+  heal: HealAction[],
+  snapshots: ProfileFileSnapshot[],
+  liveDisabled: boolean,
+): Promise<FailedTransactionResult> {
+  const result = await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+  if (liveDisabled) {
+    try {
+      const back = await d.setLiveDisabled(req.pkg, false)
+      if (back) heal.push({ code: 'LIVE_REENABLED', note: '回滚后已恢复插件运行（live 反向）' })
+      else heal.push({ code: 'LIVE_REENABLE_FAILED', note: '回滚后恢复插件运行未确认（live 反向返回 false）' })
+    } catch (err) {
+      heal.push({ code: 'LIVE_REENABLE_FAILED', note: `回滚后恢复插件运行失败（live 反向）：${errText(err)}` })
+    }
+  }
+  return result
+}
+
+async function uninstall(
+  req: Extract<TransactionRequest, { kind: 'uninstall' }>,
+  d: ResolvedDeps,
+  snapshots: ProfileFileSnapshot[],
+): Promise<TransactionResult> {
+  const heal: HealAction[] = []
+  let liveDisabled = false
+  let orphanedPatchFiles: string[] = []
+  try {
+    liveDisabled = await d.setLiveDisabled(req.pkg, true)
+    if (liveDisabled) heal.push({ code: 'LIVE_DISABLED', note: '运行中的插件界面已先行下线' })
+    const patch = d.stripPatchedEntries(d.profileDir, req.pkg)
+    if (patch.changed) heal.push({ code: 'PATCH_ENTRIES_STRIPPED', note: '已摘除该包的 pnpm 补丁条目（防 ERR_PNPM_UNUSED_PATCH 整单失败）' })
+    orphanedPatchFiles = patch.orphanedPatchFiles
+    const rmOut = await d.runner.remove(req.pkg, req.signal)
+    if (rmOut.class !== 'ok') {
+      const failure: TransactionFailure = req.signal?.aborted
+        ? { code: 'ABORTED', note: rmOut.output }
+        : { code: 'REMOVE_FAILED', note: rmOut.output }
+      return rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
+    }
+    const depsNow = await strictReadDeps(d)
+    if (req.pkg in depsNow) {
+      throw new DomainFailure({ code: 'STILL_PRESENT_AFTER_REMOVE', note: `移除后 profile 依赖中仍存在 ${req.pkg}` })
+    }
+    return committed(req.kind, heal, rmOut.output, { pkg: req.pkg, liveDisabled, orphanedPatchFiles })
+  } catch (err) {
+    if (err instanceof DomainFailure) {
+      return rollbackWithLiveReverse(req, d, err.failure, heal, snapshots, liveDisabled)
+    }
+    const failure: TransactionFailure = isAbortish(err, req.signal)
+      ? { code: 'ABORTED', note: errText(err) }
+      : { code: 'INTERNAL_ERROR', note: errText(err) }
+    return rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
+  }
+}
+
 // ---------- 入口：FIFO 互斥 + 分发 ----------
 
 /** 模块级 FIFO 互斥锁（进程内串行；skillhub install-lock 同款思路）。 */
@@ -704,6 +866,12 @@ async function executeTransaction(
   }
   const d: ResolvedDeps = { ...base, runner }
 
+  // uninstall 门 validate 先于快照（定序 1；全部 rejected 零写入零快照）
+  if (req.kind === 'uninstall') {
+    const rejectedResult = await validateUninstall(req, d)
+    if (rejectedResult !== null) return rejectedResult
+  }
+
   // 快照（非 ENOENT 读取异常 → rejected，零写入）
   let snapshots: ProfileFileSnapshot[]
   try {
@@ -719,8 +887,9 @@ async function executeTransaction(
   switch (req.kind) {
     case 'install-npm':
       return installNpm(req, d, snapshots)
-    default:
-      // 本阶段（Task 2）仅实现 install-npm 门；其余门在 Task 5 落地
-      return rejected({ code: 'INTERNAL_ERROR', note: `事务门未实现：${String((req as { kind: string }).kind)}` }, req.kind)
+    case 'install-github':
+      return installGithub(req, d, snapshots)
+    case 'uninstall':
+      return uninstall(req, d, snapshots)
   }
 }

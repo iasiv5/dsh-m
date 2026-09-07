@@ -8,9 +8,8 @@
  * 新发布后 NO_MATCHING_VERSION 的退避重试 + packument 预热（B3）。
  */
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { addDshPlugin, removeDshPlugin, removePatchedDependencyEntries } from './dsh-cli.js'
+import { addDshPlugin, removeDshPlugin } from './dsh-cli.js'
 import {
   classifyPnpmError,
   makeDshRunner,
@@ -23,12 +22,12 @@ import {
   runProfileTransaction,
   makeNpmWarmPackument,
   TransactionError,
+  type HealAction,
   type TransactionDeps,
 } from './profile-transaction.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
   readProfileDeps,
-  removeInstalledPlugin,
   type InstalledPlugin,
 } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
@@ -681,9 +680,12 @@ export interface InstallResult {
   spec: string
   version?: string
   sha?: string
+  tag?: string
   usedAllowAllBuilds: boolean
   needsRestart: true
   output: string
+  /** 事务自愈动作（机器可断言 code + 给人看的 note） */
+  healActions?: HealAction[]
 }
 
 /** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。 */
@@ -712,10 +714,7 @@ export async function installEntry(
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
-    addDshPlugin: deps?.addDshPlugin ?? addDshPlugin,
-    readProfileDeps: deps?.readProfileDeps ?? readProfileDeps,
   }
-  const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
   if (entry.source === 'npm' && entry.npm) {
     const pkg = entry.npm
     // npm：无论 latest 还是用户指定 exact，都先读取该精确版本的 dist metadata（事务外解析）
@@ -745,24 +744,28 @@ export async function installEntry(
       usedAllowAllBuilds: result.usedAllowAllBuilds === true,
       needsRestart: true,
       output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
+      healActions: result.healActions,
     }
   }
   if (entry.github) {
-    const { tag, sha } = await defaultGithubLatestTag(entry.github, timeoutMs, opts.signal)
-    const spec = `github:${entry.github}#${sha}`
-    const res = await d.addDshPlugin(spec)
-    const depsNow = await d.readProfileDeps(profileDir)
-    const pkgKey = Object.keys(depsNow).find((k) => depsNow[k] === spec || depsNow[k].startsWith(`github:${entry.github}#`))
-    if (!pkgKey) throw new Error(`安装后未在 profile 依赖中找到 ${entry.github}`)
-    void tag
+    // 版本解析在事务外（DI 修正：githubLatestTag 此前绕过注入）
+    const { tag, sha } = await (deps?.githubLatestTag ?? defaultGithubLatestTag)(entry.github, timeoutMs, opts.signal)
+    const result = await runProfileTransaction(
+      { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
+      txDepsFrom(deps, timeoutMs),
+    )
+    if (!result.ok) throw new TransactionError(result)
+    const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
     return {
       id: entry.id,
-      pkg: pkgKey,
-      spec,
-      sha,
-      usedAllowAllBuilds: res.usedAllowAllBuilds,
+      pkg: result.pkg ?? entry.github,
+      spec: result.spec ?? `github:${entry.github}#${sha}`,
+      sha: result.sha ?? sha,
+      tag: result.tag ?? tag,
+      usedAllowAllBuilds: result.usedAllowAllBuilds === true,
       needsRestart: true,
-      output: res.output.slice(-800),
+      output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
+      healActions: result.healActions,
     }
   }
   throw new Error(`条目 ${entry.id} 缺少可安装来源`)
@@ -773,26 +776,36 @@ export interface UninstallResult {
   liveDisabled: boolean
   needsRestart: true
   leftovers: string[]
+  /** 事务自愈动作（机器可断言 code + 给人看的 note） */
+  healActions?: HealAction[]
 }
 
 export interface UninstallDeps {
-  removePatchedEntries?: typeof removePatchedDependencyEntries
-  removeInstalled?: typeof removeInstalledPlugin
+  /** Task 6 起：卸载走事务（validate 前置 + 快照 + 回滚）；注入仅为可测试性 */
+  transaction?: TransactionDeps
 }
 
-/** 卸载：live-disable → 摘除该包补丁条目 → pnpm remove → 报告疑似残留（DESIGN.md §3：删包不删数据）。 */
+/** 卸载：validate（严格读取）→ live-disable → 摘补丁 → pnpm remove → verify gone（DESIGN.md §3：删包不删数据）。 */
 export async function uninstallPlugin(
   pkg: string,
   _cfg: RegistryConfig = {},
-  _opts: RegistryRuntimeOptions = {},
+  opts: RegistryRuntimeOptions = {},
   deps: UninstallDeps = {},
 ): Promise<UninstallResult> {
-  const liveDisabled = await setLivePluginDisabled(pkg, true)
-  // 依赖移除后残留的 patchedDependencies 条目会让 pnpm 以 ERR_PNPM_UNUSED_PATCH 整单失败，先摘掉
-  const patchCleanup = (deps.removePatchedEntries ?? removePatchedDependencyEntries)(webProfileDir(), pkg)
-  await (deps.removeInstalled ?? removeInstalledPlugin)(pkg)
-  const leftovers = [...new Set([...leftoverCandidates(pkg), ...patchCleanup.orphanedPatchFiles])]
-  return { pkg, liveDisabled, needsRestart: true, leftovers }
+  const result = await runProfileTransaction(
+    { kind: 'uninstall', pkg, signal: opts.signal },
+    deps.transaction ?? {},
+  )
+  if (!result.ok) throw new TransactionError(result)
+  const orphaned = result.orphanedPatchFiles ?? []
+  const leftovers = [...new Set([...leftoverCandidates(pkg), ...orphaned])]
+  return {
+    pkg,
+    liveDisabled: result.liveDisabled === true,
+    needsRestart: true,
+    leftovers,
+    healActions: result.healActions,
+  }
 }
 
 export interface UpgradeResult extends InstallResult {

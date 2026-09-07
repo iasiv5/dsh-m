@@ -17,7 +17,7 @@ import {
   makeNpmWarmPackument,
 } from '../lib/core/profile-transaction.js'
 import { snapshotFiles, atomicWriteFile } from '../lib/core/npm-integrity.js'
-import { classifyPnpmError } from '../lib/core/dsh-cli.js'
+import { classifyPnpmError, PNPM_OUTCOME_CODES } from '../lib/core/dsh-cli.js'
 
 // ---------- fixtures（事故同形摘要；Task 11 起共享 tests/fixtures/pnpm-errors.mjs） ----------
 
@@ -565,8 +565,7 @@ describe('renderFailure 契约（legacy 文案逐字）', () => {
   })
 })
 
-describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入缝）', () => {
-  let dir = ''
+describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入缝）', () => {  let dir = ''
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'dshm-prim-'))
   })
@@ -662,5 +661,380 @@ describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入�
     )
     assert.ok(rms.some(([p]) => p.includes('.restore-')), 'tmp 已清理')
     assert.equal(readFileSync(target, 'utf8'), 'old')
+  })
+})
+
+// ---------- Task 5：install-github 与 uninstall 两门 ----------
+
+const SHA = 'a'.repeat(40)
+const SHA2 = 'b'.repeat(40)
+
+/** 可卸载 fixture：manifest 含 pkg-a 依赖 + node_modules/pkg-a/package.json 带 dsh 字段。 */
+function uninstallableProfile({ manifestDeps = { existing: '^1.0.0', 'pkg-a': '1.0.0' } } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'dshm-unin-'))
+  writeFileSync(join(dir, 'package.json'), manifest({ dependencies: manifestDeps }))
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ withOverrides: false }))
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+  mkdirSync(join(dir, 'node_modules', 'pkg-a'), { recursive: true })
+  writeFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.0.0', dsh: {} }))
+  return dir
+}
+
+const SIX_CLASSES = [
+  ['ok', () => ({ class: 'ok', output: 'ok' })],
+  ['retryable-lag', () => ({ class: 'retryable-lag', code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION, output: 'lag' })],
+  ['config-drift', () => ({ class: 'config-drift', code: PNPM_OUTCOME_CODES.CONFIG_MISMATCH, output: 'drift' })],
+  ['unused-patch', () => ({ class: 'unused-patch', code: PNPM_OUTCOME_CODES.UNUSED_PATCH, output: 'patch' })],
+  ['needs-builds', () => ({ class: 'needs-builds', output: 'builds' })],
+  ['hard-fail', () => ({ class: 'hard-fail', output: 'hard' })],
+]
+
+describe('install-github 门', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  it('参数化：add 破坏性写入后 spec 不匹配 → GITHUB_SPEC_MISMATCH → rolled-back 字节还原', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const { runner } = mockRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { garbage: 'x' } }))
+        return { class: 'ok', output: 'added' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-github', repo: 'owner/repo', sha: SHA, tag: 'v1.0.0' },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'GITHUB_SPEC_MISMATCH')
+    assert.equal(r.snapshotRestoreVerified, true)
+    assert.equal(r.profileConverged, true)
+    assert.deepEqual(bytesOf(dir), before)
+  })
+
+  it('安装成功：新写入 spec 命中 → committed，pkg/tag 透传', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${SHA}` } }))
+        return { class: 'ok', output: 'added', usedAllowAllBuilds: false }
+      }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-github', repo: 'owner/repo', sha: SHA, tag: 'v1.2.3' },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'committed', JSON.stringify(r.healActions))
+    assert.equal(r.pkg, 'owner-repo')
+    assert.equal(r.spec, `github:owner/repo#${SHA}`)
+    assert.equal(r.sha, SHA)
+    assert.equal(r.tag, 'v1.2.3')
+  })
+
+  it('旧依赖误命中防护：预置同 spec 旧依赖、add 不改文件 → GITHUB_SPEC_MISMATCH（前态比对）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${SHA}` } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const { runner } = mockRunner({ add: [ok('noop-add')], frozen: [ok('frozen-ok')] })
+    const r = await runProfileTransaction(
+      { kind: 'install-github', repo: 'owner/repo', sha: SHA },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'GITHUB_SPEC_MISMATCH')
+    assert.deepEqual(bytesOf(dir), before)
+  })
+
+  it('add 非 ok（含 retryable-lag，按 hard-fail）→ ADD_FAILED → 回滚', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    for (const maker of SIX_CLASSES.slice(1)) {
+      const { runner } = mockRunner({ add: [async () => maker[1]()], frozen: [ok('frozen-ok')] })
+      const r = await runProfileTransaction(
+        { kind: 'install-github', repo: 'owner/repo', sha: SHA2 },
+        baseTx(dir, runner),
+      )
+      assert.equal(r.failure.code, 'ADD_FAILED', `class=${maker[0]}`)
+      assert.equal(r.status, 'rolled-back', `class=${maker[0]}`)
+    }
+  })
+
+  it('畸形 request：unsafe repo / 非 owner/repo 形状 / 非 40 位 hex SHA → TypeError 零调用', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const factoryCalls = []
+    const deps = { runner: () => { factoryCalls.push(1); return mockRunner().runner }, profileDir: dir }
+    for (const bad of [
+      { kind: 'install-github', repo: '../evil', sha: SHA },
+      { kind: 'install-github', repo: 'owner', sha: SHA },
+      { kind: 'install-github', repo: 'owner/repo', sha: 'xyz' },
+    ]) {
+      await assert.rejects(() => runProfileTransaction(bad, deps), TypeError)
+    }
+    assert.equal(factoryCalls.length, 0)
+    assert.deepEqual(bytesOf(dir), before)
+  })
+})
+
+describe('uninstall 门', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  it('参数化：remove 破坏性写入后依赖仍在 → STILL_PRESENT_AFTER_REMOVE → rolled-back 字节还原 + live 反向', async () => {
+    dir = uninstallableProfile()
+    const before = bytesOf(dir)
+    const liveCalls = []
+    const { runner } = mockRunner({
+      remove: [async () => {
+        // 破坏性写入：丢了其他键，但 pkg-a 依赖仍在 → verify gone 必炸
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { 'pkg-a': '1.0.0' } }))
+        return { class: 'ok', output: 'removed' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a' },
+      baseTx(dir, runner, { setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true } }),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'STILL_PRESENT_AFTER_REMOVE')
+    assert.deepEqual(bytesOf(dir), before, '三文件字节还原')
+    assert.deepEqual(liveCalls, [['pkg-a', true], ['pkg-a', false]], '先下线、回滚后反向')
+    assert.ok(healCodes(r).includes('LIVE_DISABLED'))
+    assert.ok(healCodes(r).includes('LIVE_REENABLED'))
+  })
+
+  it('正常卸载：validate → live-disable → 摘补丁 → remove → verify gone → committed', async () => {
+    dir = uninstallableProfile()
+    const liveCalls = []
+    const patchCalls = []
+    const { runner, calls } = mockRunner({
+      remove: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0' } }))
+        return { class: 'ok', output: 'removed' }
+      }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a' },
+      baseTx(dir, runner, {
+        setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true },
+        stripPatchedEntries: (profileDir, pkg) => {
+          patchCalls.push([profileDir, pkg])
+          return { changed: true, orphanedPatchFiles: [join(dir, 'patches', 'pkg-a.patch')] }
+        },
+      }),
+    )
+    assert.equal(r.status, 'committed')
+    assert.equal(r.pkg, 'pkg-a')
+    assert.equal(r.liveDisabled, true)
+    assert.deepEqual(r.orphanedPatchFiles, [join(dir, 'patches', 'pkg-a.patch')])
+    assert.equal(r.needsRestart, true)
+    assert.deepEqual(liveCalls, [['pkg-a', true]], 'committed 不做 live 反向')
+    assert.deepEqual(patchCalls, [[dir, 'pkg-a']])
+    assert.deepEqual(calls.remove, [{ arg: 'pkg-a', signal: undefined }])
+    assert.ok(healCodes(r).includes('PATCH_ENTRIES_STRIPPED'))
+  })
+
+  it('三种 rejected：NOT_INSTALLED / NOT_DSH_PLUGIN / PLUGIN_METADATA_UNREADABLE —— 零写入零 runner 调用', async () => {
+    const liveCalls = []
+    const { runner, calls } = mockRunner({})
+    const depsOf = (d) => baseTx(d, runner, { setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return false } })
+
+    // NOT_INSTALLED
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const r1 = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, depsOf(dir))
+    assert.equal(r1.status, 'rejected')
+    assert.equal(r1.failure.code, 'NOT_INSTALLED')
+    rmSync(dir, { recursive: true, force: true })
+
+    // NOT_DSH_PLUGIN
+    dir = uninstallableProfile({ manifestDeps: { 'pkg-a': '1.0.0' } })
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.0.0' }))
+    const r2 = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, depsOf(dir))
+    assert.equal(r2.status, 'rejected')
+    assert.equal(r2.failure.code, 'NOT_DSH_PLUGIN')
+    rmSync(dir, { recursive: true, force: true })
+
+    // PLUGIN_METADATA_UNREADABLE（元数据非合法 JSON）
+    dir = uninstallableProfile({ manifestDeps: { 'pkg-a': '1.0.0' } })
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), '{broken json')
+    const r3 = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, depsOf(dir))
+    assert.equal(r3.status, 'rejected')
+    assert.equal(r3.failure.code, 'PLUGIN_METADATA_UNREADABLE')
+
+    assert.equal(calls.remove.length, 0, 'runner 零调用')
+    assert.equal(liveCalls.length, 0, 'setLiveDisabled 零调用')
+  })
+
+  it('分类消费矩阵 remove 行六类全枚举：ok→committed，其余五类→REMOVE_FAILED→rolled-back', async () => {
+    for (const [name, maker] of SIX_CLASSES) {
+      dir = uninstallableProfile()
+      const { runner } = mockRunner({
+        remove: [async () => {
+          if (name === 'ok') {
+            writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0' } }))
+            return maker()
+          }
+          return maker()
+        }],
+        frozen: [ok('frozen-ok')],
+      })
+      const r = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, baseTx(dir, runner))
+      if (name === 'ok') {
+        assert.equal(r.status, 'committed', name)
+        assert.equal(r.ok, true)
+      } else {
+        assert.equal(r.failure.code, 'REMOVE_FAILED', name)
+        assert.equal(r.status, 'rolled-back', name)
+      }
+      rmSync(dir, { recursive: true, force: true })
+      dir = ''
+    }
+  })
+
+  it('分类消费矩阵 rebuildInstall 行六类全枚举：ok→rolled-back，其余五类→manual-repair', async () => {
+    for (const [name, maker] of SIX_CLASSES) {
+      dir = makeProfile({
+        'package.json': manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.0.0' } }),
+        'pnpm-lock.yaml': lockFile(),
+        'pnpm-workspace.yaml': 'packages:\n  - .\n',
+      })
+      const { runner } = mockRunner({
+        add: [failWith('命令失败 (exit 1): ERR_PNPM_MISC')],
+        frozen: [failWith(CONFIG_MISMATCH)],   // 对齐后仍失配 → rebuild
+        rebuild: [async () => maker()],
+      })
+      const r = await runProfileTransaction(
+        { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+        baseTx(dir, runner),
+      )
+      assert.equal(r.failure.code, 'ADD_FAILED', name)
+      if (name === 'ok') {
+        assert.equal(r.status, 'rolled-back', name)
+        assert.equal(r.profileConverged, true, name)
+        assert.ok(healCodes(r).includes('B2_LOCKFILE_REBUILT'), name)
+      } else {
+        assert.equal(r.profileConverged, false, name)
+        assert.equal(r.status, 'manual-repair', `rebuild=${name} 应 manual-repair`)
+      }
+      rmSync(dir, { recursive: true, force: true })
+      dir = ''
+    }
+  })
+
+  it('中途 abort：remove 已写入后 abort → 回滚不可取消，终态 rolled-back + ABORTED', async () => {
+    dir = uninstallableProfile()
+    const before = bytesOf(dir)
+    const ac = new AbortController()
+    const { runner } = mockRunner({
+      remove: [() => new Promise((_, reject) => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { evil: '1' } }))
+        ac.signal.addEventListener('abort', () => {
+          const err = new Error('命令已取消')
+          err.name = 'AbortError'
+          reject(err)
+        }, { once: true })
+      })],
+      frozen: [ok('frozen-ok')],
+    })
+    const pending = runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a', signal: ac.signal },
+      baseTx(dir, runner),
+    )
+    await sleep(60)
+    ac.abort()
+    const r = await pending
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'ABORTED')
+    assert.deepEqual(bytesOf(dir), before)
+  })
+
+  it('patch cleanup 部分写入后 throw → 回滚字节还原 + live 反向补偿记录在案', async () => {
+    dir = uninstallableProfile()
+    const before = bytesOf(dir)
+    const liveCalls = []
+    const { runner, calls } = mockRunner({ frozen: [ok('frozen-ok')] })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a' },
+      baseTx(dir, runner, {
+        setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true },
+        stripPatchedEntries: (profileDir, pkg) => {
+          // 先真实改写一半，再抛
+          writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\npatchedDependencies:\n  pkg-a: patches/a.patch\n')
+          throw new Error('strip crashed mid-way')
+        },
+      }),
+    )
+    assert.equal(r.status, 'rolled-back', renderFailure(r))
+    assert.equal(r.failure.code, 'INTERNAL_ERROR')
+    assert.deepEqual(bytesOf(dir), before, '三文件字节还原')
+    assert.deepEqual(liveCalls, [['pkg-a', true], ['pkg-a', false]], 'live 反向补偿被尝试')
+    assert.ok(healCodes(r).includes('LIVE_REENABLED'))
+    assert.equal(calls.remove.length, 0, '摘补丁炸了不再进 remove')
+  })
+
+  it('live 反向失败也如实记录（LIVE_REENABLE_FAILED），不改变 rolled-back 终态', async () => {
+    dir = uninstallableProfile()
+    const liveCalls = []
+    const { runner } = mockRunner({
+      remove: [async () => {
+        // 破坏性写入：pkg-a 仍在（verify gone 必炸）
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { 'pkg-a': '1.0.0' } }))
+        return { class: 'ok', output: 'removed' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a' },
+      baseTx(dir, runner, {
+        setLiveDisabled: async (pkg, flag) => {
+          liveCalls.push([pkg, flag])
+          if (flag === false) throw new Error('reenable failed')
+          return true
+        },
+      }),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.ok(healCodes(r).includes('LIVE_REENABLE_FAILED'))
+  })
+
+  it('畸形 request：uninstall unsafe pkg → TypeError + 零调用 + 字节未变', async () => {
+    dir = uninstallableProfile()
+    const before = bytesOf(dir)
+    const factoryCalls = []
+    const liveCalls = []
+    const deps = {
+      profileDir: dir,
+      runner: () => { factoryCalls.push(1); return mockRunner().runner },
+      setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return false },
+    }
+    await assert.rejects(() => runProfileTransaction({ kind: 'uninstall', pkg: '../evil' }, deps), TypeError)
+    assert.equal(factoryCalls.length, 0)
+    assert.equal(liveCalls.length, 0)
+    assert.deepEqual(bytesOf(dir), before)
   })
 })
