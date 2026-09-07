@@ -6,15 +6,15 @@
  * 顶层必须是非 null/非数组对象且有 method → `ping` 跳过 guard，否则
  * trustedRestartRequest host-equivalence guard → typed method/业务错误映射 → 其他 500。
  */
-import { BOOT_ID, addDshPlugin, publicInstallStatus } from './dsh-cli.js'
+import { BOOT_ID, publicInstallStatus } from './dsh-cli.js'
 import {
   listInstalledWithMeta,
   listMarket,
   installFromRegistry,
   uninstallPlugin,
   upgradePlugin,
-  withMutationLock,
 } from './market.js'
+import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
 import { readInstalledPluginReadme } from './installed.js'
 import { isNewerVersion, npmLatest } from './versions.js'
 import type { RegistryController, RegistryControllerSnapshot } from './registry-controller.js'
@@ -44,13 +44,13 @@ export interface HostApiOverrides {
   upgradePlugin?: typeof upgradePlugin
   checkRegistryEntries?: typeof checkRegistryEntries
   npmLatest?: typeof npmLatest
+  /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
+  runTransaction?: typeof runProfileTransaction
 }
 
 export interface HostApiContext {
   controller: RegistryController
   pkg: { name: string; version: string }
-  /** 变更互斥锁（host.ts 传 withMutationLock） */
-  onMutation: <T>(task: () => Promise<T>) => Promise<T>
   deps?: HostApiOverrides
 }
 
@@ -172,6 +172,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     upgradePlugin: ctx.deps?.upgradePlugin ?? upgradePlugin,
     checkRegistryEntries: ctx.deps?.checkRegistryEntries ?? checkRegistryEntries,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
+    runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
   }
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
 
@@ -199,8 +200,21 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'self-upgrade': {
           const latest = await d.npmLatest(ctx.pkg.name, cfg().timeoutMs ?? 20_000)
-          const result = await ctx.onMutation(() => addDshPlugin(`${ctx.pkg.name}@${latest.version}`))
-          payload = { pkg: ctx.pkg.name, version: latest.version, usedAllowAllBuilds: result.usedAllowAllBuilds, needsRestart: true as const }
+          // 缺 integrity 一律 fail closed，不进事务
+          if (!latest.integrity) {
+            throw new Error(`npm metadata 缺少 dist integrity：${ctx.pkg.name}@${latest.version}，拒绝升级`)
+          }
+          const result = await d.runTransaction(
+            { kind: 'install-npm', pkg: ctx.pkg.name, version: latest.version, integrity: latest.integrity, signal },
+            { warmPackument: makeNpmWarmPackument(cfg().timeoutMs ?? 20_000) },
+          )
+          if (!result.ok) throw new TransactionError(result)
+          payload = {
+            pkg: ctx.pkg.name,
+            version: latest.version,
+            usedAllowAllBuilds: result.usedAllowAllBuilds === true,
+            needsRestart: true as const,
+          }
           break
         }
 
@@ -258,7 +272,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const id = strArg(body, 'id')
           if (!id) throw new ApiProtocolError(400, '缺少 id')
           const version = typeof body.version === 'string' ? body.version : undefined
-          const result = await ctx.onMutation(() => d.installFromRegistry(id, cfg(), { version, namespace: 'host' }))
+          const result = await d.installFromRegistry(id, cfg(), { version, namespace: 'host', signal })
           payload = { ...result }
           break
         }
@@ -266,7 +280,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'uninstall': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          const result = await ctx.onMutation(() => d.uninstallPlugin(target, cfg(), { namespace: 'host' }))
+          const result = await d.uninstallPlugin(target, cfg(), { namespace: 'host', signal })
           payload = { ...result }
           break
         }
@@ -274,7 +288,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'upgrade': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          const result = await ctx.onMutation(() => d.upgradePlugin(target, cfg(), { namespace: 'host' }))
+          const result = await d.upgradePlugin(target, cfg(), { namespace: 'host', signal })
           payload = { ...result }
           break
         }

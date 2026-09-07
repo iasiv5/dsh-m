@@ -11,7 +11,6 @@ import {
   listMarket,
   uninstallPlugin,
   upgradePlugin,
-  withMutationLock,
   type InstalledResult,
 } from './core/market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
@@ -197,7 +196,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       const id = String(args.id || '').trim()
       if (!id) throw new Error('缺少收录 id')
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
-      return cloneJson(await withMutationLock(() => m.installFromRegistry(id, cfg, { version, namespace: 'host' })))
+      return cloneJson(await m.installFromRegistry(id, cfg, { version, namespace: 'host' }))
     },
   }))
 
@@ -223,7 +222,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
-      return cloneJson(await withMutationLock(() => m.uninstallPlugin(target, cfg, { namespace: 'host' })))
+      return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host' }))
     },
   }))
 
@@ -285,7 +284,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
-      return cloneJson(await withMutationLock(() => m.upgradePlugin(target, cfg, { namespace: 'host' })))
+      return cloneJson(await m.upgradePlugin(target, cfg, { namespace: 'host' }))
     },
   }))
 

@@ -2,7 +2,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { withMutationLock } from './core/market.js'
 import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
@@ -76,7 +75,7 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
-    const handleApi = createApiDispatcher({ controller, pkg, onMutation: withMutationLock })
+    const handleApi = createApiDispatcher({ controller, pkg })
     server.register({
       kind: 'exact',
       path: '/dshm',

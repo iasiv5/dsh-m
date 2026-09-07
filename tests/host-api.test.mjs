@@ -78,7 +78,6 @@ function setup(overrides = {}) {
   const dispatcher = createApiDispatcher({
     controller,
     pkg: { name: 'dsh-m', version: '0.0.0-test' },
-    onMutation: (task) => task(),
     deps: {
       listMarket: async (cfg, opts) => {
         calls.listMarket.push(opts)
@@ -324,5 +323,91 @@ describe('host-api：method 响应', () => {
     assert.equal(res.status, 500)
     assert.equal(res.body.ok, false)
     assert.ok(!res.raw.includes('at ') || !res.raw.includes('stack'))
+  })
+})
+
+// ---------- Task 7：self-upgrade 走事务 + 互斥锁收编 ----------
+
+const committedUpgrade = {
+  kind: 'install-npm',
+  status: 'committed',
+  ok: true,
+  healActions: [],
+  output: 'upgraded',
+  snapshotRestoreVerified: false,
+  profileConverged: true,
+  needsRestart: true,
+  pkg: 'dsh-m',
+  spec: 'dsh-m@9.9.9',
+  version: '9.9.9',
+  usedAllowAllBuilds: false,
+}
+
+describe('host-api：self-upgrade 事务委派（Task 7）', () => {
+  it('锁收编：dispatcher 不再接受 onMutation，install 直接委派 market', async () => {
+    const { dispatcher } = setup({
+      installFromRegistry: async (id, cfg2, opts) => ({
+        id, pkg: 'pkg-1', spec: 'pkg-1@1.0.0', usedAllowAllBuilds: false, needsRestart: true, output: 'ok',
+      }),
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'plug-1' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.pkg, 'pkg-1')
+    assert.equal(res.body.ok, true)
+  })
+
+  it('npmLatest 无 integrity → 报错且 runTransaction 零调用', async () => {
+    const txCalls = []
+    const { dispatcher } = setup({
+      npmLatest: async () => ({ version: '9.9.9' }), // 缺 integrity
+      runTransaction: async (req, deps) => {
+        txCalls.push({ req, deps })
+        return committedUpgrade
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(res.status, 500)
+    assert.match(res.body.error, /缺少 dist integrity/)
+    assert.equal(txCalls.length, 0, '不进事务')
+  })
+
+  it('委派参数：pkg/version/integrity/signal + 生产 warmPackument 绑定', async () => {
+    const txCalls = []
+    const { dispatcher } = setup({
+      runTransaction: async (req, deps) => {
+        txCalls.push({ req, deps })
+        return committedUpgrade
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.version, '9.9.9')
+    assert.equal(res.body.usedAllowAllBuilds, false)
+    assert.equal(res.body.needsRestart, true)
+    assert.equal(txCalls.length, 1)
+    assert.equal(txCalls[0].req.kind, 'install-npm')
+    assert.equal(txCalls[0].req.pkg, 'dsh-m')
+    assert.equal(txCalls[0].req.version, '9.9.9')
+    assert.equal(txCalls[0].req.integrity, 'sha512-x')
+    assert.ok(txCalls[0].req.signal instanceof AbortSignal, 'signal 贯通到 request')
+    assert.equal(typeof txCalls[0].deps?.warmPackument, 'function', '生产 warm 绑定 makeNpmWarmPackument')
+  })
+
+  it('rolled-back → 500 且 message 含「已回滚到安装前状态」（兼容契约端到端）', async () => {
+    const rolled = {
+      kind: 'install-npm',
+      status: 'rolled-back',
+      ok: false,
+      failure: { code: 'ADD_FAILED', note: '命令失败 (exit 1): boom' },
+      healActions: [],
+      output: '',
+      snapshotRestoreVerified: true,
+      profileConverged: true,
+    }
+    const { dispatcher } = setup({ runTransaction: async () => rolled })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(res.status, 500)
+    assert.equal(res.body.ok, false)
+    assert.match(res.body.error, /已回滚到安装前状态/)
   })
 })

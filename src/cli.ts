@@ -11,7 +11,6 @@ import {
   listMarket,
   uninstallPlugin,
   upgradePlugin,
-  withMutationLock,
   type InstalledResult,
   type MarketResult,
 } from './core/market.js'
@@ -250,7 +249,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'install': {
       const id = needFlag(flags, 'id')
       const version = typeof flags.version === 'string' ? flags.version : undefined
-      const res = await withMutationLock(() => d.installFromRegistry(id, cfg, { version, namespace: 'cli' }))
+      const res = await d.installFromRegistry(id, cfg, { version, namespace: 'cli' })
       out(`✅ 已安装 ${res.pkg}（${res.spec}）`)
       if (res.usedAllowAllBuilds) out('⚠️  该插件执行了构建脚本（已按策略放行）。')
       out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -260,7 +259,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'upgrade': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '升级')
-      const res = await withMutationLock(() => d.upgradePlugin(target, cfg, { namespace: 'cli' }))
+      const res = await d.upgradePlugin(target, cfg, { namespace: 'cli' })
       const from = res.fromVersion ? `v${res.fromVersion} → ` : ''
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'
       out(`✅ 已升级 ${res.pkg}（${from}${to}）`)
@@ -272,7 +271,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'uninstall': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '卸载')
-      const res = await withMutationLock(() => d.uninstallPlugin(target, cfg, { namespace: 'cli' }))
+      const res = await d.uninstallPlugin(target, cfg, { namespace: 'cli' })
       out(`✅ 已卸载 ${res.pkg}${res.liveDisabled ? '（运行中的界面已先下线）' : ''}`)
       if (res.leftovers.length) out(`ℹ️  疑似残留数据（未删除）：${res.leftovers.join('、')}`)
       out('需要重启 DSH Web 生效：dshm restart --yes')

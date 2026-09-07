@@ -832,17 +832,6 @@ export async function upgradePlugin(
   return { ...result, fromVersion: target.version }
 }
 
-// ---------- 变更互斥 ----------
-
-/** 变更互斥：安装/卸载/升级串行执行（skillhub install-lock 同款思路）。 */
-let mutationTail: Promise<unknown> = Promise.resolve()
-
-export function withMutationLock<T>(task: () => Promise<T>): Promise<T> {
-  const next = mutationTail.then(task, task)
-  mutationTail = next.catch(() => undefined)
-  return next
-}
-
 /** 疑似残留路径（存在才列出）：删包不删数据，只报告。 */
 export function leftoverCandidates(pkg: string): string[] {
   const home = dshHome()
