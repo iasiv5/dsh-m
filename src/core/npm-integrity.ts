@@ -137,31 +137,87 @@ export interface ProfileFileSnapshot {
   bytes: Buffer | null
 }
 
-async function atomicWriteFile(path: string, bytes: Buffer): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
+/** 内部测试注入缝（不进对外接口）：缺省真 fs。 */
+export interface AtomicWriteFsOps {
+  mkdir?: typeof mkdir
+  open?: typeof open
+  rename?: typeof rename
+  rm?: typeof rm
+}
+
+/**
+ * 原子写（Task 2 加固）：POSIX 直接 `rename` 原子覆盖目标（不再先 rm——旧实现的
+ * 「删目标 → rename」窗口期内崩溃会直接丢文件）。仅 Windows 形态的 `EPERM`/`EEXIST`
+ * 走备份协议：`target→backup`、`tmp→target`，任一步失败恢复 `backup→target`，
+ * 全部成功后删除 backup；任何失败路径都清理 tmp。
+ */
+async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFsOps = {}): Promise<void> {
+  const mkdirOp = fsOps.mkdir ?? mkdir
+  const openOp = fsOps.open ?? open
+  const renameOp = fsOps.rename ?? rename
+  const rmOp = fsOps.rm ?? rm
+  await mkdirOp(dirname(path), { recursive: true })
   const tmp = `${path}.restore-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
-  const fh = await open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
+  const backup = `${path}.backup-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
+  const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
   try {
     await fh.write(bytes)
     await fh.sync()
   } finally {
     await fh.close().catch(() => undefined)
   }
-  await rm(path, { force: true })
-  await rename(tmp, path)
+  const cleanTmp = () => rmOp(tmp, { force: true }).catch(() => undefined)
+  try {
+    await renameOp(tmp, path)
+    return
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | null)?.code
+    if (code !== 'EPERM' && code !== 'EEXIST') {
+      await cleanTmp()
+      throw err
+    }
+  }
+  // Windows 备份协议
+  try {
+    await renameOp(path, backup)
+  } catch (bakErr) {
+    await cleanTmp()
+    throw bakErr
+  }
+  try {
+    await renameOp(tmp, path)
+  } catch (moveErr) {
+    await cleanTmp()
+    await renameOp(backup, path).catch(() => undefined)
+    throw moveErr
+  }
+  await rmOp(backup, { force: true }).catch(() => undefined)
 }
 
 export { atomicWriteFile }
 
-/** 记录 profile 关键文件的字节快照（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）。 */
-export async function snapshotFiles(paths: string[]): Promise<ProfileFileSnapshot[]> {
+/** 内部测试注入缝（不进对外接口）：缺省真 fs。 */
+export interface SnapshotFsOps {
+  readFile?: typeof readFile
+}
+
+/**
+ * 记录 profile 关键文件的字节快照（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）。
+ * Task 2 加固：仅 `ENOENT`（文件本不存在）→ `existed:false`；其他读取异常（EACCES、
+ * EISDIR 等）一律 throw，由调用方 fail closed（零写入），不再把不可读误当成「不存在」。
+ */
+export async function snapshotFiles(paths: string[], fsOps: SnapshotFsOps = {}): Promise<ProfileFileSnapshot[]> {
+  const read = fsOps.readFile ?? readFile
   return Promise.all(
     paths.map(async (path): Promise<ProfileFileSnapshot> => {
       try {
-        const bytes = await readFile(path)
+        const bytes = await read(path)
         return { path, existed: true, bytes }
-      } catch {
-        return { path, existed: false, bytes: null }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') {
+          return { path, existed: false, bytes: null }
+        }
+        throw err
       }
     }),
   )

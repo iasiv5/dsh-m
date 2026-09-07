@@ -642,3 +642,62 @@ export async function removeDshPlugin(
       : undefined,
   )
 }
+
+// ---------- PnpmRunner 生产适配器（Task 2） ----------
+
+/** 事务模块消费的四个 pnpm 操作；一律返回 RunnerOutcome，永不 throw。 */
+export interface PnpmRunner {
+  add(spec: string, signal?: AbortSignal): Promise<RunnerOutcome>
+  remove(pkg: string, signal?: AbortSignal): Promise<RunnerOutcome>
+  frozenInstall(signal?: AbortSignal): Promise<RunnerOutcome>
+  rebuildInstall(signal?: AbortSignal): Promise<RunnerOutcome>
+}
+
+function rawOutcome(text: string): RunnerOutcome {
+  const out = String(text ?? '')
+  return { ...classifyPnpmError(out), output: out.length <= 800 ? out : out.slice(-800) }
+}
+
+/**
+ * 生产 runner：add 走 makeAddViaLadder（prepare/hoist 在途自愈在 adapter 内耗尽）；
+ * remove 包 removeDshPlugin（原始文本分类）；frozen/rebuild 直接 spawn pnpm。
+ * 四操作统一收 signal；output 截 800。
+ */
+export function makeDshRunner(profileDir: string): PnpmRunner {
+  const ladder = makeAddViaLadder({ runDshPlugin })
+  return {
+    async add(spec: string, signal?: AbortSignal): Promise<RunnerOutcome> {
+      return ladder(spec, profileDir, signal)
+    },
+    async remove(pkg: string, signal?: AbortSignal): Promise<RunnerOutcome> {
+      try {
+        const output = await removeDshPlugin(pkg, { profileDir, signal })
+        return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
+      } catch (err) {
+        return rawOutcome(errText(err))
+      }
+    },
+    async frozenInstall(signal?: AbortSignal): Promise<RunnerOutcome> {
+      try {
+        const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--frozen-lockfile'], {
+          timeoutMs: installTimeoutMs(),
+          signal,
+        })
+        return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
+      } catch (err) {
+        return rawOutcome(errText(err))
+      }
+    },
+    async rebuildInstall(signal?: AbortSignal): Promise<RunnerOutcome> {
+      try {
+        const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--no-frozen-lockfile'], {
+          timeoutMs: installTimeoutMs(),
+          signal,
+        })
+        return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
+      } catch (err) {
+        return rawOutcome(errText(err))
+      }
+    },
+  }
+}
