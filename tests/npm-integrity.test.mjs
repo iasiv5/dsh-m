@@ -12,8 +12,18 @@ import { npmVersion } from '../lib/core/versions.js'
 import { readPnpmLockIntegrity, assertNpmIntegrity, snapshotFiles, restoreSnapshots } from '../lib/core/npm-integrity.js'
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { installFromRegistry } from '../lib/core/market.js'
+import { TransactionError } from '../lib/core/profile-transaction.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
+
+// Task 11：散文正则迁 code 的共用断言器
+const txFailure = (checks) => (err) => {
+  assert.ok(err instanceof TransactionError, `应抛 TransactionError（实际 ${err?.constructor?.name}: ${err?.message}）`)
+  for (const [label, fn] of Object.entries(checks)) {
+    assert.ok(fn(err.result), `${label}：${JSON.stringify({ status: err.result.status, failure: err.result.failure })}`)
+  }
+  return true
+}
 
 // Task 9 迁移：旧注入槽位 → transaction runner 注入
 const outcomeOf = (err) => {
@@ -246,7 +256,8 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
-    assert.match(res.output, /\[dsh-m 自愈\] 安装链把依赖写成 range（\^1\.2\.3/)
+    assert.ok(res.healActions?.some((h) => h.code === 'RANGE_ANCHOR_ACCEPTED'), 'range 锚定放行记录在案')
+    assert.ok(res.healActions.some((h) => h.note.includes('^1.2.3')), 'note 点名实际写入的 range')
   })
 
   it('~ 锚定 range 同样放行；漂移 spec（1.2.4）仍 fail closed', async () => {
@@ -263,7 +274,11 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     assert.equal(res.version, '1.2.3')
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } })),
-      (err) => /1\.2\.4 与目标 1\.2\.3 不一致/.test(err.message),
+      txFailure({
+        '版本漂移 fail closed': (r) => r.failure.code === 'DEP_VERSION_MISMATCH',
+        '原文在案': (r) => r.failure.note.includes('1.2.4 与目标 1.2.3 不一致'),
+        '进入回滚': (r) => r.status === 'rolled-back',
+      }),
     )
   })
 
@@ -288,7 +303,11 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
           }),
         },
       })),
-      (err) => /integrity/.test(err.message),
+      txFailure({
+        'integrity 校验失败': (r) => r.failure.code === 'LOCK_INTEGRITY_MISMATCH',
+        '已回滚（rolled-back）': (r) => r.status === 'rolled-back',
+        '字节还原已验证': (r) => r.snapshotRestoreVerified === true,
+      }),
     )
     assert.equal(readFileSync(join(profile, 'package.json'), 'utf8'), originalPkg, 'manifest 恢复原字节')
     assert.equal(readFileSync(join(profile, 'pnpm-lock.yaml'), 'utf8'), originalLock, 'lockfile 恢复原字节')
@@ -327,7 +346,12 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
           }),
         },
       })),
-      (err) => /integrity 校验失败/.test(err.message) && /人工修复/.test(err.message) && /frozen install 也失败/.test(err.message),
+      txFailure({
+        'integrity 校验失败（原始失败码保留）': (r) => r.failure.code === 'LOCK_INTEGRITY_MISMATCH',
+        '人工修复态': (r) => r.status === 'manual-repair',
+        'rollback 错误在案': (r) => r.failure.note.includes('frozen install 也失败'),
+        'profileConverged=false': (r) => r.profileConverged === false,
+      }),
     )
   })
 

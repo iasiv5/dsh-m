@@ -15,6 +15,8 @@ import { join } from 'node:path'
 import { installFromRegistry } from '../lib/core/market.js'
 import { readPnpmLockOverrides } from '../lib/core/npm-integrity.js'
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
+import { TransactionError } from '../lib/core/profile-transaction.js'
+import { CONFIG_MISMATCH_TEXT, NO_MATCHING_TEXT } from './fixtures/pnpm-errors.mjs'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
 const OVERRIDE = { '@deepseek-ai/dsh-credentials-local': '0.1.1-rc.2' }
@@ -40,8 +42,8 @@ packages:
 `
 }
 
-const CONFIG_MISMATCH = '命令失败 (exit 1): ERR_PNPM_LOCKFILE_CONFIG_MISMATCH Cannot proceed with the frozen installation. The current "overrides" configuration doesn\'t match the value found in the lockfile'
-const NO_MATCHING = '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION No matching version found for @iasiv5/dsh-skins@1.0.3 while fetching it from https://registry.npmjs.org/'
+const CONFIG_MISMATCH = CONFIG_MISMATCH_TEXT
+const NO_MATCHING = NO_MATCHING_TEXT
 
 const entry = { id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' }
 
@@ -67,6 +69,15 @@ const wrapInstall = (fake) => async () => {
     return outcomeOf(err)
   }
 }
+/** Task 11：散文正则迁 code 的共用断言器（断言数不少于迁移前）。 */
+const txFailure = (checks) => (err) => {
+  assert.ok(err instanceof TransactionError, `应抛 TransactionError（实际 ${err?.constructor?.name}: ${err?.message}）`)
+  for (const [label, fn] of Object.entries(checks)) {
+    assert.ok(fn(err.result), `${label}：${JSON.stringify({ status: err.result.status, failure: err.result.failure, heals: err.result.healActions?.map((h) => h.code) })}`)
+  }
+  return true
+}
+const healCodes = (r) => r.healActions.map((h) => h.code)
 
 describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
   let profile = ''
@@ -129,7 +140,12 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } })),
-      (err) => /integrity 校验失败，已回滚到安装前状态/.test(err.message) && !/人工修复/.test(err.message),
+      txFailure({
+        '回滚完成 rolled-back': (r) => r.status === 'rolled-back',
+        'integrity 校验失败': (r) => r.failure.code === 'LOCK_INTEGRITY_MISMATCH',
+        '字节还原已验证': (r) => r.snapshotRestoreVerified === true,
+        '终态一致（非人工修复）': (r) => r.profileConverged === true && r.status !== 'manual-repair',
+      }),
     )
     assert.equal(readFileSync(manifestPath(), 'utf8'), originalManifest, 'manifest 字节级还原（含 pnpm.overrides 与无尾换行）')
     assert.equal(readFileSync(lockPath(), 'utf8'), originalLock, 'lockfile 字节级还原')
@@ -153,9 +169,13 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => { throw new Error(NO_MATCHING) }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } })),
-      (err) => /安装失败.*已回滚到安装前状态/.test(err.message)
-        && /还原进 manifest/.test(err.message)
-        && !/人工修复/.test(err.message),
+      txFailure({
+        '安装失败（rolled-back）': (r) => r.status === 'rolled-back',
+        'B3 重试耗尽': (r) => r.failure.code === 'ADD_RETRY_EXHAUSTED',
+        'overrides 还原进 manifest': (r) => healCodes(r).includes('B2_OVERRIDES_ALIGNED'),
+        'frozen 复验通过': (r) => healCodes(r).includes('B2_FROZEN_REVERIFY_OK'),
+        '非人工修复': (r) => r.status !== 'manual-repair',
+      }),
     )
     assert.equal(frozenCalls, 2, 'frozen 复验跑了一次')
     const finalDoc = JSON.parse(readFileSync(manifestPath(), 'utf8'))
@@ -178,9 +198,11 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
           rebuildInstall: wrapInstall(rebuildInstall),
         },
       })),
-      (err) => /已回滚到安装前状态/.test(err.message)
-        && /lockfile 已重建/.test(err.message)
-        && !/人工修复/.test(err.message),
+      txFailure({
+        '回滚完成 rolled-back': (r) => r.status === 'rolled-back',
+        'lockfile 已重建': (r) => healCodes(r).includes('B2_LOCKFILE_REBUILT'),
+        '非人工修复': (r) => r.status !== 'manual-repair',
+      }),
     )
     assert.equal(rebuildCalls, 1, '重建只执行一次')
     assert.deepEqual(JSON.parse(readFileSync(manifestPath(), 'utf8'))?.pnpm?.overrides, OVERRIDE, '重建前 overrides 已对齐进 manifest')
@@ -200,7 +222,11 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
           rebuildInstall: wrapInstall(rebuildInstall),
         },
       })),
-      (err) => /已回滚到安装前状态/.test(err.message) && /lockfile 已重建/.test(err.message) && !/人工修复/.test(err.message),
+      txFailure({
+        '回滚完成 rolled-back': (r) => r.status === 'rolled-back',
+        'lockfile 已重建': (r) => healCodes(r).includes('B2_LOCKFILE_REBUILT'),
+        '非人工修复': (r) => r.status !== 'manual-repair',
+      }),
     )
     assert.equal(rebuildCalls, 1)
   })
@@ -217,7 +243,12 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
           rebuildInstall: wrapInstall(async () => { throw new Error('重建也炸了') }),
         },
       })),
-      (err) => /人工修复/.test(err.message) && /重建也炸了/.test(err.message) && /CONFIG_MISMATCH/.test(err.message),
+      txFailure({
+        '人工修复态': (r) => r.status === 'manual-repair',
+        '重建错误在案': (r) => r.failure.note.includes('重建也炸了'),
+        'frozen 失败文本（CONFIG_MISMATCH）在案': (r) => r.failure.note.includes('CONFIG_MISMATCH'),
+        '原始失败码保留': (r) => r.failure.code === 'ADD_RETRY_EXHAUSTED',
+      }),
     )
   })
 
@@ -273,7 +304,12 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
           frozenInstall: wrapInstall(async () => { restoreInstallCalls += 1 }),
         },
       })),
-      (err) => /安装失败，已回滚到安装前状态/.test(err.message) && /ERR_PNPM_NO_MATCHING_VERSION/.test(err.message) && !/人工修复/.test(err.message),
+      txFailure({
+        '回滚完成 rolled-back': (r) => r.status === 'rolled-back',
+        'NO_MATCHING 原文在案': (r) => r.failure.note.includes('ERR_PNPM_NO_MATCHING_VERSION'),
+        '重试耗尽': (r) => r.failure.code === 'ADD_RETRY_EXHAUSTED',
+        '非人工修复': (r) => r.status !== 'manual-repair',
+      }),
     )
     assert.equal(addCalls, 3, '默认重试 2 次（共 3 次）')
     assert.equal(restoreInstallCalls, 1, '回滚走了一次 frozen 校验')
@@ -300,11 +336,12 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } }))
     assert.equal(res.version, '1.2.3', '安装本身不受影响')
     assert.equal(verifyCalls, 1, '找回键后执行了一次 frozen 复验')
+    assert.ok(res.healActions?.length > 0, '自愈动作非空（[dsh-m 自愈] 结构源）')
+    assert.ok(res.healActions.some((h) => h.code === 'B1_MANIFEST_KEYS_RESTORED'), 'B1 键找回在案')
+    assert.ok(res.healActions.some((h) => h.note.includes('pnpm')), '自愈 note 点名找回的键')
     const finalDoc = JSON.parse(readFileSync(manifestPath(), 'utf8'))
     assert.deepEqual(finalDoc.pnpm?.overrides, OVERRIDE, 'pnpm.overrides 找回')
     assert.equal(finalDoc.dependencies['pkg-a'], '1.2.3', '安装写入的依赖变更保留')
-    assert.ok(res.output.includes('[dsh-m 自愈]'), '输出明确报告自愈动作')
-    assert.ok(res.output.includes('pnpm'), '自愈报告点名找回的键')
   })
 })
 

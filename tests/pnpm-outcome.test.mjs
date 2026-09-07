@@ -11,21 +11,17 @@ import {
   makeAddViaLadder,
   PNPM_OUTCOME_CODES,
 } from '../lib/core/dsh-cli.js'
+import {
+  CONFIG_MISMATCH_TEXT,
+  NO_MATCHING_TEXT,
+  UNUSED_PATCH_TEXT,
+} from './fixtures/pnpm-errors.mjs'
 
-// ---------- 原始 pnpm 文本（事故同形摘要） ----------
+// ---------- 原始 pnpm 文本（Task 11 起共享 tests/fixtures/pnpm-errors.mjs；其余为本地补充样本） ----------
 
-/** 2026-09-05 升级回滚事故：frozen overrides 失配。 */
-const CONFIG_MISMATCH_TEXT =
-  '命令失败 (exit 1): ERR_PNPM_LOCKFILE_CONFIG_MISMATCH Cannot proceed with the frozen installation. The current "overrides" configuration doesn\'t match the value found in the lockfile'
 /** 同事故家族：回滚快照 specifier 漂移。 */
 const OUTDATED_LOCKFILE_TEXT =
   '命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json'
-/** 2026-09-05 新发布 CDN 滞后事故。 */
-const NO_MATCHING_TEXT =
-  '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION No matching version found for @iasiv5/dsh-skins@1.0.3 while fetching it from https://registry.npmjs.org/'
-/** v0.2.1 真实案例：残留补丁条目（tests/uninstall-patch.test.mjs 同源样本，rewrite 前原始文本）。 */
-const UNUSED_PATCH_TEXT =
-  '[ERR_PNPM_UNUSED_PATCH] The following patches were not used: dsh-web-search'
 /** 2026-09-05 dsh-better-sidebar 事故：构建脚本被拦（errorDigest 保留 code/hint 后的同形摘要）。 */
 const PREPARE_BLOCKED_TEXT =
   '命令失败 (exit 1): ERR_PNPM_IGNORED_BUILDS — Ignored build scripts: node-pty@1.1.0 — Run "pnpm approve-builds" to pick which dependencies should be allowed to run scripts.'
