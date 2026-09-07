@@ -63,12 +63,25 @@
 
 底层原语（本机实证）：`dsh plugin --profile web add|remove|update`（转发 pnpm，作用于 `$DSH_HOME/profiles/web`）。**profile 的 `package.json` 就是唯一事实源**——不引入任何额外状态文件。
 
-- **安装（npm 源）**：装最新版并以**精确版本锁定**（不用 `^` 范围；用户指定版本必须为精确 semver，经该精确版本 endpoint 查询）。安装前对 profile 的 `package.json` / `pnpm-lock.yaml` / `pnpm-workspace.yaml` 做**字节快照**；安装后核验 importer 依赖为该精确版本（旧版 CLI 写入的 `^v`/`~v` 锚定 range 视为等价放行，2026-09-05 实机实证；精确性由紧随的 lockfile 解析与 integrity 兜底，其余 spec 仍 fail closed），并在 lockfile `packages` 条目中比对与 npm dist 一致的 `resolution.integrity`——缺失或不一致 **fail closed** 并执行 **best-effort dependency rollback**：原子恢复快照字节 + frozen 自愈阶梯（`pnpm install --frozen-lockfile` → 仍报 `CONFIG_MISMATCH` 时把 lockfile 记录的 overrides 对齐回 `package.json#pnpm.overrides` 再复验 → `CONFIG_MISMATCH` / `OUTDATED_LOCKFILE` 顽固失配才降级 `--no-frozen-lockfile` 重建并明确告知「lockfile 已重建」；全阶梯失败才报「可能需要人工修复」）。成功路径若发现安装链丢失了 manifest 顶层未知键（如 `pnpm.overrides`，2026-09-05 升级回滚事故），从快照找回并复验 frozen 一致性，输出带 `[dsh-m 自愈]` 报告。刚发布 ~1 分钟内的 `ERR_PNPM_NO_MATCHING_VERSION` 多为 packument CDN 滞后：退避重试 2 次（5s/15s），每次重试前拉一次完整 packument 预热。不声称 node_modules 与间接依赖已字节级回滚。
-- **安装（GitHub 源）**：解析并**锁定 commit SHA**（`github:owner/repo#sha`），skillhub 同款。
+### 3.1 Profile 变更事务（`src/core/profile-transaction.ts`，2026-09-07 重构）
+
+npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模块的四个入口**（自升级 = `install-npm` + 自身包名）。编排层（market.ts / host-api.ts / tools.ts / cli.ts）只做「版本/收录条目解析（事务外）→ 开事务 → 包装结果」，互斥锁收编在模块内部（模块级 FIFO，进程内串行）。
+
+- **两阶段不变量（失败保证）**：变更失败时，①先把三个关键文件（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）**逐字节还原到变更前快照**，还原后立即重读比对验证（`snapshotRestoreVerified` 报告此历史事实）；②再跑 frozen 收敛阶梯处理依赖一致性——阶梯中的 overrides 对齐 / `--no-frozen-lockfile` 重建允许对 manifest/lockfile 做**有记录的**受控改写（`healActions`）。失败终态承诺「**一致**」（`status='rolled-back'`）不必然「等同」；收敛耗尽则 `status='manual-repair'`（还原事实独立如实报告）。不声称 node_modules 字节级回滚。
+- **结果为四分支判别联合**：`committed` / `rejected`（快照失败、前置校验失败、排队期 abort——零写入）/ `rolled-back` / `manual-repair`；`healActions[{code, note}]` + `failure{code, note}`（英文稳定 code，机器可断言）；中文散文只在展示层由 `renderFailure` 生成（唯一产地）。消费方拿结构化结果自行渲染；host-api 失败体附 `detail` 白名单投影（不含 raw output，GUI 零改动只读 `error`）。
+- **pnpm 结果只以六类分类穿过接缝**（`dsh-cli.ts` 是分类器唯一产地）：ok / retryable-lag（CDN 滞后）/ config-drift（配置漂移）/ unused-patch / needs-builds / hard-fail；**分类发生在任何文案改写之前**，事务与 market 永不 regex pnpm 原始输出、只消费 `PNPM_OUTCOME_CODES` 常量。分类消费矩阵（add/remove/frozen/rebuild × 六类）由参数化测试全枚举钉死。
+- **自愈阶梯**（全部以 healActions 记录）：B1 安装链丢 manifest 顶层键 → 快照找回 + frozen 复验（复验失败 fail-closed 进回滚）；B2 frozen 收敛：CONFIG_MISMATCH → 把 lockfile 记录的 overrides 对齐回 `package.json#pnpm.overrides` 再复验 → 顽固失配（含 OUTDATED_LOCKFILE specifier 漂移）降级 `--no-frozen-lockfile` 重建；B3 刚发布 `ERR_PNPM_NO_MATCHING_VERSION` 退避重试 2 次（5s/15s，abort-aware），每次重试前预热完整 packument（生产绑定 `makeNpmWarmPackument`，失败吞错）；构建脚本被拦 → `dangerouslyAllowAllBuilds` 放行并**必须明确报告**（在途重试在 adapter 的 `makeAddViaLadder` 内耗尽）。
+- **signal 语义**：request 可带 AbortSignal，贯通 runner 四操作、预热与退避 sleep（abort 即醒）；mutate 前 abort → `rejected`；mutate 后 abort → 中止在途调用并执行**不可取消的**回滚（不变量优先于取消）。
+- **快照/原子写原语**（`npm-integrity.ts`）：快照仅吞 ENOENT（其他读取异常 fail closed 零写入）；原子写 POSIX 直接 rename（无「先删后改名」窗口），Windows EPERM/EEXIST 走备份协议，失败清理 tmp。
+
+### 3.2 各入口语义
+
+- **安装（npm 源）**：装最新版并以**精确版本锁定**（不用 `^` 范围；用户指定版本必须为精确 semver，经该精确版本 endpoint 查询；dist integrity 缺失 fail closed 不进事务）。事务内核验 importer 依赖为该精确版本（旧版 CLI 写入的 `^v`/`~v` 锚定 range 视为等价放行并记录 `RANGE_ANCHOR_ACCEPTED`；精确性由紧随的 lockfile 解析与 integrity 兜底，其余 spec 仍 fail closed），并在 lockfile `packages` 条目中比对与 npm dist 一致的 `resolution.integrity`。
+- **安装（GitHub 源）**：解析并**锁定 commit SHA**（`github:owner/repo#sha`）。核验采用**前态比对**：新 spec 必须相对快照是新写入（预置同 spec 旧依赖不误命中），否则 `GITHUB_SPEC_MISMATCH` 回滚。
 - **已装识别**：读 profile `package.json` dependencies，与 registry 匹配 → 标注「市场安装」；不匹配的也列出，标注「非市场安装 / 来源未知」。卸载/升级对两类都可用。
-- **卸载**：live-disable（先让 client bundle 下线，避免 404）→ 摘除该包在 profile 的补丁条目（`pnpm-workspace.yaml` 顶层 `patchedDependencies` 与 `package.json#pnpm.patchedDependencies`；依赖移除后残留条目会令 pnpm 以 `ERR_PNPM_UNUSED_PATCH` 整单失败，只精确匹配 `pkg` / `pkg@ver`，补丁文件本体保留并计入残留报告）→ `dsh plugin remove`。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
-- **升级**：**按需检查**（`dshm_outdated` / `dshm_list` 时实时比对本地版本 vs npm latest / GitHub main），半自动——展示升级计划，确认后执行。**不做后台定时器**。
-- **自更新**：dsh-m 对自己同样做版本比对 + 提示升级（设置页呈现）。
+- **卸载**（事务定序写死）：validate（严格读取：NOT_INSTALLED / NOT_DSH_PLUGIN / PLUGIN_METADATA_UNREADABLE，全部零写入零快照）→ 快照 → live-disable（先让 client bundle 下线，避免 404；回滚时尽力反向）→ 摘除该包补丁条目（`pnpm-workspace.yaml` 顶层 `patchedDependencies` 与 `package.json#pnpm.patchedDependencies`；残留条目会令 pnpm 以 `ERR_PNPM_UNUSED_PATCH` 整单失败，只精确匹配 `pkg` / `pkg@ver`，补丁文件本体保留并计入残留报告）→ remove → verify gone（仍在则回滚）。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
+- **升级**：**按需检查**（`dshm_outdated` / `dshm_list` 时实时比对本地版本 vs npm latest / GitHub release，半自动——展示升级计划，确认后执行，即重开一次安装事务）。**不做后台定时器**。
+- **自更新**：dsh-m 对自己同样做版本比对 + 提示升级（设置页呈现）；执行即 `install-npm` 事务（integrity 缺失直接拒绝，不进事务）。
 - **重启**：内置**一键重启**，复用 skillhub 验证过的重启路径（本机 `dsh-web.service` 是转发 shim，不新建 systemd 单元、不监听 3080）。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅，工具返回重启提示。
 - **安全基线（5 条）**：
   1. 所有拉取仅 HTTPS + 响应大小上限 + 超时；

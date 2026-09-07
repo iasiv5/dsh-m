@@ -1,5 +1,7 @@
 /**
- * Profile 变更事务（Profile Transaction）——深模块（计划：docs/plans/2026-09-07-profile-transaction-implementation-plan.md）。
+ * Profile 变更事务（Profile Transaction）——深模块。
+ * 设计语义见 docs/DESIGN.md §3.1；执行计划（含四轮评审处置）见
+ * docs/plans/2026-09-07-profile-transaction-implementation-plan.md。
  *
  * 模块契约（「类型之外的契约」）：
  * 1. 前置：request 必须已解析到底（版本/SHA/integrity 均已定）；模块内除 `warmPackument` 外零网络。
