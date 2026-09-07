@@ -6,7 +6,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, readFileSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs'
-import { rename as realRename } from 'node:fs/promises'
+import { readdir, rename as realRename, open as realOpen } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -264,6 +264,34 @@ describe('install-npm：两阶段不变量', () => {
     assert.equal(r.profileConverged, false)
     assert.ok(healCodes(r).includes('ROLLBACK_FALLBACK_REMOVED'))
     assert.equal(calls.remove.length, 1)
+  })
+
+  it('T2 非真空：remove 谎报 ok 但把依赖重新插回 manifest → verify-gone 拦截，不再进第二轮收敛', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner, calls } = mockRunner({
+      add: [failWith(NO_MATCHING), failWith(NO_MATCHING), failWith(NO_MATCHING)],
+      frozen: [failWith(CONFIG_MISMATCH)],   // conv1：frozen(1) CM → align → frozen(2) CM
+      rebuild: [failWith('重建失败')],
+      remove: [async () => {
+        // 声称成功，却把 pkg-a 写回 manifest（模拟命令撒谎/竞态）——verify-gone 必须拦截
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+        return { class: 'ok', output: 'removed' }
+      }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair', 'remove ok 但依赖仍在 ≠ 收敛')
+    assert.equal(r.snapshotRestoreVerified, true)
+    assert.equal(r.profileConverged, false)
+    assert.ok(healCodes(r).includes('ROLLBACK_FALLBACK_REMOVED'))
+    assert.equal(calls.frozen.length, 2, 'verify-gone 失败后不得进入第二轮 frozen 收敛')
+    assert.notEqual(r.status, 'rolled-back')
   })
 
   it('快照恢复失败 + 补移除成功 → 只作补偿记录，manual-repair 且事实字段如实（R1）', async () => {
@@ -715,41 +743,89 @@ describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入�
     assert.equal(readFileSync(target, 'utf8'), 'old')
   })
 
-  it('Y1：write 失败清理 tmp，不遗留 .restore-*', async () => {
+  // T1（复审补充）：write/sync/close 失败用「真实 open + 包装句柄 + 真实 rm」集成验证——
+  // 断言目录里真的没有 .restore-* 残留，而不只是「rm 被调用过」。
+  const noRestoreLeftovers = async (d) => {
+    const names = await readdir(d)
+    return names.filter((n) => n.includes('.restore-') || n.includes('.backup-'))
+  }
+
+  it('Y1/T1：write 失败 → 真实清理 tmp，目录无 .restore-* 残留', async () => {
     const target = join(dir, 'f.json')
     writeFileSync(target, 'old')
-    const rms = []
     await assert.rejects(
       () => atomicWriteFile(target, Buffer.from('new'), {
-        open: async () => ({
-          write: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }) },
-          sync: async () => {},
-          close: async () => {},
-        }),
-        rm: async (p, o) => { rms.push(p) },
+        open: async (p, flags, mode) => {
+          const fh = await realOpen(p, flags, mode)
+          return {
+            write: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }) },
+            sync: async () => {},
+            close: async () => { await fh.close() },
+          }
+        },
       }),
       (err) => err.code === 'ENOSPC',
     )
-    assert.ok(rms.some((p) => p.includes('.restore-')), 'write 失败也清理 tmp')
+    assert.deepEqual(await noRestoreLeftovers(dir), [], 'profile 目录不得遗留临时文件')
     assert.equal(readFileSync(target, 'utf8'), 'old')
   })
 
-  it('Y1：sync 失败清理 tmp', async () => {
+  it('Y1/T1：sync 失败 → 真实清理 tmp', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async (p, flags, mode) => {
+          const fh = await realOpen(p, flags, mode)
+          return {
+            write: async () => {},
+            sync: async () => { throw Object.assign(new Error('fsync failed'), { code: 'EIO' }) },
+            close: async () => { await fh.close() },
+          }
+        },
+      }),
+      (err) => err.code === 'EIO',
+    )
+    assert.deepEqual(await noRestoreLeftovers(dir), [])
+    assert.equal(readFileSync(target, 'utf8'), 'old')
+  })
+
+  it('F3/T1：close 失败 → 错误上抛且真实清理 tmp', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async (p, flags, mode) => {
+          const fh = await realOpen(p, flags, mode)
+          return {
+            write: async () => {},
+            sync: async () => {},
+            close: async () => {
+              await fh.close()
+              throw Object.assign(new Error('close leaked'), { code: 'EIO' })
+            },
+          }
+        },
+      }),
+      (err) => err.code === 'EIO' && /close leaked/.test(err.message),
+    )
+    assert.deepEqual(await noRestoreLeftovers(dir), [], 'close 失败也清理自有 tmp')
+    assert.equal(readFileSync(target, 'utf8'), 'old')
+  })
+
+  it('F5：open 未成功（O_EXCL 碰撞/权限）→ 不清理未取得所有权的路径', async () => {
     const target = join(dir, 'f.json')
     writeFileSync(target, 'old')
     const rms = []
     await assert.rejects(
       () => atomicWriteFile(target, Buffer.from('new'), {
-        open: async () => ({
-          write: async () => {},
-          sync: async () => { throw Object.assign(new Error('fsync failed'), { code: 'EIO' }) },
-          close: async () => {},
-        }),
-        rm: async (p) => { rms.push(p) },
+        open: async () => { throw Object.assign(new Error('exists'), { code: 'EEXIST' }) },
+        rm: async (p, o) => { rms.push(p) },
       }),
-      (err) => err.code === 'EIO',
+      (err) => err.code === 'EEXIST',
     )
-    assert.ok(rms.some((p) => p.includes('.restore-')))
+    assert.equal(rms.length, 0, '未取得 tmp 所有权绝不调用 rm（可能是他人 in-flight 文件）')
+    assert.equal(readFileSync(target, 'utf8'), 'old')
   })
 
   it('Y1：备份恢复本身失败 → 报告 backup 路径与双重错误，不静默', async () => {
@@ -1268,12 +1344,15 @@ describe('终审复审 R3：B1/B2 改写后提交前重新验证最终 integrity
     assert.deepEqual(bytesOf(dir), before, '回滚后字节还原')
   })
 
-  it('B2 rebuild 写入正确 integrity → 复验通过，正常 committed', async () => {
+  it('R3/T3 正向：rebuild 真正改写 lockfile（integrity 保持正确）→ 复验通过 committed，最终 lock 来自 rebuild', async () => {
     dir = makeProfile({
       'package.json': manifest({ name: 's', private: true, pnpm: { overrides: OVERRIDE }, dependencies: { existing: '^1.0.0' } }),
       'pnpm-lock.yaml': lockFile(),
       'pnpm-workspace.yaml': 'packages:\n  - .\n',
     })
+    // rebuild 产出的新 lockfile：内容与 add 阶段不同（带重建标记 + settings 块），目标包 integrity 仍正确
+    const REBUILT_LOCK = lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false })
+      .replace("lockfileVersion: '9.0'", "lockfileVersion: '9.0'\n# rebuilt by pnpm --no-frozen-lockfile")
     const { runner } = mockRunner({
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), manifest({ name: 's', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
@@ -1281,7 +1360,10 @@ describe('终审复审 R3：B1/B2 改写后提交前重新验证最终 integrity
         return { class: 'ok', output: 'added' }
       }],
       frozen: [failWith(CONFIG_MISMATCH)],
-      rebuild: [async () => ({ class: 'ok', output: 'rebuilt' })],
+      rebuild: [async () => {
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), REBUILT_LOCK)
+        return { class: 'ok', output: 'rebuilt' }
+      }],
     })
     const r = await runProfileTransaction(
       { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
@@ -1289,6 +1371,7 @@ describe('终审复审 R3：B1/B2 改写后提交前重新验证最终 integrity
     )
     assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
     assert.equal(r.version, '1.2.3')
+    assert.equal(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8'), REBUILT_LOCK, '最终 lockfile 确实来自 rebuild，而非 add 遗留')
   })
 })
 
@@ -1323,12 +1406,13 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
     assert.deepEqual(bytesOf(dir), before)
   })
 
-  it('github 门：add 返回 ok 但 signal 已 abort → rolled-back + ABORTED', async () => {
+  it('github 门：add 返回 ok 但 signal 已 abort → rolled-back + ABORTED（T4：字节恢复事实全断言）', async () => {
     dir = makeProfile({
       'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
       'pnpm-lock.yaml': lockFile(),
       'pnpm-workspace.yaml': 'packages:\n  - .\n',
     })
+    const before = bytesOf(dir)
     const ac = new AbortController()
     const { runner } = mockRunner({
       add: [async () => {
@@ -1344,6 +1428,9 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
     )
     assert.equal(r.status, 'rolled-back')
     assert.equal(r.failure.code, 'ABORTED')
+    assert.equal(r.snapshotRestoreVerified, true, '还原后重读比对通过')
+    assert.equal(r.profileConverged, true)
+    assert.deepEqual(bytesOf(dir), before, '三文件字节恢复')
   })
 
   it('uninstall 门：remove 返回 ok 但 signal 已 abort → rolled-back + ABORTED + live 反向', async () => {
@@ -1396,6 +1483,34 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
     )
     assert.equal(r.failure.code, 'ABORTED')
     assert.equal(calls.add.length, 1, '取消后不再重试 add')
+    assert.equal(r.status, 'rolled-back')
+  })
+
+  it('F4：warm 吞掉取消并正常 resolve → 仍不得再次 add（不信任 warm 传播取消）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const ac = new AbortController()
+    const { runner, calls } = mockRunner({
+      add: [
+        failWith(NO_MATCHING),
+        async () => ({ class: 'ok', output: 'should-not-happen' }),
+      ],
+      frozen: [ok('frozen-ok')],
+    })
+    const warm = async () => {
+      await sleep(30)
+      ac.abort()
+      // 坏 fetcher：吞掉取消，正常返回
+    }
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), signal: ac.signal },
+      baseTx(dir, runner, { warmPackument: warm, retryDelaysMs: [0] }),
+    )
+    assert.equal(r.failure.code, 'ABORTED', 'warm resolve 后复查 signal 仍必须终止')
+    assert.equal(calls.add.length, 1, '不得发起下一轮 add')
     assert.equal(r.status, 'rolled-back')
   })
 

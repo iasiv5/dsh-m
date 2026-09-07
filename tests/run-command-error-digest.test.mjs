@@ -124,6 +124,41 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     assert.ok(Date.now() - startedAt < 10_000, 'abort 应快速生效')
   })
 
+  // T5/F1（复审补充）：settle 必须等子进程真正退出；忽略 SIGTERM 的子进程由 SIGKILL 升级兜底
+  const IGNORING_CHILD = (marker, delayMs) =>
+    `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, ${delayMs})`
+
+  it('F1/T5：abort 后子进程忽略 SIGTERM → grace 升级 SIGKILL，reject 晚于 child 退出，marker 永不写出', async () => {
+    const marker = join(tmpdir(), `dshm-kill-abort-${process.pid}-${Date.now()}.marker`)
+    const ac = new AbortController()
+    const startedAt = Date.now()
+    const pending = runCommand(process.execPath, ['-e', IGNORING_CHILD(marker, 1500)], {
+      timeoutMs: 60_000,
+      signal: ac.signal,
+      killGraceMs: 400,
+    })
+    setTimeout(() => ac.abort(), 100)
+    await assert.rejects(pending, (err) => err.name === 'AbortError')
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 400, `reject 必须等到子进程真正退出（SIGKILL 宽限后），实际 ${elapsed}ms`)
+    await new Promise((r) => setTimeout(r, 2500)) // 越过 marker 计划写出时刻
+    assert.equal(existsSync(marker), false, 'SIGKILL 必须先于 marker 写出——子进程不得在 reject 后继续写文件')
+  })
+
+  it('F1/T5：超时同样升级 SIGKILL 并等待退出', async () => {
+    const marker = join(tmpdir(), `dshm-kill-timeout-${process.pid}-${Date.now()}.marker`)
+    const startedAt = Date.now()
+    const pending = runCommand(process.execPath, ['-e', IGNORING_CHILD(marker, 1500)], {
+      timeoutMs: 200,
+      killGraceMs: 400,
+    })
+    await assert.rejects(pending, (err) => /命令超时 200ms/.test(err.message))
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 400, `超时 reject 必须等到子进程退出，实际 ${elapsed}ms`)
+    await new Promise((r) => setTimeout(r, 2500))
+    assert.equal(existsSync(marker), false, '被超时停止的子进程不得继续写文件')
+  })
+
   it('exit 0 仍然正常解析（不误伤成功路径）', async () => {
     const out = await runCommand(process.execPath, ['-e', 'console.log("ok")'], { timeoutMs: 15_000 })
     assert.ok(out.includes('ok'))

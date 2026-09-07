@@ -311,6 +311,8 @@ export interface RunCommandOptions {
   viaShell?: boolean
   detached?: boolean
   onChunk?: (text: string) => void
+  /** 停止子进程时 SIGTERM→SIGKILL 的升级宽限（毫秒）；默认 5000 */
+  killGraceMs?: number
 }
 
 export function webProfileName(): string {
@@ -469,36 +471,48 @@ export async function runCommand(
     } satisfies SpawnOptions)
     let out = ''
     let settled = false
+    let pendingError: Error | undefined
+    let killTimer: ReturnType<typeof setTimeout> | undefined
     const finish = (err?: Error) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (killTimer !== undefined) clearTimeout(killTimer)
       options.signal?.removeEventListener('abort', onAbort)
       if (err) reject(err)
       else resolvePromise(out)
     }
-    const killChild = () => {
+    const signalGroup = (sig: NodeJS.Signals) => {
       if (process.platform !== 'win32' && child.pid !== undefined) {
         try {
-          process.kill(-child.pid, 'SIGTERM')
+          process.kill(-child.pid, sig)
           return
         } catch {
           /* fall through */
         }
       }
       try {
-        child.kill('SIGTERM')
+        child.kill(sig)
       } catch {
         /* already gone */
       }
     }
+    /**
+     * F1（复审补充）：停止协议 = SIGTERM 进程组 → 宽限后升级 SIGKILL；settle 一律等
+     * child 'close'（子进程/进程组真正停止后才 resolve/reject）——否则忽略 SIGTERM 的
+     * 子进程会在 Promise 已 reject 后继续写文件。
+     */
+    const stopChild = (err: Error) => {
+      if (settled || pendingError !== undefined) return
+      pendingError = err
+      signalGroup('SIGTERM')
+      killTimer = setTimeout(() => signalGroup('SIGKILL'), Math.max(0, options.killGraceMs ?? 5_000))
+    }
     const timer = setTimeout(() => {
-      killChild()
-      finish(new Error(`命令超时 ${options.timeoutMs}ms`))
+      stopChild(new Error(`命令超时 ${options.timeoutMs}ms`))
     }, options.timeoutMs)
     const onAbort = () => {
-      killChild()
-      finish(commandAbortError())
+      stopChild(commandAbortError())
     }
     options.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -513,6 +527,10 @@ export async function runCommand(
     })
     child.on('error', (err) => finish(err))
     child.on('close', (code) => {
+      if (pendingError !== undefined) {
+        finish(pendingError)
+        return
+      }
       if (code === 0) finish()
       else finish(new Error(`命令失败 (exit ${code}): ${errorDigest(out) || 'no output'}`))
     })

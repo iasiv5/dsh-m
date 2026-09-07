@@ -583,6 +583,22 @@ export async function runProfileTransaction(
 | 🟡Y2 `makeAddViaLadder` 的 allowAllBuilds 写入在 try 外，违反「永不 throw」 | 采纳：写入失败转 hard-fail RunnerOutcome（≤800 截断），不再发起第二次 add。新增 EROFS 反例 |
 | ⚠️残余风险 跨进程并发不受 FIFO 保护 | 采纳文档化：DESIGN.md §3.1「互斥边界（已知限制）」+ `dshm` 帮助文案显著提示；跨进程锁列为后续演进（本轮不做，与计划「跨进程并发不在覆盖范围」一致） |
 
+### 第五轮补充：新增测试质量 + F1–F5（复审补充处置）
+> 复审补充指出 5 项测试未证明标题声称的行为（T1–T5），并连带发现 5 项真缺陷（F1–F5）；全部同轮修复（273 → 279 测试）。
+
+| 评审项 | 处置 |
+|---|---|
+| F1 abort/timeout 后 Promise 立即 settle，不等 child 退出；无 SIGKILL 升级（忽略 SIGTERM 的子进程在 reject 后继续写文件） | 采纳：`runCommand` 停止协议重做——SIGTERM 进程组 → 宽限（`killGraceMs`，缺省 5s）升级 SIGKILL；settle 一律等 child `close`（子进程真正停止后才 resolve/reject）。新增忽略 SIGTERM 的 marker 反例 ×2（abort + 超时，均断言 reject 晚于宽限且 marker 永不写出） |
+| F2 恢复复验吞所有读取错误（EACCES 被当作「不存在」） | 采纳：`assertRestoredBytes` 仅 ENOENT 视为不存在，其他读取异常按复验失败 fail closed（→ manual-repair，`ROLLBACK_VERIFY_FAILED` 在案）。其确定性触发需 chmod/fs-seam，按复审测试清单（仅 T1–T5）不另设用例 |
+| F3 close 失败被吞 | 采纳：write/sync 与 close 的错误合并传播（close 错误不掩盖原始异常）；新增真实句柄 close 失败测试（错误上抛 + 目录无 .restore-*） |
+| F4 warm 吞掉取消并正常 resolve 时仍会再次 add | 采纳：B3 循环在 warm 之后复查 signal（不信任 warm 传播取消）；新增坏 fetcher 反例（warm 正常返回但已取消 → 不得二次 add） |
+| F5 open 未成功也清理 tmp（可能删掉他人 in-flight 碰撞文件） | 采纳：`O_EXCL` open 成功才取得所有权（`tmpOwned`），未取得所有权绝不 rm；新增 open EEXIST 反例（rm 零调用） |
+| T1 Y1 write/sync 测试只证明 rm 被调用 | 采纳：改为真实 open + 包装句柄 + 真实 rm 的集成原语测试，`readdir` 断言目录无 `.restore-*`/`.backup-*` 残留（write/sync/close 三例） |
+| T2 R1 verify-gone 测试真空 | 采纳：新增非真空反例——remove 谎报 ok 且把依赖重新插回 manifest → verify-gone 拦截（manual-repair、profileConverged:false、不再进第二轮 frozen，调用数断言 =2） |
+| T3 R3 正向对照 rebuild 实为 no-op | 采纳：rebuild mock 真实改写 lockfile（带重建标记、integrity 仍正确）→ committed 且断言最终 lockfile 字节 === rebuild 产物（非 add 遗留） |
+| T4 github abort 未验字节恢复 | 采纳：补 before 快照比对 + `snapshotRestoreVerified`/`profileConverged` 断言，与 npm/uninstall 兄弟用例对齐 |
+| T5 在途取消只验快速 reject，未验 child death | 采纳：由 F1 的两例 marker 测试覆盖（reject 等待退出 + SIGKILL 升级 + marker 不存在），abort 与 timeout 各一 |
+
 ## 执行纪律
 
 - 开始实现前，先批判性复查整份计划；发现缺项、矛盾、命名不一致或验证命令无效，先修计划再动手。

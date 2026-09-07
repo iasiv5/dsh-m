@@ -444,13 +444,17 @@ function originallyAbsent(pkg: string, snapshots: ProfileFileSnapshot[]): boolea
   }
 }
 
-/** 还原后立即重读比对（第一阶段的验证动作）。 */
+/** 还原后立即重读比对（第一阶段的验证动作；F2：仅 ENOENT 视为不存在，其他读取错误 fail closed）。 */
 async function assertRestoredBytes(snapshots: ProfileFileSnapshot[]): Promise<void> {
   for (const snap of snapshots) {
     let current: Buffer | null
     try {
       current = await readFile(snap.path)
-    } catch {
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
+        // EACCES/EISDIR 等不可读 ≠ 不存在：一律按复验失败处理（restoreVerified=false）
+        throw new RestoreVerifyMismatch(`还原后复验读取失败（${snap.path}）：${errText(err)}`)
+      }
       current = null
     }
     if (snap.existed && snap.bytes !== null) {
@@ -611,6 +615,9 @@ async function addWithLagRetry(
     if (req.signal?.aborted) throw abortErr()
     if (d.warmPackument !== undefined) {
       await d.warmPackument(req.pkg, req.signal)
+      // F4（复审补充）：不信任 warm 正确传播取消——即使它正常 resolve，
+      // 取消已发生就不得再发起下一轮 add
+      if (req.signal?.aborted) throw abortErr()
       heal.push({ code: 'B3_PACKUMENT_WARMED', note: '重试前已预热 registry packument' })
     }
   }

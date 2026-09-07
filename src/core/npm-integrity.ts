@@ -146,11 +146,14 @@ export interface AtomicWriteFsOps {
 }
 
 /**
- * 原子写（Task 2 加固；终审复审 Y1 再加固）：POSIX 直接 `rename` 原子覆盖目标（不再先
- * rm——旧实现的「删目标 → rename」窗口期内崩溃会直接丢文件）。仅 Windows 形态的
- * `EPERM`/`EEXIST` 走备份协议：`target→backup`、`tmp→target`，任一步失败恢复
- * `backup→target`，全部成功后删除 backup。**任何失败路径（含 write/sync/close）都清理
- * tmp**；备份恢复本身失败时报告 backup 路径与双重错误，不静默。
+ * 原子写（Task 2 加固；终审复审 Y1/F3/F5 再加固）：POSIX 直接 `rename` 原子覆盖目标
+ * （不再先 rm——旧实现的「删目标 → rename」窗口期内崩溃会直接丢文件）。仅 Windows 形态
+ * 的 `EPERM`/`EEXIST` 走备份协议：`target→backup`、`tmp→target`，任一步失败恢复
+ * `backup→target`，全部成功后删除 backup。失败清理遵守：
+ * - F5：`O_EXCL` open 成功才取得 tmp 所有权，未取得所有权绝不清理（可能是他人 in-flight 的碰撞文件）；
+ * - F3：close 失败不吞（但不掩盖 write/sync 的原始异常）；
+ * - 任何失败路径（含 write/sync/close/rename）都清理自有 tmp；备份恢复本身失败时报告
+ *   backup 路径与双重错误，不静默。
  */
 async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFsOps = {}): Promise<void> {
   const mkdirOp = fsOps.mkdir ?? mkdir
@@ -162,14 +165,23 @@ async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFs
   const backup = `${path}.backup-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   const cleanTmp = () => rmOp(tmp, { force: true }).catch(() => undefined)
   let completed = false
+  let tmpOwned = false
   try {
     const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
+    tmpOwned = true // O_EXCL 成功 = tmp 由本调用创建
+    let opErr: unknown
     try {
       await fh.write(bytes)
       await fh.sync()
-    } finally {
-      await fh.close().catch(() => undefined)
+    } catch (err) {
+      opErr = err
     }
+    try {
+      await fh.close()
+    } catch (closeErr) {
+      if (opErr === undefined) opErr = closeErr // F3：close 失败不吞
+    }
+    if (opErr !== undefined) throw opErr
     try {
       await renameOp(tmp, path)
       completed = true
@@ -201,7 +213,7 @@ async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFs
     await rmOp(backup, { force: true }).catch(() => undefined)
     completed = true
   } finally {
-    if (!completed) await cleanTmp()
+    if (tmpOwned && !completed) await cleanTmp()
   }
 }
 
