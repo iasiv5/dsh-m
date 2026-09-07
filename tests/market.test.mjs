@@ -345,19 +345,20 @@ function mockTxRunner(script = {}) {
   return { runner: { add: op('add'), remove: op('remove'), frozenInstall: op('frozen'), rebuildInstall: op('rebuild') }, calls }
 }
 
-describe('installEntry npm 分支：事务桥接回退（Task 3）', () => {
+describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态）', () => {
   let dir = ''
   afterEach(() => {
     if (dir) rmSync(dir, { recursive: true, force: true })
     dir = ''
   })
 
-  it('桥接回退①：仅注入查询类依赖 + transaction.runner → 全部操作落在注入 runner（零 legacy 槽位、零真实 spawn）', async () => {
+  it('事务注入①：仅注入查询类依赖 + transaction.runner → 全部操作落在注入 runner（零真实 spawn）', async () => {
     dir = txProfile({
       'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
       'pnpm-workspace.yaml': 'packages:\n  - .\n',
     })
+    assert.ok(dir.startsWith(tmpdir()), 'transaction.profileDir 必须位于 os.tmpdir() 下')
     const tx = mockTxRunner({
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
@@ -367,7 +368,6 @@ describe('installEntry npm 分支：事务桥接回退（Task 3）', () => {
     })
     const res = await installFromRegistry('p', {}, {}, {
       ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
-      profileDir: dir,
       transaction: { runner: () => tx.runner, profileDir: dir },
     })
     assert.equal(res.version, '1.2.3')
@@ -379,32 +379,34 @@ describe('installEntry npm 分支：事务桥接回退（Task 3）', () => {
     assert.equal(tx.calls.remove.length, 0)
   })
 
-  it('桥接回退②：仅注入 addDshPlugin 槽位 + transaction.runner → add 走 legacy fake，frozen 回退 transaction.runner', async () => {
+  it('事务注入②：github 分支同样委派 transaction.runner', async () => {
     dir = txProfile({
       'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
       'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
       'pnpm-workspace.yaml': 'packages:\n  - .\n',
     })
-    const legacyAddCalls = []
     const tx = mockTxRunner({
-      frozen: [async () => ({ class: 'ok', output: 'frozen-ok' })],
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${'a'.repeat(40)}` } }, null, 2) + '\n')
+        return { class: 'ok', output: 'gh-added', usedAllowAllBuilds: false }
+      }],
     })
-    await assert.rejects(
-      () => installFromRegistry('p', {}, {}, {
-        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
-        profileDir: dir,
-        addDshPlugin: async (source) => {
-          legacyAddCalls.push(source)
-          throw new Error('命令失败 (exit 1): ERR_PNPM_PEER_SOMETHING hard fail')
+    const res = await installFromRegistry('p', {}, {}, {
+      loadRegistry: async () => ({
+        configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
+        isDefault: true, stale: false, fetchedAt: null, errors: [], count: 1,
+        registry: {
+          version: 1,
+          plugins: [{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'github', github: 'owner/repo' }],
         },
-        transaction: { runner: () => tx.runner, profileDir: dir },
       }),
-      (err) => /已回滚到安装前状态/.test(err.message),
-    )
-    assert.deepEqual(legacyAddCalls, ['pkg-a@1.2.3'], 'add 走 legacy fake')
-    assert.equal(tx.calls.add.length, 0, 'add 不回退到 transaction.runner（legacy 槽位优先）')
-    assert.equal(tx.calls.frozen.length, 1, 'frozen 回退 transaction.runner')
-    assert.equal(tx.calls.rebuild.length, 0, 'frozen ok 不需要 rebuild')
+      githubLatestTag: async () => ({ tag: 'v2.0.0', sha: 'a'.repeat(40) }),
+      transaction: { runner: () => tx.runner, profileDir: dir },
+    })
+    assert.equal(res.sha, 'a'.repeat(40))
+    assert.equal(res.tag, 'v2.0.0')
+    assert.equal(res.pkg, 'owner-repo')
+    assert.deepEqual(tx.calls.add, [{ arg: `github:owner/repo#${'a'.repeat(40)}`, signal: undefined }])
   })
 })
 

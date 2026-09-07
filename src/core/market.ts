@@ -9,15 +9,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { addDshPlugin, removeDshPlugin } from './dsh-cli.js'
-import {
-  classifyPnpmError,
-  makeDshRunner,
-  type PnpmRunner,
-  type RunnerOutcome,
-} from './dsh-cli.js'
 import { dshHome, webProfileDir } from './env.js'
-import { readPnpmLockIntegrity } from './npm-integrity.js'
 import {
   runProfileTransaction,
   makeNpmWarmPackument,
@@ -27,7 +19,6 @@ import {
 } from './profile-transaction.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
-  readProfileDeps,
   type InstalledPlugin,
 } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
@@ -43,7 +34,6 @@ import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
   npmLatest as defaultNpmLatest,
-  npmPackument as defaultNpmPackument,
   npmVersion,
 } from './versions.js'
 
@@ -564,114 +554,11 @@ export async function listInstalledWithMeta(
 
 // ---------- 安装 / 升级 ----------
 
-/** 安装路径可注入依赖（测试用；生产走真实实现）。 */
+/** 安装/升级路径可注入依赖（测试用；生产走真实实现）。Task 9 起事务注入走 `transaction`。 */
 export interface InstallDeps extends Partial<MarketDeps> {
-  addDshPlugin?: typeof addDshPlugin
-  removeDshPlugin?: typeof removeDshPlugin
-  readProfileDeps?: typeof readProfileDeps
   npmVersion?: typeof npmVersion
-  npmPackument?: typeof defaultNpmPackument
-  readLockIntegrity?: typeof readPnpmLockIntegrity
-  profileDir?: string
-  /** 恢复快照后的 pnpm install --frozen-lockfile（可注入） */
-  restoreInstall?: (profileDir: string) => Promise<unknown>
-  /** B2 最终降级：frozen 持续失配时的 lockfile 重建（--no-frozen-lockfile，可注入） */
-  rebuildInstall?: (profileDir: string) => Promise<unknown>
-  /** B3：ERR_PNPM_NO_MATCHING_VERSION 的退避重试间隔（毫秒，按序消费）；测试注入 [0,0] */
-  retryDelaysMs?: number[]
-  /** Task 3 起：事务依赖注入（生产原生形态；旧槽位经桥接兼容至 Task 9 删除） */
+  /** 事务依赖注入（runner/预热/退避/tmpdir 等）；B3 预热统一走 transaction.warmPackument */
   transaction?: TransactionDeps
-}
-
-// ---------- Task 3：npm 分支事务桥接（txDepsFrom；Task 9 删除） ----------
-
-/** legacy mutation 槽位（add/remove/frozen/rebuild）任一存在时才构造 legacy runner。 */
-function hasLegacyMutationOverrides(deps?: InstallDeps): boolean {
-  return deps?.addDshPlugin !== undefined
-    || deps?.removeDshPlugin !== undefined
-    || deps?.restoreInstall !== undefined
-    || deps?.rebuildInstall !== undefined
-}
-
-function bridgeOutcome(text: string): RunnerOutcome {
-  const raw = String(text ?? '')
-  return { ...classifyPnpmError(raw), output: raw.length <= 800 ? raw : raw.slice(-800) }
-}
-
-/**
- * legacy 槽位 → PnpmRunner 包装：成功→ok+output+usedAllowAllBuilds；throw→原始文本分类。
- * 未注入的槽位逐操作回退有效 runner（transaction.runner 优先，缺省生产 makeDshRunner），
- * 绝不构造残缺 runner。
- */
-function bridgeLegacyRunnerWithPerOperationFallbacks(deps: InstallDeps, base: PnpmRunner): PnpmRunner {
-  return {
-    add: deps.addDshPlugin !== undefined
-      ? async (spec: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
-          try {
-            const r = await deps.addDshPlugin!(spec)
-            return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
-          } catch (err) {
-            return bridgeOutcome(err instanceof Error ? err.message : String(err))
-          }
-        }
-      : base.add.bind(base),
-    remove: deps.removeDshPlugin !== undefined
-      ? async (pkg: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
-          try {
-            const output = await deps.removeDshPlugin!(pkg, { signal })
-            return { class: 'ok', output }
-          } catch (err) {
-            return bridgeOutcome(err instanceof Error ? err.message : String(err))
-          }
-        }
-      : base.remove.bind(base),
-    frozenInstall: deps.restoreInstall !== undefined
-      ? async (): Promise<RunnerOutcome> => {
-          try {
-            await deps.restoreInstall!(deps.profileDir ?? webProfileDir())
-            return { class: 'ok', output: 'frozen-lockfile 校验通过' }
-          } catch (err) {
-            return bridgeOutcome(err instanceof Error ? err.message : String(err))
-          }
-        }
-      : base.frozenInstall.bind(base),
-    rebuildInstall: deps.rebuildInstall !== undefined
-      ? async (): Promise<RunnerOutcome> => {
-          try {
-            await deps.rebuildInstall!(deps.profileDir ?? webProfileDir())
-            return { class: 'ok', output: 'lockfile 已重建（--no-frozen-lockfile）' }
-          } catch (err) {
-            return bridgeOutcome(err instanceof Error ? err.message : String(err))
-          }
-        }
-      : base.rebuildInstall.bind(base),
-  }
-}
-
-/**
- * 桥接构造（Task 9 删除）：legacy InstallDeps 槽位 → TransactionDeps。
- * 仅注入查询类依赖时不得构造残缺 legacy runner——直接用注入的 transaction.runner 或生产 runner。
- */
-function txDepsFrom(deps: InstallDeps | undefined, timeoutMs: number): TransactionDeps {
-  const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
-  const productionRunner = makeDshRunner(profileDir)
-  const effectiveRunner = deps?.transaction?.runner?.(profileDir) ?? productionRunner
-  const runner = hasLegacyMutationOverrides(deps)
-    ? bridgeLegacyRunnerWithPerOperationFallbacks(deps ?? {}, effectiveRunner)
-    : effectiveRunner
-  return {
-    ...deps?.transaction,
-    profileDir,
-    runner: () => runner,
-    warmPackument:
-      deps?.transaction?.warmPackument
-      ?? (deps?.npmPackument !== undefined
-        ? (pkg: string, signal?: AbortSignal) =>
-            Promise.resolve(deps.npmPackument!(pkg, timeoutMs, signal)).then(() => undefined, () => undefined)
-        : makeNpmWarmPackument(timeoutMs)),
-    retryDelaysMs: deps?.transaction?.retryDelaysMs ?? deps?.retryDelaysMs,
-    readProfileDeps: deps?.transaction?.readProfileDeps ?? deps?.readProfileDeps,
-  }
 }
 
 export interface InstallResult {
@@ -730,9 +617,13 @@ export async function installEntry(
       expectedIntegrity = latest.integrity
     }
     if (!expectedIntegrity) throw new Error(`npm metadata 缺少 dist integrity：${pkg}@${version}，拒绝安装`)
+    // 生产预热绑定：未注入时 B3 用 makeNpmWarmPackument（保留 timeout/signal、失败吞错）
     const result = await runProfileTransaction(
       { kind: 'install-npm', pkg, version, integrity: expectedIntegrity, signal: opts.signal },
-      txDepsFrom(deps, timeoutMs),
+      {
+        ...deps?.transaction,
+        warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
+      },
     )
     if (!result.ok) throw new TransactionError(result)
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
@@ -752,7 +643,7 @@ export async function installEntry(
     const { tag, sha } = await (deps?.githubLatestTag ?? defaultGithubLatestTag)(entry.github, timeoutMs, opts.signal)
     const result = await runProfileTransaction(
       { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
-      txDepsFrom(deps, timeoutMs),
+      deps?.transaction ?? {},
     )
     if (!result.ok) throw new TransactionError(result)
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')

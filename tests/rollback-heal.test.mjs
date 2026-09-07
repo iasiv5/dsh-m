@@ -14,6 +14,7 @@ import { join } from 'node:path'
 
 import { installFromRegistry } from '../lib/core/market.js'
 import { readPnpmLockOverrides } from '../lib/core/npm-integrity.js'
+import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
 const OVERRIDE = { '@deepseek-ai/dsh-credentials-local': '0.1.1-rc.2' }
@@ -44,6 +45,29 @@ const NO_MATCHING = '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION No matc
 
 const entry = { id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' }
 
+// ---------- Task 9 迁移：legacy 注入槽位 → transaction 注入 ----------
+
+const outcomeOf = (err) => {
+  const text = err instanceof Error ? err.message : String(err)
+  return { ...classifyPnpmError(text), output: text }
+}
+const wrapAdd = (fake) => async () => {
+  try {
+    const r = await fake()
+    return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
+  } catch (err) {
+    return outcomeOf(err)
+  }
+}
+const wrapInstall = (fake) => async () => {
+  try {
+    await fake()
+    return { class: 'ok', output: 'install ok' }
+  } catch (err) {
+    return outcomeOf(err)
+  }
+}
+
 describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
   let profile = ''
   beforeEach(() => {
@@ -56,7 +80,12 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
   const manifestPath = () => join(profile, 'package.json')
   const lockPath = () => join(profile, 'pnpm-lock.yaml')
 
+  /**
+   * 事务注入构造（真实 profile 防护断言：profileDir 必须在 tmpdir 下）。
+   * 默认 frozen/rebuild 成功、remove 失败（对应旧默认：真实 dsh 移除未安装包必失败）。
+   */
   function baseDeps(overrides = {}) {
+    assert.ok(profile.startsWith(tmpdir()), 'transaction.profileDir 必须位于 os.tmpdir() 下（不触碰真实 web profile）')
     return {
       loadRegistry: async () => ({
         configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
@@ -64,18 +93,18 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
         registry: { version: 1, plugins: [entry] },
       }),
       npmLatest: async () => ({ version: '1.2.3', integrity: sha512('good') }),
-      profileDir: profile,
-      retryDelaysMs: [0, 0],
-      restoreInstall: async () => undefined,
-      rebuildInstall: async () => undefined,
-      readProfileDeps: async () => {
-        try {
-          return JSON.parse(readFileSync(manifestPath(), 'utf8'))?.dependencies ?? {}
-        } catch {
-          return {}
-        }
+      transaction: {
+        profileDir: profile,
+        retryDelaysMs: [0, 0],
+        runner: () => ({
+          add: wrapAdd(async () => { throw new Error(NO_MATCHING) }),
+          remove: async () => outcomeOf(new Error('命令失败 (exit 1): 移除 pkg-a 失败（未安装）')),
+          frozenInstall: wrapInstall(async () => undefined),
+          rebuildInstall: wrapInstall(async () => undefined),
+          ...overrides.runnerOps,
+        }),
+        ...overrides.transaction,
       },
-      ...overrides,
     }
   }
 
@@ -99,7 +128,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
       return { output: 'ok', usedAllowAllBuilds: false }
     }
     await assert.rejects(
-      () => installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd })),
+      () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } })),
       (err) => /integrity 校验失败，已回滚到安装前状态/.test(err.message) && !/人工修复/.test(err.message),
     )
     assert.equal(readFileSync(manifestPath(), 'utf8'), originalManifest, 'manifest 字节级还原（含 pnpm.overrides 与无尾换行）')
@@ -123,7 +152,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     }
     const fakeAdd = async () => { throw new Error(NO_MATCHING) }
     await assert.rejects(
-      () => installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, restoreInstall })),
+      () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } })),
       (err) => /安装失败.*已回滚到安装前状态/.test(err.message)
         && /还原进 manifest/.test(err.message)
         && !/人工修复/.test(err.message),
@@ -143,9 +172,11 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => { throw new Error(NO_MATCHING) }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        restoreInstall: async () => { throw new Error(CONFIG_MISMATCH) },
-        rebuildInstall,
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => { throw new Error(CONFIG_MISMATCH) }),
+          rebuildInstall: wrapInstall(rebuildInstall),
+        },
       })),
       (err) => /已回滚到安装前状态/.test(err.message)
         && /lockfile 已重建/.test(err.message)
@@ -163,9 +194,11 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => { throw new Error(NO_MATCHING) }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        restoreInstall: async () => { throw new Error('命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json') },
-        rebuildInstall,
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => { throw new Error('命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date with <ROOT>/package.json') }),
+          rebuildInstall: wrapInstall(rebuildInstall),
+        },
       })),
       (err) => /已回滚到安装前状态/.test(err.message) && /lockfile 已重建/.test(err.message) && !/人工修复/.test(err.message),
     )
@@ -178,9 +211,11 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => { throw new Error(NO_MATCHING) }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        restoreInstall: async () => { throw new Error(CONFIG_MISMATCH) },
-        rebuildInstall: async () => { throw new Error('重建也炸了') },
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => { throw new Error(CONFIG_MISMATCH) }),
+          rebuildInstall: wrapInstall(async () => { throw new Error('重建也炸了') }),
+        },
       })),
       (err) => /人工修复/.test(err.message) && /重建也炸了/.test(err.message) && /CONFIG_MISMATCH/.test(err.message),
     )
@@ -202,12 +237,15 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
       return { output: 'ok', usedAllowAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({
-      addDshPlugin: fakeAdd,
-      npmPackument: async (pkg) => {
-        packumentCalls.push(pkg)
-        return { versions: [] }
+      runnerOps: {
+        add: wrapAdd(fakeAdd),
+        frozenInstall: wrapInstall(async () => { restoreInstallCalls += 1 }),
       },
-      restoreInstall: async () => { restoreInstallCalls += 1 },
+      transaction: {
+        warmPackument: async (pkg) => {
+          packumentCalls.push(pkg)
+        },
+      },
     }))
     assert.equal(res.version, '1.2.3')
     assert.equal(addCalls, 3, '共尝试 3 次')
@@ -230,8 +268,10 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     let restoreInstallCalls = 0
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        restoreInstall: async () => { restoreInstallCalls += 1 },
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => { restoreInstallCalls += 1 }),
+        },
       })),
       (err) => /安装失败，已回滚到安装前状态/.test(err.message) && /ERR_PNPM_NO_MATCHING_VERSION/.test(err.message) && !/人工修复/.test(err.message),
     )
@@ -257,7 +297,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }))
       return { output: 'ok', usedAllowAllBuilds: false }
     }
-    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, restoreInstall }))
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } }))
     assert.equal(res.version, '1.2.3', '安装本身不受影响')
     assert.equal(verifyCalls, 1, '找回键后执行了一次 frozen 复验')
     const finalDoc = JSON.parse(readFileSync(manifestPath(), 'utf8'))

@@ -10,9 +10,32 @@ import { join } from 'node:path'
 
 import { npmVersion } from '../lib/core/versions.js'
 import { readPnpmLockIntegrity, assertNpmIntegrity, snapshotFiles, restoreSnapshots } from '../lib/core/npm-integrity.js'
+import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { installFromRegistry } from '../lib/core/market.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
+
+// Task 9 迁移：旧注入槽位 → transaction runner 注入
+const outcomeOf = (err) => {
+  const text = err instanceof Error ? err.message : String(err)
+  return { ...classifyPnpmError(text), output: text }
+}
+const wrapAdd = (fake) => async () => {
+  try {
+    const r = await fake()
+    return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
+  } catch (err) {
+    return outcomeOf(err)
+  }
+}
+const wrapInstall = (fake) => async () => {
+  try {
+    await fake()
+    return { class: 'ok', output: 'install ok' }
+  } catch (err) {
+    return outcomeOf(err)
+  }
+}
 
 const LOCK_WITH = (pkg, version, integrity, { quoted = false, peer = '' } = {}) => `lockfileVersion: '9.0'
 
@@ -178,7 +201,10 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
 
   const entry = { id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' }
 
+  /** 事务注入构造（真实 profile 防护断言：profileDir 必须在 tmpdir 下）。 */
   function baseDeps(overrides = {}) {
+    assert.ok(profile.startsWith(tmpdir()), 'transaction.profileDir 必须位于 os.tmpdir() 下（不触碰真实 web profile）')
+    const { runnerOps, transaction, ...rest } = overrides
     return {
       loadRegistry: async () => ({
         configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
@@ -186,9 +212,18 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
         registry: { version: 1, plugins: [entry] },
       }),
       npmLatest: async () => ({ version: '1.2.3', integrity: sha512('good') }),
-      profileDir: profile,
-      restoreInstall: async () => undefined,
-      ...overrides,
+      ...rest,
+      transaction: {
+        profileDir: profile,
+        runner: () => ({
+          add: wrapAdd(async () => { throw new Error('不应调用 add') }),
+          remove: async () => outcomeOf(new Error('remove 失败')),
+          frozenInstall: wrapInstall(async () => undefined),
+          rebuildInstall: wrapInstall(async () => undefined),
+          ...(runnerOps || {}),
+        }),
+        ...(transaction || {}),
+      },
     }
   }
 
@@ -198,7 +233,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
       return { output: 'ok', usedAllowAllBuilds: false }
     }
-    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '1.2.3' }) }))
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
     assert.equal(res.needsRestart, true)
   })
@@ -209,21 +244,25 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
       return { output: 'ok', usedAllowAllBuilds: false }
     }
-    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '^1.2.3' }) }))
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
     assert.match(res.output, /\[dsh-m 自愈\] 安装链把依赖写成 range（\^1\.2\.3/)
   })
 
   it('~ 锚定 range 同样放行；漂移 spec（1.2.4）仍 fail closed', async () => {
+    // Task 9 迁移：漂移 spec 由 fake add 真实写入 manifest（严格读取器读到 1.2.4），断言零改动
+    let specWrites = 0
     const fakeAdd = async () => {
-      writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '~1.2.3' } }))
+      specWrites += 1
+      const spec = specWrites === 1 ? '~1.2.3' : '1.2.4'
+      writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': spec } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
       return { output: 'ok', usedAllowAllBuilds: false }
     }
-    const res = await installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '~1.2.3' }) }))
+    const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
     await assert.rejects(
-      () => installFromRegistry('p', {}, {}, baseDeps({ addDshPlugin: fakeAdd, readProfileDeps: async () => ({ 'pkg-a': '1.2.4' }) })),
+      () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } })),
       (err) => /1\.2\.4 与目标 1\.2\.3 不一致/.test(err.message),
     )
   })
@@ -242,10 +281,11 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        readProfileDeps: async () => ({ existing: '^1.0.0', 'pkg-a': '1.2.3' }),
-        restoreInstall: async () => {
-          restored = true
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => {
+            restored = true
+          }),
         },
       })),
       (err) => /integrity/.test(err.message),
@@ -260,9 +300,11 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
         npmLatest: async () => ({ version: '1.2.3' }),
-        addDshPlugin: async () => {
-          touched = true
-          return { output: '', usedAllowAllBuilds: false }
+        runnerOps: {
+          add: wrapAdd(async () => {
+            touched = true
+            return { output: '', usedAllowAllBuilds: false }
+          }),
         },
       })),
       (err) => /缺少 dist integrity/.test(err.message),
@@ -278,10 +320,11 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
-        addDshPlugin: fakeAdd,
-        readProfileDeps: async () => ({ 'pkg-a': '1.2.3' }),
-        restoreInstall: async () => {
-          throw new Error('frozen install 也失败')
+        runnerOps: {
+          add: wrapAdd(fakeAdd),
+          frozenInstall: wrapInstall(async () => {
+            throw new Error('frozen install 也失败')
+          }),
         },
       })),
       (err) => /integrity 校验失败/.test(err.message) && /人工修复/.test(err.message) && /frozen install 也失败/.test(err.message),
@@ -308,10 +351,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.0.5', sha512('exact')))
       return { output: 'ok', usedAllowAllBuilds: false }
     }
-    const res = await installFromRegistry('p', {}, { version: '1.0.5' }, baseDeps({
-      addDshPlugin: fakeAdd,
-      readProfileDeps: async () => ({ 'pkg-a': '1.0.5' }),
-    }))
+    const res = await installFromRegistry('p', {}, { version: '1.0.5' }, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.0.5')
     globalThis.fetch = realFetch
   })

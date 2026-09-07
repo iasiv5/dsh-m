@@ -464,11 +464,11 @@ export async function runProfileTransaction(
   - Modify: `tests/rollback-heal.test.mjs`、`tests/npm-integrity.test.mjs`
 - 迁移规则: 旧槽位 → `transaction: { profileDir, retryDelaysMs:[0,0], runner: (dir)=>({…旧 fake 按桥规则包装}), warmPackument: 旧 npmPackument fake }`；断言暂不改动（Task 11 再迁 code）。`readProfileDeps` 注入不再迁移——与文件内容等价的注入直接删除；`npm-integrity.test.mjs` 漂移 spec 用例（fake 返回 `1.2.4`）改为 fake add 真实写入 `1.2.4`（严格读取器钉同一 fail-closed，断言零改动）。
 - 真实 profile 防护: 迁移后共用 helper 断言 `transaction.profileDir` 以 `os.tmpdir()` 开头。
-- 删除前全仓搜索: `grep -rn "addDshPlugin\|readProfileDeps\|restoreInstall\|rebuildInstall" tests/`——除 uninstall-patch 对 `removePatchedDependencyEntries` 的直测外无残留。
+- 删除前全仓搜索: `grep -rn "addDshPlugin\|readProfileDeps\|npmPackument\|removeInstalled\|readLockIntegrity" tests/`——除 uninstall-patch 对 `removePatchedDependencyEntries` 的直测外无残留。（v7 修订：原模式含 `restoreInstall`/`rebuildInstall`，与接口定稿 `PnpmRunner.frozenInstall/rebuildInstall` 方法名撞名，mock runner 必然命中——字面门禁不可能通过，属验证命令无效；改为只匹配新世界不存在的 legacy 槽名。）
 - [ ] Step 1: 基线（全 pass）
 - [ ] Step 2: 迁移两测试文件 + 删桥 + 收窄 + 防护断言（同一提交）
 - [ ] Step 3: 确认通过（机器门禁）
-- Run: `npm run build && npm test && npm run typecheck && ! grep -rn "addDshPlugin\|restoreInstall\|rebuildInstall\|readProfileDeps" tests/`
+- Run: `npm run build && npm test && npm run typecheck && ! grep -rn "addDshPlugin\|readProfileDeps\|npmPackument\|removeInstalled\|readLockIntegrity" tests/`
 - Expected: 全 pass；grep 零命中。
 - [ ] Step 4: checkpoint commit（`refactor(tx): 删桥，测试注入全迁移`）
 
@@ -564,10 +564,11 @@ export async function runProfileTransaction(
 | 🟡 partial legacy deps 残缺 runner | 采纳：`hasLegacyMutationOverrides` 门 + 逐操作回退 `productionRunner`；仅查询类注入不构造 legacy runner；新增两例桥接回退专项测试（Task 3 Step 1） |
 | 非阻塞版本括注清理 | 采纳：正文版本括注去除，历史仅存于头部变更记录 |
 
-### 执行期复查修订（v6，执行 agent 依「执行纪律」第一条自行修复并记录）
+### 执行期复查修订（v6/v7，执行 agent 依「执行纪律」第一条自行修复并记录）
 | 发现 | 处置 |
 |---|---|
 | `tests/npm-integrity.test.mjs:226` 注入 `readProfileDeps` 返回 `1.2.4`（文件实为 `~1.2.3`）并断言 fail closed；verify 链入事务后无桥接槽位，Task 3「现有测试零改动通过」不可达成 | `TransactionDeps` 增 `readProfileDeps` 测试缝（缺省=严格读取器）；Task 3 桥接映射；Task 9 删桥时删槽，该用例改 fake add 真实写 `1.2.4`（断言零改动） |
+| Task 9 grep 门禁的 `restoreInstall\|rebuildInstall` 与接口定稿 `PnpmRunner.frozenInstall/rebuildInstall` 方法名撞名——所有 mock runner 必然命中，验证命令无效 | 门禁模式改为 `addDshPlugin\|readProfileDeps\|npmPackument\|removeInstalled\|readLockIntegrity`（仅 legacy 槽名，新世界零存在） |
 
 ## 执行纪律
 

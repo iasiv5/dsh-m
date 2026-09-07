@@ -91,8 +91,6 @@ export interface TransactionDeps {
   stripPatchedEntries?: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
   retryDelaysMs?: readonly number[]             // 默认 [5_000, 15_000]；测试 [0, 0]
   profileDir?: string                           // 缺省 webProfileDir()；测试 tmpdir
-  /** verify 相读取 profile 依赖（缺省 = 模块私有严格读取器）；仅为桥接/可测试性注入，Task 9 删桥时移除 */
-  readProfileDeps?: (profileDir: string) => Promise<Record<string, string>>
 }
 
 // ---------- 四分支判别联合 ----------
@@ -362,7 +360,6 @@ async function frozenConvergeLadder(
 // ---------- 严格读取器（verify 相专用） ----------
 
 async function strictReadDeps(d: ResolvedDeps): Promise<Record<string, string>> {
-  if (d.readProfileDeps !== undefined) return d.readProfileDeps(d.profileDir)
   let raw: string
   try {
     raw = await readFile(join(d.profileDir, 'package.json'), 'utf8')
@@ -544,7 +541,6 @@ interface ResolvedDeps {
   setLiveDisabled: (pkg: string, disabled: boolean) => Promise<boolean>
   stripPatchedEntries: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
   retryDelaysMs: readonly number[]
-  readProfileDeps: ((profileDir: string) => Promise<Record<string, string>>) | undefined
   paths: string[]
 }
 
@@ -556,7 +552,6 @@ function resolveDeps(deps?: TransactionDeps): Omit<ResolvedDeps, 'runner'> {
     setLiveDisabled: deps?.setLiveDisabled ?? setLivePluginDisabled,
     stripPatchedEntries: deps?.stripPatchedEntries ?? removePatchedDependencyEntries,
     retryDelaysMs: deps?.retryDelaysMs ?? [5_000, 15_000],
-    readProfileDeps: deps?.readProfileDeps,
     paths: [
       join(profileDir, 'package.json'),
       join(profileDir, 'pnpm-lock.yaml'),
