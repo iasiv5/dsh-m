@@ -3,6 +3,7 @@
 > v3（2026-09-07）：吸收第二轮评审修订。变更要点：`TransactionResult` 改为**真正的四分支判别联合**（`failure?: never` / `ok: true` 字面量类型；`TransactionError` 只收失败分支）；事实字段更名 `snapshotRestoreVerified` / `profileConverged` 并定义各态证据来源；signal 贯通完整调用链（含 uninstall/warmPackument/sleep/PluginRunner/host-api 四 mutation doorway）；Task 1 改为导出 `makeAddViaLadder` 工厂（可测试 seam）；修正 B1 测试的 fake 返回序列；FIFO 锁测试改用真实事务函数；Task 11 grep 范围收窄并新增 `renderFailure` 契约测试；快照/原子写加固改为可注入 fs 操作的确定性测试；Windows 回退加备份协议；`InstallDeps` 删除孤儿字段 `npmPackument`；阶段范围描述更正；`BASE_SHA` 固定基线验证 GUI/publish.yml 零 diff。
 > v4（2026-09-07）：终审五项修订——基线改 `git update-ref refs/dsh-plan/profile-transaction-base` + 单参数工作树比较（覆盖已提交/staged/unstaged，不依赖跨任务 shell 变量；实现前先提交在案文档）；生产 `warmPackument` 缺省绑定 `makeNpmWarmPackument(timeoutMs)`（保留 timeout/signal，未绑定时 B3 跳过预热绝不调 undefined）；消费矩阵 remove/frozen/rebuild 行六类全枚举补全；`INTERNAL_ERROR` 改 **phase-aware**（快照后异常照常走统一回滚，不绕过恢复流程）；畸形 request 零写入测试落点（Task 2/5）。阶段①更名「npm 事务抽取 + 明示行为加固」。
 > v5（2026-09-07，最终）：Task 3 桥接契约补清——`InstallDeps` 自 Task 3 起**非破坏性新增** `transaction?: TransactionDeps`（不再称「形状不变」）；legacy `npmPackument` 桥接必须传 `(pkg, timeoutMs, signal)` 三参；partial legacy deps 逐槽位回退生产 runner（仅注入查询类依赖时不得构造残缺 runner）+ 回退专项测试。正文版本括注统一去版本号。
+> v6（2026-09-07，执行期复查修订）：执行前批判性复查发现 `tests/npm-integrity.test.mjs:226` 注入 legacy `readProfileDeps` 返回与文件内容不同的 spec（`1.2.4` vs `~1.2.3`）并断言 fail closed——verify 链入事务后该注入无桥接槽位，「现有测试零改动通过」无法达成。修法：`TransactionDeps` 增加 `readProfileDeps?: (profileDir) => Promise<Record<string,string>>` 测试缝（缺省 = 模块私有严格读取器，仿 `stripPatchedEntries`「注入仅为可测试性」先例）；Task 3 桥接映射 `deps.readProfileDeps`；Task 9 删桥时**删除该槽位**，该用例改为 fake add 真实写入漂移 spec（断言零改动，钉同一 fail-closed 行为）。
 
 ## 目标
 
@@ -134,6 +135,8 @@ export interface TransactionDeps {
   stripPatchedEntries?: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
   retryDelaysMs?: readonly number[]             // 默认 [5_000, 15_000]；测试 [0, 0]
   profileDir?: string                           // 缺省 webProfileDir()；测试 tmpdir
+  /** verify 相读取 profile 依赖（缺省 = 模块私有严格读取器）；仅为桥接/可测试性注入，Task 9 删桥时移除 */
+  readProfileDeps?: (profileDir: string) => Promise<Record<string, string>>
 }
 
 /**
@@ -374,6 +377,7 @@ export async function runProfileTransaction(
         ? (pkg, signal) => deps.npmPackument!(pkg, timeoutMs, signal)   // v5：三参，不丢 timeout/signal
         : makeNpmWarmPackument(timeoutMs)),
     retryDelaysMs: deps?.transaction?.retryDelaysMs ?? deps?.retryDelaysMs,
+    readProfileDeps: deps?.transaction?.readProfileDeps ?? deps?.readProfileDeps,
   }
   ```
   - legacy runner 包装：成功→ok+output+usedAllowAllBuilds，throw→`{...classifyPnpmError(errText), output: errText}`；**未注入的槽位逐操作回退 `productionRunner` 对应方法**；
@@ -456,9 +460,9 @@ export async function runProfileTransaction(
 
 - 目标：生产路径完全原生；旧槽位删除；全部旧注入测试迁移。
 - Files:
-  - Modify: `src/core/market.ts`（删 `txDepsFrom`；`InstallDeps` 收窄为 `{ loadRegistry?, npmLatest?, npmVersion?, githubLatestTag?, listInstalledPlugins?, transaction?: TransactionDeps }`——**v3：删除顶层 `npmPackument`**，B3 预热统一走 `transaction.warmPackument`）
+  - Modify: `src/core/market.ts`（删 `txDepsFrom`；`InstallDeps` 收窄为 `{ loadRegistry?, npmLatest?, npmVersion?, githubLatestTag?, listInstalledPlugins?, transaction?: TransactionDeps }`——**v3：删除顶层 `npmPackument`**，B3 预热统一走 `transaction.warmPackument`；**v6：`TransactionDeps` 同步删除 `readProfileDeps` 桥接槽**）
   - Modify: `tests/rollback-heal.test.mjs`、`tests/npm-integrity.test.mjs`
-- 迁移规则: 旧槽位 → `transaction: { profileDir, retryDelaysMs:[0,0], runner: (dir)=>({…旧 fake 按桥规则包装}), warmPackument: 旧 npmPackument fake }`；断言暂不改动（Task 11 再迁 code）。
+- 迁移规则: 旧槽位 → `transaction: { profileDir, retryDelaysMs:[0,0], runner: (dir)=>({…旧 fake 按桥规则包装}), warmPackument: 旧 npmPackument fake }`；断言暂不改动（Task 11 再迁 code）。`readProfileDeps` 注入不再迁移——与文件内容等价的注入直接删除；`npm-integrity.test.mjs` 漂移 spec 用例（fake 返回 `1.2.4`）改为 fake add 真实写入 `1.2.4`（严格读取器钉同一 fail-closed，断言零改动）。
 - 真实 profile 防护: 迁移后共用 helper 断言 `transaction.profileDir` 以 `os.tmpdir()` 开头。
 - 删除前全仓搜索: `grep -rn "addDshPlugin\|readProfileDeps\|restoreInstall\|rebuildInstall" tests/`——除 uninstall-patch 对 `removePatchedDependencyEntries` 的直测外无残留。
 - [ ] Step 1: 基线（全 pass）
@@ -559,6 +563,11 @@ export async function runProfileTransaction(
 | 🟡 legacy warm 丢 timeout/signal | 采纳：桥接规则写死 `(pkg, signal) => deps.npmPackument(pkg, timeoutMs, signal)` 三参 |
 | 🟡 partial legacy deps 残缺 runner | 采纳：`hasLegacyMutationOverrides` 门 + 逐操作回退 `productionRunner`；仅查询类注入不构造 legacy runner；新增两例桥接回退专项测试（Task 3 Step 1） |
 | 非阻塞版本括注清理 | 采纳：正文版本括注去除，历史仅存于头部变更记录 |
+
+### 执行期复查修订（v6，执行 agent 依「执行纪律」第一条自行修复并记录）
+| 发现 | 处置 |
+|---|---|
+| `tests/npm-integrity.test.mjs:226` 注入 `readProfileDeps` 返回 `1.2.4`（文件实为 `~1.2.3`）并断言 fail closed；verify 链入事务后无桥接槽位，Task 3「现有测试零改动通过」不可达成 | `TransactionDeps` 增 `readProfileDeps` 测试缝（缺省=严格读取器）；Task 3 桥接映射；Task 9 删桥时删槽，该用例改 fake add 真实写 `1.2.4`（断言零改动） |
 
 ## 执行纪律
 
