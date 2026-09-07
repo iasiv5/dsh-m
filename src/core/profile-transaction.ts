@@ -802,7 +802,7 @@ async function uninstall(
     liveDisabled = await d.setLiveDisabled(req.pkg, true)
     if (liveDisabled) heal.push({ code: 'LIVE_DISABLED', note: '运行中的插件界面已先行下线' })
     const patch = d.stripPatchedEntries(d.profileDir, req.pkg)
-    if (patch.changed) heal.push({ code: 'PATCH_ENTRIES_STRIPPED', note: '已摘除该包的 pnpm 补丁条目（防 ERR_PNPM_UNUSED_PATCH 整单失败）' })
+    if (patch.changed) heal.push({ code: 'PATCH_ENTRIES_STRIPPED', note: '已摘除该包的 pnpm 补丁条目（防残留补丁触发 unused-patch 整单失败）' })
     orphanedPatchFiles = patch.orphanedPatchFiles
     const rmOut = await d.runner.remove(req.pkg, req.signal)
     if (rmOut.class !== 'ok') {
