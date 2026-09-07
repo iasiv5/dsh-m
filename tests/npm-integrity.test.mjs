@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { npmVersion } from '../lib/core/versions.js'
-import { readPnpmLockIntegrity, assertNpmIntegrity, snapshotFiles, restoreSnapshots } from '../lib/core/npm-integrity.js'
+import { readPnpmLockIntegrity, assertNpmIntegrity, snapshotFiles, restoreSnapshots, verifySnapshots } from '../lib/core/npm-integrity.js'
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { installFromRegistry } from '../lib/core/market.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
@@ -197,6 +197,44 @@ describe('snapshot/restore', () => {
     await restoreSnapshots(snaps)
     assert.equal(readFileSync(keep, 'utf8'), '{"original":true}')
     assert.equal(existsSync(created), false)
+  })
+
+  // Y2（第三轮复审）：F2 fail-closed 的确定性回归——fsOps 缝注入读取异常，不依赖 chmod
+  const readErr = (code) => async () => { throw Object.assign(new Error(code.toLowerCase()), { code }) }
+  const readEnoent = async () => { throw Object.assign(new Error('no such file'), { code: 'ENOENT' }) }
+
+  it('verifySnapshots：originally-absent + ENOENT → 通过', async () => {
+    const absent = { path: join(dir, 'new-file.yaml'), existed: false, bytes: null }
+    await verifySnapshots([absent], { readFile: readEnoent })
+  })
+
+  it('verifySnapshots：originally-absent + EACCES → 失败（不可读 ≠ 不存在）', async () => {
+    const absent = { path: join(dir, 'new-file.yaml'), existed: false, bytes: null }
+    await assert.rejects(
+      () => verifySnapshots([absent], { readFile: readErr('EACCES') }),
+      (err) => /EACCES|读取失败/.test(err.message),
+    )
+  })
+
+  it('verifySnapshots：originally-absent + EIO → 失败', async () => {
+    const absent = { path: join(dir, 'new-file.yaml'), existed: false, bytes: null }
+    await assert.rejects(
+      () => verifySnapshots([absent], { readFile: readErr('EIO') }),
+      (err) => /EIO|读取失败/.test(err.message),
+    )
+  })
+
+  it('verifySnapshots：existed + 字节不一致 → 失败；字节一致 → 通过', async () => {
+    const file = join(dir, 'package.json')
+    writeFileSync(file, 'original-bytes')
+    const snaps = await snapshotFiles([file])
+    writeFileSync(file, 'mutated-bytes')
+    await assert.rejects(
+      () => verifySnapshots(snaps),
+      (err) => /复验不一致/.test(err.message),
+    )
+    writeFileSync(file, 'original-bytes')
+    await verifySnapshots(snaps)
   })
 })
 

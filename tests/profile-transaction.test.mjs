@@ -828,6 +828,61 @@ describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入�
     assert.equal(readFileSync(target, 'utf8'), 'old')
   })
 
+  it('Y1/R：write 与 close 双失败 → AggregateError 保留两类错误', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async (p, flags, mode) => {
+          const fh = await realOpen(p, flags, mode)
+          return {
+            write: async () => { throw new Error('write failed') },
+            sync: async () => {},
+            close: async () => {
+              await fh.close()
+              throw new Error('close failed')
+            },
+          }
+        },
+      }),
+      (err) => {
+        assert.ok(err instanceof AggregateError, `应聚合上报，实际 ${err?.constructor?.name}`)
+        assert.deepEqual(err.errors.map((e) => e.message), ['write failed', 'close failed'])
+        return true
+      },
+    )
+    assert.deepEqual(await noRestoreLeftovers(dir), [])
+  })
+
+  it('Y1/R：清理也失败 → 三类事实（主错误/清理错误/tmp 路径）均可从最终错误取得', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async (p, flags, mode) => {
+          const fh = await realOpen(p, flags, mode)
+          return {
+            write: async () => { throw new Error('write failed') },
+            sync: async () => {},
+            close: async () => {
+              await fh.close()
+              throw new Error('close failed')
+            },
+          }
+        },
+        rm: async () => { throw new Error('rm failed') },
+      }),
+      (err) => {
+        assert.ok(err instanceof AggregateError, `应聚合上报，实际 ${err?.constructor?.name}`)
+        assert.match(err.message, /\.restore-/, '错误信息必须包含残留 tmp 路径')
+        assert.ok(err.errors[0] instanceof AggregateError, '第一项为主错误（自身为 write+close 聚合）')
+        assert.deepEqual(err.errors[0].errors.map((e) => e.message), ['write failed', 'close failed'])
+        assert.equal(err.errors[1].message, 'rm failed')
+        return true
+      },
+    )
+  })
+
   it('Y1：备份恢复本身失败 → 报告 backup 路径与双重错误，不静默', async () => {
     const target = join(dir, 'f.json')
     writeFileSync(target, 'old')

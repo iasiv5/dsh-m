@@ -599,6 +599,20 @@ export async function runProfileTransaction(
 | T4 github abort 未验字节恢复 | 采纳：补 before 快照比对 + `snapshotRestoreVerified`/`profileConverged` 断言，与 npm/uninstall 兄弟用例对齐 |
 | T5 在途取消只验快速 reject，未验 child death | 采纳：由 F1 的两例 marker 测试覆盖（reject 等待退出 + SIGKILL 升级 + marker 不存在），abort 与 timeout 各一 |
 
+### 第六轮：第三轮修复复审处置（F1-R + Y1/Y2）
+> 复审裁决：F2-F5/T1-T4 通过；F1 因「direct child close ≠ 进程组停止」未收口（detached leader 先退时 SIGKILL 定时器被清除；生产 frozen/rebuild 未 detached，组杀退化为只杀 leader）。已全部修复（279 → 288 测试）。
+
+| 评审项 | 处置 |
+|---|---|
+| 🔴F1-R-1 direct child close 后无条件清除 SIGKILL 定时器 | 采纳：停止状态机重做——close 到达时探测进程组存活（`kill(-pgid, 0)`，ESRCH=消失，EPERM 保守视为存活）；组仍存活则保留 SIGKILL 定时器不 settle；SIGKILL 后 25ms 轮询直至组消失（硬上限 10s 防 D 态进程永不 settle） |
+| 🔴F1-R-2 生产 frozen/rebuild 未 detached，负 PGID kill 无效 | 采纳：`makeDshRunner` 的 frozen/rebuild 显式 `detached: process.platform !== 'win32'`（add/remove 经 runDshPlugin 本已 detached），四操作组终止语义一致 |
+| 🔴F1-R-3 child.on('error') 可在停止中提前收口 | 采纳：error 处理在 `stopping` 时仅作诊断忽略（spawn 失败等非停止路径仍立即 reject）；停止协议由「组消失」判定收口 |
+| 🔴F1-R-4 Windows 边界 | 采纳（文档化）：组语义仅 POSIX+detached 成立；Windows/非 detached 退化为 direct-child 终止（代码注释明示） |
+| 测试 A/C：detached leader 先退 + 同组 grandchild 忽略 SIGTERM | 新增两例（abort + timeout 各一）：leader 收 SIGTERM 即退（grandchild stdio ignore 不持管道）、grandchild 1500ms 后写 marker——断言 settle 晚于 grace（≥400ms，证伪「leader close 即 settle」）、越过 marker 时刻后文件不存在（证伪「组幸存」） |
+| 测试 B：生产 frozenInstall 进程树 | 新增：临时 PATH 注入假 pnpm（sh 派生忽略 SIGTERM 的同组后代 + trap TERM 退出）→ `makeDshRunner().frozenInstall(signal)` abort → 断言 RunnerOutcome 晚于 grace 返回、后代 marker 不写出（经 DSH_KILL_GRACE_MS 环境调节加速） |
+| 🟡Y1 多错误合并传播名不符实（close 错误被首个 write 错误覆盖；清理失败被吞） | 采纳：write/sync+close 双失败 → `AggregateError`（单错误仍原样抛，保留 code 供既有断言）；清理失败聚合为主错误之后的第二项，错误信息含残留 tmp 路径。新增双失败聚合 + 三类事实（主错误/清理错误/tmp 路径）两例 |
+| 🟡Y2 F2 缺确定性回归 | 采纳：复验下沉为 `npm-integrity.verifySnapshots(snapshots, fsOps?)`（事务消费并包装为 RestoreVerifyMismatch，语义不变）；fsOps 缝注入读取异常——originally-absent + ENOENT 通过 / EACCES 失败 / EIO 失败、existed+字节不一致失败/一致通过，共 4+1 例，不依赖 chmod |
+
 ## 执行纪律
 
 - 开始实现前，先批判性复查整份计划；发现缺项、矛盾、命名不一致或验证命令无效，先修计划再动手。

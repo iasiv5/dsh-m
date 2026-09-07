@@ -159,6 +159,50 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     assert.equal(existsSync(marker), false, '被超时停止的子进程不得继续写文件')
   })
 
+  // F1-R（第三轮复审）：direct child close ≠ 进程组停止——detached leader 提前退出、
+  // 同组 grandchild 忽略 SIGTERM 时，settle 必须等整组消失（SIGKILL 兜底）。
+
+  /** leader 脚本：派生同组 grandchild（stdio ignore，不持有 leader 管道），SIGTERM 时自己退出。 */
+  const TREE_LEADER = (grandchild) =>
+    `const g = require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' }); `
+    + `process.on('SIGTERM', () => process.exit(0)); `
+    + `setInterval(() => {}, 1000); void g;`
+
+  it('F1-R/A：detached leader 先退、grandchild 忽略 SIGTERM → settle 等组消失，marker 不写出', async () => {
+    const marker = join(tmpdir(), `dshm-tree-abort-${process.pid}-${Date.now()}.marker`)
+    const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
+    const ac = new AbortController()
+    const startedAt = Date.now()
+    const pending = runCommand(process.execPath, ['-e', TREE_LEADER(grandchild)], {
+      timeoutMs: 60_000,
+      signal: ac.signal,
+      killGraceMs: 400,
+      detached: true,
+    })
+    setTimeout(() => ac.abort(), 100)
+    await assert.rejects(pending, (err) => err.name === 'AbortError')
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 400, `leader close（~200ms）不得提前 settle，必须等组消失（grace 后 SIGKILL），实际 ${elapsed}ms`)
+    await new Promise((r) => setTimeout(r, 2500)) // 越过 grandchild marker 计划写出时刻
+    assert.equal(existsSync(marker), false, '同组 grandchild 必须被组 SIGKILL，不得在 settle 后写文件')
+  })
+
+  it('F1-R/C：timeout 同款进程树终止——leader 退出后组内幸存者由 SIGKILL 收口', async () => {
+    const marker = join(tmpdir(), `dshm-tree-timeout-${process.pid}-${Date.now()}.marker`)
+    const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
+    const startedAt = Date.now()
+    const pending = runCommand(process.execPath, ['-e', TREE_LEADER(grandchild)], {
+      timeoutMs: 200,
+      killGraceMs: 400,
+      detached: true,
+    })
+    await assert.rejects(pending, (err) => /命令超时 200ms/.test(err.message))
+    const elapsed = Date.now() - startedAt
+    assert.ok(elapsed >= 400, `必须等整组消失后才 settle，实际 ${elapsed}ms`)
+    await new Promise((r) => setTimeout(r, 2500))
+    assert.equal(existsSync(marker), false, 'timeout 的进程树终止必须覆盖 grandchild')
+  })
+
   it('exit 0 仍然正常解析（不误伤成功路径）', async () => {
     const out = await runCommand(process.execPath, ['-e', 'console.log("ok")'], { timeoutMs: 15_000 })
     assert.ok(out.includes('ok'))

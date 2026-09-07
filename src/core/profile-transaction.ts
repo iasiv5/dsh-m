@@ -45,6 +45,7 @@ import {
   readPnpmLockOverrides,
   restoreSnapshots,
   snapshotFiles,
+  verifySnapshots,
   type ProfileFileSnapshot,
 } from './npm-integrity.js'
 import {
@@ -444,26 +445,13 @@ function originallyAbsent(pkg: string, snapshots: ProfileFileSnapshot[]): boolea
   }
 }
 
-/** 还原后立即重读比对（第一阶段的验证动作；F2：仅 ENOENT 视为不存在，其他读取错误 fail closed）。 */
+/** 还原后立即重读比对（第一阶段验证动作；原语在 npm-integrity.verifySnapshots，F2 只吞 ENOENT）。 */
 async function assertRestoredBytes(snapshots: ProfileFileSnapshot[]): Promise<void> {
-  for (const snap of snapshots) {
-    let current: Buffer | null
-    try {
-      current = await readFile(snap.path)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
-        // EACCES/EISDIR 等不可读 ≠ 不存在：一律按复验失败处理（restoreVerified=false）
-        throw new RestoreVerifyMismatch(`还原后复验读取失败（${snap.path}）：${errText(err)}`)
-      }
-      current = null
-    }
-    if (snap.existed && snap.bytes !== null) {
-      if (current === null || !current.equals(snap.bytes)) {
-        throw new RestoreVerifyMismatch(`还原后复验不一致：${snap.path}`)
-      }
-    } else if (current !== null) {
-      throw new RestoreVerifyMismatch(`还原后应删除的新生成文件仍存在：${snap.path}`)
-    }
+  try {
+    await verifySnapshots(snapshots)
+  } catch (err) {
+    // 读取异常与字节不一致统一按复验失败处理（ROLLBACK_VERIFY_FAILED 在案）
+    throw new RestoreVerifyMismatch(errText(err))
   }
 }
 

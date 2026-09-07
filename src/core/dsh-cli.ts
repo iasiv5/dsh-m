@@ -449,6 +449,14 @@ export function errorDigest(out: string, maxChars = 800): string {
   return text.slice(-maxChars)
 }
 
+/** 停止宽限缺省（毫秒）；可用 DSH_KILL_GRACE_MS 覆盖（测试/平台调节）。 */
+function killGraceDefault(): number {
+  return Number(process.env.DSH_KILL_GRACE_MS) || 5_000
+}
+
+/** SIGKILL 后组存活轮询的硬上限（毫秒）：防 D 态进程导致永不 settle。 */
+const GROUP_POLL_CAP_MS = 10_000
+
 export async function runCommand(
   command: string,
   args: string[],
@@ -471,24 +479,40 @@ export async function runCommand(
     } satisfies SpawnOptions)
     let out = ''
     let settled = false
+    let stopping = false
     let pendingError: Error | undefined
     let killTimer: ReturnType<typeof setTimeout> | undefined
+    let pollTimer: ReturnType<typeof setTimeout> | undefined
+    let pollDeadline = 0
+    // 组语义仅 POSIX + detached（child 是组长）才成立；Windows/非 detached 只保证 direct child
+    const groupSupported = process.platform !== 'win32' && child.pid !== undefined
+    const groupAlive = (): boolean => {
+      if (!groupSupported) return false
+      try {
+        process.kill(-child.pid!, 0)
+        return true
+      } catch (err) {
+        // ESRCH = 组不存在；EPERM 等保守视为仍存活
+        return (err as NodeJS.ErrnoException).code !== 'ESRCH'
+      }
+    }
     const finish = (err?: Error) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       if (killTimer !== undefined) clearTimeout(killTimer)
+      if (pollTimer !== undefined) clearTimeout(pollTimer)
       options.signal?.removeEventListener('abort', onAbort)
       if (err) reject(err)
       else resolvePromise(out)
     }
     const signalGroup = (sig: NodeJS.Signals) => {
-      if (process.platform !== 'win32' && child.pid !== undefined) {
+      if (groupSupported) {
         try {
-          process.kill(-child.pid, sig)
+          process.kill(-child.pid!, sig)
           return
         } catch {
-          /* fall through */
+          /* fall through：组可能已消失 */
         }
       }
       try {
@@ -497,16 +521,30 @@ export async function runCommand(
         /* already gone */
       }
     }
+    const pollGroupGone = (): void => {
+      if (settled) return
+      // SIGKILL 已发：组消失（或超过轮询硬上限，防 D 态进程）才 settle
+      if (!groupAlive() || Date.now() > pollDeadline) {
+        finish(pendingError)
+        return
+      }
+      pollTimer = setTimeout(pollGroupGone, 25)
+    }
     /**
-     * F1（复审补充）：停止协议 = SIGTERM 进程组 → 宽限后升级 SIGKILL；settle 一律等
-     * child 'close'（子进程/进程组真正停止后才 resolve/reject）——否则忽略 SIGTERM 的
-     * 子进程会在 Promise 已 reject 后继续写文件。
+     * F1-R（第三轮复审）：停止协议以「进程组不存在」为 settle 前提——SIGTERM 进程组 →
+     * 宽限后 SIGKILL → 轮询确认组消失。direct child 提前 close 不清除 kill 定时器
+     * （同组后代可能仍忽略 SIGTERM 并写 profile）。
      */
     const stopChild = (err: Error) => {
-      if (settled || pendingError !== undefined) return
+      if (settled || stopping) return
+      stopping = true
       pendingError = err
       signalGroup('SIGTERM')
-      killTimer = setTimeout(() => signalGroup('SIGKILL'), Math.max(0, options.killGraceMs ?? 5_000))
+      killTimer = setTimeout(() => {
+        signalGroup('SIGKILL')
+        pollDeadline = Date.now() + GROUP_POLL_CAP_MS
+        pollGroupGone()
+      }, Math.max(0, options.killGraceMs ?? killGraceDefault()))
     }
     const timer = setTimeout(() => {
       stopChild(new Error(`命令超时 ${options.timeoutMs}ms`))
@@ -525,9 +563,15 @@ export async function runCommand(
       out = (out + text).slice(-256 * 1024)
       options.onChunk?.(text)
     })
-    child.on('error', (err) => finish(err))
+    child.on('error', (err) => {
+      // F1-R：停止协议进行中，迟到的 error（如 kill 竞态）只作诊断，不得提前收口
+      if (stopping) return
+      finish(err)
+    })
     child.on('close', (code) => {
-      if (pendingError !== undefined) {
+      if (stopping) {
+        // direct child close ≠ 进程组停止：组仍存活 → 保留 SIGKILL 定时器/轮询，不 settle
+        if (groupAlive()) return
         finish(pendingError)
         return
       }
@@ -717,9 +761,11 @@ export function makeDshRunner(profileDir: string): PnpmRunner {
     },
     async frozenInstall(signal?: AbortSignal): Promise<RunnerOutcome> {
       try {
+        // F1-R：detached 使 pnpm（及其后代）进入独立进程组，abort/超时可整组终止
         const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--frozen-lockfile'], {
           timeoutMs: installTimeoutMs(),
           signal,
+          detached: process.platform !== 'win32',
         })
         return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
       } catch (err) {
@@ -731,6 +777,7 @@ export function makeDshRunner(profileDir: string): PnpmRunner {
         const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--no-frozen-lockfile'], {
           timeoutMs: installTimeoutMs(),
           signal,
+          detached: process.platform !== 'win32',
         })
         return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
       } catch (err) {

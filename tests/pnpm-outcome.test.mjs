@@ -5,10 +5,14 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
   classifyPnpmError,
   makeAddViaLadder,
+  makeDshRunner,
   PNPM_OUTCOME_CODES,
 } from '../lib/core/dsh-cli.js'
 import {
@@ -212,5 +216,43 @@ describe('PluginRunner seam 形状', () => {
     assert.equal(seen.profile, 'web')
     assert.deepEqual(seen.pluginArgs, ['add', 'pkg-a@1.2.3'])
     assert.equal(seen.options, undefined, '未提供 signal 时不传 options')
+  })
+})
+
+// ---------- F1-R/B（第三轮复审）：生产 frozenInstall 的进程树终止 ----------
+
+describe('makeDshRunner.frozenInstall：生产进程树终止（F1-R/B）', () => {
+  it('abort 后 pnpm 的后代（同组、忽略 SIGTERM）必须被组 SIGKILL，marker 不写出', async () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'dshm-bin-'))
+    const profileDir = mkdtempSync(join(tmpdir(), 'dshm-frozen-'))
+    const marker = join(tmpdir(), `dshm-pnpm-tree-${process.pid}-${Date.now()}.marker`)
+    // 假 pnpm：派生忽略 SIGTERM 的后代（输出重定向，不持有 sh 的管道），TERM 时自己退出
+    const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
+    const fakePnpm = join(binDir, 'pnpm')
+    writeFileSync(fakePnpm, `#!/bin/sh\n"${process.execPath}" -e ${JSON.stringify(grandchild)} >/dev/null 2>&1 &\ntrap 'exit 0' TERM\nwait\n`)
+    chmodSync(fakePnpm, 0o755)
+    const oldPath = process.env.PATH
+    const oldGrace = process.env.DSH_KILL_GRACE_MS
+    process.env.PATH = `${binDir}:${oldPath}`
+    process.env.DSH_KILL_GRACE_MS = '400'
+    try {
+      const ac = new AbortController()
+      const startedAt = Date.now()
+      const pending = makeDshRunner(profileDir).frozenInstall(ac.signal)
+      setTimeout(() => ac.abort(), 150)
+      const out = await pending
+      const elapsed = Date.now() - startedAt
+      assert.equal(out.class, 'hard-fail', `取消应归为失败结果：${JSON.stringify(out)}`)
+      assert.ok(/命令已取消/.test(out.output))
+      assert.ok(elapsed >= 400, `必须等进程组消失（grace 后 SIGKILL）才返回 RunnerOutcome，实际 ${elapsed}ms`)
+      await new Promise((r) => setTimeout(r, 2500)) // 越过后代 marker 计划写出时刻
+      assert.equal(existsSync(marker), false, 'pnpm 后代不得在 operation 返回后继续写文件')
+    } finally {
+      process.env.PATH = oldPath
+      if (oldGrace === undefined) delete process.env.DSH_KILL_GRACE_MS
+      else process.env.DSH_KILL_GRACE_MS = oldGrace
+      rmSync(binDir, { recursive: true, force: true })
+      rmSync(profileDir, { recursive: true, force: true })
+    }
   })
 })

@@ -163,57 +163,81 @@ async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFs
   await mkdirOp(dirname(path), { recursive: true })
   const tmp = `${path}.restore-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   const backup = `${path}.backup-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
-  const cleanTmp = () => rmOp(tmp, { force: true }).catch(() => undefined)
   let completed = false
   let tmpOwned = false
+  let mainErr: unknown
+  let threw = false
+  let cleanupErr: unknown
   try {
-    const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
-    tmpOwned = true // O_EXCL 成功 = tmp 由本调用创建
-    let opErr: unknown
     try {
-      await fh.write(bytes)
-      await fh.sync()
-    } catch (err) {
-      opErr = err
-    }
-    try {
-      await fh.close()
-    } catch (closeErr) {
-      if (opErr === undefined) opErr = closeErr // F3：close 失败不吞
-    }
-    if (opErr !== undefined) throw opErr
-    try {
-      await renameOp(tmp, path)
-      completed = true
-      return
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException | null)?.code
-      if (code !== 'EPERM' && code !== 'EEXIST') {
-        throw err
-      }
-    }
-    // Windows 备份协议
-    try {
-      await renameOp(path, backup)
-    } catch (bakErr) {
-      throw bakErr
-    }
-    try {
-      await renameOp(tmp, path)
-    } catch (moveErr) {
+      const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
+      tmpOwned = true // O_EXCL 成功 = tmp 由本调用创建
+      // Y1（第三轮复审）：write/sync 与 close 的错误全部保留（AggregateError），不互相覆盖
+      const errors: unknown[] = []
       try {
-        await renameOp(backup, path)
-      } catch (restoreErr) {
-        throw new Error(
-          `原子写失败：${errTextOf(moveErr)}；备份恢复也失败（${errTextOf(restoreErr)}），原文件现位于备份 ${backup}`,
-        )
+        await fh.write(bytes)
+        await fh.sync()
+      } catch (err) {
+        errors.push(err)
       }
-      throw moveErr
+      try {
+        await fh.close()
+      } catch (err) {
+        errors.push(err) // F3：close 失败不吞
+      }
+      if (errors.length === 1) throw errors[0]
+      if (errors.length > 1) throw new AggregateError(errors, '临时文件写入/同步/关闭失败')
+      try {
+        await renameOp(tmp, path)
+        completed = true
+        return
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException | null)?.code
+        if (code !== 'EPERM' && code !== 'EEXIST') {
+          throw err
+        }
+      }
+      // Windows 备份协议
+      try {
+        await renameOp(path, backup)
+      } catch (bakErr) {
+        throw bakErr
+      }
+      try {
+        await renameOp(tmp, path)
+      } catch (moveErr) {
+        try {
+          await renameOp(backup, path)
+        } catch (restoreErr) {
+          throw new Error(
+            `原子写失败：${errTextOf(moveErr)}；备份恢复也失败（${errTextOf(restoreErr)}），原文件现位于备份 ${backup}`,
+          )
+        }
+        throw moveErr
+      }
+      await rmOp(backup, { force: true }).catch(() => undefined)
+      completed = true
+    } catch (err) {
+      threw = true
+      mainErr = err
     }
-    await rmOp(backup, { force: true }).catch(() => undefined)
-    completed = true
   } finally {
-    if (tmpOwned && !completed) await cleanTmp()
+    if (tmpOwned && !completed) {
+      try {
+        await rmOp(tmp, { force: true })
+      } catch (err) {
+        cleanupErr = err // Y1：清理失败不覆盖主错误，随后聚合上报（含 tmp 路径）
+      }
+    }
+  }
+  if (threw) {
+    if (cleanupErr !== undefined) {
+      throw new AggregateError(
+        [mainErr, cleanupErr],
+        `原子写失败且临时文件清理也失败（可能残留 tmp：${tmp}）`,
+      )
+    }
+    throw mainErr
   }
 }
 
@@ -248,6 +272,33 @@ export async function snapshotFiles(paths: string[], fsOps: SnapshotFsOps = {}):
       }
     }),
   )
+}
+
+/**
+ * 还原后立即重读比对（第一阶段验证动作；Task 2 起）。F2（第三轮复审）：仅 `ENOENT`
+ * 视为文件不存在；EACCES/EIO/EISDIR 等其他读取异常一律 fail closed（抛错）。
+ * `fsOps` 为内部测试缝（缺省真 fs），确定性注入读取异常，不依赖 chmod。
+ */
+export async function verifySnapshots(snapshots: ProfileFileSnapshot[], fsOps: SnapshotFsOps = {}): Promise<void> {
+  const read = fsOps.readFile ?? readFile
+  for (const snap of snapshots) {
+    let current: Buffer | null
+    try {
+      current = await read(snap.path)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'ENOENT') {
+        throw new Error(`还原后复验读取失败（${snap.path}）：${errTextOf(err)}`)
+      }
+      current = null
+    }
+    if (snap.existed && snap.bytes !== null) {
+      if (current === null || !current.equals(snap.bytes)) {
+        throw new Error(`还原后复验不一致：${snap.path}`)
+      }
+    } else if (current !== null) {
+      throw new Error(`还原后应删除的新生成文件仍存在：${snap.path}`)
+    }
+  }
 }
 
 /**
