@@ -284,6 +284,13 @@ export function classifyPnpmError(text: string): { class: PnpmOutcomeClass; code
   return { class: 'hard-fail', code: m?.[1] }
 }
 
+/** 统一的命令取消错误形态（runCommand 调用前已取消与运行中取消同款）。 */
+function commandAbortError(): Error {
+  const err = new Error('命令已取消')
+  err.name = 'AbortError'
+  return err
+}
+
 function truncateOutput(text: string): string {
   const raw = String(text ?? '')
   return raw.length <= 800 ? raw : raw.slice(-800)
@@ -446,6 +453,13 @@ export async function runCommand(
   options: RunCommandOptions,
 ): Promise<string> {
   return new Promise((resolvePromise, reject) => {
+    // R4a（终审复审）：AbortSignal 的事件不会对后注册的 listener 重放——调用前已取消的
+    // signal 必须在 spawn 前拒绝，否则命令会完整执行副作用。检查与 listener 注册之间为
+    // 同步代码，无交织窗口。
+    if (options.signal?.aborted) {
+      reject(commandAbortError())
+      return
+    }
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env, CI: 'true' },
@@ -484,7 +498,7 @@ export async function runCommand(
     }, options.timeoutMs)
     const onAbort = () => {
       killChild()
-      finish(new Error('命令已取消'))
+      finish(commandAbortError())
     }
     options.signal?.addEventListener('abort', onAbort, { once: true })
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -562,7 +576,13 @@ export function makeAddViaLadder(deps: {
   const opts = (signal?: AbortSignal) => (signal !== undefined ? { signal } : undefined)
   return async (source: string, profileDir: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
     const retryAfterPrepare = async (): Promise<RunnerOutcome> => {
-      allowAllBuilds(profileDir)
+      // Y2（终审复审）：allowAll 写入本身失败也必须转换为结果，维持「永不 throw」契约
+      try {
+        allowAllBuilds(profileDir)
+      } catch (err) {
+        const text = errText(err)
+        return { class: 'hard-fail', output: truncateOutput(text) }
+      }
       try {
         const output = await run(WEB_PROFILE, ['add', source], opts(signal))
         return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: true }

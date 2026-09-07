@@ -9,6 +9,9 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { errorDigest, isPrepareBlocked, runCommand } from '../lib/core/dsh-cli.js'
 
@@ -93,6 +96,32 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
         return true
       },
     )
+  })
+
+  it('R4a：调用前已 abort 的 signal → 立即拒绝且不启动子进程（marker 不存在）', async () => {
+    const marker = join(tmpdir(), `dshm-preabort-${process.pid}-${Date.now()}.marker`)
+    const ac = new AbortController()
+    ac.abort()
+    await assert.rejects(
+      runCommand(process.execPath, ['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, 'x')`], {
+        timeoutMs: 15_000,
+        signal: ac.signal,
+      }),
+      (err) => err.name === 'AbortError' && /命令已取消/.test(err.message),
+    )
+    assert.equal(existsSync(marker), false, '子进程不得被启动')
+  })
+
+  it('R4a：运行中 abort → 子进程被杀且快速拒绝', async () => {
+    const ac = new AbortController()
+    const startedAt = Date.now()
+    const pending = runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {
+      timeoutMs: 60_000,
+      signal: ac.signal,
+    })
+    setTimeout(() => ac.abort(), 50)
+    await assert.rejects(pending, (err) => err.name === 'AbortError')
+    assert.ok(Date.now() - startedAt < 10_000, 'abort 应快速生效')
   })
 
   it('exit 0 仍然正常解析（不误伤成功路径）', async () => {

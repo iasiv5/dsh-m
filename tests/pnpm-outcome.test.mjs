@@ -188,6 +188,17 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     assert.equal(out.class, 'ok')
     assert.ok(out.output.length <= 800, `实际 ${out.output.length}`)
   })
+
+  it('Y2：allowAllBuilds 写入失败 → 仍 resolve RunnerOutcome（hard-fail），不执行第二次 add', async () => {
+    const { run, calls } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT)])
+    const out = await ladderOf(run, () => {
+      throw Object.assign(new Error('workspace read-only'), { code: 'EROFS' })
+    })('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'hard-fail', `实际 ${JSON.stringify(out)}`)
+    assert.ok(out.output.includes('workspace read-only'))
+    assert.ok(out.output.length <= 800)
+    assert.equal(calls.length, 1, 'allowAll 写失败后不再重试 add')
+  })
 })
 
 describe('PluginRunner seam 形状', () => {

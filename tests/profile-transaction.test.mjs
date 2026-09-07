@@ -218,7 +218,7 @@ describe('install-npm：两阶段不变量', () => {
     assert.ok(renderFailure(r).includes('人工修复'))
   })
 
-  it('回滚收敛全败但依赖原本不存在 → 补移除成功 → rolled-back + ROLLBACK_FALLBACK_REMOVED', async () => {
+  it('补移除后复验通过才 rolled-back：remove ok + verify gone + frozen 再收敛成功（R1）', async () => {
     dir = makeProfile({
       'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
       'pnpm-lock.yaml': lockFile(),
@@ -226,7 +226,8 @@ describe('install-npm：两阶段不变量', () => {
     })
     const { runner, calls } = mockRunner({
       add: [failWith(NO_MATCHING), failWith(NO_MATCHING), failWith(NO_MATCHING)],
-      frozen: [failWith(CONFIG_MISMATCH)],
+      // conv1: frozen(1) CM → align → frozen(2) CM → rebuild(1) 失败；remove ok；conv2: frozen(3) 通过
+      frozen: [failWith(CONFIG_MISMATCH), failWith(CONFIG_MISMATCH), ok('frozen-ok-after-remove')],
       rebuild: [failWith('重建失败')],
       remove: [ok('removed')],
     })
@@ -234,10 +235,61 @@ describe('install-npm：两阶段不变量', () => {
       { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
       baseTx(dir, runner),
     )
-    assert.equal(r.status, 'rolled-back', `实际 ${r.status} / ${renderFailure(r)}`)
+    assert.equal(r.status, 'rolled-back', `实际 ${r.status}`)
+    assert.ok(healCodes(r).includes('ROLLBACK_FALLBACK_REMOVED'))
+    assert.ok(healCodes(r).includes('ROLLBACK_CONVERGED_FROZEN'), '补移除后 frozen 复验在案')
+    assert.equal(r.snapshotRestoreVerified, true)
+    assert.equal(r.profileConverged, true)
+    assert.equal(calls.remove.length, 1)
+  })
+
+  it('补移除成功但 frozen 复验仍失败 → manual-repair + profileConverged:false（R1）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner, calls } = mockRunner({
+      add: [failWith(NO_MATCHING), failWith(NO_MATCHING), failWith(NO_MATCHING)],
+      frozen: [failWith(CONFIG_MISMATCH)],   // 每次都失配（含补移除后的复验）
+      rebuild: [failWith('重建失败')],
+      remove: [ok('removed')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair', 'remove ok 不等于收敛已证')
+    assert.equal(r.snapshotRestoreVerified, true, '字节还原本身成功')
+    assert.equal(r.profileConverged, false)
     assert.ok(healCodes(r).includes('ROLLBACK_FALLBACK_REMOVED'))
     assert.equal(calls.remove.length, 1)
-    assert.deepEqual(calls.remove[0], { arg: 'pkg-a', signal: undefined }, '回滚移除不带外部 signal')
+  })
+
+  it('快照恢复失败 + 补移除成功 → 只作补偿记录，manual-repair 且事实字段如实（R1）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [async () => {
+        // 把 package.json 变成目录：快照恢复的 rename 必然失败（ENOTDIR/EISDIR）
+        rmSync(join(dir, 'package.json'))
+        mkdirSync(join(dir, 'package.json'))
+        return { class: 'hard-fail', output: 'add failed' }
+      }],
+      remove: [ok('removed')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair', `实际 ${r.status}`)
+    assert.equal(r.snapshotRestoreVerified, false, '还原未验证必须如实报告')
+    assert.equal(r.profileConverged, false)
+    assert.ok(healCodes(r).includes('ROLLBACK_FALLBACK_REMOVED'), '移除作为补偿动作记录在案')
+    assert.ok(renderFailure(r).includes('人工修复'))
   })
 
   it('④快照失败 → rejected + SNAPSHOT_FAILED + 三文件字节未动（package.json 为目录 → EISDIR）', async () => {
@@ -662,6 +714,63 @@ describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入�
     assert.ok(rms.some(([p]) => p.includes('.restore-')), 'tmp 已清理')
     assert.equal(readFileSync(target, 'utf8'), 'old')
   })
+
+  it('Y1：write 失败清理 tmp，不遗留 .restore-*', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    const rms = []
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async () => ({
+          write: async () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }) },
+          sync: async () => {},
+          close: async () => {},
+        }),
+        rm: async (p, o) => { rms.push(p) },
+      }),
+      (err) => err.code === 'ENOSPC',
+    )
+    assert.ok(rms.some((p) => p.includes('.restore-')), 'write 失败也清理 tmp')
+    assert.equal(readFileSync(target, 'utf8'), 'old')
+  })
+
+  it('Y1：sync 失败清理 tmp', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    const rms = []
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        open: async () => ({
+          write: async () => {},
+          sync: async () => { throw Object.assign(new Error('fsync failed'), { code: 'EIO' }) },
+          close: async () => {},
+        }),
+        rm: async (p) => { rms.push(p) },
+      }),
+      (err) => err.code === 'EIO',
+    )
+    assert.ok(rms.some((p) => p.includes('.restore-')))
+  })
+
+  it('Y1：备份恢复本身失败 → 报告 backup 路径与双重错误，不静默', async () => {
+    const target = join(dir, 'f.json')
+    writeFileSync(target, 'old')
+    const renames = []
+    await assert.rejects(
+      () => atomicWriteFile(target, Buffer.from('new'), {
+        rename: async (from, to) => {
+          renames.push([from, to])
+          if (renames.length === 1) throw Object.assign(new Error('win'), { code: 'EPERM' })
+          if (renames.length === 3) throw Object.assign(new Error('still win'), { code: 'EPERM' })
+          if (renames.length === 4) throw Object.assign(new Error('restore also broken'), { code: 'EIO' })
+          await realRename(from, to)
+        },
+        rm: async () => {},
+      }),
+      (err) => /still win/.test(err.message) && /restore also broken/.test(err.message) && /\.backup-/.test(err.message),
+    )
+    assert.equal(renames.length, 4, '第四步 backup→target 恢复失败被如实上报')
+  })
 })
 
 // ---------- Task 5：install-github 与 uninstall 两门 ----------
@@ -1036,5 +1145,275 @@ describe('uninstall 门', () => {
     assert.equal(factoryCalls.length, 0)
     assert.equal(liveCalls.length, 0)
     assert.deepEqual(bytesOf(dir), before)
+  })
+})
+
+// ---------- 终审复审反例回归（R1–R4 / Y1 / Y2） ----------
+
+describe('终审复审 R2：回滚内异常不得逃出四态联合', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  it('rollback frozenInstall 直接 throw → manual-repair（不 reject），原始失败码保留', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [failWith('命令失败 (exit 1): ERR_PNPM_MISC add boom')],
+      frozen: [async () => { throw new Error('frozen crashed') }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair', `实际 ${r.status}`)
+    assert.equal(r.failure.code, 'ADD_FAILED', '原始失败码保留')
+    assert.ok(r.failure.note.includes('frozen crashed'), '回滚异常并入 note')
+    assert.equal(r.snapshotRestoreVerified, true)
+  })
+
+  it('rollback rebuildInstall throw（B2 阶段）→ manual-repair（不 reject）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [failWith(NO_MATCHING)],
+      frozen: [failWith(CONFIG_MISMATCH)],
+      rebuild: [async () => { throw new Error('rebuild crashed') }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair')
+    assert.ok(r.failure.note.includes('rebuild crashed'))
+  })
+
+  it('uninstall 回滚 frozen throw → 仍执行 live 反向 + manual-repair（不 reject）', async () => {
+    dir = uninstallableProfile()
+    const liveCalls = []
+    const { runner } = mockRunner({
+      remove: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { 'pkg-a': '1.0.0' } }))
+        return { class: 'ok', output: 'removed' }
+      }],
+      frozen: [async () => { throw new Error('frozen crashed in uninstall rollback') }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a' },
+      baseTx(dir, runner, { setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true } }),
+    )
+    assert.equal(r.status, 'manual-repair', `实际 ${r.status}`)
+    assert.deepEqual(liveCalls, [['pkg-a', true], ['pkg-a', false]], '回滚异常不阻断 live 反向')
+    assert.ok(healCodes(r).includes('LIVE_REENABLED'))
+  })
+
+  it('fallback remove 直接 throw → manual-repair（不 reject）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [failWith(NO_MATCHING), failWith(NO_MATCHING), failWith(NO_MATCHING)],
+      frozen: [failWith(CONFIG_MISMATCH)],
+      rebuild: [failWith('重建失败')],
+      remove: [async () => { throw new Error('remove crashed') }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair')
+    assert.ok(r.failure.note.includes('remove crashed'))
+  })
+})
+
+describe('终审复审 R3：B1/B2 改写后提交前重新验证最终 integrity', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  it('B2 rebuild 把 lockfile 换成错误 integrity → 不能 committed，LOCK_INTEGRITY_MISMATCH 进回滚', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ name: 's', private: true, pnpm: { overrides: OVERRIDE }, dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const { runner } = mockRunner({
+      // 安装成功且初次 integrity 正确，但 manifest 丢 pnpm 键 → B1 触发
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ name: 's', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+        return { class: 'ok', output: 'added' }
+      }],
+      frozen: [failWith(CONFIG_MISMATCH), ok('frozen-ok')],   // B1 复验失配；回滚收敛直接通过（不走 rebuild，字节还原可断言）
+      rebuild: [async () => {
+        // B2 重建把最终 lockfile 换成 evil integrity（只发生在成功路径的 B1 复验阶梯）
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('EVIL'), withOverrides: false }))
+        return { class: 'ok', output: 'rebuilt' }
+      }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back', `实际 ${r.status} / ${JSON.stringify(r.failure)}`)
+    assert.equal(r.failure.code, 'LOCK_INTEGRITY_MISMATCH', '复验失败按 integrity fail-closed')
+    assert.ok(healCodes(r).includes('B2_LOCKFILE_REBUILT'))
+    assert.deepEqual(bytesOf(dir), before, '回滚后字节还原')
+  })
+
+  it('B2 rebuild 写入正确 integrity → 复验通过，正常 committed', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ name: 's', private: true, pnpm: { overrides: OVERRIDE }, dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ name: 's', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+        return { class: 'ok', output: 'added' }
+      }],
+      frozen: [failWith(CONFIG_MISMATCH)],
+      rebuild: [async () => ({ class: 'ok', output: 'rebuilt' })],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
+    assert.equal(r.version, '1.2.3')
+  })
+})
+
+describe('终审复审 R4：mutation 后取消不得提交', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  it('npm 门：add 返回 ok 但 signal 已 abort → rolled-back + ABORTED（字节还原）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const ac = new AbortController()
+    const { runner } = mockRunner({
+      add: [async () => {
+        // 写入完整正确的安装态，然后取消，再返回 ok——事务不得提交
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+        ac.abort()
+        return { class: 'ok', output: 'added' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), signal: ac.signal },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back', `实际 ${r.status}`)
+    assert.equal(r.failure.code, 'ABORTED')
+    assert.deepEqual(bytesOf(dir), before)
+  })
+
+  it('github 门：add 返回 ok 但 signal 已 abort → rolled-back + ABORTED', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const ac = new AbortController()
+    const { runner } = mockRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${SHA}` } }))
+        ac.abort()
+        return { class: 'ok', output: 'added' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-github', repo: 'owner/repo', sha: SHA, signal: ac.signal },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'ABORTED')
+  })
+
+  it('uninstall 门：remove 返回 ok 但 signal 已 abort → rolled-back + ABORTED + live 反向', async () => {
+    dir = uninstallableProfile()
+    const before = bytesOf(dir)
+    const ac = new AbortController()
+    const liveCalls = []
+    const { runner } = mockRunner({
+      remove: [async () => {
+        writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0' } }))
+        ac.abort()
+        return { class: 'ok', output: 'removed' }
+      }],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'uninstall', pkg: 'pkg-a', signal: ac.signal },
+      baseTx(dir, runner, { setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true } }),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'ABORTED')
+    assert.deepEqual(bytesOf(dir), before, '卸载被取消 = 恢复到卸载前')
+    assert.deepEqual(liveCalls, [['pkg-a', true], ['pkg-a', false]])
+  })
+
+  it('B3 warm 期间 abort → 不再发起下一轮 add，终态 ABORTED', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const ac = new AbortController()
+    const { runner, calls } = mockRunner({
+      add: [
+        failWith(NO_MATCHING),
+        async () => ({ class: 'ok', output: 'should-not-happen' }),
+      ],
+      frozen: [ok('frozen-ok')],
+    })
+    const warm = async (pkg, signal) => {
+      await sleep(30)
+      ac.abort()
+      const err = new Error('fetch aborted')
+      err.name = 'AbortError'
+      throw err
+    }
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), signal: ac.signal },
+      baseTx(dir, runner, { warmPackument: warm }),
+    )
+    assert.equal(r.failure.code, 'ABORTED')
+    assert.equal(calls.add.length, 1, '取消后不再重试 add')
+    assert.equal(r.status, 'rolled-back')
+  })
+
+  it('makeNpmWarmPackument：取消异常上抛，普通预热失败仍吞错（R4c）', async () => {
+    const fetcher = async (pkg, timeoutMs, signal) => {
+      if (pkg === 'cancel') {
+        const err = new Error('user aborted')
+        err.name = 'AbortError'
+        throw err
+      }
+      if (pkg === 'boom') throw new Error('network down')
+      return { versions: [] }
+    }
+    const warm = makeNpmWarmPackument(5_000, fetcher)
+    const ac = new AbortController()
+    ac.abort()
+    await assert.rejects(() => warm('cancel', ac.signal), (err) => err.name === 'AbortError')
+    await warm('boom') // 普通失败不抛
+    await warm('fine')
   })
 })

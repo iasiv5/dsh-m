@@ -127,6 +127,7 @@ const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
   dshm upgrade --pkg <包名> --yes
   dshm uninstall --pkg <包名> --yes
   dshm restart --yes
+  注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
 环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR
 `

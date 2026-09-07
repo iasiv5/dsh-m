@@ -146,10 +146,11 @@ export interface AtomicWriteFsOps {
 }
 
 /**
- * 原子写（Task 2 加固）：POSIX 直接 `rename` 原子覆盖目标（不再先 rm——旧实现的
- * 「删目标 → rename」窗口期内崩溃会直接丢文件）。仅 Windows 形态的 `EPERM`/`EEXIST`
- * 走备份协议：`target→backup`、`tmp→target`，任一步失败恢复 `backup→target`，
- * 全部成功后删除 backup；任何失败路径都清理 tmp。
+ * 原子写（Task 2 加固；终审复审 Y1 再加固）：POSIX 直接 `rename` 原子覆盖目标（不再先
+ * rm——旧实现的「删目标 → rename」窗口期内崩溃会直接丢文件）。仅 Windows 形态的
+ * `EPERM`/`EEXIST` 走备份协议：`target→backup`、`tmp→target`，任一步失败恢复
+ * `backup→target`，全部成功后删除 backup。**任何失败路径（含 write/sync/close）都清理
+ * tmp**；备份恢复本身失败时报告 backup 路径与双重错误，不静默。
  */
 async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFsOps = {}): Promise<void> {
   const mkdirOp = fsOps.mkdir ?? mkdir
@@ -159,39 +160,53 @@ async function atomicWriteFile(path: string, bytes: Buffer, fsOps: AtomicWriteFs
   await mkdirOp(dirname(path), { recursive: true })
   const tmp = `${path}.restore-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
   const backup = `${path}.backup-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
-  const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
-  try {
-    await fh.write(bytes)
-    await fh.sync()
-  } finally {
-    await fh.close().catch(() => undefined)
-  }
   const cleanTmp = () => rmOp(tmp, { force: true }).catch(() => undefined)
+  let completed = false
   try {
-    await renameOp(tmp, path)
-    return
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException | null)?.code
-    if (code !== 'EPERM' && code !== 'EEXIST') {
-      await cleanTmp()
-      throw err
+    const fh = await openOp(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
+    try {
+      await fh.write(bytes)
+      await fh.sync()
+    } finally {
+      await fh.close().catch(() => undefined)
     }
+    try {
+      await renameOp(tmp, path)
+      completed = true
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | null)?.code
+      if (code !== 'EPERM' && code !== 'EEXIST') {
+        throw err
+      }
+    }
+    // Windows 备份协议
+    try {
+      await renameOp(path, backup)
+    } catch (bakErr) {
+      throw bakErr
+    }
+    try {
+      await renameOp(tmp, path)
+    } catch (moveErr) {
+      try {
+        await renameOp(backup, path)
+      } catch (restoreErr) {
+        throw new Error(
+          `原子写失败：${errTextOf(moveErr)}；备份恢复也失败（${errTextOf(restoreErr)}），原文件现位于备份 ${backup}`,
+        )
+      }
+      throw moveErr
+    }
+    await rmOp(backup, { force: true }).catch(() => undefined)
+    completed = true
+  } finally {
+    if (!completed) await cleanTmp()
   }
-  // Windows 备份协议
-  try {
-    await renameOp(path, backup)
-  } catch (bakErr) {
-    await cleanTmp()
-    throw bakErr
-  }
-  try {
-    await renameOp(tmp, path)
-  } catch (moveErr) {
-    await cleanTmp()
-    await renameOp(backup, path).catch(() => undefined)
-    throw moveErr
-  }
-  await rmOp(backup, { force: true }).catch(() => undefined)
+}
+
+function errTextOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 export { atomicWriteFile }

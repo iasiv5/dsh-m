@@ -157,7 +157,9 @@ export function makeNpmWarmPackument(
   return async (pkg: string, signal?: AbortSignal): Promise<void> => {
     try {
       await fetcher(pkg, timeoutMs, signal)
-    } catch {
+    } catch (err) {
+      // R4c（终审复审）：取消不是预热失败——abort 异常必须向上传播，让 B3 立即终止
+      if (signal?.aborted) throw err
       /* 预热尽力而为：CDN 滞后场景下 packument 请求失败不阻塞重试 */
     }
   }
@@ -464,6 +466,12 @@ async function assertRestoredBytes(snapshots: ProfileFileSnapshot[]): Promise<vo
 /**
  * 统一回滚：字节还原（重读比对）→ frozen 收敛阶梯 → （仅当前面失败时）originallyAbsent
  * 补移除。回滚不可取消（不传外部 signal）。终态 rolled-back 或 manual-repair。
+ *
+ * 终审复审 R1/R2 契约：`rolled-back` 必须同时代表「字节还原已重读验证」与「终态一致性
+ * 已证明」——补移除成功本身不构成其中任何一个证明：字节还原未验证时移除只是补偿动作
+ * （manual-repair）；收敛失败后移除成功必须再经 verify-gone + frozen 复验才允许 rolled-back。
+ * 本函数为 total function：收敛阶梯 / 补移除 / B2 写入的任何异常都转换为 manual-repair
+ * 结果，绝不 reject。
  */
 async function rollbackAndConverge(
   d: ResolvedDeps,
@@ -494,37 +502,57 @@ async function rollbackAndConverge(
     }
   }
 
-  // 阶段二：frozen 收敛阶梯（仅在字节还原验证通过后才有意义）
+  // 阶段二：frozen 收敛阶梯（仅在字节还原验证通过后才有意义；R2：异常→manual-repair）
   if (restoreVerified) {
-    const conv = await frozenConvergeLadder(d, heal)
+    let conv: RunnerOutcome
+    try {
+      conv = await frozenConvergeLadder(d, heal)
+    } catch (err) {
+      return manualRepair(kind, healSuffixNote(`回滚收敛异常：${errText(err)}`), heal, errText(err), true)
+    }
     if (conv.class === 'ok') {
       heal.push({ code: 'ROLLBACK_CONVERGED_FROZEN', note: '回滚后 frozen 校验一致' })
       return rolledBack(kind, failure, heal, conv.output)
     }
-    // 收敛失败 → originallyAbsent 补移除（旧语义兜底）
+    // 收敛失败 → originallyAbsent 补移除兜底（移除成功 ≠ 收敛已证，需复验）
     if (fallbackRemovePkg !== undefined && originallyAbsent(fallbackRemovePkg, snapshots)) {
+      let rm: RunnerOutcome
       try {
-        const rm = await d.runner.remove(fallbackRemovePkg)
-        if (rm.class === 'ok') {
-          heal.push({ code: 'ROLLBACK_FALLBACK_REMOVED', note: `恢复安装失败，已补移除原不存在的依赖 ${fallbackRemovePkg}` })
-          return rolledBack(kind, failure, heal, rm.output)
-        }
-        return manualRepair(kind, healSuffixNote(`${conv.output}；移除 ${fallbackRemovePkg} 也失败（${rm.output}）`), heal, conv.output, true)
+        rm = await d.runner.remove(fallbackRemovePkg)
       } catch (rmErr) {
         return manualRepair(kind, healSuffixNote(`${conv.output}；移除 ${fallbackRemovePkg} 也失败（${errText(rmErr)}）`), heal, conv.output, true)
+      }
+      if (rm.class !== 'ok') {
+        return manualRepair(kind, healSuffixNote(`${conv.output}；移除 ${fallbackRemovePkg} 也失败（${rm.output}）`), heal, conv.output, true)
+      }
+      heal.push({ code: 'ROLLBACK_FALLBACK_REMOVED', note: `恢复安装失败，已补移除原不存在的依赖 ${fallbackRemovePkg}` })
+      // R1：严格 verify gone + 再跑一次 frozen 收敛，通过才允许 rolled-back
+      try {
+        const depsNow = await strictReadDeps(d)
+        if (fallbackRemovePkg in depsNow) {
+          return manualRepair(kind, healSuffixNote(`${conv.output}；补移除 ${fallbackRemovePkg} 后依赖仍存在`), heal, conv.output, true)
+        }
+        const reconverge = await frozenConvergeLadder(d, heal)
+        if (reconverge.class === 'ok') {
+          heal.push({ code: 'ROLLBACK_CONVERGED_FROZEN', note: '补移除后 frozen 校验一致' })
+          return rolledBack(kind, failure, heal, reconverge.output)
+        }
+        return manualRepair(kind, healSuffixNote(`${conv.output}；补移除 ${fallbackRemovePkg} 后 frozen 复验仍未通过：${reconverge.output}`), heal, reconverge.output, true)
+      } catch (err) {
+        return manualRepair(kind, healSuffixNote(`${conv.output}；补移除 ${fallbackRemovePkg} 后复验异常：${errText(err)}`), heal, conv.output, true)
       }
     }
     return manualRepair(kind, healSuffixNote(conv.output), heal, conv.output, true)
   }
 
-  // 字节还原本身失败 → 补移除兜底或 manual-repair
+  // 字节还原本身失败 → 补移除仅作为补偿动作记录（R1：restoreVerified=false 一律 manual-repair）
   const restoreDetail = errText(restoreErr)
   if (fallbackRemovePkg !== undefined && originallyAbsent(fallbackRemovePkg, snapshots)) {
     try {
       const rm = await d.runner.remove(fallbackRemovePkg)
       if (rm.class === 'ok') {
-        heal.push({ code: 'ROLLBACK_FALLBACK_REMOVED', note: `快照恢复失败，已补移除原不存在的依赖 ${fallbackRemovePkg}` })
-        return rolledBack(kind, failure, heal, rm.output)
+        heal.push({ code: 'ROLLBACK_FALLBACK_REMOVED', note: `快照恢复失败，已补移除原不存在的依赖 ${fallbackRemovePkg}（字节还原未验证）` })
+        return manualRepair(kind, healSuffixNote(restoreDetail), heal, rm.output, false)
       }
       return manualRepair(kind, healSuffixNote(`${restoreDetail}；移除 ${fallbackRemovePkg} 也失败（${rm.output}）`), heal, restoreDetail, false)
     } catch (rmErr) {
@@ -564,7 +592,7 @@ function resolveDeps(deps?: TransactionDeps): Omit<ResolvedDeps, 'runner'> {
 
 // ---------- install-npm 门 ----------
 
-/** B3：retryable-lag 退避重试（abort-aware sleep + warmPackument 预热）。 */
+/** B3：retryable-lag 退避重试（abort-aware sleep + warmPackument 预热；R4：取消不吞）。 */
 async function addWithLagRetry(
   req: TransactionRequest & { pkg: string; signal?: AbortSignal },
   spec: string,
@@ -580,11 +608,61 @@ async function addWithLagRetry(
     attempt += 1
     heal.push({ code: 'B3_LAG_RETRY', note: `NO_MATCHING_VERSION 疑似 packument CDN 滞后，退避 ${delay}ms 后重试（第 ${attempt} 次）` })
     if (delay > 0) await sleepAbortable(delay, req.signal)
+    if (req.signal?.aborted) throw abortErr()
     if (d.warmPackument !== undefined) {
       await d.warmPackument(req.pkg, req.signal)
       heal.push({ code: 'B3_PACKUMENT_WARMED', note: '重试前已预热 registry packument' })
     }
   }
+}
+
+/**
+ * npm 门最终验证（R3：可重复执行）——manifest 依赖存在与锚定、lockfile 存在、
+ * 与 npm dist 一致的 resolution.integrity。firstPass 控制是否记录 range 放行 heal。
+ */
+async function verifyNpmCommitState(
+  req: Extract<TransactionRequest, { kind: 'install-npm' }>,
+  d: ResolvedDeps,
+  heal: HealAction[],
+  firstPass: boolean,
+): Promise<void> {
+  const depsNow = await strictReadDeps(d)
+  if (depsNow[req.pkg] === undefined) {
+    throw new DomainFailure({ code: 'DEP_MISSING_AFTER_ADD', note: `安装后未在 profile 依赖中找到 ${req.pkg}` })
+  }
+  if (depsNow[req.pkg] !== req.version) {
+    if (!specAnchoredAtVersion(depsNow[req.pkg]!, req.version)) {
+      throw new DomainFailure({ code: 'DEP_VERSION_MISMATCH', note: `profile 依赖版本 ${depsNow[req.pkg]} 与目标 ${req.version} 不一致` })
+    }
+    if (firstPass) {
+      heal.push({
+        code: 'RANGE_ANCHOR_ACCEPTED',
+        note: `安装链把依赖写成 range（${depsNow[req.pkg]}，旧版 CLI save-prefix 行为）；精确性由 lockfile integrity 校验继续保证`,
+      })
+    }
+  }
+  let lockText: string
+  try {
+    lockText = await readFile(join(d.profileDir, 'pnpm-lock.yaml'), 'utf8')
+  } catch {
+    throw new DomainFailure({ code: 'LOCKFILE_MISSING', note: '安装后未找到 pnpm-lock.yaml，无法核对 integrity' })
+  }
+  let actual: string | null
+  try {
+    actual = readPnpmLockIntegrity(lockText, req.pkg, req.version)
+  } catch (err) {
+    throw new DomainFailure({ code: 'LOCK_INTEGRITY_MISMATCH', note: errText(err) })
+  }
+  try {
+    assertNpmIntegrity(req.integrity, actual, req.pkg, req.version)
+  } catch (err) {
+    throw new DomainFailure({ code: 'LOCK_INTEGRITY_MISMATCH', note: errText(err) })
+  }
+}
+
+/** mutate 已开始后的取消：进不可取消回滚（R4：runner 返回 ok 也不能提交已取消的变更）。 */
+function abortedFailure(note: string): TransactionFailure {
+  return { code: 'ABORTED', note }
 }
 
 async function installNpm(
@@ -596,46 +674,20 @@ async function installNpm(
   const spec = `${req.pkg}@${req.version}`
   try {
     const addOut = await addWithLagRetry(req, spec, d, heal)
+    if (req.signal?.aborted) {
+      return await rollbackAndConverge(d, req.kind, abortedFailure('安装过程中已取消'), heal, snapshots, req.pkg)
+    }
     if (addOut.class !== 'ok') {
       const failure: TransactionFailure = req.signal?.aborted
         ? { code: 'ABORTED', note: addOut.output }
         : addOut.class === 'retryable-lag'
           ? { code: 'ADD_RETRY_EXHAUSTED', note: addOut.output }
           : { code: 'ADD_FAILED', note: addOut.output }
-      return rollbackAndConverge(d, req.kind, failure, heal, snapshots, req.pkg)
+      return await rollbackAndConverge(d, req.kind, failure, heal, snapshots, req.pkg)
     }
 
-    // verify 相（严格读取）
-    const depsNow = await strictReadDeps(d)
-    if (depsNow[req.pkg] === undefined) {
-      throw new DomainFailure({ code: 'DEP_MISSING_AFTER_ADD', note: `安装后未在 profile 依赖中找到 ${req.pkg}` })
-    }
-    if (depsNow[req.pkg] !== req.version) {
-      if (!specAnchoredAtVersion(depsNow[req.pkg]!, req.version)) {
-        throw new DomainFailure({ code: 'DEP_VERSION_MISMATCH', note: `profile 依赖版本 ${depsNow[req.pkg]} 与目标 ${req.version} 不一致` })
-      }
-      heal.push({
-        code: 'RANGE_ANCHOR_ACCEPTED',
-        note: `安装链把依赖写成 range（${depsNow[req.pkg]}，旧版 CLI save-prefix 行为）；精确性由 lockfile integrity 校验继续保证`,
-      })
-    }
-    let lockText: string
-    try {
-      lockText = await readFile(join(d.profileDir, 'pnpm-lock.yaml'), 'utf8')
-    } catch {
-      throw new DomainFailure({ code: 'LOCKFILE_MISSING', note: '安装后未找到 pnpm-lock.yaml，无法核对 integrity' })
-    }
-    let actual: string | null
-    try {
-      actual = readPnpmLockIntegrity(lockText, req.pkg, req.version)
-    } catch (err) {
-      throw new DomainFailure({ code: 'LOCK_INTEGRITY_MISMATCH', note: errText(err) })
-    }
-    try {
-      assertNpmIntegrity(req.integrity, actual, req.pkg, req.version)
-    } catch (err) {
-      throw new DomainFailure({ code: 'LOCK_INTEGRITY_MISMATCH', note: errText(err) })
-    }
+    // verify 相（严格读取；首次）
+    await verifyNpmCommitState(req, d, heal, true)
 
     // B1（成功路径）：安装链丢 manifest 顶层键 → 快照找回 + frozen 复验（复验失败 fail-closed 进回滚）
     const restoredKeys = await restoreManifestKeys(d.profileDir, snapshots[0])
@@ -646,8 +698,13 @@ async function installNpm(
         heal.push({ code: 'B1_FROZEN_REVERIFY_FAILED', note: `frozen 复验未通过：${conv.output}` })
         throw new DomainFailure({ code: 'POST_MUTATION_CONVERGENCE_FAILED', note: `B1 找回 manifest 键后 frozen 复验失败：${conv.output}` })
       }
+      // R3：B1/B2 可能受控改写了 manifest/lockfile——提交前对最终状态重新执行完整验证
+      await verifyNpmCommitState(req, d, heal, false)
     }
 
+    if (req.signal?.aborted) {
+      return await rollbackAndConverge(d, req.kind, abortedFailure('提交前已取消'), heal, snapshots, req.pkg)
+    }
     return committed(req.kind, heal, addOut.output, {
       pkg: req.pkg,
       spec,
@@ -656,12 +713,12 @@ async function installNpm(
     })
   } catch (err) {
     if (err instanceof DomainFailure) {
-      return rollbackAndConverge(d, req.kind, err.failure, heal, snapshots, req.pkg)
+      return await rollbackAndConverge(d, req.kind, err.failure, heal, snapshots, req.pkg)
     }
     const failure: TransactionFailure = isAbortish(err, req.signal)
       ? { code: 'ABORTED', note: errText(err) }
       : { code: 'INTERNAL_ERROR', note: errText(err) }
-    return rollbackAndConverge(d, req.kind, failure, heal, snapshots, req.pkg)
+    return await rollbackAndConverge(d, req.kind, failure, heal, snapshots, req.pkg)
   }
 }
 
@@ -695,11 +752,14 @@ async function installGithub(
   try {
     // github 门无 B3：retryable-lag 不适用，一律按 hard-fail 处置（分类消费矩阵 github 行）
     const addOut = await d.runner.add(spec, req.signal)
+    if (req.signal?.aborted) {
+      return await rollbackAndConverge(d, req.kind, abortedFailure('安装过程中已取消'), heal, snapshots)
+    }
     if (addOut.class !== 'ok') {
       const failure: TransactionFailure = req.signal?.aborted
         ? { code: 'ABORTED', note: addOut.output }
         : { code: 'ADD_FAILED', note: addOut.output }
-      return rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+      return await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
     }
     // verify（契约 8）：存在键 k 使 depsNow[k] === spec 且 snapshotDeps[k] !== spec（相对前态变化）
     const depsNow = await strictReadDeps(d)
@@ -711,6 +771,9 @@ async function installGithub(
         note: `安装后未在 profile 依赖中找到受 SHA 锁定的新 spec（${spec}）；已存在的同 spec 旧依赖不算命中`,
       })
     }
+    if (req.signal?.aborted) {
+      return await rollbackAndConverge(d, req.kind, abortedFailure('提交前已取消'), heal, snapshots)
+    }
     return committed(req.kind, heal, addOut.output, {
       pkg: key,
       spec,
@@ -720,12 +783,12 @@ async function installGithub(
     })
   } catch (err) {
     if (err instanceof DomainFailure) {
-      return rollbackAndConverge(d, req.kind, err.failure, heal, snapshots)
+      return await rollbackAndConverge(d, req.kind, err.failure, heal, snapshots)
     }
     const failure: TransactionFailure = isAbortish(err, req.signal)
       ? { code: 'ABORTED', note: errText(err) }
       : { code: 'INTERNAL_ERROR', note: errText(err) }
-    return rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+    return await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
   }
 }
 
@@ -768,7 +831,7 @@ async function validateUninstall(
   return null
 }
 
-/** 卸载回滚：统一回滚后 live 尽力反向（补偿动作记录在案，不改变终态）。 */
+/** 卸载回滚：统一回滚后 live 尽力反向（R2：回滚异常也必须反向；补偿记录在案，不改变终态）。 */
 async function rollbackWithLiveReverse(
   req: Extract<TransactionRequest, { kind: 'uninstall' }>,
   d: ResolvedDeps,
@@ -777,7 +840,19 @@ async function rollbackWithLiveReverse(
   snapshots: ProfileFileSnapshot[],
   liveDisabled: boolean,
 ): Promise<FailedTransactionResult> {
-  const result = await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+  let result: FailedTransactionResult
+  try {
+    result = await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+  } catch (err) {
+    // 最后防线：rollbackAndConverge 理论上 total；仍异常时如实 manual-repair，随后照样 live 反向
+    result = manualRepair(
+      req.kind,
+      { code: failure.code, note: `${failure.note}；依赖回滚也失败（${errText(err)}）` },
+      heal,
+      errText(err),
+      false,
+    )
+  }
   if (liveDisabled) {
     try {
       const back = await d.setLiveDisabled(req.pkg, false)
@@ -805,25 +880,31 @@ async function uninstall(
     if (patch.changed) heal.push({ code: 'PATCH_ENTRIES_STRIPPED', note: '已摘除该包的 pnpm 补丁条目（防残留补丁触发 unused-patch 整单失败）' })
     orphanedPatchFiles = patch.orphanedPatchFiles
     const rmOut = await d.runner.remove(req.pkg, req.signal)
+    if (req.signal?.aborted) {
+      return await rollbackWithLiveReverse(req, d, abortedFailure('卸载过程中已取消'), heal, snapshots, liveDisabled)
+    }
     if (rmOut.class !== 'ok') {
       const failure: TransactionFailure = req.signal?.aborted
         ? { code: 'ABORTED', note: rmOut.output }
         : { code: 'REMOVE_FAILED', note: rmOut.output }
-      return rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
+      return await rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
     }
     const depsNow = await strictReadDeps(d)
     if (req.pkg in depsNow) {
       throw new DomainFailure({ code: 'STILL_PRESENT_AFTER_REMOVE', note: `移除后 profile 依赖中仍存在 ${req.pkg}` })
     }
+    if (req.signal?.aborted) {
+      return await rollbackWithLiveReverse(req, d, abortedFailure('提交前已取消'), heal, snapshots, liveDisabled)
+    }
     return committed(req.kind, heal, rmOut.output, { pkg: req.pkg, liveDisabled, orphanedPatchFiles })
   } catch (err) {
     if (err instanceof DomainFailure) {
-      return rollbackWithLiveReverse(req, d, err.failure, heal, snapshots, liveDisabled)
+      return await rollbackWithLiveReverse(req, d, err.failure, heal, snapshots, liveDisabled)
     }
     const failure: TransactionFailure = isAbortish(err, req.signal)
       ? { code: 'ABORTED', note: errText(err) }
       : { code: 'INTERNAL_ERROR', note: errText(err) }
-    return rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
+    return await rollbackWithLiveReverse(req, d, failure, heal, snapshots, liveDisabled)
   }
 }
 
@@ -881,12 +962,21 @@ async function executeTransaction(
     return rejected({ code: 'ABORTED', note: '变更开始前已取消' }, req.kind)
   }
 
-  switch (req.kind) {
-    case 'install-npm':
-      return installNpm(req, d, snapshots)
-    case 'install-github':
-      return installGithub(req, d, snapshots)
-    case 'uninstall':
-      return uninstall(req, d, snapshots)
+  // R2 第二层：phase-aware 最后防线。各门自身已 total；此兜底只处理门逻辑的意外遗漏，
+  // 快照已取 → 照常走统一回滚（rollbackAndConverge 已 total，不会再递归逃逸）。
+  try {
+    switch (req.kind) {
+      case 'install-npm':
+        return await installNpm(req, d, snapshots)
+      case 'install-github':
+        return await installGithub(req, d, snapshots)
+      case 'uninstall':
+        return await uninstall(req, d, snapshots)
+    }
+  } catch (err) {
+    const failure: TransactionFailure = isAbortish(err, req.signal)
+      ? { code: 'ABORTED', note: errText(err) }
+      : { code: 'INTERNAL_ERROR', note: errText(err) }
+    return await rollbackAndConverge(d, req.kind, failure, [], snapshots)
   }
 }

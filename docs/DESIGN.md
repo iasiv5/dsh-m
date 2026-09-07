@@ -71,8 +71,9 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **结果为四分支判别联合**：`committed` / `rejected`（快照失败、前置校验失败、排队期 abort——零写入）/ `rolled-back` / `manual-repair`；`healActions[{code, note}]` + `failure{code, note}`（英文稳定 code，机器可断言）；中文散文只在展示层由 `renderFailure` 生成（唯一产地）。消费方拿结构化结果自行渲染；host-api 失败体附 `detail` 白名单投影（不含 raw output，GUI 零改动只读 `error`）。
 - **pnpm 结果只以六类分类穿过接缝**（`dsh-cli.ts` 是分类器唯一产地）：ok / retryable-lag（CDN 滞后）/ config-drift（配置漂移）/ unused-patch / needs-builds / hard-fail；**分类发生在任何文案改写之前**，事务与 market 永不 regex pnpm 原始输出、只消费 `PNPM_OUTCOME_CODES` 常量。分类消费矩阵（add/remove/frozen/rebuild × 六类）由参数化测试全枚举钉死。
 - **自愈阶梯**（全部以 healActions 记录）：B1 安装链丢 manifest 顶层键 → 快照找回 + frozen 复验（复验失败 fail-closed 进回滚）；B2 frozen 收敛：CONFIG_MISMATCH → 把 lockfile 记录的 overrides 对齐回 `package.json#pnpm.overrides` 再复验 → 顽固失配（含 OUTDATED_LOCKFILE specifier 漂移）降级 `--no-frozen-lockfile` 重建；B3 刚发布 `ERR_PNPM_NO_MATCHING_VERSION` 退避重试 2 次（5s/15s，abort-aware），每次重试前预热完整 packument（生产绑定 `makeNpmWarmPackument`，失败吞错）；构建脚本被拦 → `dangerouslyAllowAllBuilds` 放行并**必须明确报告**（在途重试在 adapter 的 `makeAddViaLadder` 内耗尽）。
-- **signal 语义**：request 可带 AbortSignal，贯通 runner 四操作、预热与退避 sleep（abort 即醒）；mutate 前 abort → `rejected`；mutate 后 abort → 中止在途调用并执行**不可取消的**回滚（不变量优先于取消）。
-- **快照/原子写原语**（`npm-integrity.ts`）：快照仅吞 ENOENT（其他读取异常 fail closed 零写入）；原子写 POSIX 直接 rename（无「先删后改名」窗口），Windows EPERM/EEXIST 走备份协议，失败清理 tmp。
+- **signal 语义**：request 可带 AbortSignal，贯通 runner 四操作、预热与退避 sleep（abort 即醒）；mutate 前 abort → `rejected`；mutate 后 abort → 中止在途调用并执行**不可取消的**回滚（不变量优先于取消）；mutation 返回与提交前复查 signal——runner 返回 ok 但已取消的事务同样进 ABORTED 回滚，不提交。
+- **互斥边界（已知限制）**：FIFO 锁为**进程内**互斥——Web Host / GUI / Agent tools 与独立 `dshm` CLI 可能运行在不同进程、操作同一 web profile，跨进程并发不在覆盖范围。变更执行期间避免同时从 GUI/Agent/CLI 发起另一次变更；跨进程锁（lockfile + stale 恢复）留作后续演进。
+- **快照/原子写原语**（`npm-integrity.ts`）：快照仅吞 ENOENT（其他读取异常 fail closed 零写入）；原子写 POSIX 直接 rename（无「先删后改名」窗口），Windows EPERM/EEXIST 走备份协议；**任何失败路径（含 write/sync/close）都清理 tmp**，备份恢复自身失败时报告 backup 路径与双重错误。
 
 ### 3.2 各入口语义
 

@@ -570,6 +570,19 @@ export async function runProfileTransaction(
 | `tests/npm-integrity.test.mjs:226` 注入 `readProfileDeps` 返回 `1.2.4`（文件实为 `~1.2.3`）并断言 fail closed；verify 链入事务后无桥接槽位，Task 3「现有测试零改动通过」不可达成 | `TransactionDeps` 增 `readProfileDeps` 测试缝（缺省=严格读取器）；Task 3 桥接映射；Task 9 删桥时删槽，该用例改 fake add 真实写 `1.2.4`（断言零改动） |
 | Task 9 grep 门禁的 `restoreInstall\|rebuildInstall` 与接口定稿 `PnpmRunner.frozenInstall/rebuildInstall` 方法名撞名——所有 mock runner 必然命中，验证命令无效 | 门禁模式改为 `addDshPlugin\|readProfileDeps\|npmPackument\|removeInstalled\|readLockIntegrity`（仅 legacy 槽名，新世界零存在） |
 
+### 第五轮：实施产物终审（执行后复审）处置
+> 复审裁决 Changes Requested（🔴×4、🟡×2、残余风险×1）；全部 🔴/🟡 已按建议修复并配确定性反例回归（254 → 273 测试）。
+
+| 评审项 | 处置 |
+|---|---|
+| 🔴R1 快照恢复失败/收敛失败时 fallback remove ok 即返回 `rolled-back`（事实字段与真实状态相反） | 采纳：`restoreVerified=false` 一律 manual-repair（remove 仅作补偿动作记录，ROLLBACK_FALLBACK_REMOVED 保留）；收敛失败后 remove ok 必须再经严格 verify-gone + frozen 复验（复验过才 rolled-back，否则 manual-repair）。原钉住错误行为的测试拆为复验通过/仍失败两组，另增恢复失败专项（manual-repair + 事实字段如实） |
+| 🔴R2 回滚收敛异常（frozen throw / B2 写失败 / runner 违约）可 reject 逃出四态联合；uninstall 回滚异常阻断 live 反向 | 采纳三层：`rollbackAndConverge` total 化（收敛阶梯/补移除/复验异常一律转 manual-repair）；各门 catch 内 `return await`；`executeTransaction` 增 phase-aware 最后防线；`rollbackWithLiveReverse` 先兜底再 live 反向（异常不阻断）。新增 4 例反例回归（frozen/rebuild/remove throw + uninstall live 反向） |
+| 🔴R3 B1/B2 rebuild 改写 lockfile 后提交前未重新校验 integrity | 采纳：抽 `verifyNpmCommitState`（可重复执行），B1/B2 受控改写后于 commit builder 前重跑完整验证（firstPass 控制 range heal 不重复）；复验失败 → LOCK_INTEGRITY_MISMATCH 进回滚。新增 evil rebuild 反例 + 正常 rebuild 对照两例 |
+| 🔴R4 pre-aborted signal 仍 spawn 子进程；mutation 返回后不复查 signal（可 committed）；warm 吞取消异常 | 采纳：`runCommand` spawn 前检查 `signal.aborted`（检查与 listener 注册为同步块，窗口按构造封死）+ 统一 AbortError 形态；三门在 mutation 返回后与提交前复查 signal（runner ok + 已取消 → ABORTED 不可取消回滚）；B3 循环 sleep 后检查；`makeNpmWarmPackument` 取消异常上抛、普通失败仍吞。新增 npm/github/uninstall 三门取消回归 + warm 取消不重试 + runCommand pre-abort marker 反例 + 运行中 abort 快速拒绝 |
+| 🟡Y1 `atomicWriteFile` write/sync 失败遗留 `.restore-*`；备份恢复失败静默 | 采纳：tmp 创建成功起统一外层 try/finally 清理；备份恢复自身失败抛含 backup 路径与双重错误的复合信息。新增 write/sync 失败清理 + 备份恢复失败双报三例 |
+| 🟡Y2 `makeAddViaLadder` 的 allowAllBuilds 写入在 try 外，违反「永不 throw」 | 采纳：写入失败转 hard-fail RunnerOutcome（≤800 截断），不再发起第二次 add。新增 EROFS 反例 |
+| ⚠️残余风险 跨进程并发不受 FIFO 保护 | 采纳文档化：DESIGN.md §3.1「互斥边界（已知限制）」+ `dshm` 帮助文案显著提示；跨进程锁列为后续演进（本轮不做，与计划「跨进程并发不在覆盖范围」一致） |
+
 ## 执行纪律
 
 - 开始实现前，先批判性复查整份计划；发现缺项、矛盾、命名不一致或验证命令无效，先修计划再动手。
