@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
+import { TransactionError } from '../lib/core/profile-transaction.js'
 
 const ORIGIN = 'http://127.0.0.1:3080'
 const JSON_HEADERS = { 'content-type': 'application/json', origin: ORIGIN, host: '127.0.0.1:3080' }
@@ -409,5 +410,40 @@ describe('host-api：self-upgrade 事务委派（Task 7）', () => {
     assert.equal(res.status, 500)
     assert.equal(res.body.ok, false)
     assert.match(res.body.error, /已回滚到安装前状态/)
+  })
+})
+
+// ---------- Task 10：结构化结果 detail 白名单投影 ----------
+
+describe('host-api：TransactionError → detail 白名单投影（Task 10）', () => {
+  it('rolled-back（LOCK_INTEGRITY_MISMATCH）→ 500 + detail.failure.code + 无 raw output + legacy 文案', async () => {
+    const rolled = {
+      kind: 'install-npm',
+      status: 'rolled-back',
+      ok: false,
+      failure: { code: 'LOCK_INTEGRITY_MISMATCH', note: 'integrity 不一致：pkg-a@1.2.3 期望 X，lockfile 实际 Y' },
+      healActions: [{ code: 'ROLLBACK_BYTES_RESTORED', note: '三文件已按快照逐字节还原并重读复验' }],
+      output: 'raw pnpm output that must not leak',
+      snapshotRestoreVerified: true,
+      profileConverged: true,
+    }
+    const { dispatcher } = setup({
+      installFromRegistry: async () => {
+        throw new TransactionError(rolled)
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'plug-1' } })
+    assert.equal(res.status, 500)
+    assert.equal(res.body.ok, false)
+    assert.equal(res.body.detail.status, 'rolled-back')
+    assert.equal(res.body.detail.kind, 'install-npm')
+    assert.equal(res.body.detail.failure.code, 'LOCK_INTEGRITY_MISMATCH')
+    assert.equal(res.body.detail.snapshotRestoreVerified, true)
+    assert.equal(res.body.detail.profileConverged, true)
+    assert.equal(Array.isArray(res.body.detail.healActions), true)
+    assert.equal(res.body.detail.output, undefined, 'detail 不含 raw output')
+    assert.equal('output' in res.body.detail, false)
+    assert.match(res.body.error, /已回滚到安装前状态/)
+    assert.ok(!res.raw.includes('raw pnpm output'), '原始 runner 输出不外泄')
   })
 })

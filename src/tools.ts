@@ -346,8 +346,10 @@ interface InstallOut {
   spec?: string
   version?: string
   sha?: string
+  tag?: string
   usedAllowAllBuilds?: boolean
   fromVersion?: string
+  healActions?: Array<{ code: string; note: string }>
 }
 interface UninstallOut {
   pkg?: string
@@ -386,7 +388,10 @@ function renderList(out: ListOut): string {
 
 function renderInstall(out: InstallOut): string {
   const extra = out.usedAllowAllBuilds ? '注意：该插件执行了构建脚本（已按策略放行）。' : ''
-  return `✅ ${out.pkg} 已安装（${out.spec}）。${extra}需要重启 DSH Web 生效——告知用户并询问是否 dshm_restart。不要打印安装命令。`
+  const heals = out.healActions?.length
+    ? `安装过程含 ${out.healActions.length} 步自愈（${out.healActions.map((h) => h.code).join('、')}）。`
+    : ''
+  return `✅ ${out.pkg} 已安装（${out.spec}）。${extra}${heals}需要重启 DSH Web 生效——告知用户并询问是否 dshm_restart。不要打印安装命令。`
 }
 
 function renderUninstall(out: UninstallOut): string {

@@ -160,6 +160,25 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     return { status: 422, payload: { ok: false, error: err.message, errors: err.errors } }
   }
   if (err instanceof ApiProtocolError) return { status: err.status, payload: { ok: false, error: err.message } }
+  if (err instanceof TransactionError) {
+    // detail 白名单投影：结构化事实，不含 raw output（GUI 只读 error，零改动）
+    const r = err.result
+    return {
+      status: 500,
+      payload: {
+        ok: false,
+        error: err.message,
+        detail: {
+          status: r.status,
+          kind: r.kind,
+          failure: r.failure,
+          healActions: r.healActions,
+          snapshotRestoreVerified: r.snapshotRestoreVerified,
+          profileConverged: r.profileConverged,
+        },
+      },
+    }
+  }
   return { status: 500, payload: { ok: false, error: err instanceof Error ? err.message : String(err) } }
 }
 
