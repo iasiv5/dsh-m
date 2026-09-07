@@ -8,20 +8,23 @@
  * 新发布后 NO_MATCHING_VERSION 的退避重试 + packument 预热（B3）。
  */
 import { existsSync } from 'node:fs'
-import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { addDshPlugin, removeDshPlugin, removePatchedDependencyEntries, runCommand } from './dsh-cli.js'
-import { dshHome, installTimeoutMs, webProfileDir } from './env.js'
+import { addDshPlugin, removeDshPlugin, removePatchedDependencyEntries } from './dsh-cli.js'
 import {
-  assertNpmIntegrity,
-  atomicWriteFile,
-  readPnpmLockIntegrity,
-  readPnpmLockOverrides,
-  restoreSnapshots,
-  snapshotFiles,
-  type ProfileFileSnapshot,
-} from './npm-integrity.js'
+  classifyPnpmError,
+  makeDshRunner,
+  type PnpmRunner,
+  type RunnerOutcome,
+} from './dsh-cli.js'
+import { dshHome, webProfileDir } from './env.js'
+import { readPnpmLockIntegrity } from './npm-integrity.js'
+import {
+  runProfileTransaction,
+  makeNpmWarmPackument,
+  TransactionError,
+  type TransactionDeps,
+} from './profile-transaction.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
   readProfileDeps,
@@ -577,173 +580,98 @@ export interface InstallDeps extends Partial<MarketDeps> {
   rebuildInstall?: (profileDir: string) => Promise<unknown>
   /** B3：ERR_PNPM_NO_MATCHING_VERSION 的退避重试间隔（毫秒，按序消费）；测试注入 [0,0] */
   retryDelaysMs?: number[]
+  /** Task 3 起：事务依赖注入（生产原生形态；旧槽位经桥接兼容至 Task 9 删除） */
+  transaction?: TransactionDeps
 }
 
-async function defaultRestoreInstall(profileDir: string): Promise<unknown> {
-  return runCommand('pnpm', ['--dir', profileDir, 'install', '--frozen-lockfile'], { timeoutMs: installTimeoutMs() })
+// ---------- Task 3：npm 分支事务桥接（txDepsFrom；Task 9 删除） ----------
+
+/** legacy mutation 槽位（add/remove/frozen/rebuild）任一存在时才构造 legacy runner。 */
+function hasLegacyMutationOverrides(deps?: InstallDeps): boolean {
+  return deps?.addDshPlugin !== undefined
+    || deps?.removeDshPlugin !== undefined
+    || deps?.restoreInstall !== undefined
+    || deps?.rebuildInstall !== undefined
 }
 
-async function defaultRebuildInstall(profileDir: string): Promise<unknown> {
-  return runCommand('pnpm', ['--dir', profileDir, 'install', '--no-frozen-lockfile'], { timeoutMs: installTimeoutMs() })
-}
-
-/** B3 默认退避：新发布 ~1 分钟内的升级失败多为 packument CDN 滞后（2026-09-05 实证）。 */
-const NO_MATCHING_VERSION_RETRY_DELAYS_MS = [5_000, 15_000]
-
-// ---------- B1/B2：manifest 保留与 frozen 自愈（2026-09-05 事故加固） ----------
-
-const LOCKFILE_CONFIG_MISMATCH_RE = /ERR_PNPM_LOCKFILE_CONFIG_MISMATCH/
-const OUTDATED_LOCKFILE_RE = /ERR_PNPM_OUTDATED_LOCKFILE/
-const NO_MATCHING_VERSION_RE = /ERR_PNPM_NO_MATCHING_VERSION/
-
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function readManifestDoc(profileDir: string): Promise<Record<string, unknown> | null> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    return parsed as Record<string, unknown>
-  } catch {
-    return null
-  }
+function bridgeOutcome(text: string): RunnerOutcome {
+  const raw = String(text ?? '')
+  return { ...classifyPnpmError(raw), output: raw.length <= 800 ? raw : raw.slice(-800) }
 }
 
 /**
- * B1（成功路径）：安装链（pnpm / 宿主 CLI）若把升级前 manifest 的顶层键丢掉
- * （如 `pnpm.overrides` 事故前态），从安装前字节快照里找回并原子写回。
- * 只补「快照有、现在无」的键，绝不覆盖安装刚写入的 dependencies/dsh 变更。
- * 返回找回的键名列表；无需修复返回 null。
+ * legacy 槽位 → PnpmRunner 包装：成功→ok+output+usedAllowAllBuilds；throw→原始文本分类。
+ * 未注入的槽位逐操作回退有效 runner（transaction.runner 优先，缺省生产 makeDshRunner），
+ * 绝不构造残缺 runner。
  */
-async function restoreManifestKeys(
-  profileDir: string,
-  snapshot: ProfileFileSnapshot | undefined,
-): Promise<string[] | null> {
-  if (!snapshot?.existed || snapshot.bytes === null) return null
-  let prev: Record<string, unknown>
-  try {
-    const parsed: unknown = JSON.parse(snapshot.bytes.toString('utf8'))
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-    prev = parsed as Record<string, unknown>
-  } catch {
-    return null
-  }
-  const cur = await readManifestDoc(profileDir)
-  if (!cur) return null
-  const missing = Object.keys(prev).filter((k) => !(k in cur))
-  if (missing.length === 0) return null
-  for (const key of missing) cur[key] = prev[key]
-  const bytes = Buffer.from(`${JSON.stringify(cur, null, 2)}\n`, 'utf8')
-  await atomicWriteFile(join(profileDir, 'package.json'), bytes)
-  return missing
-}
-
-/**
- * B2 第一层自愈：frozen 校验报 overrides 失配时，把 lockfile 记录的 overrides
- * 并入 manifest 的 `pnpm.overrides`（manifest 已有条目优先，绝不删用户手写的键）。
- * lockfile 的 overrides 是上一次解析实际生效的钉版，以此为准可让 frozen 直接通过
- * 而无需重建依赖树（与 2026-09-05 人工修复路径等价）。未做任何修改返回 null。
- */
-async function restoreOverridesFromLock(profileDir: string): Promise<string | null> {
-  let lockText: string
-  try {
-    lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
-  } catch {
-    return null
-  }
-  const lockOverrides = readPnpmLockOverrides(lockText)
-  const doc = await readManifestDoc(profileDir)
-  if (!doc) return null
-  const pnpm = doc.pnpm !== null && typeof doc.pnpm === 'object' && !Array.isArray(doc.pnpm)
-    ? doc.pnpm as Record<string, unknown>
-    : {}
-  const current = pnpm.overrides !== null && typeof pnpm.overrides === 'object' && !Array.isArray(pnpm.overrides)
-    ? pnpm.overrides as Record<string, unknown>
-    : {}
-  const merged: Record<string, unknown> = { ...lockOverrides, ...current }
-  if (JSON.stringify(merged) === JSON.stringify(current)) return null
-  doc.pnpm = { ...pnpm, overrides: merged }
-  const bytes = Buffer.from(`${JSON.stringify(doc, null, 2)}\n`, 'utf8')
-  await atomicWriteFile(join(profileDir, 'package.json'), bytes)
-  const restored = Object.keys(lockOverrides).filter((k) => !(k in current))
-  return restored.length > 0 ? `（还原自 lockfile：${restored.join(', ')}）` : '（与 lockfile overrides 对齐）'
-}
-
-/**
- * B2 frozen 自愈阶梯：frozen install → CONFIG_MISMATCH 时先 overrides 对齐再重试 →
- * 仍失配（或 OUTDATED_LOCKFILE specifier 漂移，实机实证：override 钉直接依赖时回滚
- * 快照本身即 specifier 不一致）则降级 `--no-frozen-lockfile` 重建一致性。自愈动作按序
- * 记入 notes（最终呈现给用户）；阶梯走完仍失败时抛最后一个错误。
- */
-async function frozenInstallWithHeal(
-  profileDir: string,
-  d: {
-    restoreInstall: (profileDir: string) => Promise<unknown>
-    rebuildInstall: (profileDir: string) => Promise<unknown>
-  },
-  notes: string[],
-): Promise<void> {
-  try {
-    await d.restoreInstall(profileDir)
-    return
-  } catch (frozenErr) {
-    const text = errText(frozenErr)
-    const isConfigMismatch = LOCKFILE_CONFIG_MISMATCH_RE.test(text)
-    if (!isConfigMismatch && !OUTDATED_LOCKFILE_RE.test(text)) throw frozenErr
-    if (isConfigMismatch) {
-      const merged = await restoreOverridesFromLock(profileDir)
-      if (merged !== null) {
-        notes.push(`已把 lockfile overrides 还原进 manifest ${merged}`)
-        try {
-          await d.restoreInstall(profileDir)
-          notes.push('frozen 校验通过')
-          return
-        } catch {
-          /* 对齐后仍失配 → 走重建降级 */
+function bridgeLegacyRunnerWithPerOperationFallbacks(deps: InstallDeps, base: PnpmRunner): PnpmRunner {
+  return {
+    add: deps.addDshPlugin !== undefined
+      ? async (spec: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
+          try {
+            const r = await deps.addDshPlugin!(spec)
+            return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
+          } catch (err) {
+            return bridgeOutcome(err instanceof Error ? err.message : String(err))
+          }
         }
-      }
-    }
-    try {
-      await d.rebuildInstall(profileDir)
-    } catch (rebuildErr) {
-      throw new Error(`${text}；lockfile 重建（--no-frozen-lockfile）也失败：${errText(rebuildErr)}`)
-    }
-    notes.push('lockfile 已重建（--no-frozen-lockfile 完成一致性安装）')
+      : base.add.bind(base),
+    remove: deps.removeDshPlugin !== undefined
+      ? async (pkg: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
+          try {
+            const output = await deps.removeDshPlugin!(pkg, { signal })
+            return { class: 'ok', output }
+          } catch (err) {
+            return bridgeOutcome(err instanceof Error ? err.message : String(err))
+          }
+        }
+      : base.remove.bind(base),
+    frozenInstall: deps.restoreInstall !== undefined
+      ? async (): Promise<RunnerOutcome> => {
+          try {
+            await deps.restoreInstall!(deps.profileDir ?? webProfileDir())
+            return { class: 'ok', output: 'frozen-lockfile 校验通过' }
+          } catch (err) {
+            return bridgeOutcome(err instanceof Error ? err.message : String(err))
+          }
+        }
+      : base.frozenInstall.bind(base),
+    rebuildInstall: deps.rebuildInstall !== undefined
+      ? async (): Promise<RunnerOutcome> => {
+          try {
+            await deps.rebuildInstall!(deps.profileDir ?? webProfileDir())
+            return { class: 'ok', output: 'lockfile 已重建（--no-frozen-lockfile）' }
+          } catch (err) {
+            return bridgeOutcome(err instanceof Error ? err.message : String(err))
+          }
+        }
+      : base.rebuildInstall.bind(base),
   }
 }
 
 /**
- * B3：ERR_PNPM_NO_MATCHING_VERSION 在刚发布的窗口内几乎都是 packument CDN 滞后
- * （2026-09-05 实证：/latest 已新、完整 packument 仍旧）。按 retryDelaysMs 退避重试，
- * 每次重试前拉一次完整 packument 预热/校验；其他错误与重试耗尽后原样抛出。
+ * 桥接构造（Task 9 删除）：legacy InstallDeps 槽位 → TransactionDeps。
+ * 仅注入查询类依赖时不得构造残缺 legacy runner——直接用注入的 transaction.runner 或生产 runner。
  */
-async function addDshPluginWithRetry(
-  spec: string,
-  pkg: string,
-  d: {
-    addDshPlugin: typeof addDshPlugin
-    npmPackument: typeof defaultNpmPackument
-  },
-  retryDelaysMs: readonly number[],
-  timeoutMs: number,
-  signal?: AbortSignal,
-): Promise<{ output: string; usedAllowAllBuilds: boolean }> {
-  let attempt = 0
-  for (;;) {
-    try {
-      return await d.addDshPlugin(spec)
-    } catch (err) {
-      if (!NO_MATCHING_VERSION_RE.test(errText(err)) || attempt >= retryDelaysMs.length) throw err
-      const delay = retryDelaysMs[attempt] ?? 0
-      attempt += 1
-      if (delay > 0) await sleep(delay)
-      await d.npmPackument(pkg, timeoutMs, signal).catch(() => undefined)
-    }
+function txDepsFrom(deps: InstallDeps | undefined, timeoutMs: number): TransactionDeps {
+  const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
+  const productionRunner = makeDshRunner(profileDir)
+  const effectiveRunner = deps?.transaction?.runner?.(profileDir) ?? productionRunner
+  const runner = hasLegacyMutationOverrides(deps)
+    ? bridgeLegacyRunnerWithPerOperationFallbacks(deps ?? {}, effectiveRunner)
+    : effectiveRunner
+  return {
+    ...deps?.transaction,
+    profileDir,
+    runner: () => runner,
+    warmPackument:
+      deps?.transaction?.warmPackument
+      ?? (deps?.npmPackument !== undefined
+        ? (pkg: string, signal?: AbortSignal) =>
+            Promise.resolve(deps.npmPackument!(pkg, timeoutMs, signal)).then(() => undefined, () => undefined)
+        : makeNpmWarmPackument(timeoutMs)),
+    retryDelaysMs: deps?.transaction?.retryDelaysMs ?? deps?.retryDelaysMs,
+    readProfileDeps: deps?.transaction?.readProfileDeps ?? deps?.readProfileDeps,
   }
 }
 
@@ -756,18 +684,6 @@ export interface InstallResult {
   usedAllowAllBuilds: boolean
   needsRestart: true
   output: string
-}
-
-/**
- * 旧版 dsh CLI（save-prefix ^）安装后会把依赖写成 `^x.y.z` 而非精确版本
- * （2026-09-05 实机实证：升级报「profile 依赖版本 ^0.2.5 与目标 0.2.5 不一致」）。
- * 仅当 spec 恰好锚定在目标精确版本上（v 本身 / ^v / ~v）才放行；真正的精确性
- * 不靠 manifest 字符串，而由紧随其后的 lockfile importer 精确解析 + integrity
- * 比对保证——其它任何 spec 仍然 fail closed。
- */
-function specAnchoredAtVersion(spec: string, version: string): boolean {
-  const s = String(spec || '').trim()
-  return s === version || s === `^${version}` || s === `~${version}`
 }
 
 /** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。 */
@@ -796,19 +712,13 @@ export async function installEntry(
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
-    npmPackument: deps?.npmPackument ?? defaultNpmPackument,
     addDshPlugin: deps?.addDshPlugin ?? addDshPlugin,
-    removeDshPlugin: deps?.removeDshPlugin ?? removeDshPlugin,
     readProfileDeps: deps?.readProfileDeps ?? readProfileDeps,
-    readLockIntegrity: deps?.readLockIntegrity ?? readPnpmLockIntegrity,
-    restoreInstall: deps?.restoreInstall ?? defaultRestoreInstall,
-    rebuildInstall: deps?.rebuildInstall ?? defaultRebuildInstall,
   }
-  const retryDelaysMs = deps?.retryDelaysMs ?? NO_MATCHING_VERSION_RETRY_DELAYS_MS
-  const profileDir = deps?.profileDir ?? webProfileDir()
+  const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
   if (entry.source === 'npm' && entry.npm) {
     const pkg = entry.npm
-    // npm：无论 latest 还是用户指定 exact，都先读取该精确版本的 dist metadata
+    // npm：无论 latest 还是用户指定 exact，都先读取该精确版本的 dist metadata（事务外解析）
     let version: string
     let expectedIntegrity: string | undefined
     if (opts.version) {
@@ -821,86 +731,20 @@ export async function installEntry(
       expectedIntegrity = latest.integrity
     }
     if (!expectedIntegrity) throw new Error(`npm metadata 缺少 dist integrity：${pkg}@${version}，拒绝安装`)
-    const spec = `${pkg}@${version}`
-    // 安装前快照：失败时 best-effort 依赖回滚与 B1 键找回的依据
-    const snapshots = await snapshotFiles([
-      join(profileDir, 'package.json'),
-      join(profileDir, 'pnpm-lock.yaml'),
-      join(profileDir, 'pnpm-workspace.yaml'),
-    ])
-    const healNotes: string[] = []
-    // 区分 add 阶段与校验阶段失败：回滚报错不再把 pnpm 安装失败误标成「integrity 校验失败」
-    let phase: 'install' | 'verify' = 'install'
-    try {
-      const res = await addDshPluginWithRetry(spec, pkg, d, retryDelaysMs, timeoutMs, opts.signal)
-      phase = 'verify'
-      const depsNow = await d.readProfileDeps(profileDir)
-      if (depsNow[pkg] === undefined) throw new Error(`安装后未在 profile 依赖中找到 ${pkg}`)
-      if (depsNow[pkg] !== version) {
-        if (!specAnchoredAtVersion(depsNow[pkg], version)) {
-          throw new Error(`profile 依赖版本 ${depsNow[pkg]} 与目标 ${version} 不一致`)
-        }
-        healNotes.push(`安装链把依赖写成 range（${depsNow[pkg]}，旧版 CLI save-prefix 行为）；精确性由 lockfile integrity 校验继续保证`)
-      }
-      let lockText: string
-      try {
-        lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
-      } catch {
-        throw new Error('安装后未找到 pnpm-lock.yaml，无法核对 integrity')
-      }
-      const actual = d.readLockIntegrity(lockText, pkg, version)
-      assertNpmIntegrity(expectedIntegrity, actual, pkg, version)
-      // B1（成功路径）：安装链若丢了 manifest 顶层键（如 pnpm.overrides），从快照找回并复验 frozen 一致性
-      const restoredKeys = await restoreManifestKeys(profileDir, snapshots[0])
-      if (restoredKeys) {
-        healNotes.push(`安装链丢失了 manifest 顶层键（${restoredKeys.join(', ')}），已从安装前快照找回`)
-        try {
-          await frozenInstallWithHeal(profileDir, d, healNotes)
-        } catch (healErr) {
-          healNotes.push(`frozen 一致性自愈未完成，profile 可能需要人工检查：${errText(healErr)}`)
-        }
-      }
-      return {
-        id: entry.id,
-        pkg,
-        spec,
-        version,
-        usedAllowAllBuilds: res.usedAllowAllBuilds,
-        needsRestart: true,
-        output: res.output.slice(-800) + (healNotes.length > 0 ? `\n[dsh-m 自愈] ${healNotes.join('；')}` : ''),
-      }
-    } catch (err) {
-      // best-effort rollback：原子恢复 manifest/lock/workspace 快照字节，再按 frozen 自愈阶梯收敛
-      let rollbackError: string | null = null
-      const rollbackNotes: string[] = []
-      try {
-        await restoreSnapshots(snapshots)
-        await frozenInstallWithHeal(profileDir, d, rollbackNotes)
-      } catch (rerr) {
-        rollbackError = errText(rerr)
-        // 原先不存在该依赖且恢复安装失败：尝试移除
-        const originallyAbsent = snapshots[0] && snapshots[0].existed && (() => {
-          try {
-            return !JSON.parse(snapshots[0].bytes!.toString('utf8'))?.dependencies?.[pkg]
-          } catch {
-            return false
-          }
-        })()
-        if (originallyAbsent) {
-          try {
-            await d.removeDshPlugin(pkg)
-            rollbackError = null
-          } catch (rmErr) {
-            rollbackError = `${rollbackError}；移除 ${pkg} 也失败（${errText(rmErr)}）`
-          }
-        }
-      }
-      const prefix = phase === 'install' ? '安装失败' : 'integrity 校验失败'
-      if (rollbackError) {
-        throw new Error(`${prefix}（${errText(err)}）；依赖回滚也失败（${rollbackError}），profile 可能需要人工修复`)
-      }
-      const suffix = rollbackNotes.length > 0 ? `（${rollbackNotes.join('；')}）` : ''
-      throw new Error(`${prefix}，已回滚到安装前状态${suffix}：${errText(err)}`)
+    const result = await runProfileTransaction(
+      { kind: 'install-npm', pkg, version, integrity: expectedIntegrity, signal: opts.signal },
+      txDepsFrom(deps, timeoutMs),
+    )
+    if (!result.ok) throw new TransactionError(result)
+    const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
+    return {
+      id: entry.id,
+      pkg: result.pkg ?? pkg,
+      spec: result.spec ?? `${pkg}@${version}`,
+      version: result.version ?? version,
+      usedAllowAllBuilds: result.usedAllowAllBuilds === true,
+      needsRestart: true,
+      output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
     }
   }
   if (entry.github) {

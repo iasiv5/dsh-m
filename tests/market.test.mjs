@@ -1,9 +1,13 @@
 /**
  * Task 3：服务端分页、latest cache、deadline/abort、unavailable 契约与 host/cli namespace。
+ * Task 3 桥接：transaction 注入与 legacy 槽位逐操作回退。
  * 运行：npm run build && node --test tests/market.test.mjs
  */
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin } from '../lib/core/market.js'
 
@@ -289,6 +293,118 @@ describe('install/upgrade：unavailable 抛业务错误', () => {
       () => upgradePlugin('pkg-1', cfg, {}, deps),
       (err) => err instanceof Error && /不可用/.test(err.message),
     )
+  })
+})
+
+// ---------- Task 3：npm 分支事务桥接 ----------
+
+const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
+
+function txProfile(files) {
+  const dir = mkdtempSync(join(tmpdir(), 'dshm-txbridge-'))
+  for (const [name, content] of Object.entries(files || {})) writeFileSync(join(dir, name), content)
+  return dir
+}
+
+function txRegistryDeps(entry, npmLatestResult) {
+  return {
+    loadRegistry: async () => ({
+      configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
+      isDefault: true, stale: false, fetchedAt: null, errors: [], count: 1,
+      registry: { version: 1, plugins: [entry] },
+    }),
+    npmLatest: async () => npmLatestResult,
+  }
+}
+
+const TX_ENTRY = { id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' }
+const LOCK_GOOD = `lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      pkg-a:
+        specifier: 1.2.3
+        version: 1.2.3
+
+packages:
+  pkg-a@1.2.3:
+    resolution: {integrity: ${sha512('good')}}
+`
+
+/** 记录调用的 mock PnpmRunner（四操作俱全，永不 spawn）。 */
+function mockTxRunner(script = {}) {
+  const calls = { add: [], remove: [], frozen: [], rebuild: [] }
+  const op = (name) => async (arg, signal) => {
+    calls[name].push({ arg, signal })
+    const seq = script[name] || []
+    const step = seq[Math.min(calls[name].length - 1, seq.length - 1)]
+    if (!step) return { class: 'ok', output: `${name}-ok` }
+    return step(arg, signal, calls[name].length)
+  }
+  return { runner: { add: op('add'), remove: op('remove'), frozenInstall: op('frozen'), rebuildInstall: op('rebuild') }, calls }
+}
+
+describe('installEntry npm 分支：事务桥接回退（Task 3）', () => {
+  let dir = ''
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = ''
+  })
+
+  it('桥接回退①：仅注入查询类依赖 + transaction.runner → 全部操作落在注入 runner（零 legacy 槽位、零真实 spawn）', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const tx = mockTxRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
+        return { class: 'ok', output: 'added-via-tx-runner', usedAllowAllBuilds: false }
+      }],
+    })
+    const res = await installFromRegistry('p', {}, {}, {
+      ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+      profileDir: dir,
+      transaction: { runner: () => tx.runner, profileDir: dir },
+    })
+    assert.equal(res.version, '1.2.3')
+    assert.equal(res.pkg, 'pkg-a')
+    assert.equal(res.spec, 'pkg-a@1.2.3')
+    assert.equal(res.usedAllowAllBuilds, false)
+    assert.deepEqual(tx.calls.add, [{ arg: 'pkg-a@1.2.3', signal: undefined }], 'add 落在注入 runner')
+    assert.equal(tx.calls.frozen.length, 0, 'committed 且无 B1 时不跑 frozen')
+    assert.equal(tx.calls.remove.length, 0)
+  })
+
+  it('桥接回退②：仅注入 addDshPlugin 槽位 + transaction.runner → add 走 legacy fake，frozen 回退 transaction.runner', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const legacyAddCalls = []
+    const tx = mockTxRunner({
+      frozen: [async () => ({ class: 'ok', output: 'frozen-ok' })],
+    })
+    await assert.rejects(
+      () => installFromRegistry('p', {}, {}, {
+        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+        profileDir: dir,
+        addDshPlugin: async (source) => {
+          legacyAddCalls.push(source)
+          throw new Error('命令失败 (exit 1): ERR_PNPM_PEER_SOMETHING hard fail')
+        },
+        transaction: { runner: () => tx.runner, profileDir: dir },
+      }),
+      (err) => /已回滚到安装前状态/.test(err.message),
+    )
+    assert.deepEqual(legacyAddCalls, ['pkg-a@1.2.3'], 'add 走 legacy fake')
+    assert.equal(tx.calls.add.length, 0, 'add 不回退到 transaction.runner（legacy 槽位优先）')
+    assert.equal(tx.calls.frozen.length, 1, 'frozen 回退 transaction.runner')
+    assert.equal(tx.calls.rebuild.length, 0, 'frozen ok 不需要 rebuild')
   })
 })
 
