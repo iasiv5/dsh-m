@@ -232,7 +232,62 @@ function syncProgress(tracker: ProgressTracker): void {
   if (snap.error !== null) progress.error = snap.error
 }
 
-export type PluginRunner = (profile: string, pluginArgs: string[]) => Promise<string>
+export type PluginRunner = (
+  profile: string,
+  pluginArgs: string[],
+  options?: { signal?: AbortSignal },
+) => Promise<string>
+
+// ---------- pnpm 结果六类分类（Task 1：分类先于任何文案改写） ----------
+
+export type PnpmOutcomeClass =
+  | 'ok' | 'retryable-lag' | 'config-drift' | 'unused-patch' | 'needs-builds' | 'hard-fail'
+
+export const PNPM_OUTCOME_CODES = {
+  CONFIG_MISMATCH: 'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH',
+  OUTDATED_LOCKFILE: 'ERR_PNPM_OUTDATED_LOCKFILE',
+  NO_MATCHING_VERSION: 'ERR_PNPM_NO_MATCHING_VERSION',
+  UNUSED_PATCH: 'ERR_PNPM_UNUSED_PATCH',
+  PUBLIC_HOIST_PATTERN_DIFF: 'ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF',
+} as const
+
+export interface RunnerOutcome {
+  readonly class: PnpmOutcomeClass
+  /** 已知决策 code 取 PNPM_OUTCOME_CODES 的值；hard-fail 可保留其他 ERR_PNPM_* 诊断码 */
+  readonly code?: string
+  /** ≤800 字符（runner 边界统一截断） */
+  readonly output: string
+  /** 仅 add·ok */
+  readonly usedAllowAllBuilds?: boolean
+}
+
+/**
+ * 对 pnpm/dsh 原始输出文本做六类归一解释。分类发生在任何文案改写之前；
+ * 上层（事务/market）只消费 class + code 常量，永不 regex 原始输出。
+ */
+export function classifyPnpmError(text: string): { class: PnpmOutcomeClass; code?: string } {
+  const raw = String(text ?? '')
+  if (raw.includes(PNPM_OUTCOME_CODES.NO_MATCHING_VERSION)) {
+    return { class: 'retryable-lag', code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION }
+  }
+  if (raw.includes(PNPM_OUTCOME_CODES.CONFIG_MISMATCH)) {
+    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.CONFIG_MISMATCH }
+  }
+  if (raw.includes(PNPM_OUTCOME_CODES.OUTDATED_LOCKFILE)) {
+    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.OUTDATED_LOCKFILE }
+  }
+  if (raw.includes(PNPM_OUTCOME_CODES.UNUSED_PATCH)) {
+    return { class: 'unused-patch', code: PNPM_OUTCOME_CODES.UNUSED_PATCH }
+  }
+  if (isPrepareBlocked(raw)) return { class: 'needs-builds' }
+  const m = /(ERR_PNPM_[A-Z0-9_]+)/.exec(raw)
+  return { class: 'hard-fail', code: m?.[1] }
+}
+
+function truncateOutput(text: string): string {
+  const raw = String(text ?? '')
+  return raw.length <= 800 ? raw : raw.slice(-800)
+}
 
 export interface DshArgv {
   file: string
@@ -458,6 +513,7 @@ export async function runDshPlugin(
     dshArgv?: typeof dshArgv
     profileDir?: string
     timeoutMs?: number
+    signal?: AbortSignal
   } = {},
 ): Promise<string> {
   if (profile !== WEB_PROFILE) throw new Error('仅支持 web profile')
@@ -472,6 +528,7 @@ export async function runDshPlugin(
     return await run(argv.file, [...argv.args, 'plugin', '--profile', profile, ...prepared], {
       cwd: argv.cwd,
       timeoutMs: deps.timeoutMs ?? installTimeoutMs(),
+      signal: deps.signal,
       env: { CI: 'true' },
       viaShell: argv.viaShell,
       detached: process.platform !== 'win32',
@@ -491,8 +548,65 @@ export async function runDshPlugin(
 }
 
 /**
+ * 加装阶梯工厂（导出、可注入、可测试；生产与测试共用同一实现）。
+ * 阶梯：add → prepare 被拦时写 dangerouslyAllowAllBuilds 重试 →
+ * PUBLIC_HOIST_PATTERN_DIFF 时 `install --no-frozen-lockfile` 重建后重试 →
+ * 耗尽归类返回。对**原始错误文本**分类；永不 throw，一律返回 RunnerOutcome。
+ */
+export function makeAddViaLadder(deps: {
+  runDshPlugin: PluginRunner
+  allowAllBuilds?: (profileDirectory: string) => boolean
+}): (source: string, profileDir: string, signal?: AbortSignal) => Promise<RunnerOutcome> {
+  const run = deps.runDshPlugin
+  const allowAllBuilds = deps.allowAllBuilds ?? writeDangerouslyAllowAllBuilds
+  const opts = (signal?: AbortSignal) => (signal !== undefined ? { signal } : undefined)
+  return async (source: string, profileDir: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
+    const retryAfterPrepare = async (): Promise<RunnerOutcome> => {
+      allowAllBuilds(profileDir)
+      try {
+        const output = await run(WEB_PROFILE, ['add', source], opts(signal))
+        return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: true }
+      } catch (retryErr) {
+        return { ...classifyPnpmError(errText(retryErr)), output: truncateOutput(errText(retryErr)) }
+      }
+    }
+    try {
+      const output = await run(WEB_PROFILE, ['add', source], opts(signal))
+      return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: false }
+    } catch (err) {
+      const text = errText(err)
+      if (text.includes(PNPM_OUTCOME_CODES.PUBLIC_HOIST_PATTERN_DIFF)) {
+        try {
+          await run(WEB_PROFILE, ['install', '--no-frozen-lockfile'], opts(signal))
+        } catch (rebuildErr) {
+          const rebuildText = errText(rebuildErr)
+          return { ...classifyPnpmError(rebuildText), output: truncateOutput(rebuildText) }
+        }
+        try {
+          const output = await run(WEB_PROFILE, ['add', source], opts(signal))
+          return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: false }
+        } catch (retryErr) {
+          const retryText = errText(retryErr)
+          if (isPrepareBlocked(retryText)) return retryAfterPrepare()
+          return { ...classifyPnpmError(retryText), output: truncateOutput(retryText) }
+        }
+      }
+      if (!isPrepareBlocked(text)) {
+        return { ...classifyPnpmError(text), output: truncateOutput(text) }
+      }
+      return retryAfterPrepare()
+    }
+  }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/**
  * 安装。返回 usedAllowAllBuilds 供 UI 明确报告「该插件执行了构建脚本」。
  * source 形如：`pkg@1.2.3`（npm 精确锁定）或 `github:owner/repo#sha`（锁 SHA）。
+ * 薄包装：调 makeAddViaLadder，非 ok 时 throw（对 legacy 调用方保持现行报错形状）。
  */
 export async function addDshPlugin(
   source: string,
@@ -502,42 +616,29 @@ export async function addDshPlugin(
     allowAllBuilds?: (profileDirectory: string) => boolean
   } = {},
 ): Promise<{ output: string; usedAllowAllBuilds: boolean }> {
-  const run = deps.runDshPlugin ?? runDshPlugin
-  const allowAllBuilds = deps.allowAllBuilds ?? writeDangerouslyAllowAllBuilds
-  const retryAfterPrepare = async (): Promise<{ output: string; usedAllowAllBuilds: boolean }> => {
-    const changed = allowAllBuilds(deps.profileDir ?? webProfileDir())
-    try {
-      return { output: await run(WEB_PROFILE, ['add', source]), usedAllowAllBuilds: true }
-    } catch (retryErr) {
-      throw rewritePnpmError(retryErr)
-    }
+  const ladder = makeAddViaLadder({
+    runDshPlugin: deps.runDshPlugin ?? runDshPlugin,
+    allowAllBuilds: deps.allowAllBuilds,
+  })
+  const outcome = await ladder(source, deps.profileDir ?? webProfileDir())
+  if (outcome.class === 'ok') {
+    return { output: outcome.output, usedAllowAllBuilds: outcome.usedAllowAllBuilds === true }
   }
-  try {
-    return { output: await run(WEB_PROFILE, ['add', source]), usedAllowAllBuilds: false }
-  } catch (err) {
-    const text = err instanceof Error ? err.message : String(err)
-    if (text.includes('ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF')) {
-      await run(WEB_PROFILE, ['install', '--no-frozen-lockfile'])
-      try {
-        return { output: await run(WEB_PROFILE, ['add', source]), usedAllowAllBuilds: false }
-      } catch (retryErr) {
-        if (!isPrepareBlocked(retryErr instanceof Error ? retryErr.message : String(retryErr))) {
-          throw rewritePnpmError(retryErr)
-        }
-        return retryAfterPrepare()
-      }
-    }
-    if (!isPrepareBlocked(text)) throw rewritePnpmError(err)
-    return retryAfterPrepare()
-  }
+  throw rewritePnpmError(new Error(outcome.output))
 }
 
 /** 卸载（转发 pnpm remove；调用方须先做 live-disable）。 */
 export async function removeDshPlugin(
   pkg: string,
-  deps: { runDshPlugin?: PluginRunner } = {},
+  deps: { runDshPlugin?: PluginRunner; profileDir?: string; signal?: AbortSignal } = {},
 ): Promise<string> {
   if (!isSafePluginTarget(pkg)) throw new Error(`无效插件包名: ${pkg}`)
   const run = deps.runDshPlugin ?? runDshPlugin
-  return run(WEB_PROFILE, ['remove', pkg])
+  return run(
+    WEB_PROFILE,
+    ['remove', pkg],
+    deps.profileDir !== undefined || deps.signal !== undefined
+      ? { profileDir: deps.profileDir, signal: deps.signal }
+      : undefined,
+  )
 }
