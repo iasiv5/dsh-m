@@ -623,6 +623,9 @@ export async function runProfileTransaction(
 | 🟡Y2 `errText()` 对 AggregateError 只取最外层 message，底层错误不进 failure.note | 采纳：errText 递归展开（`message：子错误；子错误`）；新增事务边界用例——rollback 收到 write+close 双失败聚合 → manual-repair 且 note 同时含两个底层错误 |
 | 处理建议：删基线 ref | 已执行（Task 13 Step 4） |
 
+### 闭环终审（第八轮）：Approved，评审闭环完成
+> 复审提交 `8bcd5e6`；🔴 0 项、🟡 0 项、无新增回归。Y1 归一表（含显式 0=立即 SIGKILL、非法值回落 5000）与 Y2 递归展开（含嵌套聚合/空数组边界）均确认通过；Y2 事务级测试的同构构造被接受（原语级产生聚合 + 事务级展开，经同一标准 AggregateError 衔接，无需扩公开 seam）。独立验证 291/291、`ALL-GATES-OK-REF-DELETED`、GUI/publish 对基线零 diff。**最终状态：批准，可进入项目既有发布流程。**
+
 ## 执行纪律
 
 - 开始实现前，先批判性复查整份计划；发现缺项、矛盾、命名不一致或验证命令无效，先修计划再动手。
