@@ -14,6 +14,7 @@ const API = "/dshm";
 const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice } = require("./market-state.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
+const { installedViewModel, registrySourceKey } = require("./installed-view.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -688,20 +689,6 @@ function ReadmeBlock({ pkg }) {
   );
 }
 
-// ---------- 卸载护栏（方案 B：全放开 + 上下文警告） ----------
-function uninstallGuard(it) {
-  if (it.source === "link") {
-    return {
-      confirm: lookup("confirm.unlink"),
-      warn: lookup("warn.unlink", { path: it.path }),
-    };
-  }
-  if (it.source === "file") {
-    return { confirm: lookup("confirm.core"), warn: lookup("warn.core") };
-  }
-  return { confirm: lookup("confirm.uninstall"), warn: null };
-}
-
 // ---------- 已装页 ----------
 function InstalledTab({ notify, installed }) {
   const { loading, data, error, reload } = installed;
@@ -766,23 +753,23 @@ function InstalledTab({ notify, installed }) {
       "div",
       { className: "dshm-cards" },
       items.map((it) => {
-        const guard = uninstallGuard(it);
+        const vm = installedViewModel(it);
         return Card({
           key: it.pkg,
-          icon: h(Icon, { entry: { name: it.name, github: it.registryGithub || it.githubRepo || (it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null), icon: null } }),
+          icon: h(Icon, { entry: { name: it.name, github: vm.githubRepo, icon: null } }),
           name: it.name,
           badges: [
-            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : "")}`.trim()) : null,
+            it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${vm.latestLabel}`.trim()) : null,
             it.registryId ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market")) : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
           ],
           desc: it.description || "（无描述）",
           sub: [
             `v${it.version || "?"}`,
-            { npm: lookup("src.npm"), github: lookup("src.github"), link: lookup("src.link"), file: lookup("src.file"), unknown: lookup("src.unknown") }[it.source] || it.source,
+            vm.sourceLabelKey ? lookup(vm.sourceLabelKey) : it.source,
           ].join(" · "),
           links: h(LinksRow, {
             npm: it.source === "npm" ? it.pkg : null,
-            github: it.registryGithub || it.githubRepo || (it.spec.startsWith("github:") ? it.spec.slice(7).split("#")[0] : null),
+            github: vm.githubRepo,
           }),
           open: openPkg === it.pkg,
           onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
@@ -791,10 +778,10 @@ function InstalledTab({ notify, installed }) {
             : DetailRows([
                 [lookup("detail.pkg"), it.pkg],
                 [lookup("detail.spec"), it.spec],
-                [lookup("detail.latest"), it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : "—")],
+                [lookup("detail.latest"), vm.latestLabelDetail],
                 [lookup("detail.listed"), it.registryId || lookup("detail.listed.no")],
                 [lookup("detail.path"), it.path],
-                guard.warn ? [lookup("detail.note"), guard.warn] : null,
+                vm.guard.warnKey ? [lookup("detail.note"), lookup(vm.guard.warnKey, vm.guard.warnParams)] : null,
               ]),
           actions: [
             h("button", {
@@ -820,7 +807,7 @@ function InstalledTab({ notify, installed }) {
             h(TwoStepButton, {
               key: "un",
               label: lookup("action.uninstall"),
-              confirmLabel: guard.confirm,
+              confirmLabel: lookup(vm.guard.confirmKey),
               className: "dshm-btn sm",
               disabled: busyPkg === it.pkg,
               onConfirm: () => doUninstall(it),
@@ -834,20 +821,8 @@ function InstalledTab({ notify, installed }) {
 
 // ---------- 设置页 ----------
 function regSourceLabel(data) {
-  if (!data) return "—";
-  const map = {
-    "default-raw": "src.default.raw",
-    "default-jsdelivr": "src.default.jsdelivr",
-    "default-cache": "src.default.cache",
-    bundled: "src.bundled",
-    "custom-url": "src.custom.url",
-    "custom-file": "src.custom.file",
-    "custom-cache": "src.custom.cache",
-    "custom-unavailable": "src.custom.unavailable",
-    // 旧字段兼容
-    override: "src.override", jsdelivr: "src.jsdelivr", raw: "src.raw", cache: "src.cache",
-  };
-  return lookup(map[data.source] || data.source);
+  const key = registrySourceKey(data);
+  return key === null ? "—" : lookup(key);
 }
 
 function configStatusLabel(status) {
