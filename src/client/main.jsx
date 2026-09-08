@@ -15,6 +15,7 @@ const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normali
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
+const { pickPayload, parseToolArgs } = require("./tool-view.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -1252,45 +1253,6 @@ function registerSlot(slots, options, component) {
   return slots.register(next, component);
 }
 
-function pickPayload(props) {
-  const found = [];
-  const visit = (node, depth) => {
-    if (!node || depth > 6) return;
-    if (typeof node === "string") {
-      const t = node.trim();
-      if ((t.startsWith("{") || t.startsWith("[")) && t.length > 8) {
-        try {
-          visit(JSON.parse(t), depth + 1);
-        } catch {
-          /* ignore */
-        }
-      }
-      return;
-    }
-    if (typeof node !== "object") return;
-    if (Array.isArray(node)) {
-      for (const x of node) visit(x, depth + 1);
-      return;
-    }
-    if (Array.isArray(node.items)) found.push(node);
-    for (const key of ["block", "meta", "result", "resultView", "view", "data", "value", "payload", "content", "message"]) {
-      if (node[key] != null) visit(node[key], depth + 1);
-    }
-  };
-  visit(props, 0);
-  return found.find((x) => x && Array.isArray(x.items)) || null;
-}
-
-function parseToolArgs(props) {
-  const block = props?.block;
-  const raw = (block && "kind" in block ? block.call?.argsRaw : block?.argsRaw) || "";
-  if (!raw || typeof raw !== "string") return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
 
 function ToolCardRow({ it, onInstalled }) {
   const [busy, setBusy] = useState(false);
