@@ -68,6 +68,39 @@
       "homepage": "https://github.com/liustack/modsearch"
     },
     {
+      "id": "dsh-docs-panel",
+      "name": "DSH Docs Panel",
+      "description": "DSH 侧边栏里的「全局文档」：全局 Markdown 笔记，任何工作区随时可读，支持大纲跳转与一键转编辑器。（需先安装 dsh-better-sidebar ≥0.4.0）",
+      "category": "ui",
+      "tags": ["文档", "Markdown", "侧边栏", "需 better-sidebar"],
+      "source": "npm",
+      "npm": "dsh-docs-panel",
+      "github": "mlosun/dsh-docs-panel",
+      "homepage": "https://github.com/mlosun/dsh-docs-panel"
+    },
+    {
+      "id": "dsh-server-deck",
+      "name": "DSH Server Deck",
+      "description": "服务器卡片仪表盘：实时状态/CPU/内存/磁盘 + 趋势记录与可视化（1h/24h/7d/30d），点卡片进入 xterm 交互终端。可选集成 dsh-better-sidebar：装后注册为侧边栏「服务器」页签，装载顺序无关。",
+      "category": "tools",
+      "tags": ["服务器", "监控", "终端", "推荐 better-sidebar"],
+      "source": "npm",
+      "npm": "dsh-server-deck",
+      "github": "meyaomiao/dsh-server-deck",
+      "homepage": "https://github.com/meyaomiao/dsh-server-deck"
+    },
+    {
+      "id": "dsh-flowglass",
+      "name": "DSH Flowglass",
+      "description": "流镜：实时会话流程图插件，把当前会话画成三列泳道，展示工具调用、并行分组与子代理分支，支持逐层钻取。可选集成 dsh-better-sidebar：装后注册为按会话隔离的侧边栏 Tab。",
+      "category": "ui",
+      "tags": ["可视化", "流程图", "会话", "推荐 better-sidebar"],
+      "source": "npm",
+      "npm": "dsh-flowglass",
+      "github": "Iwctwbh/dsh-flowglass",
+      "homepage": "https://github.com/Iwctwbh/dsh-flowglass"
+    },
+    {
       "id": "dsh-auth",
       "name": "DSH Auth",
       "description": "DSH Web 管理员认证插件：Argon2id 口令、可撤销会话、双语界面，经 Caddy forward_auth 边缘保护页面/API/下载/SSE/WebSocket，Harness 保持仅回环监听。",
