@@ -395,20 +395,6 @@ function writeDangerouslyAllowAllBuilds(profileDirectory: string): boolean {
   return true
 }
 
-export function rewritePnpmError(err: unknown): Error {
-  const text = err instanceof Error ? err.message : String(err)
-  if (/ERR_PNPM_UNUSED_PATCH/.test(text)) {
-    return new Error('profile 的补丁配置（patchedDependencies）里存在不再使用的条目，pnpm 拒绝执行。卸载时 dsh-m 会自动摘除目标包自己的补丁条目；仍报此错通常是其他包留有失效补丁，请手工清理 profile 的 pnpm-workspace.yaml。')
-  }
-  if (isPrepareBlocked(text)) {
-    return new Error('该插件需要执行构建脚本（prepare），pnpm 默认拦截。dsh-m 已写入 profile 的 dangerouslyAllowAllBuilds 并重试；若仍失败请检查 web profile 是否可写。')
-  }
-  if (/ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF/.test(text)) {
-    return new Error('当前 profile 的 node_modules 由不同主版本的 pnpm 生成，安装前需要先重建依赖。')
-  }
-  return err instanceof Error ? err : new Error(text)
-}
-
 /**
  * 失败摘要：命令失败时从完整输出里提取可诊断的行，而不是盲取末尾。
  * 2026-09-05 实证（dsh-better-sidebar 安装失败）：pnpm ndjson 错误行 ~1.2KB，
@@ -697,30 +683,6 @@ export function makeAddViaLadder(deps: {
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-/**
- * 安装。返回 usedAllowAllBuilds 供 UI 明确报告「该插件执行了构建脚本」。
- * source 形如：`pkg@1.2.3`（npm 精确锁定）或 `github:owner/repo#sha`（锁 SHA）。
- * 薄包装：调 makeAddViaLadder，非 ok 时 throw（对 legacy 调用方保持现行报错形状）。
- */
-export async function addDshPlugin(
-  source: string,
-  deps: {
-    runDshPlugin?: PluginRunner
-    profileDir?: string
-    allowAllBuilds?: (profileDirectory: string) => boolean
-  } = {},
-): Promise<{ output: string; usedAllowAllBuilds: boolean }> {
-  const ladder = makeAddViaLadder({
-    runDshPlugin: deps.runDshPlugin ?? runDshPlugin,
-    allowAllBuilds: deps.allowAllBuilds,
-  })
-  const outcome = await ladder(source, deps.profileDir ?? webProfileDir())
-  if (outcome.class === 'ok') {
-    return { output: outcome.output, usedAllowAllBuilds: outcome.usedAllowAllBuilds === true }
-  }
-  throw rewritePnpmError(new Error(outcome.output))
 }
 
 /** 卸载（转发 pnpm remove；调用方须先做 live-disable）。 */

@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { removePatchedDependencyEntries, rewritePnpmError } from '../lib/core/dsh-cli.js'
+import { removePatchedDependencyEntries } from '../lib/core/dsh-cli.js'
 import { uninstallPlugin } from '../lib/core/market.js'
 
 function fixture(profileFiles) {
@@ -149,13 +149,5 @@ describe('uninstallPlugin × 补丁清理（Task 6：事务注入）', () => {
     assert.equal(res.needsRestart, true)
     assert.ok(Array.isArray(res.healActions))
     rmSync(dir, { recursive: true, force: true })
-  })
-})
-
-describe('rewritePnpmError', () => {
-  it('ERR_PNPM_UNUSED_PATCH 转译为可读指引', () => {
-    const err = rewritePnpmError(new Error('[ERR_PNPM_UNUSED_PATCH] The following patches were not used: dsh-web-search'))
-    assert.match(err.message, /patchedDependencies/)
-    assert.doesNotMatch(err.message, /ERR_PNPM_UNUSED_PATCH/)
   })
 })

@@ -4,7 +4,6 @@
  */
 import { open, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { isSafePluginTarget, removeDshPlugin, type PluginRunner } from './dsh-cli.js'
 import { webProfileDir } from './env.js'
 
 const PKG_NAME_RE = /^(@[A-Za-z0-9-*~][A-Za-z0-9-*._~]*\/)?[A-Za-z0-9-._~]+$/
@@ -152,24 +151,6 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
     })
   }
   return { items, others, profileDir: root }
-}
-
-/** 从 web profile 卸载已安装的 dsh 插件。pkg 必须来自 profile 依赖（先 live-disable，见 market.ts）。 */
-export async function removeInstalledPlugin(
-  pkg: string,
-  profileDir: string = webProfileDir(),
-  deps: { runDshPlugin?: PluginRunner } = {},
-): Promise<{ pkg: string }> {
-  const key = String(pkg || '').trim()
-  if (!isSafePkgName(key) || !isSafePluginTarget(key)) throw new Error(`无效插件包名: ${pkg}`)
-  const root = resolve(profileDir)
-  const listed = await readProfileDeps(root)
-  if (!(key in listed)) throw new Error(`web profile 未安装该插件: ${key}`)
-  const dir = resolvePluginDir(root, key, listed[key])
-  const raw = dir ? await readPkgJson(dir) : null
-  if (!raw || !('dsh' in raw)) throw new Error(`不是 dsh 插件: ${key}`)
-  await removeDshPlugin(key, deps)
-  return { pkg: key }
 }
 
 // ---------- README 预览（借鉴 skillhub，64KB 截断） ----------
