@@ -16,6 +16,7 @@ const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
+const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait } = require("./restart-wait.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -449,16 +450,20 @@ function RestartBanner({ note, onDone }) {
       const ping0 = await api("ping");
       await api("restart");
       setPhase("waiting");
-      const deadline = Date.now() + 90_000;
+      const deadlineAt = Date.now() + RESTART_DEADLINE_MS;
       for (;;) {
-        await new Promise((r) => setTimeout(r, 2000));
-        if (Date.now() > deadline) throw new Error(lookup("restart.timeout"));
+        await new Promise((r) => setTimeout(r, RESTART_POLL_MS));
+        if (nextRestartWait({ phase: "before-ping", now: Date.now(), deadlineAt }) === "timeout") {
+          throw new Error(lookup("restart.timeout"));
+        }
+        let bootChanged = false;
         try {
           const ping = await api("ping");
-          if (ping.boot !== ping0.boot) break;
+          bootChanged = ping.boot !== ping0.boot;
         } catch {
           /* 服务重启中，继续轮询 */
         }
+        if (nextRestartWait({ phase: "after-ping", bootChanged }) === "done") break;
       }
       setPhase("idle");
       onDone(true);
