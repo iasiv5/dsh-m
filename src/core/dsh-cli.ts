@@ -449,9 +449,23 @@ export function errorDigest(out: string, maxChars = 800): string {
   return text.slice(-maxChars)
 }
 
-/** 停止宽限缺省（毫秒）；可用 DSH_KILL_GRACE_MS 覆盖（测试/平台调节）。 */
+/**
+ * 停止宽限（毫秒）归一：允许显式 0（立即 SIGKILL）；负数/NaN/Infinity/垃圾值一律回落
+ * 缺省。Y1（第四轮复审）：`Number(raw) || 5000` 会把 -1 当真值、把显式 0 吞成缺省。
+ */
+const KILL_GRACE_DEFAULT_MS = 5_000
+
+function normalizeKillGrace(raw: unknown): number | null {
+  const value = typeof raw === 'number' ? raw : Number(raw)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+export { normalizeKillGrace }
+
 function killGraceDefault(): number {
-  return Number(process.env.DSH_KILL_GRACE_MS) || 5_000
+  const raw = process.env.DSH_KILL_GRACE_MS
+  if (raw === undefined || raw.trim() === '') return KILL_GRACE_DEFAULT_MS
+  return normalizeKillGrace(raw) ?? KILL_GRACE_DEFAULT_MS
 }
 
 /** SIGKILL 后组存活轮询的硬上限（毫秒）：防 D 态进程导致永不 settle。 */
@@ -544,7 +558,7 @@ export async function runCommand(
         signalGroup('SIGKILL')
         pollDeadline = Date.now() + GROUP_POLL_CAP_MS
         pollGroupGone()
-      }, Math.max(0, options.killGraceMs ?? killGraceDefault()))
+      }, normalizeKillGrace(options.killGraceMs) ?? killGraceDefault())
     }
     const timer = setTimeout(() => {
       stopChild(new Error(`命令超时 ${options.timeoutMs}ms`))

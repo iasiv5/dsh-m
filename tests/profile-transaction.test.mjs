@@ -1362,6 +1362,32 @@ describe('终审复审 R2：回滚内异常不得逃出四态联合', () => {
     assert.equal(r.status, 'manual-repair')
     assert.ok(r.failure.note.includes('remove crashed'))
   })
+
+  it('Y2：AggregateError 在事务边界递归展开——failure.note 含全部底层错误', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({
+      add: [failWith('命令失败 (exit 1): ERR_PNPM_MISC add boom')],
+      frozen: [async () => {
+        // 模拟底层原语聚合上报（如 atomicWriteFile 的 write+close 双失败）
+        throw new AggregateError(
+          [new Error('write failed'), new Error('close failed')],
+          '临时文件写入/同步/关闭失败',
+        )
+      }],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'manual-repair')
+    assert.ok(r.failure.note.includes('临时文件写入/同步/关闭失败'), '聚合消息保留')
+    assert.ok(r.failure.note.includes('write failed'), '第一个底层错误进入 note')
+    assert.ok(r.failure.note.includes('close failed'), '第二个底层错误进入 note')
+  })
 })
 
 describe('终审复审 R3：B1/B2 改写后提交前重新验证最终 integrity', () => {

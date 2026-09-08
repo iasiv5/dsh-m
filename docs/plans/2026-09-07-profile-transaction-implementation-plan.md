@@ -613,6 +613,16 @@ export async function runProfileTransaction(
 | 🟡Y1 多错误合并传播名不符实（close 错误被首个 write 错误覆盖；清理失败被吞） | 采纳：write/sync+close 双失败 → `AggregateError`（单错误仍原样抛，保留 code 供既有断言）；清理失败聚合为主错误之后的第二项，错误信息含残留 tmp 路径。新增双失败聚合 + 三类事实（主错误/清理错误/tmp 路径）两例 |
 | 🟡Y2 F2 缺确定性回归 | 采纳：复验下沉为 `npm-integrity.verifySnapshots(snapshots, fsOps?)`（事务消费并包装为 RestoreVerifyMismatch，语义不变）；fsOps 缝注入读取异常——originally-absent + ENOENT 通过 / EACCES 失败 / EIO 失败、existed+字节不一致失败/一致通过，共 4+1 例，不依赖 chmod |
 
+### 第七轮：第四轮复审——批准（Approved with non-blocking suggestions）
+> 裁决：F1-R 阻塞项关闭，全部 🔴 处置完毕；两条 🟡 非阻塞建议同轮吸收（288 → 291 测试），随后按 Task 13 Step 4 清理基线 ref。
+
+| 评审项 | 处置 |
+|---|---|
+| 批准结论 + 前轮反例复验通过（AbortError ~631ms、marker 不存在） | 记录；三条执行说明（error-during-stop 按构造封死、10s 轮询上限、DSH_KILL_GRACE_MS 环境覆盖）均获接受 |
+| 🟡Y1 `DSH_KILL_GRACE_MS` 未校验（-1 被当真值致几乎立即 SIGKILL；显式 0 被 `\|\| 缺省` 吞掉） | 采纳：`normalizeKillGrace` 归一（导出供单测）——允许显式 0=立即 SIGKILL；负数/NaN/Infinity/垃圾值回落缺省 5000；显式 `options.killGraceMs` 同一归一。新增表驱动单测 + env '0' 行为测试（快速升级、未被吞成 5s） |
+| 🟡Y2 `errText()` 对 AggregateError 只取最外层 message，底层错误不进 failure.note | 采纳：errText 递归展开（`message：子错误；子错误`）；新增事务边界用例——rollback 收到 write+close 双失败聚合 → manual-repair 且 note 同时含两个底层错误 |
+| 处理建议：删基线 ref | 已执行（Task 13 Step 4） |
+
 ## 执行纪律
 
 - 开始实现前，先批判性复查整份计划；发现缺项、矛盾、命名不一致或验证命令无效，先修计划再动手。

@@ -199,7 +199,12 @@ export class TransactionError extends Error {
 
 // ---------- 内部工具 ----------
 
+/** Y2（第四轮复审）：AggregateError 递归展开——多个底层错误都要进入事务 failure.note，不只最外层 message。 */
 function errText(err: unknown): string {
+  if (err instanceof AggregateError) {
+    const details = err.errors.map(errText).filter((t) => t !== '')
+    return details.length > 0 ? `${err.message}：${details.join('；')}` : err.message
+  }
   return err instanceof Error ? err.message : String(err)
 }
 

@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { errorDigest, isPrepareBlocked, runCommand } from '../lib/core/dsh-cli.js'
+import { errorDigest, isPrepareBlocked, normalizeKillGrace, runCommand } from '../lib/core/dsh-cli.js'
 
 /** 与线上事故同形的 pnpm ndjson 错误行（栈帧拉满到 >800 字符）。 */
 const NDJSON_IGNORED_BUILDS_LINE = JSON.stringify({
@@ -201,6 +201,39 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     assert.ok(elapsed >= 400, `必须等整组消失后才 settle，实际 ${elapsed}ms`)
     await new Promise((r) => setTimeout(r, 2500))
     assert.equal(existsSync(marker), false, 'timeout 的进程树终止必须覆盖 grandchild')
+  })
+
+  // Y1（第四轮复审）：killGrace 归一——显式 0 = 立即 SIGKILL；负数/垃圾值回落缺省
+  it('Y1：normalizeKillGrace 表——0/非负有限数通过；负数/NaN/Infinity/垃圾值 → null（回落缺省）', () => {
+    assert.equal(normalizeKillGrace(0), 0, '显式 0 表示立即 SIGKILL，不得被 || 缺省吞掉')
+    assert.equal(normalizeKillGrace('0'), 0)
+    assert.equal(normalizeKillGrace(400), 400)
+    assert.equal(normalizeKillGrace('400'), 400)
+    assert.equal(normalizeKillGrace(-1), null)
+    assert.equal(normalizeKillGrace('abc'), null)
+    assert.equal(normalizeKillGrace(Infinity), null)
+    assert.equal(normalizeKillGrace(NaN), null)
+  })
+
+  it('Y1：DSH_KILL_GRACE_MS=0 → 立即 SIGKILL（未被吞成缺省 5s）', async () => {
+    const marker = join(tmpdir(), `dshm-grace0-${process.pid}-${Date.now()}.marker`)
+    process.env.DSH_KILL_GRACE_MS = '0'
+    try {
+      const ac = new AbortController()
+      const startedAt = Date.now()
+      const pending = runCommand(process.execPath, ['-e', IGNORING_CHILD(marker, 1200)], {
+        timeoutMs: 60_000,
+        signal: ac.signal,
+      })
+      setTimeout(() => ac.abort(), 100)
+      await assert.rejects(pending, (err) => err.name === 'AbortError')
+      const elapsed = Date.now() - startedAt
+      assert.ok(elapsed < 2000, `grace=0 应立即升级 SIGKILL（实际 ${elapsed}ms，疑似被吞成缺省）`)
+      await new Promise((r) => setTimeout(r, 2000))
+      assert.equal(existsSync(marker), false)
+    } finally {
+      delete process.env.DSH_KILL_GRACE_MS
+    }
   })
 
   it('exit 0 仍然正常解析（不误伤成功路径）', async () => {
