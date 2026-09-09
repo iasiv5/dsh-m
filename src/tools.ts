@@ -41,20 +41,6 @@ function summaryOf(state: RegistryState): { isDefault: boolean; status: string; 
   return { isDefault: state.isDefault, status: state.status, stale: state.stale }
 }
 
-function matchInstalledByEntry(
-  entry: RegistryEntry,
-  installed: Array<{ pkg: string; name: string; spec: string; version: string; source: string }>,
-) {
-  return installed.find((it) => {
-    if (entry.npm && (it.pkg === entry.npm || it.name === entry.npm)) return true
-    if (entry.github && it.source === 'github') {
-      const m = /^github:([^#]+)/.exec(it.spec)
-      if (m && m[1] === entry.github) return true
-    }
-    return false
-  })
-}
-
 export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarketDeps = {}): void {
   const timeoutMs = cfg.timeoutMs ?? 20_000
   const m = {
@@ -107,18 +93,18 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         withLatest: false,
         namespace: 'host',
       })
-      const installed = await import('./core/installed.js')
-      const inst = await installed.listInstalledPlugins()
-      const merged = result.items.map((e) => {
-        const i = matchInstalledByEntry(e, inst.items)
-        return { ...e, installed: Boolean(i), installedPkg: i?.pkg, installedVersion: i?.version }
-      })
+      // 安装标注唯一来源：listMarket 的单次 profile 快照。
+      // 状态不完整且存在可被误标的条目时 fail-closed——不把未知安装状态呈现成未安装；
+      // 空结果（registry 不可用/超时/无匹配）无可误标条目，维持优雅空结果。
+      if (!result.installedComplete && result.items.length > 0) {
+        throw new Error('读取 web profile 安装状态失败，安装标注不可用；请稍后重试')
+      }
       return cloneJson({
         query: String(args.query || ''),
         category,
         total: result.total,
         registry: summaryOf(result.registryState),
-        items: merged.map((e) => ({
+        items: result.items.map((e) => ({
           id: e.id,
           name: e.name,
           description: e.description,

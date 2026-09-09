@@ -5,7 +5,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -71,7 +71,7 @@ function fakeDeps(overrides = {}) {
     },
     listInstalledPlugins: async () => {
       calls.listInstalled += 1
-      return { items: [], others: 0, profileDir: '/tmp/profile' }
+      return { items: [], others: 0, complete: true, profileDir: '/tmp/profile' }
     },
     npmLatest: async (pkg) => {
       calls.npm.push(pkg)
@@ -243,6 +243,7 @@ describe('listInstalledWithMeta', () => {
       path: '/tmp/node_modules/pkg-1',
     }],
     others: 2,
+    complete: true,
     profileDir: '/tmp/profile',
   }
 
@@ -425,7 +426,7 @@ describe('dshm_* Agent tools：host namespace 与 metadata-only search', () => {
       return listMarket(cfg, { limit: 5, withLatest: false }, deps)
     })()
     const installedResult = await (async () => {
-      const { deps } = fakeDeps({ listInstalledPlugins: async () => ({ items: [], others: 0, profileDir: '/tmp/p' }) })
+      const { deps } = fakeDeps({ listInstalledPlugins: async () => ({ items: [], others: 0, complete: true, profileDir: '/tmp/p' }) })
       return listInstalledWithMeta(cfg, {}, deps)
     })()
     registerTools(ctx, cfg, {
@@ -464,6 +465,153 @@ describe('dshm_* Agent tools：host namespace 与 metadata-only search', () => {
     const outdated = registered.find((t) => t.name === 'dshm_outdated')
     const out2 = await outdated.execute({})
     assert.ok(out2.registry && typeof out2.registry.stale === 'boolean')
+  })
+})
+
+describe('dshm_search：安装标注单快照契约（Tier B + fail-closed）', () => {
+  // 唯一哨兵条目：npm 名不可能真实安装，避免开发机已装导致假绿
+  const sentinel = {
+    id: 'sentinel-dshm-review',
+    name: 'Sentinel',
+    description: 'installed-annotation sentinel',
+    category: 'tools',
+    tags: [],
+    source: 'npm',
+    npm: 'definitely-not-installed-dshm-review',
+    homepage: 'https://example.com/sentinel',
+    installed: true,
+    installedPkg: 'definitely-not-installed-dshm-review',
+    installedVersion: '1.2.3',
+  }
+  const emptyCounts = { market: 0, tools: 0, ui: 0, search: 0, other: 0 }
+  const readyState = { isDefault: true, status: 'ready', stale: false }
+
+  async function searchToolWith(result) {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+    registerTools(ctx, cfg, { listMarket: async () => result })
+    const search = registered.find((t) => t.name === 'dshm_search')
+    assert.ok(search, 'dshm_search 已注册')
+    return search
+  }
+
+  it('原样透传 listMarket 的 installed 标注（唯一来源）', async () => {
+    const search = await searchToolWith({
+      items: [sentinel],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      categoryCounts: { ...emptyCounts, tools: 1 },
+      registryState: readyState,
+      installedComplete: true,
+      latestComplete: true,
+      latestTimedOut: false,
+    })
+    const out = await search.execute({ query: 'sentinel' })
+    assert.equal(out.items.length, 1)
+    assert.equal(out.items[0].installed, true)
+    assert.equal(out.items[0].installedPkg, 'definitely-not-installed-dshm-review')
+    assert.equal(out.items[0].installedVersion, '1.2.3')
+  })
+
+  it('非空结果的安装状态不完整时 fail-closed（不把未知当未装）', async () => {
+    const search = await searchToolWith({
+      items: [{ ...sentinel, installed: false, installedPkg: undefined, installedVersion: undefined }],
+      total: 1,
+      offset: 0,
+      limit: 5,
+      categoryCounts: { ...emptyCounts, tools: 1 },
+      registryState: readyState,
+      installedComplete: false,
+      latestComplete: true,
+      latestTimedOut: false,
+    })
+    await assert.rejects(() => search.execute({ query: 'sentinel' }), /安装标注不可用/)
+  })
+
+  it('空结果的安装状态不完整时保持空结果（不误伤 unavailable/超时路径）', async () => {
+    const search = await searchToolWith({
+      items: [],
+      total: 0,
+      offset: 0,
+      limit: 5,
+      categoryCounts: emptyCounts,
+      registryState: { isDefault: true, status: 'unavailable', stale: false },
+      installedComplete: false,
+      latestComplete: false,
+      latestTimedOut: true,
+    })
+    const out = await search.execute({ query: 'no-match' })
+    assert.deepEqual(out.items, [])
+    assert.equal(out.total, 0)
+    assert.equal(out.registry.status, 'unavailable')
+  })
+
+  it('端到端：真实枚举（坏 JSON profile）→ 真实 listMarket 组装 → fail-closed reject', async () => {
+    // 不 fake 最终 MarketResult——真实枚举代码跑在坏 profile 上，信号从源头贯通到门禁
+    const badProfile = mkdtempSync(join(tmpdir(), 'dshm-bad-profile-'))
+    try {
+      writeFileSync(join(badProfile, 'package.json'), '{ broken')
+      const realInstalled = await import('../lib/core/installed.js')
+      const readyRegistry = readyLoaded([
+        { id: 'p-1', name: 'P1', description: 'd1', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+      ])
+      const { registerTools } = await import('../lib/tools.js')
+      const registered = []
+      const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+      registerTools(ctx, cfg, {
+        listMarket: (c, opts) => listMarket(c, opts, {
+          loadRegistry: async () => readyRegistry,
+          listInstalledPlugins: () => realInstalled.listInstalledPlugins(badProfile),
+        }),
+      })
+      const search = registered.find((t) => t.name === 'dshm_search')
+      assert.ok(search, 'dshm_search 已注册')
+      await assert.rejects(() => search.execute({ query: 'p' }), /安装标注不可用/)
+    } finally {
+      rmSync(badProfile, { recursive: true, force: true })
+    }
+  })
+
+  it('端到端：真实枚举（合法 profile）→ 真实 listMarket 匹配 → 标注透传且枚举恰好一次', async () => {
+    // 成功路径同样不 fake 最终 MarketResult：真实枚举 + 真实 matchInstalledByEntry 命中 + 单快照计数
+    const okProfile = mkdtempSync(join(tmpdir(), 'dshm-ok-profile-'))
+    try {
+      mkdirSync(join(okProfile, 'node_modules', 'pkg-a'), { recursive: true })
+      writeFileSync(join(okProfile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }))
+      writeFileSync(
+        join(okProfile, 'node_modules', 'pkg-a', 'package.json'),
+        JSON.stringify({ name: 'A', version: '1.2.3', dsh: { client: { platform: 'web' } } }),
+      )
+      const realInstalled = await import('../lib/core/installed.js')
+      let installedCalls = 0
+      const readyRegistry = readyLoaded([
+        { id: 'p-1', name: 'P1', description: 'd1', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' },
+      ])
+      const { registerTools } = await import('../lib/tools.js')
+      const registered = []
+      const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+      registerTools(ctx, cfg, {
+        listMarket: (c, opts) => listMarket(c, opts, {
+          loadRegistry: async () => readyRegistry,
+          listInstalledPlugins: async () => {
+            installedCalls += 1
+            return realInstalled.listInstalledPlugins(okProfile)
+          },
+        }),
+      })
+      const search = registered.find((t) => t.name === 'dshm_search')
+      const out = await search.execute({ query: 'P1' })
+      assert.equal(installedCalls, 1, '一次搜索只消费一个安装快照')
+      const item = out.items.find((e) => e.id === 'p-1')
+      assert.ok(item, '收录条目在结果中')
+      assert.equal(item.installed, true, '真实 matcher 命中已装依赖')
+      assert.equal(item.installedPkg, 'pkg-a')
+      assert.equal(item.installedVersion, '1.2.3')
+    } finally {
+      rmSync(okProfile, { recursive: true, force: true })
+    }
   })
 })
 

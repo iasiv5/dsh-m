@@ -1,6 +1,13 @@
 /**
  * 已装插件识别（DESIGN.md §3）：profile 的 package.json 是唯一事实源，
  * 不引入额外状态文件。移植自 skillhub installed-plugins.ts（去 README 暂缓）。
+ *
+ * 完整性契约（2026-09-09）：枚举结果必含 `complete`——只有当顶层 manifest 与每个
+ * 依赖的 package.json 都可读、可解析为非数组对象、且每项都能归类（DSH 插件 → items /
+ * 确认非 DSH → others）时才为 true；任一项「无法判断」即 complete:false（partial 结果
+ * 保留，该依赖不计入 others）。当前 complete 仅被 listMarket → dshm_search 消费；
+ * 已装列表（listInstalledWithMeta）/ dshm_list / CLI list·outdated / 升级路径的
+ * incomplete 展示与处理为后续独立任务。
  */
 import { open, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -29,7 +36,9 @@ export interface InstalledPlugin {
 
 export interface InstalledPluginsResult {
   items: InstalledPlugin[]
-  /** 非 dsh 依赖（含解析失败）的数量 */
+  /** 已完整判定 profile dependencies 中每一项是否为 DSH 插件；任一项无法判断即为 false（partial 结果保留）。 */
+  complete: boolean
+  /** 已成功读取合法 package.json 且确认不含 dsh 字段的依赖数；无法读取或解析的依赖不计入，并令 complete=false。 */
   others: number
   profileDir: string
 }
@@ -88,27 +97,84 @@ export function githubRepoFromRepository(raw: unknown): string | null {
   return m ? `${m[1]}/${m[2]}` : null
 }
 
-export async function readPkgJson(dir: string): Promise<PkgJson | null> {
-  try {
-    const raw = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as PkgJson
-    return raw && typeof raw === 'object' ? raw : null
-  } catch {
-    return null
-  }
+/** JSON 合法根：非 null、非数组的对象（typeof [] === 'object'，数组必须显式排除）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-export async function readProfileDeps(profileDir: string): Promise<Record<string, string>> {
+export interface PkgJsonReadResult {
+  ok: boolean
+  value?: PkgJson
+}
+
+/** 单包 package.json 唯一读取实现：读不到 / 坏 JSON / 根非对象一律 ok:false。 */
+async function readPkgJsonResult(dir: string): Promise<PkgJsonReadResult> {
+  let raw: unknown
   try {
-    const raw = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as { dependencies?: unknown }
-    if (!raw || typeof raw !== 'object' || !raw.dependencies || typeof raw.dependencies !== 'object') return {}
-    const out: Record<string, string> = {}
-    for (const [name, spec] of Object.entries(raw.dependencies as Record<string, unknown>)) {
-      if (typeof spec === 'string' && spec !== '') out[name] = spec
-    }
-    return out
+    raw = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
   } catch {
-    return {}
+    return { ok: false }
   }
+  if (!isRecord(raw)) return { ok: false }
+  return { ok: true, value: raw as PkgJson }
+}
+
+export async function readPkgJson(dir: string): Promise<PkgJson | null> {
+  const result = await readPkgJsonResult(dir)
+  return result.ok ? result.value ?? null : null
+}
+
+export interface ProfileDepsReadResult {
+  complete: boolean
+  /** 已确认合法的依赖（partial）：顶层不可读时为空；个别非法项只降 complete，不丢弃其他合法项。 */
+  deps: Record<string, string>
+}
+
+/** 空 deps 统一无原型容器：与逐项解析产物保持同一原型语义，继承属性不得伪装成依赖成员。 */
+function emptyDeps(): Record<string, string> {
+  return Object.create(null)
+}
+
+/**
+ * 顶层 profile package.json 唯一读取实现（完整性 + partial 语义）：
+ * - 读不到 / 坏 JSON / 根非数组对象 → complete:false, deps:{}（manifest 缺失 ≠ 合法空 profile）；
+ * - 合法但无 dependencies 字段，或 dependencies 为空对象 → complete:true, deps:{}（唯一合法空形态）；
+ * - dependencies 存在但类型非法（null/数组/标量）→ complete:false, deps:{}；
+ * - 逐项：key 不安全（isSafePkgName 拒绝 `__proto__`、`_`/`.` 开头分段等）或 spec 非字符串/纯空白
+ *   → 该项计入 incomplete（complete:false）并跳过，其余合法项保留。
+ *   容器为无原型对象（Object.create(null)）——第二层防御：特殊属性名不受 Object.prototype
+ *   setter/继承语义影响，数据结构与早退路径的空容器保持一致。
+ */
+async function readProfileDepsResult(profileDir: string): Promise<ProfileDepsReadResult> {
+  let raw: unknown
+  try {
+    raw = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
+  } catch {
+    return { complete: false, deps: emptyDeps() }
+  }
+  if (!isRecord(raw)) return { complete: false, deps: emptyDeps() }
+  if (!Object.prototype.hasOwnProperty.call(raw, 'dependencies')) return { complete: true, deps: emptyDeps() }
+  const dependencies = raw.dependencies
+  if (!isRecord(dependencies)) return { complete: false, deps: emptyDeps() }
+  let complete = true
+  const deps: Record<string, string> = emptyDeps()
+  for (const [name, spec] of Object.entries(dependencies)) {
+    if (!isSafePkgName(name)) {
+      complete = false
+      continue
+    }
+    if (typeof spec !== 'string' || spec.trim() === '') {
+      complete = false
+      continue
+    }
+    deps[name] = spec
+  }
+  return { complete, deps }
+}
+
+/** 宽松读取（README 路径）：只返回可确认的依赖项，个别非法项被跳过而不是整体丢弃。 */
+export async function readProfileDeps(profileDir: string): Promise<Record<string, string>> {
+  return (await readProfileDepsResult(profileDir)).deps
 }
 
 function sanitizePkgJson(raw: PkgJson, fallbackName: string): Omit<InstalledPlugin, 'pkg' | 'spec' | 'source' | 'dsh'> {
@@ -122,17 +188,31 @@ function sanitizePkgJson(raw: PkgJson, fallbackName: string): Omit<InstalledPlug
   }
 }
 
-/** 枚举 web profile 已安装插件（只读）。 */
+/** 枚举 web profile 已安装插件（只读）。complete:false 时 items/others 为 partial 结果（已确认部分保留）。 */
 export async function listInstalledPlugins(profileDir: string = webProfileDir()): Promise<InstalledPluginsResult> {
   const root = resolve(profileDir)
-  const deps = await readProfileDeps(root)
+  const result = await readProfileDepsResult(root)
+  let complete = result.complete
+  const deps = result.deps
   const items: InstalledPlugin[] = []
   let others = 0
   for (const pkg of Object.keys(deps).sort()) {
     const spec = deps[pkg]
     const dir = resolvePluginDir(root, pkg, spec)
-    const raw = dir ? await readPkgJson(dir) : null
-    if (!raw || !('dsh' in raw)) {
+    if (!dir) {
+      // 依赖键不安全、目录无法解析 → 无法判断（不冒充非 DSH）
+      complete = false
+      continue
+    }
+    const rawResult = await readPkgJsonResult(dir)
+    if (!rawResult.ok) {
+      // package.json 缺失/不可读/坏 JSON/根非对象 → 无法判断
+      complete = false
+      continue
+    }
+    const raw = rawResult.value as PkgJson
+    if (!('dsh' in raw)) {
+      // 确认非 DSH 依赖
       others += 1
       continue
     }
@@ -146,11 +226,11 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
       spec,
       source: parseSpecSource(spec),
       dsh: true,
-      path: dir as string,
+      path: dir,
       githubRepo: githubRepoFromRepository(raw.repository),
     })
   }
-  return { items, others, profileDir: root }
+  return { items, others, complete, profileDir: root }
 }
 
 // ---------- README 预览（借鉴 skillhub，64KB 截断） ----------
@@ -194,7 +274,11 @@ export async function readInstalledPluginReadme(
   if (!isSafePkgName(key)) throw new Error(`无效插件包名: ${pkg}`)
   const root = resolve(profileDir)
   const deps = await readProfileDeps(root)
-  if (!(key in deps)) throw new Error(`web profile 未安装该插件: ${key}`)
+  // 授权边界必须用 own-property 判定：`in` 会沿原型链命中继承属性（如 'constructor'），
+  // 绕过「pkg 必须来自 profile dependencies」的成员约束
+  if (!Object.hasOwn(deps, key)) {
+    throw new Error(`web profile 未安装该插件: ${key}`)
+  }
   const dir = resolvePluginDir(root, key, deps[key])
   if (!dir) throw new Error(`无法解析插件目录: ${key}`)
   const raw = await readPkgJson(dir)

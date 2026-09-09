@@ -384,7 +384,8 @@ export async function listMarket(
   }
 
   const installed = await installedTask
-  const installedComplete = installed !== null
+  // 完整性两层来源：枚举 throw → null；枚举 partial resolve → complete:false（installed.ts 完整性契约）
+  const installedComplete = installed !== null && installed.complete === true
   const installedItems = installed?.items ?? []
 
   // 全量统计 + query/category 过滤 + 分页（同步，极轻）
