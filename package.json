@@ -45,6 +45,7 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test tests/*.test.mjs",
+    "pretest": "npm run build",
     "prepare": "npm run build"
   },
   "dsh": {
