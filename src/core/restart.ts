@@ -1,10 +1,11 @@
 /**
- * 自重启：移植自 skillhub restart.ts（tag→OIDC 同源的 dsh-web shim 环境已验证）。
- * 优先 systemd 单元重启（本机 = deepseek-harness.service，dsh-web.service 为转发 shim）；
- * 无 systemd 时退回 detached helper 等端口释放后换身重拉。
+ * 自重启：优先使用 DSH launcher 提供的 appExit 生命周期钩子，把重启交给
+ * systemd 等服务管理器的 Restart 策略；没有受管服务时再退回 detached helper。
+ * 只有无法使用 appExit 且能从 cgroup 识别服务时，才通过 manager-owned transient
+ * systemd-run 任务调用 systemctl 作为兼容兜底，避免 helper 留在待停止 unit cgroup。
  * 安全：restart 端点必须通过 trustedRestartRequest（Origin 与 Host 同源）。
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -93,16 +94,30 @@ export function systemdUnitName(cgroupText: string): string | null {
   return null
 }
 
-export function systemdRestartArgv(opts: { cgroup: string; uid: number }): { file: string; args: string[] } | null {
+function shellQuote(part: string): string {
+  return `'${part.replace(/'/g, "'\\''")}'`
+}
+
+/**
+ * Build a transient systemd-run command for callers that do not have appExit.
+ * The transient service is owned by the manager, not by the DSH unit that it
+ * will restart, so KillMode=control-group cannot kill the restart command.
+ */
+export function systemdRestartArgv(opts: { cgroup: string; uid: number; pid?: number }): { file: string; args: string[] } | null {
   const unit = systemdUnitName(opts.cgroup)
   if (unit === null) return null
-  if (opts.cgroup.includes('/user.slice/')) {
-    return { file: 'systemctl', args: ['--user', 'restart', '--no-block', unit] }
-  }
-  if (opts.uid === 0) {
-    return { file: 'systemctl', args: ['restart', '--no-block', unit] }
-  }
-  return { file: 'sudo', args: ['-n', 'systemctl', 'restart', '--no-block', unit] }
+  const userManager = opts.cgroup.includes('/user.slice/')
+  const targetArgs = userManager
+    ? ['systemctl', '--user', 'restart', '--no-block', unit]
+    : ['systemctl', 'restart', '--no-block', unit]
+  const script = `sleep 0.2; exec ${targetArgs.map(shellQuote).join(' ')}`
+  const transientArgs = [
+    '--unit', `dshm-restart-${opts.pid ?? process.pid}-${Date.now()}.service`,
+    '--collect', '--service-type=exec', '/bin/sh', '-c', script,
+  ]
+  if (userManager) return { file: 'systemd-run', args: ['--user', ...transientArgs] }
+  if (opts.uid === 0) return { file: 'systemd-run', args: transientArgs }
+  return { file: 'sudo', args: ['-n', 'systemd-run', ...transientArgs] }
 }
 
 export function restartLaunch(): { file: string; args: string[]; cwd: string; viaShell: boolean } {
@@ -134,7 +149,85 @@ function respawnInvocation(
 export interface RestartResult {
   pid: number
   helperPid: number | undefined
-  via: 'helper' | 'systemd'
+  via: 'app-exit' | 'helper' | 'systemd'
+}
+
+/** DSH's launcher treats a non-zero appExit as a service-manager restart. */
+export const MANAGED_RESTART_EXIT_CODE = 75
+export type AppExit = (code: number) => void
+
+export interface RestartPolicyFacts {
+  restart: string
+  successExitStatus: string
+  restartPreventExitStatus: string
+}
+
+/**
+ * Detect a process started by a service manager without depending on the unit
+ * name or on a particular DSH release's cgroup layout.
+ */
+export function serviceManagedEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const present = (value: unknown): boolean => typeof value === 'string' && value.trim() !== ''
+  return typeof env === 'object' && env !== null
+    && (present(env.INVOCATION_ID) || present(env.NOTIFY_SOCKET))
+}
+
+function statusContainsExitCode(status: string, code: number): boolean {
+  return String(status ?? '').split(/\s+/u).some((token) => token === String(code) || token === `STATUS=${code}`)
+}
+
+export function restartPolicyAllowsExit(policy: RestartPolicyFacts | null | undefined, code = MANAGED_RESTART_EXIT_CODE): boolean {
+  if (policy === null || policy === undefined) return false
+  if (policy.restart !== 'on-failure' && policy.restart !== 'always') return false
+  if (statusContainsExitCode(policy.successExitStatus, code)) return false
+  if (statusContainsExitCode(policy.restartPreventExitStatus, code)) return false
+  return true
+}
+
+/** Query policy before voluntarily exiting; failure fails over to transient restart. */
+export function readSystemdRestartPolicy(opts: { cgroup: string; uid: number }): RestartPolicyFacts | null {
+  const unit = systemdUnitName(opts.cgroup)
+  if (unit === null) return null
+  const userManager = opts.cgroup.includes('/user.slice/')
+  const file = userManager || opts.uid === 0 ? 'systemctl' : 'sudo'
+  const args = userManager
+    ? ['--user', 'show', '--value', '--property=Restart', '--property=SuccessExitStatus', '--property=RestartPreventExitStatus', unit]
+    : opts.uid === 0
+      ? ['show', '--value', '--property=Restart', '--property=SuccessExitStatus', '--property=RestartPreventExitStatus', unit]
+      : ['-n', 'systemctl', 'show', '--value', '--property=Restart', '--property=SuccessExitStatus', '--property=RestartPreventExitStatus', unit]
+  try {
+    const output = execFileSync(file, args, {
+      encoding: 'utf8',
+      timeout: 1_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      env: process.env,
+    })
+    const [restart = '', successExitStatus = '', restartPreventExitStatus = ''] = String(output).split(/\r?\n/u)
+    return { restart: restart.trim(), successExitStatus: successExitStatus.trim(), restartPreventExitStatus: restartPreventExitStatus.trim() }
+  } catch {
+    return null
+  }
+}
+
+function reportRestartError(scope: string, error: unknown): void {
+  try {
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`[dsh-m] ${scope} failed: ${message}\n`)
+  } catch {
+    /* stderr may already be closed while the host is shutting down */
+  }
+}
+
+/** Read the optional launcher hook without coupling core code to Cordis types. */
+export function appExitFromContext(context: unknown): AppExit | undefined {
+  const getter = (context as { get?: unknown } | null | undefined)?.get
+  if (typeof getter !== 'function') return undefined
+  try {
+    const candidate = getter.call(context, 'appExit')
+    return typeof candidate === 'function' ? candidate as AppExit : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function restartHelperSource(
@@ -204,21 +297,41 @@ export function scheduleRestart(
     pid?: number
     cgroup?: string
     uid?: number
+    /** DSH launcher lifecycle hook, available in both 0.1.2-rc.1 and 0.1.5-rc.1. */
+    appExit?: AppExit
+    /** Injectable environment for deterministic tests. */
+    env?: NodeJS.ProcessEnv
+    /** Injectable systemd policy facts; omitted in production and queried when needed. */
+    restartPolicy?: RestartPolicyFacts | null
   } = {},
 ): RestartResult {
   const pid = deps.pid ?? process.pid
-  const systemd = systemdRestartArgv({
-    cgroup: deps.cgroup ?? readProcCgroup(),
-    uid: deps.uid ?? (typeof process.getuid === 'function' ? process.getuid() : 1),
-  })
+  const cgroup = deps.cgroup ?? readProcCgroup()
+  const uid = deps.uid ?? (typeof process.getuid === 'function' ? process.getuid() : 1)
+  const systemd = systemdRestartArgv({ cgroup, uid, pid })
+  const managed = typeof deps.appExit === 'function' && serviceManagedEnv(deps.env ?? process.env)
+  const policy = deps.restartPolicy ?? (managed && systemd !== null ? readSystemdRestartPolicy({ cgroup, uid }) : null)
+  if (managed && (systemd === null || restartPolicyAllowsExit(policy))) {
+    const timer = (deps.setTimeout ?? setTimeout)(() => deps.appExit!(MANAGED_RESTART_EXIT_CODE), 150)
+    timer.unref?.()
+    return { pid, helperPid: undefined, via: 'app-exit' }
+  }
   if (systemd !== null) {
     ;(deps.setTimeout ?? setTimeout)(() => {
-      const helper = (deps.spawn ?? spawn)(systemd.file, systemd.args, {
-        detached: true,
-        stdio: 'ignore',
-        env: process.env,
-      })
-      helper.unref()
+      try {
+        const helper = (deps.spawn ?? spawn)(systemd.file, systemd.args, {
+          detached: true,
+          stdio: 'ignore',
+          env: process.env,
+        })
+        helper.once?.('error', (error) => reportRestartError('transient restart helper', error))
+        helper.once?.('exit', (code, signal) => {
+          if (code !== 0) reportRestartError('transient restart helper', `exit=${code ?? 'null'} signal=${signal ?? 'none'}`)
+        })
+        helper.unref()
+      } catch (error) {
+        reportRestartError('transient restart helper', error)
+      }
     }, 500)
     return { pid, helperPid: undefined, via: 'systemd' }
   }
@@ -227,16 +340,30 @@ export function scheduleRestart(
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const logOut = join(tmpdir(), `dshm-restart-${stamp}.out.log`)
   const logErr = join(tmpdir(), `dshm-restart-${stamp}.err.log`)
-  const helper = (deps.spawn ?? spawn)(
-    (deps.nodeExecutable ?? nodeExecutable)(),
-    ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port)],
-    {
-      detached: true,
-      stdio: 'ignore',
-      env: process.env,
-    },
-  )
+  let helper
+  try {
+    helper = (deps.spawn ?? spawn)(
+      (deps.nodeExecutable ?? nodeExecutable)(),
+      ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port)],
+      {
+        detached: true,
+        stdio: 'ignore',
+        env: process.env,
+      },
+    )
+    helper.once?.('error', (error) => reportRestartError('detached restart helper', error))
+  } catch (error) {
+    // Do not terminate the live host if the replacement could not be started.
+    reportRestartError('detached restart helper', error)
+    return { pid, helperPid: undefined, via: 'helper' }
+  }
   helper.unref()
-  ;(deps.setTimeout ?? setTimeout)(() => (deps.kill ?? process.kill)(pid, 'SIGTERM'), 500)
+  ;(deps.setTimeout ?? setTimeout)(() => {
+    try {
+      ;(deps.kill ?? process.kill)(pid, 'SIGTERM')
+    } catch (error) {
+      reportRestartError('detached host shutdown', error)
+    }
+  }, 500)
   return { pid, helperPid: helper.pid, via: 'helper' }
 }

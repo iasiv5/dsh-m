@@ -6,12 +6,30 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait } from '../src/client/restart-wait.js'
+import {
+  RESTART_POLL_MS,
+  RESTART_DEADLINE_MS,
+  nextRestartWait,
+  isAmbiguousRestartRequestError,
+} from '../src/client/restart-wait.js'
 
 describe('常量（与现行字面量一致）', () => {
   it('轮询 2s、deadline 90s', () => {
     assert.equal(RESTART_POLL_MS, 2_000)
     assert.equal(RESTART_DEADLINE_MS, 90_000)
+  })
+})
+
+describe('restart request errors', () => {
+  it('网络/中止错误可能表示服务已接受重启', () => {
+    assert.equal(isAmbiguousRestartRequestError({ name: 'TypeError' }), true)
+    assert.equal(isAmbiguousRestartRequestError({ name: 'AbortError' }), true)
+    assert.equal(isAmbiguousRestartRequestError({ name: 'NetworkError' }), true)
+  })
+  it('HTTP 业务错误仍是确定失败', () => {
+    assert.equal(isAmbiguousRestartRequestError(new Error('HTTP 500')), false)
+    assert.equal(isAmbiguousRestartRequestError({ name: 'SyntaxError' }), false)
+    assert.equal(isAmbiguousRestartRequestError(null), false)
   })
 })
 

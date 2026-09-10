@@ -14,7 +14,7 @@ import {
   type InstalledResult,
 } from './core/market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
-import { scheduleRestart } from './core/restart.js'
+import { appExitFromContext, scheduleRestart } from './core/restart.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   market: '市场',
@@ -31,6 +31,7 @@ export interface ToolMarketDeps {
   installFromRegistry?: typeof installFromRegistry
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
+  restart?: typeof scheduleRestart
 }
 
 function cloneJson(value: unknown) {
@@ -50,6 +51,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     uninstallPlugin: deps.uninstallPlugin ?? uninstallPlugin,
     upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
   }
+  const restart = deps.restart ?? ((port: number | null = null) =>
+    scheduleRestart(port, { appExit: appExitFromContext(ctx) }))
 
   ctx.tools.register(defineTool({
     name: 'dshm_search',
@@ -277,13 +280,13 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   ctx.tools.register(defineTool({
     name: 'dshm_restart',
     description:
-      'Restart DSH web so newly installed/uninstalled/upgraded plugins take effect. ONLY call after the user agrees (用户同意重启后). The page reloads automatically after the service comes back.',
+      'Restart DSH web so newly installed/uninstalled/upgraded plugins take effect. ONLY call after the user agrees (用户同意重启后). DSH Web reconnects in the background after the service comes back.',
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => [{
         type: 'text',
-        text: `已请求重启 DSH web（via ${(value as { via?: string }).via}）。服务几秒内恢复，之后让用户刷新页面即可。对用户最多一句短话。`,
+        text: `已请求重启 DSH web（via ${(value as { via?: string }).via}）。服务恢复后 DSH Web 会在后台自动重连。对用户最多一句短话。`,
       }],
       presentationMeta: (_args, value) => ({ kind: 'dshm-restart', ...(value as object) }),
     },
@@ -295,7 +298,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     }),
     timeoutMs: 15_000,
     async execute() {
-      return cloneJson(scheduleRestart(null))
+      return cloneJson(restart(null))
     },
   }))
 

@@ -6,6 +6,7 @@ import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
 import { registerTools } from './tools.js'
+import { appExitFromContext, scheduleRestart } from './core/restart.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../package.json') as { name: string; version: string }
@@ -34,7 +35,11 @@ export function apply(ctx: Context, config: Config): void {
   // registry controller：active config / configured / pending / rejected 分离 + generation fence；
   // tools 与 Host API 共用同一 active config object（apply 原地更新字段，live 生效）
   const controller = createRegistryController(config)
-  registerTools(ctx, controller.config)
+  // DSH 0.1.2-rc.1 and 0.1.5-rc.1 both expose appExit through dsh-cmdline;
+  // using it avoids guessing the service unit from release-specific cgroups.
+  const appExit = appExitFromContext(ctx)
+  const restart = (port: number | null = null) => scheduleRestart(port, { appExit })
+  registerTools(ctx, controller.config, { restart })
 
   // 设置页（GUI 设置卡片的宿主命名空间）：applies 'live'，scope 提供 get/update/watch
   ctx.inject(['settings'], (c) => {
@@ -75,7 +80,7 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
-    const handleApi = createApiDispatcher({ controller, pkg })
+    const handleApi = createApiDispatcher({ controller, pkg, deps: { scheduleRestart: restart } })
     server.register({
       kind: 'exact',
       path: '/dshm',

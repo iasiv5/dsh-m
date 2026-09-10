@@ -16,7 +16,7 @@ const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
-const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait } = require("./restart-wait.js");
+const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -79,7 +79,7 @@ const ZH = {
   "restart.doing": "正在请求重启…", "restart.waiting": "已请求重启，等待 DSH Web 恢复…",
   "restart.now": "⚡ 一键重启", "restart.failed": "重启失败：{err}",
   "restart.timeout": "重启超时，请手动检查 dsh web 服务状态",
-  "restart.hint.done": "已请求重启 DSH web（via {via}）。服务几秒内恢复，之后让用户刷新页面即可。",
+  "restart.hint.done": "已请求重启 DSH web（via {via}）。服务恢复后 DSH Web 会在后台自动重连。",
   "phase.resolving": "解析依赖", "phase.downloading": "下载", "phase.linking": "链接安装", "phase.building": "构建脚本", "phase.ready": "准备中",
   "readme.show": "📖 README", "readme.hide": "收起 README", "readme.loading": "加载 README… ", "readme.none": "（该插件没有 README）",
   "readme.truncated": "…（超过 64KB 已截断，完整内容见插件目录）",
@@ -89,7 +89,7 @@ const ZH = {
   "title.panel": "插件市场", "title.full": "DeepSeek Harness 插件市场",
 };
 const EN = {
-  "market.title": "Plugin Marketplace", "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
+  "market.title": "Plugin Marketplace",
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
   "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.other": "Other",
   "search.ph": "Search name, description, tags…",
@@ -148,7 +148,7 @@ const EN = {
   "restart.doing": "Requesting restart…", "restart.waiting": "Restart requested, waiting for DSH Web…",
   "restart.now": "⚡ Restart", "restart.failed": "Restart failed: {err}",
   "restart.timeout": "Restart timed out — check the dsh web service manually",
-  "restart.hint.done": "Restart requested (via {via}). The service will be back in seconds; ask the user to refresh afterwards.",
+  "restart.hint.done": "Restart requested (via {via}). DSH Web will reconnect in the background after the service returns.",
   "phase.resolving": "Resolving", "phase.downloading": "Downloading", "phase.linking": "Linking", "phase.building": "Building", "phase.ready": "Preparing",
   "readme.show": "📖 README", "readme.hide": "Hide README", "readme.loading": "Loading README… ", "readme.none": "(No README)",
   "readme.truncated": "…(truncated at 64KB — see the plugin directory for full content)",
@@ -448,7 +448,14 @@ function RestartBanner({ note, onDone }) {
     setPhase("restarting");
     try {
       const ping0 = await api("ping");
-      await api("restart");
+      try {
+        await api("restart");
+      } catch (requestError) {
+        // The host may have accepted restart and closed the socket before the
+        // JSON response flushed. Continue with boot-id verification for that
+        // ambiguous network case; definite HTTP errors still fail immediately.
+        if (!isAmbiguousRestartRequestError(requestError)) throw requestError;
+      }
       setPhase("waiting");
       const deadlineAt = Date.now() + RESTART_DEADLINE_MS;
       for (;;) {
@@ -465,6 +472,9 @@ function RestartBanner({ note, onDone }) {
         }
         if (nextRestartWait({ phase: "after-ping", bootChanged }) === "done") break;
       }
+      // Do not force window.location.reload() here. DSH Web owns the browser
+      // connection and has its own background recovery/retry loop; a full-page
+      // reload during the auth/route handoff can land on a blank error page.
       setPhase("idle");
       onDone(true);
     } catch (e) {

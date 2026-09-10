@@ -14,3 +14,13 @@ export function nextRestartWait({ phase, now = 0, deadlineAt = Infinity, bootCha
   }
   return bootChanged ? "done" : "continue";
 }
+
+/**
+ * A fetch TypeError/AbortError can mean the server accepted restart and closed
+ * the connection before the response flushed. HTTP 4xx/5xx errors remain
+ * definite failures and must not silently turn into a 90-second wait.
+ */
+export function isAmbiguousRestartRequestError(error) {
+  const name = error && typeof error === "object" ? error.name : "";
+  return name === "TypeError" || name === "AbortError" || name === "NetworkError";
+}

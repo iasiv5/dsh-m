@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20verified-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%2B%200.1.5--rc.1%20contract%20checked-2563eb)](#faq)
 
 [English](./README.en.md) · 中文
 
@@ -22,7 +22,7 @@
 ```text
 安装并启用 DSH 插件 dsh-m：
 1. 执行 `dsh plugin --profile web add dsh-m`
-2. 重启 DSH Web 使插件加载（本机：`systemctl --user restart dsh-web.service`；或按你的部署方式重启）
+2. 重启 DSH Web 使插件加载（按部署方式重启对应的 DSH user unit；unit 名称不要硬编码）
 3. 轮询 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080`，直到恢复 200
 4. 执行 `curl -s -X POST http://127.0.0.1:3080/dshm -H 'content-type: application/json' -d '{"method":"ping"}'`，确认返回 `plugin: dsh-m`
 5. 完成后提醒我刷新页面，点击侧栏底部的「插件市场」
@@ -40,7 +40,7 @@
 | **已装** | web profile 实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断） |
 | **设置** | registry 地址草稿 +「校验并应用 / 恢复默认 / 下载默认 registry.json / 检查条目可达性」；配置地址、生效来源与状态一目了然；强制刷新；dsh-m 自更新 |
 
-安装 / 卸载 / 升级完成后出现「⚡ 一键重启」横幅——重启走 systemd 单元（同源校验，兜底 detached helper），按 boot id 轮询直至服务恢复。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
+安装 / 卸载 / 升级完成后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。已完成当前 DSH Web `0.1.5-rc.1` 运行时的 live 核验：web profile 已加载 dsh-m `0.2.11`，重启后 `/dshm` ping 返回 `version: 0.2.11`，携带当前认证 token 的页面请求流程为 `303 → 200`；无认证请求会被拒绝。此次白屏截图对应的 404 在服务稳定后未复现；journal 显示截图时段发生多次 `status=75/TEMPFAIL` 重启，当前暂判定为重启/认证过渡窗口现象，未发现 dsh-m Host 路由崩溃。DSH `0.1.2-rc.1` live E2E、transient fallback live E2E，以及连续安装/卸载实验仍是正式发布前的验证 gap。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
 ## Agent 工具（7 个）
 
@@ -109,6 +109,9 @@ main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优
 
 **4. 自定义源挂了怎么办？**
 优先使用该源最近一次成功的缓存并标记「缓存来源」；完全没有缓存时市场显示「收录清单不可用」，已安装插件仍可正常管理。修正地址或恢复默认即可。
+
+**5. 重启按钮支持哪些 DSH Web 版本？**
+已核对 `0.1.2-rc.1` 与 `0.1.5-rc.1` 的公开包契约；两版都提供 dsh-m 使用的 `appExit` launcher hook。当前 `openbmc-dsh.service` 的 0.1.5 运行时已实际加载 dsh-m `0.2.11` 并完成 `/dshm` ping 与带认证页面的 `303 → 200` 核验；白屏期间的多次 `status=75/TEMPFAIL` 已记录，当前稳定服务未复现 404。0.1.2 live E2E、transient fallback live E2E 和连续插件安装/卸载实验仍需发布前补做。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
 
 ## License
 

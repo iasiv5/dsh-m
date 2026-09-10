@@ -205,6 +205,20 @@ describe('host-api：method 响应', () => {
     assert.ok(res.body.boot)
   })
 
+  it('restart 委派注入的生命周期调度器并传递 serving port', async () => {
+    let calledWith = undefined
+    const { dispatcher } = setup({
+      scheduleRestart: (port) => {
+        calledWith = port
+        return { pid: 1, helperPid: undefined, via: 'app-exit' }
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'restart' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.via, 'app-exit')
+    assert.equal(calledWith, 3080)
+  })
+
   it('registry 返回 plugins + registryState；force 放行同源', async () => {
     const { dispatcher } = setup()
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry', force: true } })

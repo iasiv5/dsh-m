@@ -83,7 +83,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **卸载**（事务定序写死）：validate（严格读取：NOT_INSTALLED / NOT_DSH_PLUGIN / PLUGIN_METADATA_UNREADABLE，全部零写入零快照）→ 快照 → live-disable（先让 client bundle 下线，避免 404；回滚时尽力反向）→ 摘除该包补丁条目（`pnpm-workspace.yaml` 顶层 `patchedDependencies` 与 `package.json#pnpm.patchedDependencies`；残留条目会令 pnpm 以 `ERR_PNPM_UNUSED_PATCH` 整单失败，只精确匹配 `pkg` / `pkg@ver`，补丁文件本体保留并计入残留报告）→ remove → verify gone（仍在则回滚）。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
 - **升级**：**按需检查**（`dshm_outdated` / `dshm_list` 时实时比对本地版本 vs npm latest / GitHub release，半自动——展示升级计划，确认后执行，即重开一次安装事务）。**不做后台定时器**。
 - **自更新**：dsh-m 对自己同样做版本比对 + 提示升级（设置页呈现）；执行即 `install-npm` 事务（integrity 缺失直接拒绝，不进事务）。
-- **重启**：内置**一键重启**，复用 skillhub 验证过的重启路径（本机 `dsh-web.service` 是转发 shim，不新建 systemd 单元、不监听 3080）。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅，工具返回重启提示。
+- **重启**：内置**一键重启**。在服务管理器托管的 DSH 进程内，只有确认 unit 的 `Restart=on-failure` / `Restart=always` 且 `75` 未被 `SuccessExitStatus` / `RestartPreventExitStatus` 覆盖时，才调用 launcher 提供的 `appExit(75)`；策略未知或不满足时改用 manager-owned transient `systemd-run` 调用 `systemctl`，不猜测或硬编码 unit 名称，也不在即将停止的 cgroup 内 detached spawn `systemctl`。无 systemd/appExit 时再退回 detached-helper 兼容路径。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅；客户端以 boot id 确认替换进程后关闭横幅，交由 DSH Web 自身后台连接恢复，不强制整页刷新；工具返回重启提示。
 - **安全基线（5 条）**：
   1. 所有拉取仅 HTTPS + 响应大小上限 + 超时；
   2. npm 安装校验 integrity；
@@ -182,5 +182,5 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 
 - profile 根：`$DSH_HOME/profiles/web`（默认 `~/.dsh/profiles/web`）；已装插件 = 其 `package.json` dependencies + `dsh.profile.bundles`。
 - 新装插件需**重启 dsh web** 才加载；HMR 仅在 `pnpm run dev:web` watcher 存活时有效。
-- 禁止创建监听 3080 的进程；`dsh-web.service` 为 shim，重启走其转发路径。
+- 禁止创建监听 3080 的进程；部署 unit 名称（例如 `openbmc-dsh.service`、`deepseek-harness.service` 或 `dsh-web.service`）只作运行时事实，不硬编码到 dsh-m；managed host 的重启由 `appExit` + unit `Restart` 策略完成。
 - 插件包协议要点：`type: module`、`main` host 入口、`exports["./client"]` 指向打包产物、`dsh.client.platform: "web"`、`dsh.bundle.patch: ./cordis.patch.yml`（`- insert: - id: dsh-m; name: dsh-m`）。

@@ -46,6 +46,8 @@ export interface HostApiOverrides {
   npmLatest?: typeof npmLatest
   /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
   runTransaction?: typeof runProfileTransaction
+  /** Host 注入 appExit 后的重启调度器；测试可替换。 */
+  scheduleRestart?: typeof scheduleRestart
 }
 
 export interface HostApiContext {
@@ -192,6 +194,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     checkRegistryEntries: ctx.deps?.checkRegistryEntries ?? checkRegistryEntries,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
+    scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
   }
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
 
@@ -313,7 +316,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'restart': {
-          const result = scheduleRestart(servingPort(req))
+          const result = d.scheduleRestart(servingPort(req))
           payload = { ...result }
           break
         }

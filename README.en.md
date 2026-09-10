@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20verified-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%2B%200.1.5--rc.1%20contract%20checked-2563eb)](#faq)
 
 English · [中文](./README.md)
 
@@ -22,7 +22,7 @@ A DeepSeek Harness (DSH) plugin marketplace with a customizable registry: **brow
 ```text
 Install and enable the DSH plugin dsh-m:
 1. Run `dsh plugin --profile web add dsh-m`
-2. Restart DSH Web to load the plugin (on this machine: `systemctl --user restart dsh-web.service`; or restart it your usual way)
+2. Restart DSH Web to load the plugin (restart the DSH user unit used by your deployment; do not hardcode a unit name)
 3. Poll `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080` until it returns 200 again
 4. Run `curl -s -X POST http://127.0.0.1:3080/dshm -H 'content-type: application/json' -d '{"method":"ping"}'` and confirm the reply has `plugin: dsh-m`
 5. Then remind me to refresh the page and click "Plugin Marketplace" at the bottom of the sidebar
@@ -40,7 +40,7 @@ The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeC
 | **Installed** | What your web profile actually has, annotated "via market / non-market"; update badges, upgrade, two-step confirm uninstall; 📖 README preview (64KB cap) |
 | **Settings** | Registry address draft with "Validate & apply / Restore default / Download default registry.json / Check entries reachability"; configured vs active address and status at a glance; force refresh; dsh-m self-update |
 
-After any mutation a "⚡ Restart" banner appears — restart goes through the systemd unit (same-origin checked, detached-helper fallback) and polls by boot id until the service is back. Installs stream live pnpm progress (resolve → download → link → build).
+After any mutation a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The current DSH Web `0.1.5-rc.1` runtime has now live-loaded dsh-m `0.2.11`; `/dshm` ping returned version `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible once the service stabilized; journal evidence showed repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Installs stream live pnpm progress (resolve → download → link → build).
 
 ## Agent tools (7)
 
@@ -109,6 +109,9 @@ Listings over 200 entries trigger a performance notice. The market list is serve
 
 **4. What if my custom source goes down?**
 dsh-m serves its last successful cache for that source and marks it as cached; with no cache at all the market shows "registry unavailable" while installed plugins stay manageable. Fix the address or restore the default anytime.
+
+**5. Which DSH Web versions does the restart button support?**
+The public package contracts for `0.1.2-rc.1` and `0.1.5-rc.1` are checked; both expose the dsh-m `appExit` launcher hook. The current `openbmc-dsh.service` runtime has live-loaded dsh-m `0.2.11`; `/dshm` ping returned `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible after service stabilization; journal evidence recorded repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Systemd deployments must configure `Restart=on-failure` or `Restart=always`; otherwise use the deployment's manual restart procedure.
 
 ## License
 
