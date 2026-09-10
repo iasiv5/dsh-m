@@ -40,7 +40,7 @@
 | **已装** | web profile 实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断） |
 | **设置** | registry 地址草稿 +「校验并应用 / 恢复默认 / 下载默认 registry.json / 检查条目可达性」；配置地址、生效来源与状态一目了然；强制刷新；dsh-m 自更新 |
 
-安装 / 卸载 / 升级完成后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。已完成当前 DSH Web `0.1.5-rc.1` 运行时的 live 核验：web profile 已加载 dsh-m `0.2.11`，重启后 `/dshm` ping 返回 `version: 0.2.11`，携带当前认证 token 的页面请求流程为 `303 → 200`；无认证请求会被拒绝。此次白屏截图对应的 404 在服务稳定后未复现；journal 显示截图时段发生多次 `status=75/TEMPFAIL` 重启，当前暂判定为重启/认证过渡窗口现象，未发现 dsh-m Host 路由崩溃。DSH `0.1.2-rc.1` live E2E、transient fallback live E2E，以及连续安装/卸载实验仍是正式发布前的验证 gap。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
+安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。已完成当前 DSH Web `0.1.5-rc.1` 运行时的 live 核验：web profile 已加载 dsh-m `0.2.11`，重启后 `/dshm` ping 返回 `version: 0.2.11`，携带当前认证 token 的页面请求流程为 `303 → 200`；无认证请求会被拒绝。此次白屏截图对应的 404 在服务稳定后未复现；journal 显示截图时段发生多次 `status=75/TEMPFAIL` 重启，当前暂判定为重启/认证过渡窗口现象，未发现 dsh-m Host 路由崩溃。DSH `0.1.2-rc.1` live E2E、transient fallback live E2E，以及连续安装/卸载实验仍是正式发布前的验证 gap。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
 ## Agent 工具（7 个）
 

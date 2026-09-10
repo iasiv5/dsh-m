@@ -95,7 +95,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 
 3 个视图，卡片展开式详情（不做独立详情页），**中文优先**，跟随 DSH Web 深色主题：
 
-1. **市场页**（默认）：registry 卡片流；搜索/分类为**服务端过滤**（Host 强制 `withLatest=true`、每页 50、1,000 条清单第一页只探测当前页）；`MarketPanel` 是市场/已装数据唯一 owner（请求 generation + AbortController 丢弃旧响应）；分页控件 + 超过 200 条性能提示 + 默认/自定义/缓存/不可用短提示（不含本地路径）；卡片详情保留 README markdown 预览与 npm/GitHub 官方外链。
+1. **市场页**（默认）：registry 卡片流；搜索/分类为**服务端过滤**（Host 强制 `withLatest=true`、每页 50、1,000 条清单第一页只探测当前页）；`MarketPanel` 是市场/已装数据唯一 owner（请求 generation + AbortController 丢弃旧响应）；安装/卸载/升级完成后通过统一协调器同时刷新市场与已装快照，不要求关闭并重新打开面板；分页控件 + 超过 200 条性能提示 + 默认/自定义/缓存/不可用短提示（不含本地路径）；卡片详情保留 README markdown 预览与 npm/GitHub 官方外链。
 2. **已装页**：profile 实际安装列表，标注来源（市场/非市场/未知）；registry 不可用时仍列出已装并标记；「可升级 → x.y.z」徽标 +「升级」；「卸载」。
 3. **设置页**：registry 地址草稿 +「校验并应用」（先校验候选再写 settings，失败不落盘）/「恢复默认」/「下载默认 registry.json」（不改当前配置）/「检查条目可达性」（probe 统计 + 最多 100 条 issue，只读不改配置）；同时展示配置地址、当前生效配置、生效来源与 configStatus（含 rejected/回滚原因与维护性 warnings）；完整本地路径仅在此页显示。registry 配置为 **live 生效，不出现安装类重启横幅**；安装/卸载/升级仍保留重启横幅。
 

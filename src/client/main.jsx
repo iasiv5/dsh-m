@@ -17,6 +17,7 @@ const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
+const { refreshAfterMutation } = require("./view-refresh.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -498,7 +499,7 @@ function RestartBanner({ note, onDone }) {
 }
 
 // ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props） ----------
-function MarketTab({ notify, market }) {
+function MarketTab({ notify, market, onMutation }) {
   const { data, loading, error, reload, query, updateQuery } = market;
   const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -531,7 +532,7 @@ function MarketTab({ notify, market }) {
         text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
           (res.usedAllowAllBuilds ? lookup("notify.allowbuilds") : ""),
       });
-      await reload(false);
+      await (onMutation ? onMutation() : reload(false));
     } catch (e) {
       notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
     } finally {
@@ -706,7 +707,7 @@ function ReadmeBlock({ pkg }) {
 }
 
 // ---------- 已装页 ----------
-function InstalledTab({ notify, installed }) {
+function InstalledTab({ notify, installed, onMutation }) {
   const { loading, data, error, reload } = installed;
   const [openPkg, setOpenPkg] = useState(null);
   const [readmePkg, setReadmePkg] = useState(null);
@@ -723,7 +724,7 @@ function InstalledTab({ notify, installed }) {
           (res.liveDisabled ? lookup("notify.livedisabled") : "") +
           (res.leftovers && res.leftovers.length ? lookup("notify.leftovers", { paths: res.leftovers.join(", ") }) : ""),
       });
-      await reload();
+      await (onMutation ? onMutation() : reload());
     } catch (e) {
       notify({ kind: "err", text: lookup("failed.uninstall", { err: (e && e.message) || e }) });
     } finally {
@@ -744,7 +745,7 @@ function InstalledTab({ notify, installed }) {
           to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest",
         }) + (res.usedAllowAllBuilds ? lookup("notify.upgradehint") : ""),
       });
-      await reload();
+      await (onMutation ? onMutation() : reload());
     } catch (e) {
       notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
     } finally {
@@ -1121,11 +1122,12 @@ function MarketPanel({ onClose }) {
   // 市场数据唯一 owner：服务端分页 + query generation + AbortController（Task 7）
   const market = useMarketData();
   const installed = useAsync(() => api("installed"), []);
-  // registry 配置应用后：先刷新市场页，再刷新已装页（顺序执行，旧请求被 generation 丢弃）
-  const onRegistryChanged = useCallback(async () => {
-    await market.reload(false);
-    await installed.reload().catch(() => undefined);
-  }, [market, installed]);
+  // Registry 配置或任一 profile mutation 后，两个视图一起刷新，避免单页快照不同步。
+  const refreshViews = useCallback(
+    () => refreshAfterMutation({ marketReload: market.reload, installedReload: installed.reload }),
+    [market.reload, installed.reload],
+  );
+  const onRegistryChanged = refreshViews;
   const counts = {
     market: market.data ? market.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
@@ -1183,8 +1185,8 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, market }) : null,
-        tab === "installed" ? h(InstalledTab, { notify, installed }) : null,
+        tab === "market" ? h(MarketTab, { notify, market, onMutation: refreshViews }) : null,
+        tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
       ),
       toast
