@@ -46,6 +46,17 @@
       "homepage": "https://github.com/iasiv5/dsh-skip-browser-auth"
     },
     {
+      "id": "dsh-surf",
+      "name": "DSH Surf",
+      "description": "网络冲浪入口插件：在 DSH 设置里提供一级「网络冲浪」入口，一键打开自托管的 Selkies/Chrome 远程浏览器桌面（视频流直连，不占用主页面；需按仓库 deploy/ 部署容器并挂在认证反代后）。",
+      "category": "tools",
+      "tags": ["浏览器", "远程桌面", "Selkies", "Chrome", "网络冲浪"],
+      "source": "npm",
+      "npm": "@iasiv5/dsh-surf",
+      "github": "iasiv5/dsh-surf",
+      "homepage": "https://github.com/iasiv5/dsh-surf"
+    },
+    {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册新侧边栏页面。内置文件渲染编辑/终端/侧边对话/Git/子代理页面。",
@@ -165,17 +176,6 @@
       "npm": "deepseek-harness-dingtalk",
       "github": "sliverp/DeepSeek-harness-dingtalk",
       "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
-    },
-    {
-      "id": "dsh-surf",
-      "name": "DSH Surf",
-      "description": "网络冲浪入口插件：在 DSH 设置里提供一级「网络冲浪」入口，一键打开自托管的 Selkies/Chrome 远程浏览器桌面（视频流直连，不占用主页面；需按仓库 deploy/ 部署容器并挂在认证反代后）。",
-      "category": "tools",
-      "tags": ["浏览器", "远程桌面", "Selkies", "Chrome", "网络冲浪"],
-      "source": "npm",
-      "npm": "@iasiv5/dsh-surf",
-      "github": "iasiv5/dsh-surf",
-      "homepage": "https://github.com/iasiv5/dsh-surf"
     }
   ]
 }
