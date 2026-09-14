@@ -39,7 +39,7 @@
       "id": "dsh-skins",              // slug，唯一
       "name": "DSH Skins",
       "description": "中文描述",        // v1 只有中文
-      "category": "ui",               // market|tools|ui|search|media|other 六选一
+      "category": "ui",               // market|tools|ui|search|other 五选一
       "tags": ["主题"],
       "source": "github",             // npm|github
       "npm": "可选；source=npm 时必填",
@@ -58,6 +58,9 @@
 3. schema 合法（复用 `lib/core/registry.js` 的严格 `validateRegistry`，与运行时同一套规则）；
 4. npm 条目可查；GitHub 条目 repo 存在；`icon`/`homepage` URL 可达（icon 允许为空）。
 自定义 registry 不经过官方 CI——设置页对自定义源展示未校验信任提示。
+
+### 2.4 收录文案（registry-copy-guide 定稿）
+`description`/`tags` 的写法另见 [`docs/registry-copy-guide.md`](./registry-copy-guide.md)：全条 ≤60 全角当量（对齐卡片收起态两行截断）、统一前置/依赖/兼容三种句式、依赖关系不入 tags。CI 对文案超限打软警告不阻断（§2.3 第 4 步之后追加）。
 
 ## 3. 安装 / 卸载 / 升级 / 重启
 

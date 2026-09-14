@@ -27,6 +27,32 @@ if (ids.size !== (parsed.registry?.plugins.length || 0)) {
   console.error('✗ 存在重复 id')
 }
 
+// ---------- 文案软警告（docs/registry-copy-guide.md；只 warn 不 fail） ----------
+const widthUnits = (s) => [...s].reduce((acc, ch) => acc + (/[ -~]/.test(ch) ? 0.5 : 1), 0)
+const COPY_LIMIT = 60
+
+let warned = false
+for (const entry of parsed.registry?.plugins || []) {
+  const where = `[${entry.id}]`
+  const desc = entry.description || ''
+  const w = widthUnits(desc)
+  if (w > COPY_LIMIT) {
+    warned = true
+    console.warn(`⚠ ${where} description ${w.toFixed(1)} 当量超 ${COPY_LIMIT}（卡片收起态两行会截出残句），压缩或细节归 homepage`)
+  }
+  for (const tag of entry.tags || []) {
+    if (/^(需|推荐|requires?)/i.test(tag)) {
+      warned = true
+      console.warn(`⚠ ${where} tag「${tag}」是依赖关系词——关系应写在 description 句式里（需 …/可选集成 …），见 registry-copy-guide §4/§5`)
+    }
+  }
+  const tail = desc.match(/（[^（）]*(?:适配|需|依赖|推荐)[^（）]*）/)
+  if (tail) {
+    warned = true
+    console.warn(`⚠ ${where} description 含全角括号尾巴「${tail[0]}」——兼容/前置应改写为末句句式（已适配 …，详见仓库 / 需 …），见 registry-copy-guide §4`)
+  }
+}
+
 const ghHeaders = {
   accept: 'application/vnd.github+json',
   'user-agent': 'dsh-m-registry-check',
@@ -86,4 +112,8 @@ if (failed) {
   console.error('\nregistry 校验未通过')
   process.exit(1)
 }
-console.log('\nregistry 校验通过')
+if (warned) {
+  console.log('\nregistry 校验通过（含文案软警告，见上；合并前请逐条给出理由）')
+} else {
+  console.log('\nregistry 校验通过')
+}

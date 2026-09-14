@@ -4,7 +4,7 @@
     {
       "id": "dsh-m",
       "name": "DSH Marketplace",
-      "description": "可自定义 Registry 内容的 DeepSeek Harness 插件市场：收录、安装、卸载、升级 DSH 插件，一站搞定。",
+      "description": "可自定义收录清单的 DSH 插件市场：收录、安装、卸载、升级一站完成，附 agent 工具与 dshm CLI。",
       "category": "market",
       "tags": ["市场", "插件管理"],
       "source": "npm",
@@ -15,9 +15,9 @@
     {
       "id": "dsh-skins",
       "name": "DSH Skins",
-      "description": "DeepSeek Harness Web 界面主题/皮肤管理插件，可切换多种视觉风格。",
+      "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。",
       "category": "ui",
-      "tags": ["主题", "美化"],
+      "tags": ["皮肤", "主题", "美化"],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
@@ -26,7 +26,7 @@
     {
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
-      "description": "为 DSH 内置 GitHub Copilot 提供方补上设备码（device flow）登录/注销设置页，并预置开箱即用的 Copilot 路由；凭据托管 DSH 内置凭据库，模型目录自动同步。",
+      "description": "为内置 Copilot 提供方补设备码登录/注销设置页，预置开箱路由；凭据入内置凭据库，模型目录兜底不覆盖定制。",
       "category": "tools",
       "tags": ["Copilot", "认证", "模型接入"],
       "source": "npm",
@@ -37,7 +37,7 @@
     {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
-      "description": "在已适配版本上替换官方 Connection 提供方，跳过 BrowserAuth，不再需要输入烦人的Token。（当前已适配：0.1.2-rc.1）",
+      "description": "替换官方 Connection 提供方跳过 BrowserAuth，免输 Token；已适配 0.1.2-rc.1 与 0.1.5-rc.1/rc.2，详见仓库。",
       "category": "tools",
       "tags": ["BrowserAuth", "连接", "安全"],
       "source": "npm",
@@ -48,9 +48,9 @@
     {
       "id": "dsh-surf",
       "name": "DSH Surf",
-      "description": "网络冲浪入口插件：在 DSH 设置里提供一级「网络冲浪」入口，一键打开自托管的 Selkies/Chrome 远程浏览器桌面（视频流直连，不占用主页面；需按仓库 deploy/ 部署容器并挂在认证反代后）。",
+      "description": "网络冲浪入口：设置一级菜单一键打开自托管 Selkies/Chrome 远程桌面，视频流直连；需自建容器并挂认证反代。",
       "category": "tools",
-      "tags": ["浏览器", "远程桌面", "Selkies", "Chrome", "网络冲浪"],
+      "tags": ["浏览器", "远程桌面", "Selkies", "网络冲浪"],
       "source": "npm",
       "npm": "@iasiv5/dsh-surf",
       "github": "iasiv5/dsh-surf",
@@ -59,7 +59,7 @@
     {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
-      "description": "开放的侧边栏底座，支持三方拓展注册新侧边栏页面。内置文件渲染编辑/终端/侧边对话/Git/子代理页面。",
+      "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
       "category": "ui",
       "tags": ["侧边栏", "文件编辑", "终端", "Git"],
       "source": "npm",
@@ -81,9 +81,9 @@
     {
       "id": "dsh-docs-panel",
       "name": "DSH Docs Panel",
-      "description": "DSH 侧边栏里的「全局文档」：全局 Markdown 笔记，任何工作区随时可读，支持大纲跳转与一键转编辑器。（需先安装 dsh-better-sidebar ≥0.4.0）",
+      "description": "侧边栏「全局文档」：全局 Markdown 笔记任何工作区可读，支持大纲跳转与一键转编辑器；需 better-sidebar ≥0.4.0。",
       "category": "ui",
-      "tags": ["文档", "Markdown", "侧边栏", "需 better-sidebar"],
+      "tags": ["文档", "Markdown", "侧边栏"],
       "source": "npm",
       "npm": "dsh-docs-panel",
       "github": "mlosun/dsh-docs-panel",
@@ -92,9 +92,9 @@
     {
       "id": "dsh-server-deck",
       "name": "DSH Server Deck",
-      "description": "服务器卡片仪表盘：实时状态/CPU/内存/磁盘 + 趋势记录与可视化（1h/24h/7d/30d），点卡片进入 xterm 交互终端。可选集成 dsh-better-sidebar：装后注册为侧边栏「服务器」页签，装载顺序无关。",
+      "description": "服务器卡片仪表盘：实时 CPU/内存/磁盘与趋势图（1h~30d），点卡片进 xterm 终端；可选集成 better-sidebar。",
       "category": "tools",
-      "tags": ["服务器", "监控", "终端", "推荐 better-sidebar"],
+      "tags": ["服务器", "监控", "终端", "趋势图"],
       "source": "npm",
       "npm": "dsh-server-deck",
       "github": "meyaomiao/dsh-server-deck",
@@ -103,9 +103,9 @@
     {
       "id": "dsh-flowglass",
       "name": "DSH Flowglass",
-      "description": "流镜：实时会话流程图插件，把当前会话画成三列泳道，展示工具调用、并行分组与子代理分支，支持逐层钻取。可选集成 dsh-better-sidebar：装后注册为按会话隔离的侧边栏 Tab。",
+      "description": "流镜：把当前会话画成三列泳道流程图，展示工具调用、并行分组与子代理分支；可选集成 better-sidebar。",
       "category": "ui",
-      "tags": ["可视化", "流程图", "会话", "推荐 better-sidebar"],
+      "tags": ["可视化", "流程图", "会话"],
       "source": "npm",
       "npm": "dsh-flowglass",
       "github": "Iwctwbh/dsh-flowglass",
@@ -114,7 +114,7 @@
     {
       "id": "dsh-auth",
       "name": "DSH Auth",
-      "description": "DSH Web 管理员认证插件：Argon2id 口令、可撤销会话、双语界面，经 Caddy forward_auth 边缘保护页面/API/下载/SSE/WebSocket，Harness 保持仅回环监听。",
+      "description": "DSH Web 管理员认证：Argon2id 口令与可撤销会话，经 Caddy forward_auth 保护页面、API、下载、SSE 与 WebSocket。",
       "category": "tools",
       "tags": ["认证", "安全"],
       "source": "npm",
@@ -125,7 +125,7 @@
     {
       "id": "deepseek-harness-lark",
       "name": "DeepSeek Harness Lark",
-      "description": "飞书 / Lark 文本与图片通道插件：把飞书消息桥接进 DeepSeek Harness 对话。",
+      "description": "飞书 / Lark 通道插件：把飞书消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
       "category": "other",
       "tags": ["飞书", "Lark", "通道"],
       "source": "npm",
@@ -136,7 +136,7 @@
     {
       "id": "deepseek-harness-qqbot",
       "name": "DeepSeek Harness QQBot",
-      "description": "QQ Bot 文本与图片通道插件：把 QQ 机器人消息桥接进 DeepSeek Harness 对话。",
+      "description": "QQ Bot 通道插件：把 QQ 机器人消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
       "category": "other",
       "tags": ["QQ", "通道"],
       "source": "npm",
@@ -158,7 +158,7 @@
     {
       "id": "deepseek-harness-wecom",
       "name": "DeepSeek Harness WeCom",
-      "description": "企业微信 AI Bot 文本与图片通道桥，桥接进 DeepSeek Harness 对话。",
+      "description": "企业微信 AI Bot 通道插件：把企业微信消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
       "category": "other",
       "tags": ["企业微信", "通道"],
       "source": "npm",
@@ -169,7 +169,7 @@
     {
       "id": "deepseek-harness-dingtalk",
       "name": "DeepSeek Harness DingTalk",
-      "description": "钉钉 Stream 文本与图片通道插件，桥接进 DeepSeek Harness 对话。",
+      "description": "钉钉 Stream 通道插件：把钉钉消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
       "category": "other",
       "tags": ["钉钉", "通道"],
       "source": "npm",
