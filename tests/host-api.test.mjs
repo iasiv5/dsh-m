@@ -117,6 +117,8 @@ function setup(overrides = {}) {
         calls.npm.push(pkg)
         return { version: '9.9.9', integrity: 'sha512-x' }
       },
+      // 缺省注入，避免 dispatcher 预热时真实 spawn `dsh --version`（ping 契约测试单独覆盖）
+      resolveDshVersion: async () => '0.0.0-dsh-test',
       ...overrides,
     },
   })
@@ -459,5 +461,23 @@ describe('host-api：TransactionError → detail 白名单投影（Task 10）', 
     assert.equal('output' in res.body.detail, false)
     assert.match(res.body.error, /已回滚到安装前状态/)
     assert.ok(!res.raw.includes('raw pnpm output'), '原始 runner 输出不外泄')
+  })
+})
+
+describe('host-api：ping.dshVersion（市场头部 chip 数据源）', () => {
+  it('注入 resolver → ping 携带 dshVersion', async () => {
+    const { dispatcher } = setup({ resolveDshVersion: async () => '0.1.5-rc.2' })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'ping' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.dshVersion, '0.1.5-rc.2')
+    assert.equal(res.body.plugin, 'dsh-m')
+    assert.equal(typeof res.body.boot, 'string')
+  })
+
+  it('resolver 返回 null → dshVersion 字段整个缺席（undefined 不序列化）', async () => {
+    const { dispatcher } = setup({ resolveDshVersion: async () => null })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'ping' } })
+    assert.equal(res.status, 200)
+    assert.equal('dshVersion' in res.body, false)
   })
 })

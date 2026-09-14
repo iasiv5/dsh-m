@@ -7,6 +7,7 @@
  * trustedRestartRequest host-equivalence guard → typed method/业务错误映射 → 其他 500。
  */
 import { BOOT_ID, publicInstallStatus } from './dsh-cli.js'
+import { resolveDshVersion } from './dsh-version.js'
 import {
   listInstalledWithMeta,
   listMarket,
@@ -48,6 +49,8 @@ export interface HostApiOverrides {
   runTransaction?: typeof runProfileTransaction
   /** Host 注入 appExit 后的重启调度器；测试可替换。 */
   scheduleRestart?: typeof scheduleRestart
+  /** DSH 运行版本解析（ping.dshVersion 数据源）；测试可替换。 */
+  resolveDshVersion?: typeof resolveDshVersion
 }
 
 export interface HostApiContext {
@@ -195,8 +198,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
+    resolveDshVersion: ctx.deps?.resolveDshVersion ?? resolveDshVersion,
   }
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
+  // DSH 版本一次性解析，dispatcher 创建即预热（首个 ping 不吃 spawn 回退的延迟）
+  const dshVersionP: Promise<string | null> = Promise.resolve()
+    .then(() => d.resolveDshVersion())
+    .catch(() => null)
 
   return async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const abort = new AbortController()
@@ -207,7 +215,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
       let payload: Record<string, unknown>
       switch (method) {
         case 'ping':
-          payload = { plugin: ctx.pkg.name, version: ctx.pkg.version, node: process.version, boot: BOOT_ID }
+          payload = {
+            plugin: ctx.pkg.name,
+            version: ctx.pkg.version,
+            node: process.version,
+            boot: BOOT_ID,
+            // DSH 运行版本（头部 chip 数据源）；解析失败 → undefined → JSON 序列化时字段缺席
+            dshVersion: (await dshVersionP) ?? undefined,
+          }
           break
 
         case 'self-check': {

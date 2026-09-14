@@ -87,6 +87,7 @@ const ZH = {
   "warn.unlink": "卸载只移除 profile 对本地目录的引用（{path}），不会删除目录本身。",
   "warn.core": "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
   "profile.hint": "web profile：{path}",
+  "dsh.chip.copyhint": "点击复制版本号", "dsh.chip.copied": "已复制 ✓",
   "title.panel": "插件市场", "title.full": "DeepSeek Harness 插件市场",
 };
 const EN = {
@@ -156,6 +157,7 @@ const EN = {
   "warn.unlink": "Uninstalling only removes the profile's reference to the local directory ({path}); the directory itself is kept.",
   "warn.core": "This is a core/archive package installed via file:. Uninstalling may affect DSH features and requires manual restore.",
   "profile.hint": "web profile: {path}",
+  "dsh.chip.copyhint": "Click to copy version", "dsh.chip.copied": "Copied ✓",
   "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
 };
 function browserLang() {
@@ -275,6 +277,14 @@ const CSS = `
 [data-slot="sidebar.footer.action"]{display:flex!important;flex-direction:column;width:100%;min-width:0}
 [data-slot="sidebar.footer.action"]>*{flex:none;min-width:0}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
+/* 头部 DSH 版本 chip：等宽小字圆角，hover 展开详情，点击复制（2026-09-14 定稿） */
+.dshm-dshchip{position:relative;display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:4px 10px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;cursor:pointer;white-space:nowrap;flex:none}
+.dshm-dshchip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));color:var(--dsw-alias-label-primary,inherit)}
+.dshm-dshchip-v{font-weight:600;color:var(--dsw-alias-label-primary,inherit)}
+.dshm-dshchip-tip{position:absolute;top:calc(100% + 7px);right:0;visibility:hidden;opacity:0;transition:opacity .12s;z-index:60;background:var(--dsw-alias-bg-overlay,#fff);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:9px;box-shadow:var(--dsw-shadow-lv1,0 2px 8px rgb(20 24 32 / 8%));padding:7px 10px;text-align:left;pointer-events:none}
+.dshm-dshchip:hover .dshm-dshchip-tip,.dshm-dshchip:focus-visible .dshm-dshchip-tip{visibility:visible;opacity:1}
+.dshm-dshchip-tiprow{font:12px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;color:var(--dsw-alias-label-primary,inherit)}
+.dshm-dshchip-tipsub{display:block;margin-top:2px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-caption,#9ca3af)}
 `;
 
 function ensureCss() {
@@ -1117,11 +1127,50 @@ const TABS = [
   ["settings", "tab.settings", null],
 ];
 
+// ---------- 头部 DSH 版本 chip（数据源 ping.dshVersion；hover 详情、点击复制） ----------
+function DshVersionChip({ version }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(version);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* 剪贴板不可用（非安全上下文/权限）静默——chip 保持展示 */
+    }
+  };
+  return h(
+    "button",
+    { type: "button", className: "dshm-dshchip", onClick: copy, "aria-label": `DSH ${version}` },
+    "DSH ",
+    h("span", { className: "dshm-dshchip-v" }, version),
+    h(
+      "span",
+      { className: "dshm-dshchip-tip", role: "tooltip" },
+      h("span", { className: "dshm-dshchip-tiprow" }, `DSH ${version}`),
+      h("span", { className: "dshm-dshchip-tipsub" }, lookup(copied ? "dsh.chip.copied" : "dsh.chip.copyhint")),
+    ),
+  );
+}
+
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
   // 市场数据唯一 owner：服务端分页 + query generation + AbortController（Task 7）
   const market = useMarketData();
   const installed = useAsync(() => api("installed"), []);
+  // DSH 运行版本：挂载时随 ping 一次性带回；失败/缺席 → chip 整个隐藏（不留占位）
+  const [dshVersion, setDshVersion] = useState(null);
+  useEffect(() => {
+    let live = true;
+    api("ping")
+      .then((r) => {
+        if (live) setDshVersion(typeof r?.dshVersion === "string" && r.dshVersion ? r.dshVersion : null);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   // Registry 配置或任一 profile mutation 后，两个视图一起刷新，避免单页快照不同步。
   const refreshViews = useCallback(
     () => refreshAfterMutation({ marketReload: market.reload, installedReload: installed.reload }),
@@ -1180,6 +1229,7 @@ function MarketPanel({ onClose }) {
           ),
         ),
         h("span", { className: "dshm-spacer" }),
+        dshVersion ? h(DshVersionChip, { version: dshVersion }) : null,
         h("button", { className: "dshm-btn", onClick: onClose }, lookup("common.close")),
       ),
       h(
