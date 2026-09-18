@@ -57,6 +57,17 @@
       "homepage": "https://github.com/iasiv5/dsh-surf"
     },
     {
+      "id": "dsh-obmc-web",
+      "name": "DSH OBMC Web",
+      "description": "在 DSH 里打开 OpenBMC 控制台：同源代理走 SSH 隧道，设置面板一键开启，支持 IP 探测与隧道重定向；需 SSH 跳板可达 BMC。",
+      "category": "tools",
+      "tags": ["OpenBMC", "远程管理", "SSH 隧道", "KVM"],
+      "source": "npm",
+      "npm": "@iasiv5/dsh-obmc-web",
+      "github": "iasiv5/dsh-obmc-web",
+      "homepage": "https://github.com/iasiv5/dsh-obmc-web"
+    },
+    {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
