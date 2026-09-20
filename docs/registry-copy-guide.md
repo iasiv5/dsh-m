@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 全部 16 条收录条目的 `description` 与 `tags` 写法。
+> 管辖范围：`registry.json` 全部 18 条收录条目的 `description` 与 `tags` 写法。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。

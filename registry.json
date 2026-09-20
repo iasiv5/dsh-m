@@ -187,6 +187,17 @@
       "npm": "deepseek-harness-dingtalk",
       "github": "sliverp/DeepSeek-harness-dingtalk",
       "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
+    },
+    {
+      "id": "browser-skill-dsh-plugin",
+      "name": "BrowserSkill",
+      "description": "浏览器自动化：把 BrowserSkill 的 browser_* 工具暴露给模型，让模型在对话中操作浏览器，详见仓库。",
+      "category": "tools",
+      "tags": ["浏览器", "自动化", "工具调用"],
+      "source": "npm",
+      "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
+      "github": "Tencent/BrowserSkill",
+      "homepage": "https://github.com/Tencent/BrowserSkill/tree/main/packages/dsh-plugin-browserskill#readme"
     }
   ]
 }
