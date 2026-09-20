@@ -198,6 +198,17 @@
       "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
       "github": "Tencent/BrowserSkill",
       "homepage": "https://github.com/Tencent/BrowserSkill/tree/main/packages/dsh-plugin-browserskill#readme"
+    },
+    {
+      "id": "dsh-weknora",
+      "name": "WeKnora",
+      "description": "知识库检索：把 WeKnora 接入模型，提供语义搜索、文档阅读与 RAG 问答等工具，可用自有知识库，详见仓库。",
+      "category": "tools",
+      "tags": ["知识库", "RAG", "检索"],
+      "source": "npm",
+      "npm": "@wxg-prc-cpg/dsh-weknora",
+      "github": "Tencent/WeKnora",
+      "homepage": "https://github.com/Tencent/WeKnora/tree/main/packages/dsh-weknora"
     }
   ]
 }
