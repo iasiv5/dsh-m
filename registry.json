@@ -209,6 +209,17 @@
       "npm": "@wxg-prc-cpg/dsh-weknora",
       "github": "Tencent/WeKnora",
       "homepage": "https://github.com/Tencent/WeKnora/tree/main/packages/dsh-weknora"
+    },
+    {
+      "id": "dsh-chat-manager",
+      "name": "DSH Chat Manager",
+      "description": "会话管理器：在原生侧边栏搜索归档聊天、恢复会话并安全永久删除；需按内核版本选装，详见仓库。",
+      "category": "tools",
+      "tags": ["会话管理", "归档", "聊天记录", "恢复"],
+      "source": "npm",
+      "npm": "dsh-chat-manager",
+      "github": "WSL043/dsh-chat-manager",
+      "homepage": "https://github.com/WSL043/dsh-chat-manager"
     }
   ]
 }
