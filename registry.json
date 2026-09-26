@@ -37,7 +37,7 @@
     {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
-      "description": "替换官方 Connection 提供方跳过 BrowserAuth，免输 Token；已适配 0.1.2-rc.1 与 0.1.5-rc.1/rc.2，详见仓库。",
+      "description": "替换官方 Connection 提供方跳过 BrowserAuth，免输 Token；已适配 0.1.2-rc.1、0.1.5-rc.1/rc.2 与 0.1.7-rc.1/rc.2，详见仓库。",
       "category": "tools",
       "tags": ["BrowserAuth", "连接", "安全"],
       "source": "npm",
