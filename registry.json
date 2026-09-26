@@ -26,7 +26,7 @@
     {
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
-      "description": "为内置 Copilot 提供方补设备码登录/注销设置页，预置开箱路由；凭据入内置凭据库，模型目录兜底不覆盖定制。",
+      "description": "为内置 Copilot 提供方补登录/注销设置页与开箱路由；模型目录兜底不覆盖定制。适配 0.1.7-rc.2，旧版用 1.1.x。",
       "category": "tools",
       "tags": ["Copilot", "认证", "模型接入"],
       "source": "npm",
