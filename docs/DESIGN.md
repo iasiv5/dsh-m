@@ -187,3 +187,26 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - 新装插件需**重启 dsh web** 才加载；HMR 仅在 `pnpm run dev:web` watcher 存活时有效。
 - 禁止创建监听 3080 的进程；部署 unit 名称（例如 `openbmc-dsh.service`、`deepseek-harness.service` 或 `dsh-web.service`）只作运行时事实，不硬编码到 dsh-m；managed host 的重启由 `appExit` + unit `Restart` 策略完成。
 - 插件包协议要点：`type: module`、`main` host 入口、`exports["./client"]` 指向打包产物、`dsh.client.platform: "web"`、`dsh.bundle.patch: ./cordis.patch.yml`（`- insert: - id: dsh-m; name: dsh-m`）。
+
+## 12. settings 服务双代兼容（2026-09-27 定稿）
+
+DSH 0.1.7 把 settings 服务重塑为 `@deepseek-ai/dsh-settings` 的 `SettingsForms`：旧的
+`settings.register(ns, schema, …)`（get/update/watch scope）消失，改为「Config schema 标
+`.volatile()` 的字段 + loader 原地提交 + 自动生成设置页」。经 npm tarball 逐字节比对，
+**0.1.7-rc.1 与 rc.2 的 dsh-settings 完全相同、loader 同为 ~1.0.5**——一套新通路通吃两个 rc。
+
+兼容层 `src/core/settings-compat.ts`，运行时形态探测（不按版本号分支）：
+
+| runtime 代际 | 判据 | 读 | 写 | 变更通知 |
+|---|---|---|---|---|
+| ≤0.1.5 | `settings.register` 存在 | `scope.get()` | `scope.update()` | `scope.watch()` |
+| 0.1.7-rc.1 / rc.2 | `settings.describe`+`update` 存在 | loader 解析的 Config（Volatile 引用 `.get()`） | `settings.update(ns, patch)`（config-editor 落 profile patch，重启持久） | `loader/volatile-update` 事件 |
+| 未识别 | 两者皆无 | cordis 配置文件 | 同左（仅启动期生效） | 无 |
+
+不变量：
+
+1. **controller 只见 plain 值**——所有 store 出站值统一过 `unwrapConfig`（含 Volatile 引用解包与脏值丢弃），旧 API 混合形态（老 runtime + 新 schemastery）同样被挡在边界上；
+2. **设置集成绝不炸插件**——`wireRegistrySettings` 不抛，失败以 warn + 降级收场，webServer / tools 不受影响；
+3. **新 API 不调 `configure({ auto: false })`**——保留 `autoGenerate`（默认开），设置页由宿主按 volatile 字段自动生成；
+4. **`.volatile()` 受控调用**——仅当 schemastery 有该方法时标记（0.1.5-rc.3 精确 pin 3.18.2 无此方法，老 runtime 不受影响）；方法重复包裹会 throw，每字段只调一次；
+5. **写省略 `expectedRevision`**——与旧 API 相同的末写胜语义，并发防护由 controller 串行队列 + `lastSelfWrite` 回声去重承担。

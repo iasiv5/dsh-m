@@ -4,7 +4,7 @@
     {
       "id": "dsh-m",
       "name": "DSH Marketplace",
-      "description": "可自定义收录清单的 DSH 插件市场：收录、安装、卸载、升级一站完成，附 agent 工具与 dshm CLI。",
+      "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 0.1.2-rc.1、0.1.5-rc.1/rc.2 与 0.1.7-rc.1/rc.2，详见仓库。",
       "category": "market",
       "tags": ["市场", "插件管理"],
       "source": "npm",

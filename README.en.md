@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%2B%200.1.5--rc.1%20contract%20checked-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.1.7--rc.2%20dual--API-2563eb)](#faq)
 
 English · [中文](./README.md)
 
@@ -110,8 +110,8 @@ Listings over 200 entries trigger a performance notice. The market list is serve
 **4. What if my custom source goes down?**
 dsh-m serves its last successful cache for that source and marks it as cached; with no cache at all the market shows "registry unavailable" while installed plugins stay manageable. Fix the address or restore the default anytime.
 
-**5. Which DSH Web versions does the restart button support?**
-The public package contracts for `0.1.2-rc.1` and `0.1.5-rc.1` are checked; both expose the dsh-m `appExit` launcher hook. The current `openbmc-dsh.service` runtime has live-loaded dsh-m `0.2.11`; `/dshm` ping returned `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible after service stabilization; journal evidence recorded repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Systemd deployments must configure `Restart=on-failure` or `Restart=always`; otherwise use the deployment's manual restart procedure.
+**5. Which DSH Web versions are supported?**
+Same scope as dsh-skip-browser-auth: the public package contracts for `0.1.2-rc.1`, `0.1.5-rc.1/rc.2`, `0.1.7-rc.1`, and `0.1.7-rc.2` are all checked. DSH 0.1.7 reshaped the settings service into `SettingsForms` (the old `settings.register` is gone); dsh-m stays compatible via runtime shape detection: the whole ≤0.1.5 generation uses the `register()` scope path (0.1.5-rc.2's dsh-settings still ships the old API and is covered), while 0.1.7-rc.1 / rc.2 use Config `.volatile()` fields + `settings.update` + the `loader/volatile-update` event (byte-identical dsh-settings and the same loader across both rcs, so one implementation covers both). Unknown shapes degrade to the cordis config-file path with marketplace features unaffected. All these versions expose the dsh-m `appExit` launcher hook used by the restart button; the 0.1.5-rc.1 runtime has live-loaded dsh-m and passed `/dshm` ping plus an authenticated `303 → 200` page request, while the 0.1.7 adaptation's live E2E (install + settings write persistence) follows after release. Systemd deployments must configure `Restart=on-failure` or `Restart=always`; otherwise use the deployment's manual restart procedure.
 
 ## License
 

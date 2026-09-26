@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%2B%200.1.5--rc.1%20contract%20checked-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.1.7--rc.2%20dual--API-2563eb)](#faq)
 
 [English](./README.en.md) · 中文
 
@@ -110,8 +110,8 @@ main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优
 **4. 自定义源挂了怎么办？**
 优先使用该源最近一次成功的缓存并标记「缓存来源」；完全没有缓存时市场显示「收录清单不可用」，已安装插件仍可正常管理。修正地址或恢复默认即可。
 
-**5. 重启按钮支持哪些 DSH Web 版本？**
-已核对 `0.1.2-rc.1` 与 `0.1.5-rc.1` 的公开包契约；两版都提供 dsh-m 使用的 `appExit` launcher hook。当前 `openbmc-dsh.service` 的 0.1.5 运行时已实际加载 dsh-m `0.2.11` 并完成 `/dshm` ping 与带认证页面的 `303 → 200` 核验；白屏期间的多次 `status=75/TEMPFAIL` 已记录，当前稳定服务未复现 404。0.1.2 live E2E、transient fallback live E2E 和连续插件安装/卸载实验仍需发布前补做。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
+**5. 支持哪些 DSH Web 版本？**
+与 dsh-skip-browser-auth 同一口径：`0.1.2-rc.1`、`0.1.5-rc.1/rc.2`、`0.1.7-rc.1`、`0.1.7-rc.2` 的公开包契约均已核对。其中 0.1.7 把 settings 服务重塑为 `SettingsForms`（旧的 `settings.register` 消失），dsh-m 以运行时形态探测双代兼容：≤0.1.5 全代际走 `register()` scope 通路（0.1.5-rc.2 的 dsh-settings 仍为旧 API，已并入核对），0.1.7-rc.1 / rc.2 走 Config `.volatile()` 字段 + `settings.update` + `loader/volatile-update` 通路（经 tarball 逐字节比对，两个 rc 的 dsh-settings 完全相同、loader 同版，一套实现通吃）；形态不识别时自动降级 cordis 配置文件通路，市场主功能不受影响。重启方面各版本都提供 dsh-m 使用的 `appExit` launcher hook；0.1.5-rc.1 运行时已实际加载并完成 `/dshm` ping 与带认证页面 `303 → 200` 核验，0.1.7 适配的 live E2E（装机 + 设置页写值持久化）随发布后核验。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
 
 ## License
 

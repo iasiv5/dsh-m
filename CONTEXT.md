@@ -28,3 +28,7 @@ _Avoid_: 错误码映射、pnpm 错误（指原始报错文本时除外）
 **自愈动作（heal action）**:
 事务为兑现「要么提交，要么恢复到有记录、可解释的一致终态」所做的某一步收敛动作的记录，由机器可断言的 code 与给人看的 note 组成。
 _Avoid_: 修复步骤、heal note（note 只是其中一半）
+
+**settings 兼容层（Settings Compat）**:
+host 对 DSH settings 服务双代形态的运行时探测与统一接线：≤0.1.5 走 `register()` scope（get/update/watch），0.1.7-rc.1/rc.2 走 Config `.volatile()` 字段 + `settings.update(ns)` + `loader/volatile-update` 事件；形态不识别降级 cordis 配置文件通路。controller 只消费 plain 值，出站一律解包 Volatile 引用；设置集成失败只降级，不拖垮 tools / webServer。
+_Avoid_: 版本号分支（按 API 形态探测，不判 DSH 版本）、设置注册（旧 API 时代用语）
