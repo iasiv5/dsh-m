@@ -15,6 +15,7 @@ import {
 } from './core/market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
+import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   market: '市场',
@@ -32,6 +33,7 @@ export interface ToolMarketDeps {
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
   restart?: typeof scheduleRestart
+  togglePlugin?: typeof coreTogglePlugin
 }
 
 function cloneJson(value: unknown) {
@@ -53,6 +55,10 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   }
   const restart = deps.restart ?? ((port: number | null = null) =>
     scheduleRestart(port, { appExit: appExitFromContext(ctx) }))
+  const toggle = deps.togglePlugin ?? coreTogglePlugin
+  // 开关委派服务探测（ADR-0001）：运行时按存在性，不判版本号
+  const getService = (): unknown =>
+    (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager')
 
   ctx.tools.register(defineTool({
     name: 'dshm_search',
@@ -164,10 +170,11 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   ctx.tools.register(defineTool({
     name: 'dshm_install',
     description:
-      'Install a plugin from the dsh-m registry into the current web profile after the user names one (装 dsh-skins / 安装 web-search). Pass the id from dshm_search results. npm 源锁定最新精确版本，github 源锁定 commit SHA。Do not print CLI commands. After success, tell the user it needs a restart of dsh web, and offer dshm_restart.',
+      'Install a plugin from the dsh-m registry into the current web profile after the user names one (装 dsh-skins / 安装 web-search). Pass the id from dshm_search results. npm 源锁定最新精确版本，github 源锁定 commit SHA。安装前做 peer 兼容预检（只检 @deepseek-ai/dsh(-*)；github 源不预检）：不兼容时返回结构化结果，向用户说明风险，用户确认后带 force: true 重试（force 等价 forceIncompatible）。Do not print CLI commands. After success, tell the user it needs a restart of dsh web, and offer dshm_restart.',
     parameters: {
       id: { type: 'string', required: true, description: '收录 id from dshm_search, e.g. dsh-skins' },
       version: { type: 'string', description: 'Optional exact semver (npm 源). Default latest.' },
+      force: { type: 'boolean', description: '用户已确认兼容风险后重试时置 true（跳过 peer 预检拦截）。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -185,7 +192,40 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       const id = String(args.id || '').trim()
       if (!id) throw new Error('缺少收录 id')
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
-      return cloneJson(await m.installFromRegistry(id, cfg, { version, namespace: 'host' }))
+      const force = args.force === true
+      return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'dshm_toggle',
+    description:
+      'Toggle a DSH plugin on/off (切换运行状态). Pass pkg from dshm_list and enabled (true=启用 / false=停用). 可逆操作：默认先与用户确认；用户同一句消息已明确表达（如「把 skins 关掉」）可直接执行。结果 applied=live 时告知已即时生效；restart-required 时提示需重启并提供 dshm_restart。受保护插件（dsh-m 自身与官方宿主命脉）会被拒绝。',
+    parameters: {
+      pkg: { type: 'string', required: true, description: '包名 from dshm_list, e.g. dsh-better-sidebar' },
+      enabled: { type: 'boolean', required: true, description: 'true = 启用，false = 停用' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true },
+      render: (_args, value) => [{ type: 'text', text: renderToggle(value as unknown as ToggleResult) }],
+      presentationMeta: (_args, value) => ({ kind: 'dshm-toggle', ...(value as object) }),
+    },
+    presentCall: (args) => ({
+      card: 'generic',
+      title: `${args.enabled === true ? '启用' : '停用'} · ${String(args.pkg || '')}`,
+      content: [],
+    }),
+    presentResult: (_args, { isError, meta }) => ({
+      card: 'generic',
+      title: isError ? '开关操作失败' : `已${(meta as ToggleResult | undefined)?.enabled === true ? '启用' : '停用'} · ${(meta as ToggleResult | undefined)?.pkg || ''}`,
+      content: [],
+    }),
+    timeoutMs: 30_000,
+    async execute(args) {
+      const target = String(args.pkg || '').trim()
+      if (!target) throw new Error('缺少 pkg')
+      if (typeof args.enabled !== 'boolean') throw new Error('缺少 enabled（boolean）')
+      return cloneJson(await toggle(target, args.enabled, { getService: getService as never }))
     },
   }))
 
@@ -316,6 +356,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         `Plugin categories: ${Object.entries(CATEGORY_LABELS).map(([k, v]) => `${k}=${v}`).join(', ')}.`,
         'Install only after the user names a card: dshm_install with its id. Then one short sentence mentioning the restart requirement; offer dshm_restart.',
         'For installed plugins, call dshm_list / dshm_outdated. Upgrade only after the user confirms which one: dshm_upgrade. Uninstall only after confirmation: dshm_uninstall.',
+        'dshm_toggle switches a plugin on/off: confirm first unless the user already said it in the same message (把 skins 关掉 → execute directly); report live vs restart-required accordingly. ',
         'dshm_restart only after the user agrees to restart; afterwards tell them to refresh once the page recovers.',
       ].join(' '),
     })
@@ -338,8 +379,20 @@ interface InstallOut {
   tag?: string
   buildApprovals?: string[]
   fallbackAllBuilds?: boolean
+  compat?: { pkg?: string; version?: string; runtimeVersion?: string | null; peers?: Record<string, string> } | null
+  compatSkipped?: 'github-source'
+  bundleWarning?: 'no-patch-layer'
   fromVersion?: string
   healActions?: Array<{ code: string; note: string }>
+}
+
+/** 开关结果渲染（Task 15）。 */
+function renderToggle(out: ToggleResult): string {
+  const word = out.enabled ? '已启用' : '已停用'
+  if (out.applied === 'live') {
+    return `✅ ${out.pkg} ${word}（即时生效）。${out.warnings.join('；')}`
+  }
+  return `✅ ${out.pkg} ${word}（需重启生效——询问是否 dshm_restart）。${out.warnings.join('；')}`
 }
 
 /** 构建放行文案（ADR-0002）：列包名；兜底全量放行如实标注。 */
@@ -386,10 +439,18 @@ function renderList(out: ListOut): string {
 
 function renderInstall(out: InstallOut): string {
   const extra = buildsNote(out)
+  const compatNote = out.compat
+    ? '注意：该版本与当前 DSH 运行时 peer 不兼容，已按用户确认强制安装。'
+    : out.compatSkipped === 'github-source'
+      ? '注意：github 源未做兼容预检。'
+      : ''
+  const bundleNote = out.bundleWarning === 'no-patch-layer'
+    ? '注意：该包无补丁层（cordis.patch.yml 缺失且未进 bundles），已装入为纯依赖不会生效；如非预期可卸载（dshm_uninstall）或到收录仓库反馈。'
+    : ''
   const heals = out.healActions?.length
     ? `安装过程含 ${out.healActions.length} 步自愈（${out.healActions.map((h) => h.code).join('、')}）。`
     : ''
-  return `✅ ${out.pkg} 已安装（${out.spec}）。${extra}${heals}需要重启 DSH Web 生效——告知用户并询问是否 dshm_restart。不要打印安装命令。`
+  return `✅ ${out.pkg} 已安装（${out.spec}）。${extra}${compatNote}${bundleNote}${heals}需要重启 DSH Web 生效——告知用户并询问是否 dshm_restart。不要打印安装命令。`
 }
 
 function renderUninstall(out: UninstallOut): string {
