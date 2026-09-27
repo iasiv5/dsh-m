@@ -14,7 +14,7 @@
  * readBundlePatchRows 对不可解析形态返回 readable:false（调用方按多行 → Bundle 级处理），
  * readProfileOverrides 宽松（读路径，坏文件 → []）。
  */
-import { isMap, isSeq, parseDocument, type Document } from 'yaml'
+import { isMap, isSeq, parseDocument, type Document, type YAMLSeq } from 'yaml'
 
 /** 官方同款 customTags：`!!js` 标量原样解析为字符串，不因未知标签炸解析。 */
 const YAML_OPTIONS = {
@@ -26,7 +26,7 @@ const YAML_OPTIONS = {
       },
     },
   ],
-} as const
+}
 
 export interface BundlePatchRowInsert {
   id: string
@@ -54,15 +54,13 @@ function scalarString(value: unknown): string | null {
  */
 export function readBundlePatchRows(text: string): BundlePatchRows {
   const result: BundlePatchRows = { inserts: [], configRows: 0, readable: true }
-  let document: Document.Parsed
+  let seq: YAMLSeq
   try {
-    document = parseDocument(text, YAML_OPTIONS)
+    seq = parsePatchSeq(text).seq
   } catch {
     return { ...result, readable: false }
   }
-  if (document.errors.length > 0) return { ...result, readable: false }
-  if (!isSeq(document.contents)) return { ...result, readable: false }
-  for (const item of document.contents.items) {
+  for (const item of seq.items) {
     if (!isMap(item)) return { inserts: [], configRows: 0, readable: false }
     if (item.has('insert')) {
       const inserted = item.get('insert')
@@ -86,12 +84,14 @@ export function isSingleRowPlugin(rows: BundlePatchRows): boolean {
   return rows.readable && rows.inserts.length === 1 && rows.configRows === 0
 }
 
-function parsePatchDocument(text: string): Document.Parsed {
+function parsePatchSeq(text: string): { document: Document.Parsed; seq: YAMLSeq } {
   const document = parseDocument(text, YAML_OPTIONS)
   const error = document.errors[0]
   if (error !== undefined) throw error
-  if (!isSeq(document.contents)) throw new Error('cordis.patch.yml 必须是 YAML 序列')
-  return document
+  // Document.contents 是 accessor，CFA 无法收窄——先落到局部变量再判形
+  const seq = document.contents
+  if (!isSeq(seq)) throw new Error('cordis.patch.yml 必须是 YAML 序列')
+  return { document, seq }
 }
 
 export interface RowOverridePlan {
@@ -114,8 +114,8 @@ export function planRowOverride(
   name: string | undefined,
   enabled: boolean,
 ): RowOverridePlan {
-  const document = parsePatchDocument(text)
-  const items = document.contents.items
+  const { document, seq } = parsePatchSeq(text)
+  const items = seq.items
   const targetIndex = findLastIndex(items, (item, index) => {
     if (!isMap(item) || item.has('insert')) return false
     if (document.getIn([index, 'id']) !== id) return false
@@ -151,14 +151,14 @@ export interface ProfileOverrideRow {
  * 只返回带字符串 id 的非 insert 行；`disabled` 键缺省视为 false。
  */
 export function readProfileOverrides(text: string): ProfileOverrideRow[] {
-  let document: Document.Parsed
+  let seq: YAMLSeq
   try {
-    document = parsePatchDocument(text)
+    seq = parsePatchSeq(text).seq
   } catch {
     return []
   }
   const rows: ProfileOverrideRow[] = []
-  for (const item of document.contents.items) {
+  for (const item of seq.items) {
     if (!isMap(item) || item.has('insert')) continue
     const id = scalarString(item.get('id'))
     if (id === null) continue
