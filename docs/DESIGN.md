@@ -86,15 +86,25 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **卸载**（事务定序写死）：validate（严格读取：NOT_INSTALLED / NOT_DSH_PLUGIN / PLUGIN_METADATA_UNREADABLE，全部零写入零快照）→ 快照 → live-disable（先让 client bundle 下线，避免 404；回滚时尽力反向）→ 摘除该包补丁条目（`pnpm-workspace.yaml` 顶层 `patchedDependencies` 与 `package.json#pnpm.patchedDependencies`；残留条目会令 pnpm 以 `ERR_PNPM_UNUSED_PATCH` 整单失败，只精确匹配 `pkg` / `pkg@ver`，补丁文件本体保留并计入残留报告）→ remove → verify gone（仍在则回滚）。**不清理插件产生的数据/配置**，但把检测到的疑似残留路径（如 `~/.dsh/<plugin>.json`）列出报告。
 - **升级**：**按需检查**（`dshm_outdated` / `dshm_list` 时实时比对本地版本 vs npm latest / GitHub release，半自动——展示升级计划，确认后执行，即重开一次安装事务）。**不做后台定时器**。
 - **自更新**：dsh-m 对自己同样做版本比对 + 提示升级（设置页呈现）；执行即 `install-npm` 事务（integrity 缺失直接拒绝，不进事务）。
+- **开关（0.4.0，术语见 CONTEXT.md「开关/行覆盖/Bundle 选择/委派降级」）**：已装插件运行状态的可逆切换，**不经 Profile 变更事务**。粒度自动路由——包内补丁层单 insert 行且无配置补丁行 → 行覆盖（`cordis.patch.yml` 保注释 `disabled` 编辑，官方 `writePluginEnabled` 同款语义，启用写显式 `disabled: false`）；多行/不可解析 → Bundle 选择（`dsh.profile.bundles` 数组增删）。写路径委派优先：运行时探测官方 `pluginManager` 服务（`ctx.get`，按存在性不判版本号）→ `setPluginEnabled`/`setBundleEnabled`（白拿保护判定、unaddressable 识别、hmr 活体重组；applied 以复读 `listPlugins()` 为准）；服务缺席降级 loader `entry.update()` 直操作 + 锁内文件编辑（bundle 级恒 restart-required）。**必须持官方同款锁**（`withFileLock(<profile>/package.json)`）防与官方 UI 并发丢更新。架构决策见 [ADR-0001](./adr/0001-delegate-with-fallback-for-plugin-manager.md)。
+- **运行相位（0.4.0）**：loader fiber 状态投影（active/failed/pending/loading/unloading；fiber 缺失即已停用），读路径始终自读 loader entries，读路径零服务依赖。
+- **保护名单（0.4.0）**：`dsh-m` 自身 + 逐字镜像官方 `protectedModules` 16 项全集（锚点 `dsh-plugin-manager@0.1.7-rc.2 lib/index.js L1077`；DSH 升级后 diff 官方名单）。作用于**开关与卸载**（保护门为开关路径最先判定，纯名单检查先于在装枚举）；升级不受影响；委派路径信任官方 `readOnlyReason`。
+- **peer 兼容预检（0.4.0）**：install/upgrade 事务外 metadata 阶段，校验 `@deepseek-ai/dsh(-*)` peers 与运行时版本（`workspace:^/~/ *` 视为运行时版本；semver includePrerelease；官方 `evaluatePluginCompatibility` 同语义）。运行时版本解析失败或预检元数据读取失败 → 不拦（如实标注未检）；不兼容 → GUI 弹确认 / agent 回结构化 issue / CLI `--force`；无豁免机制（确认即通道）；GitHub 源明示 `compatSkipped`。
+- **精确构建放行（0.4.0，[ADR-0002](./adr/0002-precise-build-approval.md)）**：needs-builds 拦截点（adapter 的 `makeAddViaLadder`）先读 `pnpm-workspace.yaml` 的 pnpm 待决名单（值为 `set this to true or false` 的无通配符键），逐键写 `allowBuilds.<pkg>: true`；名单空/不可读才走全量兜底并如实标注。放行结果沿 `RunnerOutcome.buildApprovals`/`fallbackAllBuilds` 上行（`usedAllowAllBuilds` 字段已删除）。
+- **bundle 身份验证（0.4.0）**：事务 verify 阶段观察——包内无 `cordis.patch.yml` 且不在 bundles 数组 → `bundleWarning: 'no-patch-layer'`（装成纯依赖），只警告不回滚（存在合法的无补丁层 dsh 包）。
+- **实测版本清单（0.4.0，术语「实测版本清单」）**：registry 条目可选 `verified: string[]`（精确 semver），来自各仓库对照源的实测声明；只展示与收录质量提示，**不做安装拦截依据**。
+- **元数据源竞速（0.4.0）**：npmjs/npmmirror `/-/ping` 并发竞速（首个 2xx 胜出、败者 abort、双败保持默认 npmjs；1500ms 预算 / 5 分钟缓存，`probeEnabled/probeTimeoutMs/probeCacheTtlMin` 可调）；**只读不写**——只影响 dsh-m 元数据/packument 读取源与市场页展示，安装链路（pnpm 读 profile .npmrc）不动。
 - **重启**：内置**一键重启**。在服务管理器托管的 DSH 进程内，只有确认 unit 的 `Restart=on-failure` / `Restart=always` 且 `75` 未被 `SuccessExitStatus` / `RestartPreventExitStatus` 覆盖时，才调用 launcher 提供的 `appExit(75)`；策略未知或不满足时改用 manager-owned transient `systemd-run` 调用 `systemctl`，不猜测或硬编码 unit 名称，也不在即将停止的 cgroup 内 detached spawn `systemctl`。无 systemd/appExit 时再退回 detached-helper 兼容路径。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅；客户端以 boot id 确认替换进程后关闭横幅，交由 DSH Web 自身后台连接恢复，不强制整页刷新；工具返回重启提示。
 - **安全基线（5 条）**：
   1. 所有拉取仅 HTTPS + 响应大小上限 + 超时；
   2. npm 安装校验 integrity；
   3. GitHub 安装强制 pinned SHA；
-  4. pnpm 构建脚本被拦时，沿用 skillhub 的 `dangerouslyAllowAllBuilds` 重试，但**必须明确报告**「该插件需要执行构建脚本」；
+  4. pnpm 构建脚本被拦时，先按 pnpm 待决名单**逐键精确放行**（ADR-0002），名单不可读才 `dangerouslyAllowAllBuilds` 全量兜底，且**必须明确报告**放行了哪些包/是否兜底；
   5. 不做签名/验签体系（自用，明确不做）。
 
 ## 4. GUI（旗舰，v1 必须做好）
+
+0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）；设置页「元数据源」行展示竞速胜出源。
 
 3 个视图，卡片展开式详情（不做独立详情页），**中文优先**，跟随 DSH Web 深色主题：
 
