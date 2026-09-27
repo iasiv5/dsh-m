@@ -21,7 +21,19 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
 
       - name: Install deps (prepare/build toolchain)
-        run: npm ci --no-audit --no-fund
+        run: |
+          set +e
+          node --version; npm --version
+          npm ci --no-audit --no-fund 2>&1 | tee install.log
+          status=${PIPESTATUS[0]}
+          {
+            echo "### npm ci exit=$status (node $(node --version), npm $(npm --version))"
+            echo ''
+            echo '```'
+            tail -80 install.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
 
       - name: Ensure npm >= 11.5.5 (trusted publishing requirement)
         run: npm install -g npm@latest
