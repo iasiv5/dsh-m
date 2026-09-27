@@ -482,3 +482,110 @@ describe('host-api：ping.dshVersion（市场头部 chip 数据源）', () => {
     assert.equal('dshVersion' in res.body, false)
   })
 })
+
+describe('host-api：0.4.0 set-enabled / forceIncompatible / status.probe（Task 14）', () => {
+  const TOGGLE_LIVE = { pkg: 'demo-pkg', enabled: false, applied: 'live', via: 'delegate', warnings: [] }
+  const TOGGLE_RESTART = { pkg: 'demo-pkg', enabled: false, applied: 'restart-required', via: 'fallback', warnings: [] }
+
+  function setupToggle({ toggleImpl, probeSnapshot, installImpl } = {}) {
+    const controller = createRegistryController({})
+    const seen = { toggle: [], install: null }
+    const dispatcher = createApiDispatcher({
+      controller,
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      deps: {
+        togglePlugin: async (pkg, enabled, deps) => {
+          seen.toggle.push({ pkg, enabled, hasService: typeof deps?.getService === 'function' })
+          return toggleImpl(pkg, enabled)
+        },
+        installFromRegistry: installImpl ?? (async () => {
+          throw new Error('不应触达')
+        }),
+        probeSnapshot,
+        getService: () => undefined, // 生产由 host.ts 注入 ctx.get('pluginManager')
+      },
+    })
+    return { dispatcher, seen }
+  }
+
+  it('set-enabled：live 生效透传 ToggleResult', async () => {
+    const { dispatcher, seen } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'demo-pkg', enabled: false } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.ok, true)
+    assert.deepEqual(res.body, { ok: true, ...TOGGLE_LIVE })
+    assert.deepEqual(seen.toggle, [{ pkg: 'demo-pkg', enabled: false, hasService: true }])
+  })
+
+  it('set-enabled：restart-required 透传（fallback 降级形态）', async () => {
+    const { dispatcher } = setupToggle({ toggleImpl: async () => TOGGLE_RESTART })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'demo-pkg', enabled: false } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.applied, 'restart-required')
+    assert.equal(res.body.via, 'fallback')
+  })
+
+  it('set-enabled：protected → 403 + code；not-installed → 404', async () => {
+    const { ToggleError } = await import('../lib/core/toggle.js')
+    const { dispatcher } = setupToggle({
+      toggleImpl: async () => { throw new ToggleError('protected', '受保护插件不可开关: dsh-m') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'dsh-m', enabled: false } })
+    assert.equal(res.status, 403)
+    assert.equal(res.body.code, 'protected')
+
+    const { dispatcher: d2 } = setupToggle({
+      toggleImpl: async () => { throw new ToggleError('not-installed', 'web profile 未安装该插件: ghost') },
+    })
+    const res2 = await callApi(d2, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'ghost', enabled: true } })
+    assert.equal(res2.status, 404)
+    assert.equal(res2.body.code, 'not-installed')
+  })
+
+  it('set-enabled：缺参/类型错 → 400', async () => {
+    const { dispatcher } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'x' } })
+    assert.equal(res.status, 400)
+    const res2 = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'x', enabled: 'yes' } })
+    assert.equal(res2.status, 400)
+  })
+
+  it('install：forceIncompatible 透传到 market opts', async () => {
+    const seenInstall = {}
+    const { dispatcher } = setupToggle({
+      toggleImpl: async () => TOGGLE_LIVE,
+      installImpl: async (id, cfg, opts) => {
+        Object.assign(seenInstall, opts)
+        return {
+          id, pkg: 'pkg-1', spec: 'pkg-1@1.0.0', version: '1.0.0',
+          buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: 'ok',
+        }
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'p', forceIncompatible: true } })
+    assert.equal(res.status, 200)
+    assert.equal(seenInstall.forceIncompatible, true)
+  })
+
+  it('install：IncompatibleError → 409 + 结构化 issue（GUI 弹确认用）', async () => {
+    const { IncompatibleError } = await import('../lib/core/compat-check.js')
+    const issue = { pkg: 'pkg-1', version: '1.0.0', runtimeVersion: '0.1.7-rc.2', peers: { '@deepseek-ai/dsh': '<=0.1.6' } }
+    const { dispatcher } = setupToggle({
+      toggleImpl: async () => TOGGLE_LIVE,
+      installImpl: async () => { throw new IncompatibleError(issue) },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'p' } })
+    assert.equal(res.status, 409)
+    assert.deepEqual(res.body.issue, issue)
+  })
+
+  it('status：带 probe 快照（deps 注入时）；未注入 → null', async () => {
+    const snap = { source: 'npmmirror', checkedAt: 123456 }
+    const { dispatcher } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE, probeSnapshot: () => snap })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'status' } })
+    assert.deepEqual(res.body.probe, snap)
+    const { dispatcher: d2 } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE })
+    const res2 = await callApi(d2, { headers: JSON_HEADERS, body: { method: 'status' } })
+    assert.equal(res2.body.probe, null)
+  })
+})

@@ -23,6 +23,9 @@ import { RegistryConfigError } from './registry-controller.js'
 import { checkRegistryEntries } from './registry-check.js'
 import { CATEGORIES, type Category } from './registry.js'
 import { servingPort, scheduleRestart, trustedRestartRequest } from './restart.js'
+import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
+import { IncompatibleError } from './compat-check.js'
+import type { ProbeLike } from './market.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 export class BadJsonError extends Error {}
@@ -51,6 +54,14 @@ export interface HostApiOverrides {
   scheduleRestart?: typeof scheduleRestart
   /** DSH 运行版本解析（ping.dshVersion 数据源）；测试可替换。 */
   resolveDshVersion?: typeof resolveDshVersion
+  /** Task 14：开关委派的官方服务探测（ctx.get('pluginManager')）；测试可替换。 */
+  getService?: () => PluginManagerLike | undefined
+  /** Task 14：开关执行器；测试可替换。 */
+  togglePlugin?: typeof togglePlugin
+  /** Task 14：元数据源竞速探测（market 元数据源选择用）；缺省 = 不探测。 */
+  probe?: ProbeLike
+  /** Task 14：探测快照（status 响应展示用）；缺省 = null。 */
+  probeSnapshot?: () => { source: string | null; checkedAt: number } | null
 }
 
 export interface HostApiContext {
@@ -165,6 +176,14 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     return { status: 422, payload: { ok: false, error: err.message, errors: err.errors } }
   }
   if (err instanceof ApiProtocolError) return { status: err.status, payload: { ok: false, error: err.message } }
+  if (err instanceof ToggleError) {
+    const status = err.code === 'protected' ? 403 : err.code === 'not-installed' ? 404 : 409
+    return { status, payload: { ok: false, error: err.message, code: err.code } }
+  }
+  if (err instanceof IncompatibleError) {
+    // 结构化 issue：GUI 据此弹「仍要安装」确认（forceIncompatible 重试）
+    return { status: 409, payload: { ok: false, error: err.message, issue: err.issue } }
+  }
   if (err instanceof TransactionError) {
     // detail 白名单投影：结构化事实，不含 raw output（GUI 只读 error，零改动）
     const r = err.result
@@ -199,7 +218,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
     resolveDshVersion: ctx.deps?.resolveDshVersion ?? resolveDshVersion,
+    getService: ctx.deps?.getService,
+    toggle: ctx.deps?.togglePlugin ?? togglePlugin,
+    probe: ctx.deps?.probe,
+    probeSnapshot: ctx.deps?.probeSnapshot,
   }
+  // 元数据源探测注入（Task 8/14）：市场/安装/升级/已装的元数据读取共用
+  const probeDeps = d.probe !== undefined ? { probe: d.probe } : {}
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
   // DSH 版本一次性解析，dispatcher 创建即预热（首个 ping 不吃 spawn 回退的延迟）
   const dshVersionP: Promise<string | null> = Promise.resolve()
@@ -282,14 +307,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             withLatest: true,
             namespace: 'host',
             signal,
-          })
+          }, probeDeps)
           payload = { ...result }
           break
         }
 
         case 'installed': {
           await ctx.controller.ensureReady()
-          const result = await d.listInstalledWithMeta(cfg(), { namespace: 'host', signal })
+          const result = await d.listInstalledWithMeta(cfg(), { namespace: 'host', signal }, probeDeps)
           payload = { ...result }
           break
         }
@@ -303,14 +328,19 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'status':
-          payload = { ...publicInstallStatus() }
+          payload = { ...publicInstallStatus(), probe: d.probeSnapshot?.() ?? null }
           break
 
         case 'install': {
           const id = strArg(body, 'id')
           if (!id) throw new ApiProtocolError(400, '缺少 id')
           const version = typeof body.version === 'string' ? body.version : undefined
-          const result = await d.installFromRegistry(id, cfg(), { version, namespace: 'host', signal })
+          const result = await d.installFromRegistry(id, cfg(), {
+            version,
+            forceIncompatible: boolArg(body.forceIncompatible),
+            namespace: 'host',
+            signal,
+          }, probeDeps)
           payload = { ...result }
           break
         }
@@ -323,10 +353,23 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           break
         }
 
+        case 'set-enabled': {
+          const target = strArg(body, 'pkg')
+          if (!target) throw new ApiProtocolError(400, '缺少 pkg')
+          if (typeof body.enabled !== 'boolean') throw new ApiProtocolError(400, '缺少 enabled（必须为 boolean）')
+          const result = await d.toggle(target, body.enabled, { getService: d.getService })
+          payload = { ...result }
+          break
+        }
+
         case 'upgrade': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          const result = await d.upgradePlugin(target, cfg(), { namespace: 'host', signal })
+          const result = await d.upgradePlugin(target, cfg(), {
+            forceIncompatible: boolArg(body.forceIncompatible),
+            namespace: 'host',
+            signal,
+          }, probeDeps)
           payload = { ...result }
           break
         }

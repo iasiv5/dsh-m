@@ -60,6 +60,18 @@ export function unwrapConfig(source: unknown): RegistryConfig {
   return out
 }
 
+/** 从任意形态提取 probe 三字段（Task 7/14；类型不符丢弃，缺省交调用方）。 */
+export function unwrapProbeConfig(source: unknown): { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number } {
+  const raw = unwrapValue(source) as { probeEnabled?: unknown; probeTimeoutMs?: unknown; probeCacheTtlMin?: unknown } | null | undefined
+  const out: { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number } = {}
+  if (raw && typeof raw === 'object') {
+    if (typeof raw.probeEnabled === 'boolean') out.probeEnabled = raw.probeEnabled
+    if (typeof raw.probeTimeoutMs === 'number') out.probeTimeoutMs = raw.probeTimeoutMs
+    if (typeof raw.probeCacheTtlMin === 'number') out.probeCacheTtlMin = raw.probeCacheTtlMin
+  }
+  return out
+}
+
 /** 旧 settings 服务（≤0.1.5）：register() 返回 get/update/watch scope。 */
 export interface LegacySettingsScope {
   get(): unknown

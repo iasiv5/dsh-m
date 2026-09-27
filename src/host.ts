@@ -5,9 +5,11 @@ import Schema from '@deepseek-ai/schemastery'
 import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
-import { wireRegistrySettings, unwrapConfig } from './core/settings-compat.js'
+import { wireRegistrySettings, unwrapConfig, unwrapProbeConfig } from './core/settings-compat.js'
 import { registerTools } from './tools.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
+import { RegistryProbe } from './core/registry-probe.js'
+import type { PluginManagerLike } from './core/toggle.js'
 
 const require = createRequire(import.meta.url)
 const pkg = require('../package.json') as { name: string; version: string }
@@ -57,6 +59,22 @@ export function apply(ctx: Context, config: Config): void {
   // using it avoids guessing the service unit from release-specific cgroups.
   const appExit = appExitFromContext(ctx)
   const restart = (port: number | null = null) => scheduleRestart(port, { appExit })
+
+  // 元数据源竞速探测（Task 7/14）：timeoutMs 取启动时配置（实例持有缓存，改参数重启生效）；
+  // probeEnabled 每次调用实时读取（设置页关掉立即生效）。
+  const probe = new RegistryProbe({
+    timeoutMs: unwrapProbeConfig(config).probeTimeoutMs ?? 1500,
+    cacheTtlMs: (unwrapProbeConfig(config).probeCacheTtlMin ?? 5) * 60_000,
+  })
+  const probeLike = {
+    fastest: (): Promise<'npmjs' | 'npmmirror' | null> => {
+      if (unwrapProbeConfig(config).probeEnabled === false) return Promise.resolve(null)
+      return probe.fastest()
+    },
+  }
+  // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号
+  const getService = (): PluginManagerLike | undefined =>
+    (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager') as PluginManagerLike | undefined
   registerTools(ctx, controller.config, { restart })
 
   // 设置页接线（双代兼容，详见 core/settings-compat.ts）：
@@ -100,7 +118,16 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
-    const handleApi = createApiDispatcher({ controller, pkg, deps: { scheduleRestart: restart } })
+    const handleApi = createApiDispatcher({
+      controller,
+      pkg,
+      deps: {
+        scheduleRestart: restart,
+        probe: probeLike,
+        probeSnapshot: () => probe.cachedSnapshot(),
+        getService,
+      },
+    })
     server.register({
       kind: 'exact',
       path: '/dshm',
