@@ -93,7 +93,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **精确构建放行（0.4.0，[ADR-0002](./adr/0002-precise-build-approval.md)）**：needs-builds 拦截点（adapter 的 `makeAddViaLadder`）先读 `pnpm-workspace.yaml` 的 pnpm 待决名单（值为 `set this to true or false` 的无通配符键），逐键写 `allowBuilds.<pkg>: true`；名单空/不可读才走全量兜底并如实标注。放行结果沿 `RunnerOutcome.buildApprovals`/`fallbackAllBuilds` 上行（`usedAllowAllBuilds` 字段已删除）。
 - **bundle 身份验证（0.4.0）**：事务 verify 阶段观察——包内无 `cordis.patch.yml` 且不在 bundles 数组 → `bundleWarning: 'no-patch-layer'`（装成纯依赖），只警告不回滚（存在合法的无补丁层 dsh 包）。
 - **实测版本清单（0.4.0，术语「实测版本清单」）**：registry 条目可选 `verified: string[]`（精确 semver），来自各仓库对照源的实测声明；只展示与收录质量提示，**不做安装拦截依据**。
-- **元数据源竞速（0.4.0）**：npmjs/npmmirror `/-/ping` 并发竞速（首个 2xx 胜出、败者 abort、双败保持默认 npmjs；1500ms 预算 / 5 分钟缓存，`probeEnabled/probeTimeoutMs/probeCacheTtlMin` 可调）；**只读不写**——只影响 dsh-m 元数据/packument 读取源与市场页展示，安装链路（pnpm 读 profile .npmrc）不动。
+- **元数据源竞速（0.4.0 引入，0.4.x 退役）**：曾照搬官方 `dsh-client-ui-plugin-manager` 的 `PluginRegistryProbe`（npmjs/npmmirror `/-/ping` 竞速选元数据读取源）。退役理由：官方竞速只服务于「安装对话框 registry 默认预选」这一交互，dsh-m 无此交互；host 实测 npmjs（~175ms）稳定快于 npmmirror（~360-1400ms），探测恒等默认值；且元数据读取已有 TTL cache + deadline 预算。npmjs 真不可达时按官方 host 语义补**失败驱动 fallback**（对 network/timeout/not-found/no-matching-version 顺序重试镜像），不再引入主动探测。残留 `probeEnabled/probeTimeoutMs/probeCacheTtlMin` 配置键被非 strict Config schema 静默忽略，无需迁移。
 - **重启**：内置**一键重启**。在服务管理器托管的 DSH 进程内，只有确认 unit 的 `Restart=on-failure` / `Restart=always` 且 `75` 未被 `SuccessExitStatus` / `RestartPreventExitStatus` 覆盖时，才调用 launcher 提供的 `appExit(75)`；策略未知或不满足时改用 manager-owned transient `systemd-run` 调用 `systemctl`，不猜测或硬编码 unit 名称，也不在即将停止的 cgroup 内 detached spawn `systemctl`。无 systemd/appExit 时再退回 detached-helper 兼容路径。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅；客户端以 boot id 确认替换进程后关闭横幅，交由 DSH Web 自身后台连接恢复，不强制整页刷新；工具返回重启提示。
 - **安全基线（5 条）**：
   1. 所有拉取仅 HTTPS + 响应大小上限 + 超时；
@@ -104,7 +104,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 
 ## 4. GUI（旗舰，v1 必须做好）
 
-0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）；设置页「元数据源」行展示竞速胜出源。
+0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）。
 
 3 个视图，卡片展开式详情（不做独立详情页），**中文优先**，跟随 DSH Web 深色主题：
 

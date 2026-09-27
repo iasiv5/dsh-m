@@ -84,15 +84,8 @@ export interface MarketDeps {
   listInstalledPlugins: typeof defaultListInstalledPlugins
   npmLatest: typeof defaultNpmLatest
   githubLatestTag: typeof defaultGithubLatestTag
-  /** 元数据源竞速探测（Task 8）；缺省 = 不探测（默认 npmjs） */
-  probe?: ProbeLike
   /** enablement 合成注入（Task 13）；缺省 = composeEnablement */
   composeEnablement?: typeof composeEnablement
-}
-
-/** 元数据源竞速探测的最小结构类型（RegistryProbe 注入；只读元数据源，不动安装链路）。 */
-export interface ProbeLike {
-  fastest(): Promise<'npmjs' | 'npmmirror' | null>
 }
 
 /** profile package.json 的 dsh.profile.bundles 数组（读不到 → []；Task 13）。 */
@@ -126,19 +119,6 @@ function loaderEntriesOrNull(): LoaderEntry[] | null {
   } catch {
     return null
   }
-}
-
-/** 探测结果 → versions.ts 的 registry base；探测失败/禁用 → undefined（默认 npmjs）。 */
-async function probeRegistryBase(probe: ProbeLike | undefined): Promise<string | undefined> {
-  if (probe === undefined) return undefined
-  try {
-    const source = await probe.fastest()
-    if (source === 'npmjs') return 'https://registry.npmjs.org'
-    if (source === 'npmmirror') return 'https://registry.npmmirror.com'
-  } catch {
-    /* 探测失败 → 默认源 */
-  }
-  return undefined
 }
 
 export interface MarketResult {
@@ -312,9 +292,9 @@ interface ProbeOutcome {
   value?: LatestValue
 }
 
-function probeTask(item: MarketItem, deps: MarketDeps, timeoutMs: number, signal?: AbortSignal, registry?: string): Promise<LatestValue> {
+function probeTask(item: MarketItem, deps: MarketDeps, timeoutMs: number, signal?: AbortSignal): Promise<LatestValue> {
   if (item.source === 'npm' && item.npm) {
-    return deps.npmLatest(item.npm, timeoutMs, signal, registry).then((r) => ({ version: r.version }))
+    return deps.npmLatest(item.npm, timeoutMs, signal).then((r) => ({ version: r.version }))
   }
   return deps.githubLatestTag(item.github!, timeoutMs, signal).then((r) => ({ tag: r.tag, sha: r.sha }))
 }
@@ -490,10 +470,9 @@ export async function listMarket(
         latestComplete = false
         latestTimedOut = true
       } else {
-        const probeRegistry = await probeRegistryBase(d.probe)
         await mapWithConcurrency(todo, LATEST_WORKERS, async (item) => {
           const perBudget = Math.max(1, remaining())
-          const task = probeTask(item, d, Math.min(cfg.timeoutMs ?? 20_000, perBudget), signal, probeRegistry)
+          const task = probeTask(item, d, Math.min(cfg.timeoutMs ?? 20_000, perBudget), signal)
           const outcome = await probeWithBudget(task, perBudget, signal)
           if (outcome.ok && outcome.value) {
             applyProbe(item, outcome.value)
@@ -685,7 +664,6 @@ export async function installEntry(
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
-    registry: await probeRegistryBase(deps?.probe),
   }
   if (entry.source === 'npm' && entry.npm) {
     const pkg = entry.npm
@@ -693,11 +671,11 @@ export async function installEntry(
     let version: string
     let expectedIntegrity: string | undefined
     if (opts.version) {
-      const meta = await d.npmVersion(pkg, opts.version, timeoutMs, opts.signal, d.registry)
+      const meta = await d.npmVersion(pkg, opts.version, timeoutMs, opts.signal)
       version = meta.version
       expectedIntegrity = meta.integrity
     } else {
-      const latest = await d.npmLatest(pkg, timeoutMs, opts.signal, d.registry)
+      const latest = await d.npmLatest(pkg, timeoutMs, opts.signal)
       version = latest.version
       expectedIntegrity = latest.integrity
     }
@@ -709,7 +687,6 @@ export async function installEntry(
       compat = await (deps?.precheck ?? precheckNpmCompat)(pkg, version, {
         timeoutMs,
         signal: opts.signal,
-        registry: d.registry,
       })
     } catch {
       compat = null

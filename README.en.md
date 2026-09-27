@@ -38,7 +38,7 @@ The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeC
 |---|---|
 | **Market** | Card flow with search and category filters (server-side filtering + pagination, 50 per page — even a 1,000-entry registry probes the current page only); expandable details; "Install" — npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
 | **Installed** | What your web profile actually has, annotated "via market / non-market"; update badges, upgrade, two-step confirm uninstall; 📖 README preview (64KB cap); **live phase badge** (●active / ●failed / ○pending) and a **one-click toggle** (0.4.0: delegates to the official pluginManager service for live application; falls back to file-level edits + restart notice when absent; dsh-m itself and official host lifelines are locked) |
-| **Settings** | Registry address draft with "Validate & apply / Restore default / Download default registry.json / Check entries reachability"; configured vs active address and status at a glance; force refresh; dsh-m self-update; **metadata source display** (npmjs / npmmirror ping race winner — affects metadata reads only, never the install path) |
+| **Settings** | Registry address draft with "Validate & apply / Restore default / Download default registry.json / Check entries reachability"; configured vs active address and status at a glance; force refresh; dsh-m self-update |
 
 After any mutation, the already-open Market and Installed views refresh the profile state together, keeping badges and cards in sync without closing and reopening the marketplace; a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The current DSH Web `0.1.5-rc.1` runtime has now live-loaded dsh-m `0.2.11`; `/dshm` ping returned version `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible once the service stabilized; journal evidence showed repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Installs stream live pnpm progress (resolve → download → link → build).
 
@@ -51,7 +51,10 @@ After any mutation, the already-open Market and Installed views refresh the prof
 - **Peer compatibility precheck**: install/upgrade validates `@deepseek-ai/dsh(-*)` peers against the runtime version before touching the profile (GitHub sources state the check was skipped); on mismatch the GUI asks, the agent tool returns structured data, the CLI takes `--force`.
 - **Verified runtimes**: an optional `verified` array per registry entry records DSH runtimes actually tested — a claim of record, not a prediction; display-only, never gates installs.
 - **Bundle identity check**: post-install warning when a package lands without a patch layer ("installed as a plain dependency").
-- **Metadata source probe**: npmjs / npmmirror ping race (1500ms budget, 5-minute cache by default) that only selects dsh-m's metadata read source.
+
+### Retired in 0.4.x
+
+- **Metadata source probe**: 0.4.0 introduced an npmjs / npmmirror ping race to pick the metadata read source; it has been removed entirely (including the `probeEnabled` / `probeTimeoutMs` / `probeCacheTtlMin` settings and the settings-page display). The official counterpart probe only pre-selects a registry in the interactive install dialog, which dsh-m does not have, and npmjs measured consistently faster from the host, so the probe always equaled the default. Metadata reads now always use npmjs, matching the install path (profile `.npmrc` default).
 
 ## Agent tools (8)
 

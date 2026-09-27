@@ -5,10 +5,9 @@ import Schema from '@deepseek-ai/schemastery'
 import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
-import { wireRegistrySettings, unwrapConfig, unwrapProbeConfig, detectSettingsKind, ownEntryId, type FormsSettingsService } from './core/settings-compat.js'
+import { wireRegistrySettings, unwrapConfig } from './core/settings-compat.js'
 import { registerTools } from './tools.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
-import { RegistryProbe } from './core/registry-probe.js'
 import type { PluginManagerLike } from './core/toggle.js'
 
 const require = createRequire(import.meta.url)
@@ -23,9 +22,6 @@ export interface Config {
   registryUrl?: string
   timeoutMs?: number
   cacheTtlMin?: number
-  probeEnabled?: boolean
-  probeTimeoutMs?: number
-  probeCacheTtlMin?: number
 }
 
 /**
@@ -42,9 +38,6 @@ export const Config: Schema<Config> = Schema.object({
   registryUrl: live(Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）')),
   timeoutMs: live(Schema.number().default(20000).description('上游请求超时（毫秒）')),
   cacheTtlMin: live(Schema.number().default(60).description('registry 缓存时长（分钟）')),
-  probeEnabled: live(Schema.boolean().default(true).description('元数据源竞速探测：npmjs 与 npmmirror ping 并发，首个 2xx 胜出；只影响 dsh-m 元数据读取源与市场页展示，不影响安装链路')),
-  probeTimeoutMs: live(Schema.number().default(1500).description('竞速探测单侧超时（毫秒）')),
-  probeCacheTtlMin: live(Schema.number().default(5).description('竞速探测结果缓存时长（分钟）')),
 })
 
 export function apply(ctx: Context, config: Config): void {
@@ -60,18 +53,6 @@ export function apply(ctx: Context, config: Config): void {
   const appExit = appExitFromContext(ctx)
   const restart = (port: number | null = null) => scheduleRestart(port, { appExit })
 
-  // 元数据源竞速探测（Task 7/14）：timeoutMs 取启动时配置（实例持有缓存，改参数重启生效）；
-  // probeEnabled 每次调用实时读取（设置页关掉立即生效）。
-  const probe = new RegistryProbe({
-    timeoutMs: unwrapProbeConfig(config).probeTimeoutMs ?? 1500,
-    cacheTtlMs: (unwrapProbeConfig(config).probeCacheTtlMin ?? 5) * 60_000,
-  })
-  const probeLike = {
-    fastest: (): Promise<'npmjs' | 'npmmirror' | null> => {
-      if (unwrapProbeConfig(config).probeEnabled === false) return Promise.resolve(null)
-      return probe.fastest()
-    },
-  }
   // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号
   const getService = (): PluginManagerLike | undefined =>
     (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager') as PluginManagerLike | undefined
@@ -82,26 +63,10 @@ export function apply(ctx: Context, config: Config): void {
   // - 0.1.7-rc.1 / rc.2：Config `.volatile()` 字段自动生成设置页（autoGenerate 默认开，无需 configure），
   //   读 = loader 解析的 Config 引用，写 = settings.update(ns, patch)，通知 = loader/volatile-update；
   // - 其他形态：降级 cordis 配置文件通路。任何失败只 warn，不拖垮 webServer / tools。
-  // probe 配置写入口（Task 18 Rev）：forms 形态走 settings.update（落盘 + 活体）；
-  // legacy/其余形态就地改 config（probeLike 每次调用现读，活体生效但不保证持久化）。
-  let probeWriter: ((patch: { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number }) => Promise<void>) | null = null
   ctx.inject(['settings'], (c) => {
     const settings = (
       c as unknown as { settings?: unknown }
     ).settings
-    if (detectSettingsKind(settings) === 'forms') {
-      const ns = ownEntryId(ctx, pkg.name)
-      if (ns !== undefined) {
-        const forms = settings as FormsSettingsService
-        probeWriter = async (patch) => { await forms.update(ns, patch) }
-      }
-    }
-    if (probeWriter === null) {
-      probeWriter = async (patch) => {
-        const target = config as Record<string, unknown>
-        for (const [k, v] of Object.entries(patch)) target[k] = v
-      }
-    }
     try {
       const outcome = wireRegistrySettings({
         ctx,
@@ -139,14 +104,7 @@ export function apply(ctx: Context, config: Config): void {
       pkg,
       deps: {
         scheduleRestart: restart,
-        probe: probeLike,
-        probeSnapshot: () => probe.cachedSnapshot(),
         getService,
-        probeConfigGet: () => unwrapProbeConfig(config),
-        probeConfigSet: async (patch) => {
-          if (!probeWriter) throw new Error('设置服务缺席，probe 配置仅可经 cordis 配置文件修改')
-          await probeWriter(patch)
-        },
       },
     })
     server.register({

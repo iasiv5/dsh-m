@@ -483,11 +483,11 @@ describe('host-api：ping.dshVersion（市场头部 chip 数据源）', () => {
   })
 })
 
-describe('host-api：0.4.0 set-enabled / forceIncompatible / status.probe（Task 14）', () => {
+describe('host-api：0.4.0 set-enabled / forceIncompatible（Task 14）', () => {
   const TOGGLE_LIVE = { pkg: 'demo-pkg', enabled: false, applied: 'live', via: 'delegate', warnings: [] }
   const TOGGLE_RESTART = { pkg: 'demo-pkg', enabled: false, applied: 'restart-required', via: 'fallback', warnings: [] }
 
-  function setupToggle({ toggleImpl, probeSnapshot, installImpl } = {}) {
+  function setupToggle({ toggleImpl, installImpl } = {}) {
     const controller = createRegistryController({})
     const seen = { toggle: [], install: null }
     const dispatcher = createApiDispatcher({
@@ -501,7 +501,6 @@ describe('host-api：0.4.0 set-enabled / forceIncompatible / status.probe（Task
         installFromRegistry: installImpl ?? (async () => {
           throw new Error('不应触达')
         }),
-        probeSnapshot,
         getService: () => undefined, // 生产由 host.ts 注入 ctx.get('pluginManager')
       },
     })
@@ -577,15 +576,5 @@ describe('host-api：0.4.0 set-enabled / forceIncompatible / status.probe（Task
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'p' } })
     assert.equal(res.status, 409)
     assert.deepEqual(res.body.issue, issue)
-  })
-
-  it('status：带 probe 快照（deps 注入时）；未注入 → null', async () => {
-    const snap = { source: 'npmmirror', checkedAt: 123456 }
-    const { dispatcher } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE, probeSnapshot: () => snap })
-    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'status' } })
-    assert.deepEqual(res.body.probe, snap)
-    const { dispatcher: d2 } = setupToggle({ toggleImpl: async () => TOGGLE_LIVE })
-    const res2 = await callApi(d2, { headers: JSON_HEADERS, body: { method: 'status' } })
-    assert.equal(res2.body.probe, null)
   })
 })

@@ -111,18 +111,4 @@ describe('precheckNpmCompat', () => {
       peers: { '@deepseek-ai/dsh': '<=0.1.6' },
     })
   })
-
-  it('registry 参数透传元数据读取', async () => {
-    const seen = []
-    await precheckNpmCompat('demo-pkg', '1.0.0', {
-      timeoutMs: 1,
-      runtimeVersion: '0.1.7-rc.2',
-      registry: 'https://registry.npmmirror.com',
-      fetchVersion: async (pkg, version, timeoutMs, signal, registry) => {
-        seen.push({ pkg, version, registry })
-        return { version, peers: {} }
-      },
-    })
-    assert.deepEqual(seen, [{ pkg: 'demo-pkg', version: '1.0.0', registry: 'https://registry.npmmirror.com' }])
-  })
 })

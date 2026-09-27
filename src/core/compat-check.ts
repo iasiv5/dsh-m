@@ -52,7 +52,6 @@ export function evaluatePeers(peers: Record<string, string>, runtimeVersion: str
 export interface PrecheckOptions {
   timeoutMs: number
   signal?: AbortSignal
-  registry?: string
   /** 运行时版本注入（测试用）；缺省 = resolveDshVersion()（进程内缓存） */
   runtimeVersion?: string | null
   /** 版本元数据读取注入（测试用）；缺省 = npmVersion */
@@ -71,7 +70,7 @@ export async function precheckNpmCompat(
   const runtime = opts.runtimeVersion !== undefined ? opts.runtimeVersion : await resolveDshVersion()
   if (runtime === null || runtime === '') return null
   const fetchVersion = opts.fetchVersion ?? npmVersion
-  const meta = await fetchVersion(pkg, version, opts.timeoutMs, opts.signal, opts.registry)
+  const meta = await fetchVersion(pkg, version, opts.timeoutMs, opts.signal)
   const failing = evaluatePeers(meta.peers ?? {}, runtime)
   if (Object.keys(failing).length === 0) return null
   return { pkg, version, runtimeVersion: runtime, peers: failing }
