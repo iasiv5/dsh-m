@@ -749,3 +749,24 @@ describe('Task 2：远程加载与 cache 回退', () => {
     await rm(cacheFile('host', defAddr.cacheKey))
   })
 })
+
+describe('verified 字段（0.4.0 Task 19）', () => {
+  const base = { id: 'x', name: 'X', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'x-pkg' }
+  it('精确 semver 数组通过并回传', () => {
+    const r = validateRegistry({ version: 1, plugins: [{ ...base, verified: ['0.1.7-rc.2', '0.1.5-rc.1'] }] })
+    assert.equal(r.ok, true)
+    assert.deepEqual(r.registry.plugins[0].verified, ['0.1.7-rc.2', '0.1.5-rc.1'])
+  })
+  it('range / 前缀 / 非数组 / 空白项 / 重复项拒绝', () => {
+    for (const verified of [['>=0.1.5'], ['v0.1.5'], '0.1.5', ['  '], ['0.1.5', '0.1.5']]) {
+      const r = validateRegistry({ version: 1, plugins: [{ ...base, verified }] })
+      assert.equal(r.ok, false, JSON.stringify(verified))
+      assert.ok(r.errors.some((e) => e.includes('verified')), JSON.stringify(verified))
+    }
+  })
+  it('字段缺省合法（可选）', () => {
+    const r = validateRegistry({ version: 1, plugins: [{ ...base }] })
+    assert.equal(r.ok, true)
+    assert.equal(r.registry.plugins[0].verified, undefined)
+  })
+})

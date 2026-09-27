@@ -48,6 +48,9 @@ export interface RegistryEntry {
   github?: string
   homepage?: string
   icon?: string
+  /** 实测版本清单（0.4.0 / CONTEXT.md 术语）：实测声明而非预测声明——只展示与收录
+   *  质量提示，不做安装拦截依据。每项必须精确 semver（禁 range/前缀）。 */
+  verified?: string[]
 }
 
 export interface Registry {
@@ -195,7 +198,13 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
 // ---------- 严格 v1 校验 ----------
 
 const TOP_LEVEL_KEYS = new Set(['version', 'plugins'])
-const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon'])
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified'])
+
+/** 精确 semver 判定（与 versions.ts EXACT_VERSION_RE 同语义；接受 prerelease/build，拒绝 range/前缀）。 */
+const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+function semverParse(value: string): unknown | null {
+  return EXACT_SEMVER_RE.test(value) ? value : null
+}
 
 function httpsUrlError(raw: string): string | null {
   if (raw.length > MAX_URL) return `超过 ${MAX_URL} 字符`
@@ -323,6 +332,27 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
     }
 
     // 错误条目不产生合法输出：整份清单在存在任何错误时返回 null
+    // verified（0.4.0）：可选字符串数组，每项精确 semver（禁 range/前缀）
+    let verified: string[] | undefined
+    if (e.verified !== undefined) {
+      if (!Array.isArray(e.verified)) {
+        errors.push(`${where}.verified: 必须是字符串数组`)
+      } else {
+        const list: string[] = []
+        e.verified.forEach((v, vi) => {
+          if (typeof v !== 'string' || v.trim() === '' || v !== v.trim()) {
+            errors.push(`${where}.verified[${vi}]: 必须是非空白精确 semver`)
+            return
+          }
+          const parsed = semverParse(v)
+          if (parsed === null) errors.push(`${where}.verified[${vi}}: ${JSON.stringify(v)} 不是合法 semver（禁 range/前缀）`)
+          else if ((e.verified as unknown[]).includes(v, vi + 1)) errors.push(`${where}.verified[${vi}]: 重复 ${v}`)
+          else list.push(v)
+        })
+        if (list.length > 0) verified = list
+      }
+    }
+
     plugins.push({
       id,
       name,
@@ -334,6 +364,7 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       ...(entryGithub !== undefined ? { github: entryGithub } : {}),
       ...(entryHomepage !== undefined ? { homepage: entryHomepage } : {}),
       ...(entryIcon !== undefined ? { icon: entryIcon } : {}),
+      ...(verified !== undefined ? { verified } : {}),
     })
   })
 
