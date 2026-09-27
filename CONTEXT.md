@@ -32,3 +32,27 @@ _Avoid_: 修复步骤、heal note（note 只是其中一半）
 **settings 兼容层（Settings Compat）**:
 host 对 DSH settings 服务双代形态的运行时探测与统一接线：≤0.1.5 走 `register()` scope（get/update/watch），0.1.7-rc.1/rc.2 走 Config `.volatile()` 字段 + `settings.update(ns)` + `loader/volatile-update` 事件；形态不识别降级 cordis 配置文件通路。controller 只消费 plain 值，出站一律解包 Volatile 引用；设置集成失败只降级，不拖垮 tools / webServer。
 _Avoid_: 版本号分支（按 API 形态探测，不判 DSH 版本）、设置注册（旧 API 时代用语）
+
+**开关（Enablement Toggle）**:
+对已装插件运行状态的可逆切换；内部按插件形态路由到行覆盖或 Bundle 选择两种粒度，对外始终呈现为一个开关。不经 Profile 变更事务，自带文件锁的轻量编辑。
+_Avoid_: 启用/禁用按钮（指 UI 控件时才这么叫）、开关功能
+
+**行覆盖（Row Override）**:
+写入 profile `cordis.patch.yml` 的单条目 `disabled` 覆盖，单 insert 行插件的开关持久化形态；启用写显式 `disabled: false` 以压过更低层。
+_Avoid_: 补丁开关、disabled 条目
+
+**Bundle 选择（Bundle Selection）**:
+profile `dsh.profile.bundles` 数组的增删，多行插件（含配置补丁行）的整层开关形态。
+_Avoid_: bundle 开关（口语可，文档用术语）
+
+**运行相位（Live Phase）**:
+loader fiber 状态在已装页的投影（active / failed / pending / loading / unloading / 无 fiber 即已停用）；是观察量不是存储量，与开关状态互为印证。
+_Avoid_: 状态（过载词）、健康度
+
+**委派降级（Delegate-with-Fallback）**:
+开关写路径先探测官方 pluginManager 服务并委派、服务缺席时退回 loader 直操作与文件编辑的架构形态；探测按服务存在性，不判 DSH 版本号。读路径始终自读，不随写路径切换。
+_Avoid_: 兼容层（与 settings 兼容层混淆）、版本分支
+
+**实测版本清单（Verified Runtimes）**:
+收录条目中记录实测通过的历史运行时版本数组；是实测声明而非预测声明，只用于展示与收录质量提示，不做安装拦截依据。
+_Avoid_: 兼容范围（semver range 才是范围声明）、compat
