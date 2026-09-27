@@ -92,114 +92,83 @@ describe('togglePlugin：保护门与在装判定', () => {
   })
 })
 
-describe('togglePlugin：委派路径', () => {
-  it('行级：setPluginEnabled(entryId) + 复读达标 → live', async () => {
-    installFixture('demo-pkg', SINGLE_PATCH)
-    let rows = [{ entryId: 'demo-row', moduleName: 'demo-pkg', enabled: true, fiberPhase: 'active' }]
+describe('togglePlugin：委派路径（一律 Bundle，与官方页主开关同层）', () => {
+  /** 有状态官方服务模拟器：行翻转 + bundle 可见性（退选后 listPlugins 不再列出）。 */
+  function mkService(initialRows, { bundleOn = true, bundleApplication = 'applied' } = {}) {
     const calls = []
-    const res = await togglePlugin('demo-pkg', false, {
-      profileDir: dir,
-      getService: () => ({
-        async listPlugins() {
-          return rows
-        },
-        async setPluginEnabled(id, enabled) {
-          calls.push([id, enabled])
-          rows = [{ entryId: 'demo-row', moduleName: 'demo-pkg', enabled, fiberPhase: enabled ? 'active' : null }]
-          return { application: 'applied' }
-        },
-        async setBundleEnabled() {
-          throw new Error('不应走 bundle')
-        },
-      }),
-    })
-    assert.deepEqual(calls, [['demo-row', false]])
+    const state = { rows: initialRows.map((r) => ({ ...r })), bundleOn }
+    const service = {
+      async listPlugins() {
+        return state.bundleOn ? state.rows.map((r) => ({ ...r })) : []
+      },
+      async setPluginEnabled(id, enabled) {
+        calls.push(['setPluginEnabled', id, enabled])
+        const row = state.rows.find((r) => r.entryId === id)
+        if (row) row.enabled = enabled
+        return { application: 'applied' }
+      },
+      async setBundleEnabled(name, enabled) {
+        calls.push(['setBundleEnabled', name, enabled])
+        state.bundleOn = enabled
+        return { application: bundleApplication }
+      },
+    }
+    return { service, calls }
+  }
+
+  it('单行插件停用 → setBundleEnabled（非行级）；退选后复读 → live', async () => {
+    installFixture('demo-pkg', SINGLE_PATCH)
+    const { service, calls } = mkService([
+      { entryId: 'demo-row', moduleName: 'demo-pkg', enabled: true, fiberPhase: 'active' },
+    ])
+    const res = await togglePlugin('demo-pkg', false, { profileDir: dir, getService: () => service })
+    assert.deepEqual(calls, [['setBundleEnabled', 'demo-pkg', false]])
     assert.deepEqual(res, { pkg: 'demo-pkg', enabled: false, applied: 'live', via: 'delegate', warnings: [] })
   })
 
-  it('readOnlyReason：management-required → protected、unaddressable → unaddressable', async () => {
+  it('启用时先清理可见的历史行覆盖，再 selectBundle（obmc-web 形态）', async () => {
     installFixture('demo-pkg', SINGLE_PATCH)
-    const mk = (reason) => ({
-      async listPlugins() {
-        return [{ entryId: 'x', moduleName: 'demo-pkg', enabled: true, readOnlyReason: reason }]
-      },
-      async setPluginEnabled() {
-        throw new Error('不应触达')
-      },
-      async setBundleEnabled() {
-        throw new Error('不应触达')
-      },
-    })
-    await assert.rejects(
-      () => togglePlugin('demo-pkg', false, { profileDir: dir, getService: () => mk('management-required') }),
-      (err) => err instanceof ToggleError && err.code === 'protected',
-    )
-    await assert.rejects(
-      () => togglePlugin('demo-pkg', false, { profileDir: dir, getService: () => mk('unaddressable') }),
-      (err) => err instanceof ToggleError && err.code === 'unaddressable',
-    )
+    const { service, calls } = mkService([
+      { entryId: 'demo-row', moduleName: 'demo-pkg', enabled: false, fiberPhase: null },
+    ])
+    const res = await togglePlugin('demo-pkg', true, { profileDir: dir, getService: () => service })
+    assert.deepEqual(calls, [
+      ['setPluginEnabled', 'demo-row', true],
+      ['setBundleEnabled', 'demo-pkg', true],
+    ])
+    assert.equal(res.applied, 'live')
+    assert.equal(res.warnings.some((w) => w.includes('历史行覆盖')), true)
   })
 
-  it('行级官方未列出 → unknown-plugin', async () => {
+  it('清理扫描跳过官方 readOnly 行', async () => {
     installFixture('demo-pkg', SINGLE_PATCH)
-    const empty = serviceStub([])
-    await assert.rejects(
-      () => togglePlugin('demo-pkg', false, { profileDir: dir, getService: () => empty }),
-      (err) => err instanceof ToggleError && err.code === 'unknown-plugin',
-    )
+    const { service, calls } = mkService([
+      { entryId: 'locked', moduleName: 'demo-pkg', enabled: false, readOnlyReason: 'management-required' },
+    ])
+    const res = await togglePlugin('demo-pkg', true, { profileDir: dir, getService: () => service })
+    assert.equal(calls.some(([op]) => op === 'setPluginEnabled'), false, 'readOnly 行不清理')
+    assert.deepEqual(calls[0], ['setBundleEnabled', 'demo-pkg', true])
+    // readOnly 行清不掉 → 复读 running=false ≠ enabled=true → 诚实上报 restart-required
+    assert.equal(res.applied, 'restart-required')
   })
 
-  it('application=restart-required → 直接采信', async () => {
+  it('application=restart-required → 直接采信（不复读）', async () => {
     installFixture('demo-pkg', SINGLE_PATCH)
-    const res = await togglePlugin('demo-pkg', false, {
-      profileDir: dir,
-      getService: () => ({
-        async listPlugins() {
-          return [{ entryId: 'demo-row', moduleName: 'demo-pkg', enabled: true, fiberPhase: 'active' }]
-        },
-        async setPluginEnabled() {
-          return { application: 'restart-required' }
-        },
-        async setBundleEnabled() {
-          throw new Error('不应走 bundle')
-        },
-      }),
-    })
+    const { service } = mkService(
+      [{ entryId: 'demo-row', moduleName: 'demo-pkg', enabled: true, fiberPhase: 'active' }],
+      { bundleApplication: 'restart-required' },
+    )
+    const res = await togglePlugin('demo-pkg', false, { profileDir: dir, getService: () => service })
     assert.equal(res.applied, 'restart-required')
     assert.equal(res.via, 'delegate')
   })
 
-  it('overridden → restart-required + 覆盖警告', async () => {
-    installFixture('demo-pkg', SINGLE_PATCH)
-    const res = await togglePlugin('demo-pkg', false, {
-      profileDir: dir,
-      getService: () => ({
-        async listPlugins() {
-          return [{ entryId: 'demo-row', moduleName: 'demo-pkg', enabled: true, fiberPhase: 'active' }]
-        },
-        async setPluginEnabled() {
-          return { application: 'overridden', warnings: ['higher layer'] }
-        },
-        async setBundleEnabled() {
-          throw new Error('不应走 bundle')
-        },
-      }),
-    })
-    assert.equal(res.applied, 'restart-required')
-    assert.equal(res.warnings.some((w) => w.includes('更高补丁层覆盖')), true)
-    assert.equal(res.warnings.includes('higher layer'), true)
-  })
-
-  it('bundle 级（多行插件）→ setBundleEnabled', async () => {
+  it('多行插件 → setBundleEnabled（与单行同层）', async () => {
     installFixture('demo-multi', MULTI_PATCH)
-    const calls = []
-    const res = await togglePlugin('demo-multi', false, {
-      profileDir: dir,
-      getService: () => serviceStub(
-        [{ entryId: 'demo-seam', moduleName: 'demo-multi', enabled: true, fiberPhase: 'active' }],
-        calls,
-      ),
-    })
+    const { service, calls } = mkService([
+      { entryId: 'demo-seam', moduleName: 'demo-multi', enabled: true, fiberPhase: 'active' },
+    ])
+    const res = await togglePlugin('demo-multi', false, { profileDir: dir, getService: () => service })
     assert.deepEqual(calls, [['setBundleEnabled', 'demo-multi', false]])
     assert.equal(res.applied, 'live')
     assert.equal(res.via, 'delegate')

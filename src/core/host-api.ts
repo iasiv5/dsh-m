@@ -62,6 +62,10 @@ export interface HostApiOverrides {
   probe?: ProbeLike
   /** Task 14：探测快照（status 响应展示用）；缺省 = null。 */
   probeSnapshot?: () => { source: string | null; checkedAt: number } | null
+  /** Task 18 Rev：probe 配置读取（unwrapProbeConfig(config) 活体值）。 */
+  probeConfigGet?: () => { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number }
+  /** Task 18 Rev：probe 配置写入（settings.update 落盘 + 活体）；缺省 = 不可写。 */
+  probeConfigSet?: (patch: { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number }) => Promise<void>
 }
 
 export interface HostApiContext {
@@ -222,6 +226,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     toggle: ctx.deps?.togglePlugin ?? togglePlugin,
     probe: ctx.deps?.probe,
     probeSnapshot: ctx.deps?.probeSnapshot,
+    probeConfigGet: ctx.deps?.probeConfigGet,
+    probeConfigSet: ctx.deps?.probeConfigSet,
   }
   // 元数据源探测注入（Task 8/14）：市场/安装/升级/已装的元数据读取共用
   const probeDeps = d.probe !== undefined ? { probe: d.probe } : {}
@@ -330,6 +336,32 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'status':
           payload = { ...publicInstallStatus(), probe: d.probeSnapshot?.() ?? null }
           break
+
+        case 'probe-config': {
+          if (!d.probeConfigGet) throw new ApiProtocolError(501, 'probe 配置读取不可用')
+          payload = { ...d.probeConfigGet(), writable: typeof d.probeConfigSet === 'function' }
+          break
+        }
+
+        case 'probe-config-set': {
+          if (!d.probeConfigGet || !d.probeConfigSet) throw new ApiProtocolError(501, 'probe 配置写入不可用（设置服务缺席）')
+          const patch: { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number } = {}
+          if (body.probeEnabled !== undefined) patch.probeEnabled = boolArg(body.probeEnabled)
+          if (body.probeTimeoutMs !== undefined) {
+            const n = Number(body.probeTimeoutMs)
+            if (!Number.isFinite(n) || n < 100 || n > 30_000) throw new ApiProtocolError(400, 'probeTimeoutMs 须在 100..30000 之间')
+            patch.probeTimeoutMs = Math.floor(n)
+          }
+          if (body.probeCacheTtlMin !== undefined) {
+            const n = Number(body.probeCacheTtlMin)
+            if (!Number.isFinite(n) || n < 0 || n > 1440) throw new ApiProtocolError(400, 'probeCacheTtlMin 须在 0..1440 之间')
+            patch.probeCacheTtlMin = Math.floor(n)
+          }
+          if (Object.keys(patch).length === 0) throw new ApiProtocolError(400, '缺少可更新字段')
+          await d.probeConfigSet(patch)
+          payload = { ...d.probeConfigGet(), writable: true }
+          break
+        }
 
         case 'install': {
           const id = strArg(body, 'id')

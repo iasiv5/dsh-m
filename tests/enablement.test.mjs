@@ -167,16 +167,27 @@ describe('composeEnablement：保护与 no-entry', () => {
     for (const name of official) assert.equal(PROTECTED_MODULES.includes(name), true, name)
   })
 
-  it('loader 无 entry 且不在 bundles → no-entry（未装载不是被关）', () => {
+  it('loader 无 entry 且不在 bundles + 有补丁层 → Bundle 退选态，可再开', () => {
     const rows = composeEnablement({
       items: [item('ghost-pkg', SINGLE)],
       loaderEntries: [],
       bundles: [],
       profileOverrides: [],
     })
-    assert.deepEqual(rows.get('ghost-pkg').lockReason, 'no-entry')
-    assert.equal(rows.get('ghost-pkg').toggleable, false)
+    assert.equal(rows.get('ghost-pkg').lockReason, undefined)
+    assert.equal(rows.get('ghost-pkg').toggleable, true)
     assert.equal(rows.get('ghost-pkg').enabled, false)
+  })
+
+  it('loader 无 entry 且不在 bundles + 无补丁层 → no-entry（真纯依赖）', () => {
+    const rows = composeEnablement({
+      items: [item('lib-pkg', UNREADABLE)],
+      loaderEntries: [],
+      bundles: [],
+      profileOverrides: [],
+    })
+    assert.deepEqual(rows.get('lib-pkg').lockReason, 'no-entry')
+    assert.equal(rows.get('lib-pkg').toggleable, false)
   })
 
   it('loader 无 entry 但在 bundles → 可开关（enabled:false、无 no-entry）', () => {

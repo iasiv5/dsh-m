@@ -114,9 +114,11 @@ export function composeEnablement(input: ComposeEnablementInput): Map<string, Pl
     }
 
     let lockReason: PluginEnablement['lockReason']
+    // 有补丁层却不在 bundles = Bundle 退选（dsh-m / 官方插件页可再开），不是纯依赖
+    const hasPatchLayer = Boolean(item.patchRows?.readable && item.patchRows.inserts.length)
     if (pkg === 'dsh-m') lockReason = 'self'
     else if (PROTECTED_MODULES.includes(pkg)) lockReason = 'protected'
-    else if (entry === null && !inBundles) lockReason = 'no-entry'
+    else if (entry === null && !inBundles && !hasPatchLayer) lockReason = 'no-entry'
 
     const granularity = item.patchRows && isSingleRowPlugin(item.patchRows) ? 'row' : 'bundle'
     result.set(pkg, {

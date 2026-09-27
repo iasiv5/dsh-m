@@ -5,7 +5,7 @@ import Schema from '@deepseek-ai/schemastery'
 import { createApiDispatcher } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
-import { wireRegistrySettings, unwrapConfig, unwrapProbeConfig } from './core/settings-compat.js'
+import { wireRegistrySettings, unwrapConfig, unwrapProbeConfig, detectSettingsKind, ownEntryId, type FormsSettingsService } from './core/settings-compat.js'
 import { registerTools } from './tools.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { RegistryProbe } from './core/registry-probe.js'
@@ -82,10 +82,26 @@ export function apply(ctx: Context, config: Config): void {
   // - 0.1.7-rc.1 / rc.2：Config `.volatile()` 字段自动生成设置页（autoGenerate 默认开，无需 configure），
   //   读 = loader 解析的 Config 引用，写 = settings.update(ns, patch)，通知 = loader/volatile-update；
   // - 其他形态：降级 cordis 配置文件通路。任何失败只 warn，不拖垮 webServer / tools。
+  // probe 配置写入口（Task 18 Rev）：forms 形态走 settings.update（落盘 + 活体）；
+  // legacy/其余形态就地改 config（probeLike 每次调用现读，活体生效但不保证持久化）。
+  let probeWriter: ((patch: { probeEnabled?: boolean; probeTimeoutMs?: number; probeCacheTtlMin?: number }) => Promise<void>) | null = null
   ctx.inject(['settings'], (c) => {
     const settings = (
       c as unknown as { settings?: unknown }
     ).settings
+    if (detectSettingsKind(settings) === 'forms') {
+      const ns = ownEntryId(ctx, pkg.name)
+      if (ns !== undefined) {
+        const forms = settings as FormsSettingsService
+        probeWriter = async (patch) => { await forms.update(ns, patch) }
+      }
+    }
+    if (probeWriter === null) {
+      probeWriter = async (patch) => {
+        const target = config as Record<string, unknown>
+        for (const [k, v] of Object.entries(patch)) target[k] = v
+      }
+    }
     try {
       const outcome = wireRegistrySettings({
         ctx,
@@ -126,6 +142,11 @@ export function apply(ctx: Context, config: Config): void {
         probe: probeLike,
         probeSnapshot: () => probe.cachedSnapshot(),
         getService,
+        probeConfigGet: () => unwrapProbeConfig(config),
+        probeConfigSet: async (patch) => {
+          if (!probeWriter) throw new Error('设置服务缺席，probe 配置仅可经 cordis 配置文件修改')
+          await probeWriter(patch)
+        },
       },
     })
     server.register({

@@ -113,9 +113,21 @@ export async function togglePlugin(pkg: string, enabled: boolean, deps: ToggleDe
   const service = deps.getService?.()
 
   if (service !== undefined) {
-    return toggleViaService(service, item, enabled, granularity)
+    // 委派一律走 Bundle 选择（官方插件页主开关同层，两层 UI 状态一致；
+    // 行覆盖残留由启用路径的清理扫描兜底）。行覆盖仅是降级路径的实现细节。
+    return toggleViaService(service, item, enabled)
   }
-  return toggleFallback(item, enabled, granularity, { profileDir, io, loaderHost: deps.loaderHost ?? loaderHost() })
+  // 降级：Bundle 退选态的「启用」必须走 bundles 编辑（行覆盖救不回未合成的树）
+  let inBundles = false
+  try {
+    const manifest = JSON.parse(await io.readFile(join(profileDir, 'package.json'), 'utf8')) as BundlesManifest
+    const bundles = manifest?.dsh?.profile?.bundles
+    inBundles = Array.isArray(bundles) && bundles.includes(item.pkg)
+  } catch {
+    /* 读不到按不在 bundles 处理 */
+  }
+  const route: 'row' | 'bundle' = enabled && !inBundles ? 'bundle' : granularity
+  return toggleFallback(item, enabled, route, { profileDir, io, loaderHost: deps.loaderHost ?? loaderHost() })
 }
 
 // ---------- 委派路径 ----------
@@ -124,41 +136,47 @@ async function toggleViaService(
   service: PluginManagerLike,
   item: InstalledPlugin,
   enabled: boolean,
-  granularity: 'row' | 'bundle',
 ): Promise<ToggleResult> {
   const warnings: string[] = []
-  const before = await service.listPlugins()
-  if (granularity === 'row') {
-    const row = before.find((r) => r.moduleName === item.pkg)
-    if (row === undefined) throw new ToggleError('unknown-plugin', `官方服务未列出该插件的合成条目: ${item.pkg}`)
-    if (row.readOnlyReason === 'management-required') {
-      throw new ToggleError('protected', `官方管理判定受保护: ${item.pkg}`)
-    }
-    if (row.readOnlyReason === 'unaddressable') {
-      throw new ToggleError('unaddressable', `官方管理无法经 profile 补丁寻址: ${item.pkg}`)
-    }
-    const raw = await service.setPluginEnabled(row.entryId, enabled)
-    const rich = applicationOf(raw)
-    warnings.push(...rich.warnings)
-    // applied 以复读为准；application 字段兜底
-    const after = (await service.listPlugins()).find((r) => r.moduleName === item.pkg)
-    let applied: ToggleResult['applied']
-    if (rich.application === 'restart-required') {
-      applied = 'restart-required'
-    } else if (after === undefined) {
-      applied = 'restart-required'
-    } else {
-      const fiberOk = enabled ? after.fiberPhase !== null && after.fiberPhase !== undefined : after.fiberPhase === null || after.fiberPhase === undefined
-      applied = after.enabled === enabled && fiberOk ? 'live' : 'restart-required'
-    }
-    if (rich.application === 'overridden') warnings.push('被更高补丁层覆盖，落盘状态与请求不符——重启后以下层为准')
-    return { pkg: item.pkg, enabled, applied, via: 'delegate', warnings }
+  // 启用前清理本插件的历史行覆盖（dsh-m 单开关模型：行覆盖是它自己写下的，
+  // 不清则 bundle 重选后旧行仍 disabled，官方页第二层会出现一开一关）
+  if (enabled) {
+    const cleared = await clearRowOverrides(service, item.pkg, warnings)
+    if (cleared > 0) warnings.push(`已清理 ${cleared} 条历史行覆盖`)
   }
   const raw = await service.setBundleEnabled(item.pkg, enabled)
   const rich = applicationOf(raw)
   warnings.push(...rich.warnings)
-  const applied = rich.application === 'restart-required' ? 'restart-required' : 'live'
+  if (enabled) {
+    // selectBundle 后才可见的行覆盖（bundle 退选期 loader 无条目）再扫一遍
+    await clearRowOverrides(service, item.pkg, warnings)
+  }
+  // applied 复读：bundle on → 该模块行应存在且启用；bundle off → 行消失或全禁用
+  const after = (await service.listPlugins()).filter((r) => r.moduleName === item.pkg)
+  const running = after.some((r) => r.enabled)
+  let applied: ToggleResult['applied']
+  if (rich.application === 'restart-required') applied = 'restart-required'
+  else applied = running === enabled ? 'live' : 'restart-required'
+  if (rich.application === 'overridden') warnings.push('被更高补丁层覆盖，落盘状态与请求不符——重启后以下层为准')
   return { pkg: item.pkg, enabled, applied, via: 'delegate', warnings }
+}
+
+/** 清理本插件可见的 disabled 行覆盖（跳过官方 readOnly 行）；返回清理条数。 */
+async function clearRowOverrides(
+  service: PluginManagerLike,
+  pkg: string,
+  warnings: string[],
+): Promise<number> {
+  const rows = (await service.listPlugins()).filter(
+    (r) => r.moduleName === pkg && !r.readOnlyReason && r.enabled === false,
+  )
+  let cleared = 0
+  for (const row of rows) {
+    const rich = applicationOf(await service.setPluginEnabled(row.entryId, true))
+    warnings.push(...rich.warnings)
+    cleared += 1
+  }
+  return cleared
 }
 
 // ---------- 降级路径 ----------
@@ -226,6 +244,25 @@ async function toggleBundleFallback(
 ): Promise<ToggleResult> {
   const manifestPath = join(ctx.profileDir, 'package.json')
   await withFileLock(join(ctx.profileDir, 'package.json'), async () => {
+    if (enabled) {
+      // 启用即清本包历史行覆盖（与委派路径同语义）
+      const patchPath = join(ctx.profileDir, 'cordis.patch.yml')
+      let patchText = '[]\n'
+      try {
+        patchText = await ctx.io.readFile(patchPath, 'utf8')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      let patchMutated = false
+      for (const insert of item.patchRows?.inserts ?? []) {
+        const plan = planRowOverride(patchText, insert.id, insert.name, true)
+        if (plan.changed) {
+          patchText = plan.text
+          patchMutated = true
+        }
+      }
+      if (patchMutated) await writeFileAtomic(patchPath, patchText, { mode: 0o600 })
+    }
     let raw: string
     try {
       raw = await ctx.io.readFile(manifestPath, 'utf8')

@@ -84,6 +84,7 @@ const ZH = {
   "compat.risk": "继续安装可能导致崩溃或数据丢失。确定仍要安装吗？",
   "compat.force": "仍要安装", "common.cancel": "取消",
   "settings.probe": "元数据源", "settings.probe.npmjs": "npmjs（竞速胜出）", "settings.probe.mirror": "npmmirror（竞速胜出）", "settings.probe.none": "默认 npmjs（未探测/双不通）",
+  "settings.probe.toggle": "竞速探测", "settings.probe.apply": "应用", "settings.probe.applied": "探测配置已更新（即时生效）", "settings.probe.failed": "探测配置保存失败：{err}",
   "notify.uninstalled": "已卸载 {pkg}", "notify.livedisabled": "（已先下线运行中的界面）",
   "notify.leftovers": "；检测到疑似残留数据：{paths}",
   "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
@@ -166,6 +167,7 @@ const EN = {
   "compat.risk": "Proceeding may cause crashes or data loss. Install anyway?",
   "compat.force": "Install anyway", "common.cancel": "Cancel",
   "settings.probe": "Metadata source", "settings.probe.npmjs": "npmjs (probe winner)", "settings.probe.mirror": "npmmirror (probe winner)", "settings.probe.none": "default npmjs (not probed/both down)",
+  "settings.probe.toggle": "Probe", "settings.probe.apply": "Apply", "settings.probe.applied": "Probe settings updated (live)", "settings.probe.failed": "Failed to save probe settings: {err}",
   "notify.uninstalled": "Uninstalled {pkg}", "notify.livedisabled": " (live UI disabled first)",
   "notify.leftovers": "; possible leftover data: {paths}",
   "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgradehint": " (note: this plugin ran build scripts)",
@@ -854,8 +856,16 @@ function InstalledTab({ notify, installed, onMutation }) {
 
   const doToggle = async (it, enabled) => {
     setBusyPkg(it.pkg);
+    const call = () => api("set-enabled", { pkg: it.pkg, enabled });
     try {
-      const res = await api("set-enabled", { pkg: it.pkg, enabled });
+      let res;
+      try {
+        res = await call();
+      } catch (first) {
+        // hmr 重组窗口可能瞬断传输（set-enabled 幂等，重试一次安全）
+        await new Promise((r) => setTimeout(r, 1500));
+        res = await call();
+      }
       const note = toggleNoticeKeys(res);
       const extra = (res.warnings && res.warnings.length ? `（${res.warnings.join("；")}）` : "");
       notify({ kind: "ok", needsRestart: note.needsRestart, text: lookup(note.textKey, note.params) + extra });
@@ -1026,6 +1036,29 @@ function SettingsTab({ notify, onRegistryChanged }) {
   const cfgState = useAsync(() => api("registry-config"), []);
   const self = useAsync(() => api("self-check"), []);
   const statusInfo = useAsync(() => api("status"), []);
+  const probeCfg = useAsync(() => api("probe-config"), []);
+  const [probeDraft, setProbeDraft] = useState(null);
+  const [probeBusy, setProbeBusy] = useState(false);
+  useEffect(() => {
+    if (probeCfg.data && probeDraft === null) setProbeDraft({ ...probeCfg.data });
+  }, [probeCfg.data, probeDraft]);
+  const applyProbe = async () => {
+    if (!probeDraft) return;
+    setProbeBusy(true);
+    try {
+      const patch = {};
+      if (probeDraft.probeEnabled !== undefined) patch.probeEnabled = probeDraft.probeEnabled === true;
+      if (Number.isFinite(Number(probeDraft.probeTimeoutMs))) patch.probeTimeoutMs = Number(probeDraft.probeTimeoutMs);
+      if (Number.isFinite(Number(probeDraft.probeCacheTtlMin))) patch.probeCacheTtlMin = Number(probeDraft.probeCacheTtlMin);
+      const res = await api("probe-config-set", patch);
+      setProbeDraft({ ...res });
+      notify({ kind: "ok", text: lookup("settings.probe.applied"), needsRestart: false });
+    } catch (e) {
+      notify({ kind: "err", text: lookup("settings.probe.failed", { err: (e && e.message) || e }) });
+    } finally {
+      setProbeBusy(false);
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [draftAddress, setDraftAddress] = useState(null); // null = 尚未从 configuredAddress 初始化
@@ -1168,6 +1201,31 @@ function SettingsTab({ notify, onRegistryChanged }) {
         h("span", { className: "k" }, lookup("settings.count")), h("span", null, state ? lookup("settings.count.v", { n: state.count ?? 0 }) : "—"),
         h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
         h("span", { className: "k" }, lookup("settings.probe")), h("span", null, probeLabel(statusInfo)),
+        h("span", { className: "k" }, lookup("settings.probe.toggle")),
+        h("span", { className: "dshm-probe-ctl" },
+          probeDraft ? [
+            h(ToggleSwitch, {
+              key: "sw",
+              vm: { switchOn: probeDraft.probeEnabled === true, switchDisabled: false },
+              title: null,
+              onChange: (v) => setProbeDraft({ ...probeDraft, probeEnabled: v }),
+            }),
+            h("input", {
+              key: "timeout", className: "dshm-input", type: "number", style: { maxWidth: "90px" },
+              title: "probeTimeoutMs", value: probeDraft.probeTimeoutMs ?? "",
+              onChange: (e) => setProbeDraft({ ...probeDraft, probeTimeoutMs: e.target.value }),
+            }),
+            h("input", {
+              key: "ttl", className: "dshm-input", type: "number", style: { maxWidth: "70px" },
+              title: "probeCacheTtlMin", value: probeDraft.probeCacheTtlMin ?? "",
+              onChange: (e) => setProbeDraft({ ...probeDraft, probeCacheTtlMin: e.target.value }),
+            }),
+            h("button", {
+              key: "apply", className: "dshm-btn sm", disabled: probeBusy,
+              onClick: applyProbe,
+            }, probeBusy ? h(Spin) : lookup("settings.probe.apply")),
+          ] : lookup("settings.probe.none"),
+        ),
       ),
       state && state.stale && state.status !== "unavailable"
         ? h("div", { className: "dshm-note" }, lookup("settings.cache.hint"))
