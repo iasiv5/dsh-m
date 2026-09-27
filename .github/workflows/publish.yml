@@ -22,18 +22,28 @@ jobs:
 
       - name: Install deps (prepare/build toolchain)
         run: |
-          set +e
           node --version; npm --version
+          # setup-node 写入的空 authToken 行会让匿名装公共包也 401，先摘掉
+          sed -i '/_authToken/d' ~/.npmrc || true
+          set +e
           npm ci --no-audit --no-fund 2>&1 | tee install.log
           status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then
+            sleep 20
+            npm ci --no-audit --no-fund 2>&1 | tee -a install.log
+            status=${PIPESTATUS[0]}
+          fi
+          exit $status
+
+      - name: Diagnose (always)
+        if: always()
+        run: |
           {
-            echo "### npm ci exit=$status (node $(node --version), npm $(npm --version))"
-            echo ''
+            echo '### install.log tail'
             echo '```'
-            tail -80 install.log
+            tail -60 install.log 2>/dev/null || echo '(no install.log)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          exit $status
 
       - name: Ensure npm >= 11.5.5 (trusted publishing requirement)
         run: npm install -g npm@latest
