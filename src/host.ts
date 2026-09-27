@@ -21,6 +21,9 @@ export interface Config {
   registryUrl?: string
   timeoutMs?: number
   cacheTtlMin?: number
+  probeEnabled?: boolean
+  probeTimeoutMs?: number
+  probeCacheTtlMin?: number
 }
 
 /**
@@ -37,6 +40,9 @@ export const Config: Schema<Config> = Schema.object({
   registryUrl: live(Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）')),
   timeoutMs: live(Schema.number().default(20000).description('上游请求超时（毫秒）')),
   cacheTtlMin: live(Schema.number().default(60).description('registry 缓存时长（分钟）')),
+  probeEnabled: live(Schema.boolean().default(true).description('元数据源竞速探测：npmjs 与 npmmirror ping 并发，首个 2xx 胜出；只影响 dsh-m 元数据读取源与市场页展示，不影响安装链路')),
+  probeTimeoutMs: live(Schema.number().default(1500).description('竞速探测单侧超时（毫秒）')),
+  probeCacheTtlMin: live(Schema.number().default(5).description('竞速探测结果缓存时长（分钟）')),
 })
 
 export function apply(ctx: Context, config: Config): void {
