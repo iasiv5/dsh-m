@@ -73,6 +73,19 @@ function needFlag(flags: Record<string, string | boolean>, name: string): string
   return v.trim()
 }
 
+/** 构建放行输出（ADR-0002）：列包名；兜底全量放行如实标注。 */
+function outBuildsNote(
+  res: { buildApprovals?: string[]; fallbackAllBuilds?: boolean },
+  out: (line: string) => void,
+): void {
+  if (res.fallbackAllBuilds === true) {
+    out('⚠️  该插件执行了构建脚本（名单不可读，已全量兜底放行）。')
+    return
+  }
+  const names = res.buildApprovals ?? []
+  if (names.length > 0) out(`⚠️  该插件执行了构建脚本，已精确放行：${names.join('、')}。`)
+}
+
 function requireYes(flags: Record<string, string | boolean>, action: string): void {
   if (flags.yes !== true) {
     throw new Error(`拒绝执行：${action} 是变更操作，必须带 --yes 显式确认。`)
@@ -252,7 +265,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const version = typeof flags.version === 'string' ? flags.version : undefined
       const res = await d.installFromRegistry(id, cfg, { version, namespace: 'cli' })
       out(`✅ 已安装 ${res.pkg}（${res.spec}）`)
-      if (res.usedAllowAllBuilds) out('⚠️  该插件执行了构建脚本（已按策略放行）。')
+      outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
       return 0
     }
@@ -264,7 +277,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const from = res.fromVersion ? `v${res.fromVersion} → ` : ''
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'
       out(`✅ 已升级 ${res.pkg}（${from}${to}）`)
-      if (res.usedAllowAllBuilds) out('⚠️  该插件执行了构建脚本（已按策略放行）。')
+      outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
       return 0
     }

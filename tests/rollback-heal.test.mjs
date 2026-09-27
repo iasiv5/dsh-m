@@ -56,7 +56,7 @@ const outcomeOf = (err) => {
 const wrapAdd = (fake) => async () => {
   try {
     const r = await fake()
-    return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
+    return { class: 'ok', output: r.output, buildApprovals: r.buildApprovals ?? [], fallbackAllBuilds: r.fallbackAllBuilds === true }
   } catch (err) {
     return outcomeOf(err)
   }
@@ -136,7 +136,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => {
       writeFileSync(manifestPath(), JSON.stringify({ name: 'scratch-profile', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('EVIL') }))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } })),
@@ -265,7 +265,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
       // 成功写入：保留 pnpm 键 + 一致 lock（好 integrity）
       writeFileSync(manifestPath(), JSON.stringify({ name: 'scratch-profile', private: true, pnpm: { overrides: OVERRIDE }, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({
       runnerOps: {
@@ -331,7 +331,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => {
       writeFileSync(manifestPath(), JSON.stringify({ name: 'scratch-profile', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } }))
     assert.equal(res.version, '1.2.3', '安装本身不受影响')

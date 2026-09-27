@@ -33,7 +33,7 @@ const outcomeOf = (err) => {
 const wrapAdd = (fake) => async () => {
   try {
     const r = await fake()
-    return { class: 'ok', output: r.output, usedAllowAllBuilds: r.usedAllowAllBuilds === true }
+    return { class: 'ok', output: r.output, buildApprovals: r.buildApprovals ?? [], fallbackAllBuilds: r.fallbackAllBuilds === true }
   } catch (err) {
     return outcomeOf(err)
   }
@@ -279,7 +279,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
@@ -290,7 +290,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '^1.2.3' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
@@ -306,7 +306,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       const spec = specWrites === 1 ? '~1.2.3' : '1.2.4'
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': spec } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.2.3')
@@ -330,7 +330,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
       // 写入错误 integrity
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('EVIL')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
@@ -360,7 +360,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
         runnerOps: {
           add: wrapAdd(async () => {
             touched = true
-            return { output: '', usedAllowAllBuilds: false }
+            return { output: '', buildApprovals: [], fallbackAllBuilds: false }
           }),
         },
       })),
@@ -373,7 +373,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('EVIL')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     await assert.rejects(
       () => installFromRegistry('p', {}, {}, baseDeps({
@@ -411,7 +411,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.0.5' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.0.5', sha512('exact')))
-      return { output: 'ok', usedAllowAllBuilds: false }
+      return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, { version: '1.0.5' }, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.0.5')

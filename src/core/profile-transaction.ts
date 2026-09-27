@@ -112,7 +112,8 @@ interface CommittedResult extends TransactionBase {
   readonly needsRestart: true
   // 载荷（按门）：
   readonly pkg?: string; readonly spec?: string; readonly version?: string
-  readonly sha?: string; readonly tag?: string; readonly usedAllowAllBuilds?: boolean
+  readonly sha?: string; readonly tag?: string
+  readonly buildApprovals?: string[]; readonly fallbackAllBuilds?: boolean
   readonly liveDisabled?: boolean; readonly orphanedPatchFiles?: string[]
 }
 interface RejectedResult extends TransactionBase {
@@ -709,7 +710,8 @@ async function installNpm(
       pkg: req.pkg,
       spec,
       version: req.version,
-      usedAllowAllBuilds: addOut.usedAllowAllBuilds === true,
+      buildApprovals: addOut.buildApprovals ?? [],
+      fallbackAllBuilds: addOut.fallbackAllBuilds === true,
     })
   } catch (err) {
     if (err instanceof DomainFailure) {
@@ -779,7 +781,8 @@ async function installGithub(
       spec,
       sha: req.sha,
       tag: req.tag,
-      usedAllowAllBuilds: addOut.usedAllowAllBuilds === true,
+      buildApprovals: addOut.buildApprovals ?? [],
+      fallbackAllBuilds: addOut.fallbackAllBuilds === true,
     })
   } catch (err) {
     if (err instanceof DomainFailure) {

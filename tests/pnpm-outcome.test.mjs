@@ -94,31 +94,49 @@ function fakeRunner(script) {
   return { run, calls }
 }
 
-function ladderOf(run, allowAllBuilds) {
-  return makeAddViaLadder({ runDshPlugin: run, allowAllBuilds })
+/** resolveBuilds 决策桩：默认精确放行 node-sass（可覆盖）。 */
+function ladderOf(run, resolveBuilds) {
+  const decision = resolveBuilds ?? (() => ({ approvals: ['node-sass'], fallbackAll: false }))
+  return makeAddViaLadder({ runDshPlugin: run, resolveBuilds: decision })
 }
 
 describe('makeAddViaLadder：加装阶梯工厂', () => {
-  it('一次成功 → ok + output + usedAllowAllBuilds:false', async () => {
+  it('resolveBuilds 抛错 → Y2 契约转 hard-fail（永不 throw）', async () => {
+    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'should-not-run'])
+    const out = await ladderOf(run, () => { throw new Error('写盘失败') })('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'hard-fail')
+    assert.equal(out.output.includes('写盘失败'), true)
+  })
+
+  it('resolveBuilds 返回兜底决策 → fallbackAllBuilds:true 且 approvals 空', async () => {
+    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'ok fallback'])
+    const out = await ladderOf(run, () => ({ approvals: [], fallbackAll: true }))('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'ok')
+    assert.deepEqual(out.buildApprovals, [])
+    assert.equal(out.fallbackAllBuilds, true)
+  })
+
+  it('一次成功 → ok + output + buildApprovals:[]', async () => {
     const { run, calls } = fakeRunner(['installed!'])
     const out = await ladderOf(run)('pkg-a@1.2.3', '/tmp/profile')
     assert.deepEqual(
       { ...out },
-      { class: 'ok', output: 'installed!', usedAllowAllBuilds: false },
+      { class: 'ok', output: 'installed!', buildApprovals: [], fallbackAllBuilds: false },
     )
     assert.deepEqual(calls[0].pluginArgs, ['add', 'pkg-a@1.2.3'])
   })
 
-  it('prepare 被拦 → 写 allowAllBuilds 后重试成功 → usedAllowAllBuilds:true', async () => {
+  it('prepare 被拦 → 精确放行后重试成功 → buildApprovals 携带名单', async () => {
     const { run, calls } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'ok after allow'])
     const allowCalls = []
     const out = await ladderOf(run, (dir) => {
       allowCalls.push(dir)
-      return true
+      return { approvals: ['node-sass'], fallbackAll: false }
     })('pkg-a@1.2.3', '/tmp/profile-x')
     assert.equal(out.class, 'ok')
-    assert.equal(out.usedAllowAllBuilds, true)
-    assert.deepEqual(allowCalls, ['/tmp/profile-x'], 'allowAllBuilds 收到 profileDir')
+    assert.deepEqual(out.buildApprovals, ['node-sass'])
+      assert.equal(out.fallbackAllBuilds, false)
+    assert.deepEqual(allowCalls, ['/tmp/profile-x'], 'resolveBuilds 收到 profileDir')
     assert.equal(calls.length, 2, '重试一次')
   })
 
@@ -131,28 +149,30 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     const out = await ladderOf(run)('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out.class, 'ok')
     assert.equal(out.output, 'added after rebuild')
-    assert.equal(out.usedAllowAllBuilds, false)
+    assert.deepEqual(out.buildApprovals, [])
+      assert.equal(out.fallbackAllBuilds, false)
     assert.deepEqual(calls[1].pluginArgs, ['install', '--no-frozen-lockfile'], '先重建再重试')
     assert.deepEqual(calls[2].pluginArgs, ['add', 'pkg-a@1.2.3'])
   })
 
-  it('重建后重试仍 prepare 被拦 → allowAllBuilds 再放行重试（全链耗尽路径）', async () => {
+  it('重建后重试仍 prepare 被拦 → resolveBuilds 再放行重试（全链耗尽路径）', async () => {
     const { run, calls } = fakeRunner([
       new Error(PUBLIC_HOIST_TEXT),
       'rebuilt',
       new Error(PREPARE_BLOCKED_TEXT),
       'ok finally',
     ])
-    const out = await ladderOf(run, () => true)('pkg-a@1.2.3', '/tmp/profile')
+    const out = await ladderOf(run, () => ({ approvals: ['node-sass'], fallbackAll: false }))('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out.class, 'ok')
-    assert.equal(out.usedAllowAllBuilds, true)
+    assert.deepEqual(out.buildApprovals, ['node-sass'])
+      assert.equal(out.fallbackAllBuilds, false)
     assert.equal(calls.length, 4)
   })
 
   it('重试全部耗尽 → hard-fail/needs-builds 分类结果，永不 throw', async () => {
-    // prepare 重试后仍被拦：needs-builds（在途 allowAllBuilds 已耗尽）
+    // prepare 重试后仍被拦：needs-builds（在途放行重试已耗尽）
     const exhausted = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), new Error(PREPARE_BLOCKED_TEXT)])
-    const out1 = await ladderOf(exhausted.run, () => true)('pkg-a@1.2.3', '/tmp/profile')
+    const out1 = await ladderOf(exhausted.run, () => ({ approvals: ['node-sass'], fallbackAll: false }))('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out1.class, 'needs-builds')
     assert.ok(out1.output.includes('ERR_PNPM_IGNORED_BUILDS'))
 
@@ -166,7 +186,7 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     const rebuildFails = fakeRunner([new Error(PUBLIC_HOIST_TEXT), new Error('命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE boom')])
     const out3 = await ladderOf(rebuildFails.run)('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out3.class, 'config-drift')
-    assert.ok(!('usedAllowAllBuilds' in out3) || out3.usedAllowAllBuilds === undefined)
+    assert.ok(!('buildApprovals' in out3) || out3.buildApprovals === undefined)
 
     // 重建成功但重试加回仍 PUBLIC_HOIST：hard-fail，不无限循环
     const loop = fakeRunner([new Error(PUBLIC_HOIST_TEXT), 'rebuilt', new Error(PUBLIC_HOIST_TEXT)])

@@ -590,7 +590,10 @@ export interface InstallResult {
   version?: string
   sha?: string
   tag?: string
-  usedAllowAllBuilds: boolean
+  /** 精确放行的构建脚本包名（未走放行 = []；ADR-0002） */
+  buildApprovals: string[]
+  /** pending 名单读不出时的全量兜底标记 */
+  fallbackAllBuilds: boolean
   needsRestart: true
   output: string
   /** 事务自愈动作（机器可断言 code + 给人看的 note） */
@@ -655,7 +658,8 @@ export async function installEntry(
       pkg: result.pkg ?? pkg,
       spec: result.spec ?? `${pkg}@${version}`,
       version: result.version ?? version,
-      usedAllowAllBuilds: result.usedAllowAllBuilds === true,
+      buildApprovals: result.buildApprovals ?? [],
+      fallbackAllBuilds: result.fallbackAllBuilds === true,
       needsRestart: true,
       output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
       healActions: result.healActions,
@@ -676,7 +680,8 @@ export async function installEntry(
       spec: result.spec ?? `github:${entry.github}#${sha}`,
       sha: result.sha ?? sha,
       tag: result.tag ?? tag,
-      usedAllowAllBuilds: result.usedAllowAllBuilds === true,
+      buildApprovals: result.buildApprovals ?? [],
+      fallbackAllBuilds: result.fallbackAllBuilds === true,
       needsRestart: true,
       output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
       healActions: result.healActions,

@@ -249,7 +249,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           payload = {
             pkg: ctx.pkg.name,
             version: latest.version,
-            usedAllowAllBuilds: result.usedAllowAllBuilds === true,
+            buildApprovals: result.buildApprovals ?? [],
+            fallbackAllBuilds: result.fallbackAllBuilds === true,
             needsRestart: true as const,
           }
           break

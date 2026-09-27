@@ -336,9 +336,18 @@ interface InstallOut {
   version?: string
   sha?: string
   tag?: string
-  usedAllowAllBuilds?: boolean
+  buildApprovals?: string[]
+  fallbackAllBuilds?: boolean
   fromVersion?: string
   healActions?: Array<{ code: string; note: string }>
+}
+
+/** 构建放行文案（ADR-0002）：列包名；兜底全量放行如实标注。 */
+function buildsNote(out: InstallOut): string {
+  if (out.fallbackAllBuilds) return '注意：该插件执行了构建脚本（名单不可读，已全量兜底放行）。'
+  const names = out.buildApprovals ?? []
+  if (names.length === 0) return ''
+  return `注意：该插件执行了构建脚本，已精确放行：${names.join('、')}。`
 }
 interface UninstallOut {
   pkg?: string
@@ -376,7 +385,7 @@ function renderList(out: ListOut): string {
 }
 
 function renderInstall(out: InstallOut): string {
-  const extra = out.usedAllowAllBuilds ? '注意：该插件执行了构建脚本（已按策略放行）。' : ''
+  const extra = buildsNote(out)
   const heals = out.healActions?.length
     ? `安装过程含 ${out.healActions.length} 步自愈（${out.healActions.map((h) => h.code).join('、')}）。`
     : ''
@@ -406,7 +415,7 @@ function renderOutdated(out: ListOut): string {
 function renderUpgrade(out: InstallOut): string {
   const from = out.fromVersion ? `v${out.fromVersion} → ` : ''
   const to = out.version ? `v${out.version}` : out.sha ? out.sha.slice(0, 7) : '最新'
-  const extra = out.usedAllowAllBuilds ? '注意：该插件执行了构建脚本。' : ''
+  const extra = buildsNote(out)
   return `✅ ${out.pkg} 已升级（${from}${to}）。${extra}需要重启生效——询问是否 dshm_restart。`
 }
 

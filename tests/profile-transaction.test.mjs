@@ -967,7 +967,7 @@ describe('install-github 门', () => {
     const { runner } = mockRunner({
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${SHA}` } }))
-        return { class: 'ok', output: 'added', usedAllowAllBuilds: false }
+        return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
       }],
     })
     const r = await runProfileTransaction(

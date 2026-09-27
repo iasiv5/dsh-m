@@ -376,7 +376,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
         writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
-        return { class: 'ok', output: 'ok', usedAllowAllBuilds: false }
+        return { class: 'ok', output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
       }],
     })
     await installFromRegistry('p', {}, {}, {
@@ -386,7 +386,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     assert.deepEqual(seen, ['https://registry.npmmirror.com'])
     seen.length = 0
     const txDefault = mockTxRunner({
-      add: [async () => ({ class: 'ok', output: 'ok', usedAllowAllBuilds: false })],
+      add: [async () => ({ class: 'ok', output: 'ok', buildApprovals: [], fallbackAllBuilds: false })],
     })
     await installFromRegistry('p', {}, {}, {
       ...mkDeps({ fastest: async () => null }),
@@ -406,7 +406,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
         writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
-        return { class: 'ok', output: 'added-via-tx-runner', usedAllowAllBuilds: false }
+        return { class: 'ok', output: 'added-via-tx-runner', buildApprovals: [], fallbackAllBuilds: false }
       }],
     })
     const res = await installFromRegistry('p', {}, {}, {
@@ -416,7 +416,8 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     assert.equal(res.version, '1.2.3')
     assert.equal(res.pkg, 'pkg-a')
     assert.equal(res.spec, 'pkg-a@1.2.3')
-    assert.equal(res.usedAllowAllBuilds, false)
+    assert.deepEqual(res.buildApprovals, [])
+    assert.equal(res.fallbackAllBuilds, false)
     assert.deepEqual(tx.calls.add, [{ arg: 'pkg-a@1.2.3', signal: undefined }], 'add 落在注入 runner')
     assert.equal(tx.calls.frozen.length, 0, 'committed 且无 B1 时不跑 frozen')
     assert.equal(tx.calls.remove.length, 0)
@@ -431,7 +432,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     const tx = mockTxRunner({
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${'a'.repeat(40)}` } }, null, 2) + '\n')
-        return { class: 'ok', output: 'gh-added', usedAllowAllBuilds: false }
+        return { class: 'ok', output: 'gh-added', buildApprovals: [], fallbackAllBuilds: false }
       }],
     })
     const res = await installFromRegistry('p', {}, {}, {

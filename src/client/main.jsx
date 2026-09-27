@@ -540,7 +540,7 @@ function MarketTab({ notify, market, onMutation }) {
         kind: "ok",
         needsRestart: true,
         text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
-          (res.usedAllowAllBuilds ? lookup("notify.allowbuilds") : ""),
+          (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
       });
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
@@ -753,7 +753,7 @@ function InstalledTab({ notify, installed, onMutation }) {
           pkg: res.pkg,
           from: res.fromVersion ? `v${res.fromVersion}` : "—",
           to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest",
-        }) + (res.usedAllowAllBuilds ? lookup("notify.upgradehint") : ""),
+        }) + (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
       });
       await (onMutation ? onMutation() : reload());
     } catch (e) {

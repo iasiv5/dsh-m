@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { installTimeoutMs, WEB_PROFILE, webProfileDir } from './env.js'
 import { createProgressTracker, type ProgressPhase, type ProgressTracker } from './progress.js'
+import { applyPreciseBuilds, readPendingBuilds } from './build-approval.js'
 
 /** pnpm patchedDependencies 条目键与目标包匹配：`pkg` 或 `pkg@任意版本/区间`。 */
 function matchesPatchedKey(key: string, pkg: string): boolean {
@@ -257,8 +258,16 @@ export interface RunnerOutcome {
   readonly code?: string
   /** ≤800 字符（runner 边界统一截断） */
   readonly output: string
-  /** 仅 add·ok */
-  readonly usedAllowAllBuilds?: boolean
+  /** 仅 add·ok：精确放行的包名（未走放行 = []；ADR-0002） */
+  readonly buildApprovals?: string[]
+  /** 仅 add·ok：pending 名单读不出时的全量兜底标记 */
+  readonly fallbackAllBuilds?: boolean
+}
+
+/** 构建放行决策（ladder 注入点，Task 9 / ADR-0002）：approvals = 精确放行的包名。 */
+export interface BuildApprovalDecision {
+  approvals: string[]
+  fallbackAll: boolean
 }
 
 /**
@@ -379,7 +388,7 @@ export function withDangerouslyAllowAllBuilds(yaml: string): string {
   return `${yaml.replace(/\s*$/u, '\n')}\ndangerouslyAllowAllBuilds: true\n`
 }
 
-/** 基线 §17.4：放行构建脚本前必须能被明确报告（返回值带 usedAllowAllBuilds）。 */
+/** 基线 §17.4：放行构建脚本前必须能被明确报告（结果带 buildApprovals）。 */
 function writeDangerouslyAllowAllBuilds(profileDirectory: string): boolean {
   const file = join(profileDirectory, 'pnpm-workspace.yaml')
   let yaml = ''
@@ -393,6 +402,31 @@ function writeDangerouslyAllowAllBuilds(profileDirectory: string): boolean {
   mkdirSync(profileDirectory, { recursive: true })
   writeFileSync(file, next)
   return true
+}
+
+/**
+ * 精确放行默认实现（ADR-0002）：needs-builds 拦截后先读 pending 名单，
+ * 非空 → 逐键写 allowBuilds（approvals 携带包名）；空/不可读 → 全量兜底。
+ * 写入失败 throw（ladder 的 Y2 契约转换为 hard-fail 结果）。
+ * 已知风险（不加锁）：官方 approveBuilds 前提是 caller 持 manifest 锁；dsh-m 只有
+ * 进程内 FIFO，与官方 UI 并发安装时有低概率写竞态，相关整单失败走既有回滚语义。
+ */
+function writePreciseBuilds(profileDirectory: string): BuildApprovalDecision {
+  const file = join(profileDirectory, 'pnpm-workspace.yaml')
+  let yaml = ''
+  try {
+    yaml = readFileSync(file, 'utf8')
+  } catch {
+    /* 文件缺失 → pending 名单为空 → 走兜底创建 */
+  }
+  const pending = readPendingBuilds(yaml)
+  if (pending.length > 0) {
+    mkdirSync(profileDirectory, { recursive: true })
+    writeFileSync(file, applyPreciseBuilds(yaml, pending))
+    return { approvals: pending, fallbackAll: false }
+  }
+  writeDangerouslyAllowAllBuilds(profileDirectory)
+  return { approvals: [], fallbackAll: true }
 }
 
 /**
@@ -631,30 +665,31 @@ export async function runDshPlugin(
  */
 export function makeAddViaLadder(deps: {
   runDshPlugin: PluginRunner
-  allowAllBuilds?: (profileDirectory: string) => boolean
+  resolveBuilds?: (profileDirectory: string) => BuildApprovalDecision
 }): (source: string, profileDir: string, signal?: AbortSignal) => Promise<RunnerOutcome> {
   const run = deps.runDshPlugin
-  const allowAllBuilds = deps.allowAllBuilds ?? writeDangerouslyAllowAllBuilds
+  const resolveBuilds = deps.resolveBuilds ?? writePreciseBuilds
   const opts = (signal?: AbortSignal) => (signal !== undefined ? { signal } : undefined)
   return async (source: string, profileDir: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
     const retryAfterPrepare = async (): Promise<RunnerOutcome> => {
-      // Y2（终审复审）：allowAll 写入本身失败也必须转换为结果，维持「永不 throw」契约
+      // Y2（终审复审）：放行写入本身失败也必须转换为结果，维持「永不 throw」契约
+      let decision: BuildApprovalDecision
       try {
-        allowAllBuilds(profileDir)
+        decision = resolveBuilds(profileDir)
       } catch (err) {
         const text = errText(err)
         return { class: 'hard-fail', output: truncateOutput(text) }
       }
       try {
         const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-        return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: true }
+        return { class: 'ok', output: truncateOutput(output), buildApprovals: decision.approvals, fallbackAllBuilds: decision.fallbackAll }
       } catch (retryErr) {
         return { ...classifyPnpmError(errText(retryErr)), output: truncateOutput(errText(retryErr)) }
       }
     }
     try {
       const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-      return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: false }
+      return { class: 'ok', output: truncateOutput(output), buildApprovals: [], fallbackAllBuilds: false }
     } catch (err) {
       const text = errText(err)
       if (text.includes(PNPM_OUTCOME_CODES.PUBLIC_HOIST_PATTERN_DIFF)) {
@@ -666,7 +701,7 @@ export function makeAddViaLadder(deps: {
         }
         try {
           const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-          return { class: 'ok', output: truncateOutput(output), usedAllowAllBuilds: false }
+          return { class: 'ok', output: truncateOutput(output), buildApprovals: [], fallbackAllBuilds: false }
         } catch (retryErr) {
           const retryText = errText(retryErr)
           if (isPrepareBlocked(retryText)) return retryAfterPrepare()

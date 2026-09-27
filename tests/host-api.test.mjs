@@ -357,14 +357,14 @@ const committedUpgrade = {
   pkg: 'dsh-m',
   spec: 'dsh-m@9.9.9',
   version: '9.9.9',
-  usedAllowAllBuilds: false,
+  buildApprovals: [], fallbackAllBuilds: false,
 }
 
 describe('host-api：self-upgrade 事务委派（Task 7）', () => {
   it('锁收编：dispatcher 不再接受 onMutation，install 直接委派 market', async () => {
     const { dispatcher } = setup({
       installFromRegistry: async (id, cfg2, opts) => ({
-        id, pkg: 'pkg-1', spec: 'pkg-1@1.0.0', usedAllowAllBuilds: false, needsRestart: true, output: 'ok',
+        id, pkg: 'pkg-1', spec: 'pkg-1@1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: 'ok',
       }),
     })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'plug-1' } })
@@ -399,7 +399,8 @@ describe('host-api：self-upgrade 事务委派（Task 7）', () => {
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
     assert.equal(res.status, 200)
     assert.equal(res.body.version, '9.9.9')
-    assert.equal(res.body.usedAllowAllBuilds, false)
+    assert.deepEqual(res.body.buildApprovals, [])
+    assert.equal(res.body.fallbackAllBuilds, false)
     assert.equal(res.body.needsRestart, true)
     assert.equal(txCalls.length, 1)
     assert.equal(txCalls[0].req.kind, 'install-npm')
