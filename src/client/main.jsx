@@ -15,6 +15,7 @@ const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normali
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
+const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
@@ -71,6 +72,18 @@ const ZH = {
   "self.upgraded": "dsh-m 已更新到 v{v}，重启后生效", "self.failed": "自更新失败：{err}",
   "registry.refreshed": "收录清单已强制刷新",
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
+  "notify.builds": "（已精确放行构建脚本：{names}）", "notify.builds.fallback": "（注意：构建脚本名单不可读，已全量兜底放行）",
+  "notify.bundlewarning": "（注意：该包无补丁层，已装入为纯依赖不会生效；可卸载或到收录仓库反馈）",
+  "notify.toggled.on.live": "已启用 {pkg}（即时生效）", "notify.toggled.off.live": "已停用 {pkg}（即时生效）",
+  "notify.toggled.on.restart": "已启用 {pkg}（需重启生效）", "notify.toggled.off.restart": "已停用 {pkg}（需重启生效）",
+  "toggle.state.on": "运行中", "toggle.state.off": "已停用",
+  "toggle.lock.self": "dsh-m 自身不可开关", "toggle.lock.protected": "官方宿主命脉，不可开关", "toggle.lock.noentry": "未装载（不在加载树）",
+  "toggle.failed": "开关操作失败：{err}",
+  "phase.active": "active", "phase.failed": "failed", "phase.pending": "pending", "phase.loading": "loading", "phase.unloading": "unloading",
+  "compat.title": "兼容性风险确认", "compat.body": "{pkg}@{version} 声明的 peerDependencies 与当前 DSH {runtime} 不兼容：",
+  "compat.risk": "继续安装可能导致崩溃或数据丢失。确定仍要安装吗？",
+  "compat.force": "仍要安装", "common.cancel": "取消",
+  "settings.probe": "元数据源", "settings.probe.npmjs": "npmjs（竞速胜出）", "settings.probe.mirror": "npmmirror（竞速胜出）", "settings.probe.none": "默认 npmjs（未探测/双不通）",
   "notify.uninstalled": "已卸载 {pkg}", "notify.livedisabled": "（已先下线运行中的界面）",
   "notify.leftovers": "；检测到疑似残留数据：{paths}",
   "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
@@ -141,6 +154,18 @@ const EN = {
   "self.upgraded": "dsh-m updated to v{v} — restart to take effect", "self.failed": "Self-update failed: {err}",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
+  "notify.builds": " (build scripts precisely allowed: {names})", "notify.builds.fallback": " (note: pending list unreadable; all builds allowed as fallback)",
+  "notify.bundlewarning": " (note: no patch layer — installed as a plain dependency; uninstall or report to the listing repo)",
+  "notify.toggled.on.live": "Enabled {pkg} (applied live)", "notify.toggled.off.live": "Disabled {pkg} (applied live)",
+  "notify.toggled.on.restart": "Enabled {pkg} (restart required)", "notify.toggled.off.restart": "Disabled {pkg} (restart required)",
+  "toggle.state.on": "running", "toggle.state.off": "disabled",
+  "toggle.lock.self": "dsh-m itself cannot be toggled", "toggle.lock.protected": "host lifeline module; not toggleable", "toggle.lock.noentry": "not composed (absent from loader tree)",
+  "toggle.failed": "Toggle failed: {err}",
+  "phase.active": "active", "phase.failed": "failed", "phase.pending": "pending", "phase.loading": "loading", "phase.unloading": "unloading",
+  "compat.title": "Compatibility risk", "compat.body": "{pkg}@{version} declares peerDependencies incompatible with DSH {runtime}:",
+  "compat.risk": "Proceeding may cause crashes or data loss. Install anyway?",
+  "compat.force": "Install anyway", "common.cancel": "Cancel",
+  "settings.probe": "Metadata source", "settings.probe.npmjs": "npmjs (probe winner)", "settings.probe.mirror": "npmmirror (probe winner)", "settings.probe.none": "default npmjs (not probed/both down)",
   "notify.uninstalled": "Uninstalled {pkg}", "notify.livedisabled": " (live UI disabled first)",
   "notify.leftovers": "; possible leftover data: {paths}",
   "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgradehint": " (note: this plugin ran build scripts)",
@@ -285,6 +310,26 @@ const CSS = `
 .dshm-dshchip:hover .dshm-dshchip-tip,.dshm-dshchip:focus-visible .dshm-dshchip-tip{visibility:visible;opacity:1}
 .dshm-dshchip-tiprow{font:12px/16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;color:var(--dsw-alias-label-primary,inherit)}
 .dshm-dshchip-tipsub{display:block;margin-top:2px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-caption,#9ca3af)}
+
+/* 0.4.0：开关 / 相位点 / 兼容确认弹窗 */
+.dshm-dot{font-size:9px;line-height:1;vertical-align:middle;margin-right:2px}
+.dshm-dot.ok{color:#22c55e}
+.dshm-dot.err{color:#ef4444}
+.dshm-dot.idle{color:#9ca3af}
+.dshm-dot.busy{color:#f59e0b}
+.dshm-switch{position:relative;display:inline-flex;align-items:center;width:34px;height:19px;border-radius:10px;background:var(--dsw-alias-fill-secondary,#d1d5db);cursor:pointer;transition:background .15s;flex:none;margin-left:auto}
+.dshm-switch input{display:none}
+.dshm-switch.on{background:#22c55e}
+.dshm-switch.locked{opacity:.45;cursor:not-allowed}
+.dshm-switch-slider{position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.dshm-switch.on .dshm-switch-slider{left:17px}
+.dshm-compat-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:60}
+.dshm-compat-dialog{max-width:420px;width:calc(100% - 32px);background:var(--dsw-alias-bg-layer-2,#1c2230);border:1px solid var(--dsw-alias-border-l2,#333b4d);border-radius:12px;padding:16px}
+.dshm-compat-title{font-weight:600;margin-bottom:8px;color:#f87171}
+.dshm-compat-body{font-size:12px;margin-bottom:6px}
+.dshm-compat-peers{margin:0 0 8px;padding-left:18px;font-size:12px}
+.dshm-compat-peers li{font-family:ui-monospace,monospace}
+.dshm-compat-risk{font-size:12px;color:#f87171;margin-bottom:12px}
 `;
 
 function ensureCss() {
@@ -304,7 +349,11 @@ async function api(method, params, signal) {
     ...(signal ? { signal } : {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data.ok === false) throw new Error(data.error || `API ${res.status}`);
+  if (!res.ok || data.ok === false) {
+    const err = new Error(data.error || `API ${res.status}`);
+    if (data && typeof data === "object" && data.issue) err.issue = data.issue; // IncompatibleError 结构化载体
+    throw err;
+  }
   return data;
 }
 
@@ -424,6 +473,32 @@ function LinksRow(props) {
   return h("div", { className: "dshm-links" }, h("span", { className: "dshm-links-k" }, `${lookup("detail.links")}：`), ...kids);
 }
 
+// ---------- 0.4.0：开关 Switch 与相位点（Task 18；纯展示，状态来自 toggleViewModel） ----------
+function PhaseDot({ vm }) {
+  if (!vm.phaseDotClass) return null;
+  return h(
+    "span",
+    { className: `dshm-dot ${vm.phaseDotClass}`, title: vm.phaseLabelKey ? lookup(vm.phaseLabelKey) : null },
+    "\u25CF",
+  );
+}
+
+function ToggleSwitch({ vm, disabled, onChange, title }) {
+  return h(
+    "label",
+    {
+      className: `dshm-switch${vm.switchOn ? " on" : ""}${vm.switchDisabled ? " locked" : ""}`,
+      title: title || (vm.switchTitleKey ? lookup(vm.switchTitleKey) : null),
+      onClick: (e) => {
+        e.stopPropagation();
+        if (!vm.switchDisabled && !disabled) onChange(!vm.switchOn);
+      },
+    },
+    h("input", { type: "checkbox", checked: vm.switchOn, disabled: vm.switchDisabled || disabled, readOnly: true }),
+    h("span", { className: "dshm-switch-slider" }),
+  );
+}
+
 function TwoStepButton({ label, confirmLabel, className, onConfirm, disabled }) {
   const [arm, setArm] = useState(false);
   useEffect(() => {
@@ -532,27 +607,81 @@ function MarketTab({ notify, market, onMutation }) {
     debounceRef.current = setTimeout(() => updateQuery({ query: value }), 300);
   };
 
-  const doInstall = async (it, version) => {
+  // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null
+  const [compatConfirm, setCompatConfirm] = useState(null);
+
+  const installDone = (res) => {
+    notify({
+      kind: "ok",
+      needsRestart: true,
+      text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
+        (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "") +
+        (res.bundleWarning === "no-patch-layer" ? lookup("notify.bundlewarning") : ""),
+    });
+  };
+
+  const doInstall = async (it, version, forceIncompatible) => {
     setBusyId(it.id);
     try {
-      const res = await api("install", { id: it.id, ...(version ? { version } : {}) });
-      notify({
-        kind: "ok",
-        needsRestart: true,
-        text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
-          (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
-      });
+      const res = await api("install", { id: it.id, ...(version ? { version } : {}), ...(forceIncompatible ? { forceIncompatible: true } : {}) });
+      installDone(res);
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
-      notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
+      if (e && e.issue) {
+        // peer 预检拦截 → 弹「仍要安装」确认（用户确认后带 force 重发）
+        setCompatConfirm({ it, version, issue: e.issue });
+      } else {
+        notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
+      }
     } finally {
       setBusyId(null);
     }
   };
 
+  const CompatDialog = compatConfirm
+    ? h(
+        "div",
+        { className: "dshm-compat-overlay", onClick: () => setCompatConfirm(null) },
+        h(
+          "div",
+          { className: "dshm-compat-dialog", onClick: (e) => e.stopPropagation() },
+          h("div", { className: "dshm-compat-title" }, lookup("compat.title")),
+          h("div", { className: "dshm-compat-body" }, lookup("compat.body", {
+            pkg: compatConfirm.issue.pkg || compatConfirm.it.pkg,
+            version: compatConfirm.issue.version || "?",
+            runtime: compatConfirm.issue.runtimeVersion || "?",
+          })),
+          h(
+            "ul",
+            { className: "dshm-compat-peers" },
+            ...Object.entries(compatConfirm.issue.peers || {}).map(([name, range]) =>
+              h("li", { key: name }, `${name}: ${range}`)),
+          ),
+          h("div", { className: "dshm-compat-risk" }, lookup("compat.risk")),
+          h(
+            "div",
+            { className: "dshm-actions" },
+            h("button", {
+              className: "dshm-btn sm",
+              onClick: () => setCompatConfirm(null),
+            }, lookup("common.cancel")),
+            h("button", {
+              className: "dshm-btn primary sm",
+              onClick: () => {
+                const pending = compatConfirm;
+                setCompatConfirm(null);
+                doInstall(pending.it, pending.version, true);
+              },
+            }, lookup("compat.force")),
+          ),
+        ),
+      )
+    : null;
+
   return h(
     React.Fragment,
     null,
+    CompatDialog,
     notice
       ? h("div", { className: notice.key === "notice.unavailable" ? "dshm-err" : "dshm-hint" },
           lookup(notice.key, { count: notice.count }))
@@ -723,6 +852,21 @@ function InstalledTab({ notify, installed, onMutation }) {
   const [readmePkg, setReadmePkg] = useState(null);
   const [busyPkg, setBusyPkg] = useState(null);
 
+  const doToggle = async (it, enabled) => {
+    setBusyPkg(it.pkg);
+    try {
+      const res = await api("set-enabled", { pkg: it.pkg, enabled });
+      const note = toggleNoticeKeys(res);
+      const extra = (res.warnings && res.warnings.length ? `（${res.warnings.join("；")}）` : "");
+      notify({ kind: "ok", needsRestart: note.needsRestart, text: lookup(note.textKey, note.params) + extra });
+      await (onMutation ? onMutation() : reload());
+    } catch (e) {
+      notify({ kind: "err", text: lookup("toggle.failed", { err: (e && e.message) || e }) });
+    } finally {
+      setBusyPkg(null);
+    }
+  };
+
   const doUninstall = async (it) => {
     setBusyPkg(it.pkg);
     try {
@@ -781,19 +925,29 @@ function InstalledTab({ notify, installed, onMutation }) {
       { className: "dshm-cards" },
       items.map((it) => {
         const vm = installedViewModel(it);
+        const tvm = toggleViewModel(it);
         return Card({
           key: it.pkg,
           icon: h(Icon, { entry: { name: it.name, github: vm.githubRepo, icon: null } }),
           name: it.name,
+          topRight: h(ToggleSwitch, {
+            vm: tvm,
+            disabled: busyPkg === it.pkg,
+            onChange: (enabled) => doToggle(it, enabled),
+          }),
           badges: [
             it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${vm.latestLabel}`.trim()) : null,
             it.registryId ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market")) : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
           ],
           desc: it.description || "（无描述）",
           sub: [
+            h(PhaseDot, { key: "dot", vm: tvm }),
+            vm.phaseKey ? lookup(vm.phaseKey) : lookup(vm.enabledLabelKey),
             `v${it.version || "?"}`,
             vm.sourceLabelKey ? lookup(vm.sourceLabelKey) : it.source,
-          ].join(" · "),
+          ]
+            .map((part, i) => (i === 0 ? part : [" · ", part]))
+            .flat(),
           links: h(LinksRow, {
             npm: it.source === "npm" ? it.pkg : null,
             github: vm.githubRepo,
@@ -858,10 +1012,20 @@ function configStatusLabel(status) {
 
 const STATUS_BADGE = { ready: "", pending: "info", rejected: "warn", unavailable: "err", loading: "info" };
 
+/** 元数据源展示（Task 18）：status.probe → 竞速胜出源；未探测 → 默认。 */
+function probeLabel(statusInfo) {
+  const probe = statusInfo.data && statusInfo.data.probe;
+  if (!probe) return lookup("settings.probe.none");
+  if (probe.source === "npmjs") return lookup("settings.probe.npmjs");
+  if (probe.source === "npmmirror") return lookup("settings.probe.mirror");
+  return lookup("settings.probe.none");
+}
+
 function SettingsTab({ notify, onRegistryChanged }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
   const cfgState = useAsync(() => api("registry-config"), []);
   const self = useAsync(() => api("self-check"), []);
+  const statusInfo = useAsync(() => api("status"), []);
   const [busy, setBusy] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
   const [draftAddress, setDraftAddress] = useState(null); // null = 尚未从 configuredAddress 初始化
@@ -1003,6 +1167,7 @@ function SettingsTab({ notify, onRegistryChanged }) {
         h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(state && state.fetchedAt)),
         h("span", { className: "k" }, lookup("settings.count")), h("span", null, state ? lookup("settings.count.v", { n: state.count ?? 0 }) : "—"),
         h("span", { className: "k" }, lookup("settings.policy")), h("span", null, lookup("settings.policy.v")),
+        h("span", { className: "k" }, lookup("settings.probe")), h("span", null, probeLabel(statusInfo)),
       ),
       state && state.stale && state.status !== "unavailable"
         ? h("div", { className: "dshm-note" }, lookup("settings.cache.hint"))
@@ -1094,7 +1259,7 @@ function DetailRows(rows) {
 }
 
 // ---------- 卡片（市场/已装共用） ----------
-function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions }) {
+function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight }) {
   return h(
     "div",
     {
@@ -1110,7 +1275,7 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
     h(
       "div",
       { className: "dshm-meta" },
-      h("div", { className: "dshm-top" }, h("span", { className: "dshm-name" }, name), ...badges.filter(Boolean)),
+      h("div", { className: "dshm-top" }, h("span", { className: "dshm-name" }, name), ...badges.filter(Boolean), topRight || null),
       h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : null }, desc),
       sub ? h("div", { className: "dshm-sub" }, sub) : null,
       links || null,
