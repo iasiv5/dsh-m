@@ -353,6 +353,48 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     dir = ''
   })
 
+  it('元数据源探测（Task 8）：probe → npmmirror 时 npmLatest 收到镜像 registry；null → 不传（默认 npmjs）', async () => {
+    const seen = []
+    const mkDeps = (probe) => ({
+      loadRegistry: async () => ({
+        configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
+        isDefault: true, stale: false, fetchedAt: null, errors: [], count: 1,
+        registry: { version: 1, plugins: [TX_ENTRY] },
+      }),
+      npmLatest: async (pkg, timeoutMs, signal, registry) => {
+        seen.push(registry)
+        return { version: '1.2.3', integrity: sha512('good') }
+      },
+      probe,
+    })
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: {} }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const txMirror = mockTxRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
+        return { class: 'ok', output: 'ok', usedAllowAllBuilds: false }
+      }],
+    })
+    await installFromRegistry('p', {}, {}, {
+      ...mkDeps({ fastest: async () => 'npmmirror' }),
+      transaction: { runner: () => txMirror.runner, profileDir: dir },
+    })
+    assert.deepEqual(seen, ['https://registry.npmmirror.com'])
+    seen.length = 0
+    const txDefault = mockTxRunner({
+      add: [async () => ({ class: 'ok', output: 'ok', usedAllowAllBuilds: false })],
+    })
+    await installFromRegistry('p', {}, {}, {
+      ...mkDeps({ fastest: async () => null }),
+      transaction: { runner: () => txDefault.runner, profileDir: dir },
+    })
+    assert.deepEqual(seen, [undefined], '探测 null → 不传 registry（默认 npmjs）')
+  })
+
   it('事务注入①：仅注入查询类依赖 + transaction.runner → 全部操作落在注入 runner（零真实 spawn）', async () => {
     dir = txProfile({
       'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
