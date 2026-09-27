@@ -24,13 +24,17 @@ describe('evaluatePeers：官方语义移植', () => {
     assert.deepEqual(evaluatePeers({ '@deepseek-ai/dsh-tools': '^0.1.5' }, '0.1.7-rc.2'), {})
   })
 
-  it('精确 0.1.5 / ~0.1.5 vs 0.1.7-rc.2 → 不满足', () => {
+  it('精确 0.1.5 / <=0.1.6 vs 0.1.7-rc.2 → 不满足', () => {
     assert.deepEqual(evaluatePeers({ '@deepseek-ai/dsh-tools': '0.1.5' }, '0.1.7-rc.2'), {
       '@deepseek-ai/dsh-tools': '0.1.5',
     })
-    assert.deepEqual(evaluatePeers({ '@deepseek-ai/dsh-tools': '~0.1.5' }, '0.1.7-rc.2'), {
-      '@deepseek-ai/dsh-tools': '~0.1.5',
+    assert.deepEqual(evaluatePeers({ '@deepseek-ai/dsh-tools': '<=0.1.6' }, '0.1.7-rc.2'), {
+      '@deepseek-ai/dsh-tools': '<=0.1.6',
     })
+  })
+
+  it('~0.1.5 vs 0.1.7-rc.2 → 满足（semver 语义：prerelease 在 0.1.x 区间内，官方同判）', () => {
+    assert.deepEqual(evaluatePeers({ '@deepseek-ai/dsh-tools': '~0.1.5' }, '0.1.7-rc.2'), {})
   })
 
   it('peer 升高方向（^0.2.0）vs 0.1.7 → 不满足', () => {
@@ -98,13 +102,13 @@ describe('precheckNpmCompat', () => {
     const result = await precheckNpmCompat('demo-pkg', '2.0.0', {
       timeoutMs: 1,
       runtimeVersion: '0.1.7-rc.2',
-      fetchVersion: stubMeta({ '@deepseek-ai/dsh': '~0.1.5' }),
+      fetchVersion: stubMeta({ '@deepseek-ai/dsh': '<=0.1.6' }),
     })
     assert.deepEqual(result, {
       pkg: 'demo-pkg',
       version: '2.0.0',
       runtimeVersion: '0.1.7-rc.2',
-      peers: { '@deepseek-ai/dsh': '~0.1.5' },
+      peers: { '@deepseek-ai/dsh': '<=0.1.6' },
     })
   })
 
