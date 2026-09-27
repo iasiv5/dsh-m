@@ -114,6 +114,8 @@ interface CommittedResult extends TransactionBase {
   readonly pkg?: string; readonly spec?: string; readonly version?: string
   readonly sha?: string; readonly tag?: string
   readonly buildApprovals?: string[]; readonly fallbackAllBuilds?: boolean
+  /** verify 阶段观察：无补丁层且不在 bundles（装成纯依赖）——只警告不回滚（Task 10） */
+  readonly bundleWarning?: 'no-patch-layer'
   readonly liveDisabled?: boolean; readonly orphanedPatchFiles?: string[]
 }
 interface RejectedResult extends TransactionBase {
@@ -621,6 +623,30 @@ async function addWithLagRetry(
  * npm 门最终验证（R3：可重复执行）——manifest 依赖存在与锚定、lockfile 存在、
  * 与 npm dist 一致的 resolution.integrity。firstPass 控制是否记录 range 放行 heal。
  */
+/**
+ * bundle 身份观察（Task 10，只警告不回滚）：包内无 cordis.patch.yml 且 profile
+ * bundles 数组不含该包 → 装成「纯依赖」（不进加载树、已装页进 others 折叠）。
+ * 存在合法的无补丁层 dsh 包（伴生库/纯资源包），故不判失败。
+ */
+async function bundleIdentityWarning(profileDir: string, pkg: string): Promise<'no-patch-layer' | undefined> {
+  try {
+    await readFile(join(profileDir, 'node_modules', pkg, 'cordis.patch.yml'))
+    return undefined
+  } catch {
+    /* 无补丁层 → 再看 bundles */
+  }
+  try {
+    const raw = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = raw?.dsh?.profile?.bundles
+    if (Array.isArray(bundles) && bundles.includes(pkg)) return undefined
+  } catch {
+    /* manifest 读不到 → 如实报 warning（不升级为失败） */
+  }
+  return 'no-patch-layer'
+}
+
 async function verifyNpmCommitState(
   req: Extract<TransactionRequest, { kind: 'install-npm' }>,
   d: ResolvedDeps,
@@ -712,6 +738,7 @@ async function installNpm(
       version: req.version,
       buildApprovals: addOut.buildApprovals ?? [],
       fallbackAllBuilds: addOut.fallbackAllBuilds === true,
+      ...(await bundleIdentityWarning(d.profileDir, req.pkg)) ? { bundleWarning: 'no-patch-layer' as const } : {},
     })
   } catch (err) {
     if (err instanceof DomainFailure) {
@@ -783,6 +810,7 @@ async function installGithub(
       tag: req.tag,
       buildApprovals: addOut.buildApprovals ?? [],
       fallbackAllBuilds: addOut.fallbackAllBuilds === true,
+      ...(await bundleIdentityWarning(d.profileDir, key)) ? { bundleWarning: 'no-patch-layer' as const } : {},
     })
   } catch (err) {
     if (err instanceof DomainFailure) {

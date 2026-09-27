@@ -1613,3 +1613,66 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
     await warm('fine')
   })
 })
+
+describe('install-npm：bundle 身份观察（Task 10，只警告不回滚）', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  /** 成功 add：manifest + lock 正确落盘；patchLayer/bundles 控制身份形态。 */
+  function committedAdd({ patchLayer, bundles }) {
+    return async () => {
+      const doc = { dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }
+      if (bundles) doc.dsh = { profile: { bundles } }
+      writeFileSync(join(dir, 'package.json'), manifest(doc))
+      writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+      if (patchLayer) {
+        mkdirSync(join(dir, 'node_modules', 'pkg-a'), { recursive: true })
+        writeFileSync(join(dir, 'node_modules', 'pkg-a', 'cordis.patch.yml'), '- insert: [{id: demo, name: pkg-a}]\n')
+      }
+      return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
+    }
+  }
+
+  const runInstall = (runner) => runProfileTransaction(
+    { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+    baseTx(dir, runner),
+  )
+
+  it('无补丁层且不在 bundles → bundleWarning:no-patch-layer（committed 不回滚）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({ add: [committedAdd({ patchLayer: false, bundles: undefined })] })
+    const r = await runInstall(runner)
+    assert.equal(r.status, 'committed')
+    assert.equal(r.bundleWarning, 'no-patch-layer')
+  })
+
+  it('有补丁层 → 无 bundleWarning', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({ add: [committedAdd({ patchLayer: true, bundles: undefined })] })
+    const r = await runInstall(runner)
+    assert.equal(r.status, 'committed')
+    assert.equal(r.bundleWarning, undefined)
+  })
+
+  it('无补丁层但在 bundles → 无 bundleWarning（bundle 身份成立）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const { runner } = mockRunner({ add: [committedAdd({ patchLayer: false, bundles: ['pkg-a'] })] })
+    const r = await runInstall(runner)
+    assert.equal(r.status, 'committed')
+    assert.equal(r.bundleWarning, undefined)
+    const doc = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    assert.deepEqual(doc.dsh.profile.bundles, ['pkg-a'])
+  })
+})
