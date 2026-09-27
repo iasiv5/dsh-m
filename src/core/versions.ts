@@ -29,6 +29,17 @@ export interface NpmLatest {
 /** 精确版本 metadata（Task 8 integrity 校验使用，与 NpmLatest 同形）。 */
 export type NpmVersionMetadata = NpmLatest
 
+/** 精确版本完整详情（0.4.0 兼容预检）：同 NpmLatest + 该版本 peerDependencies 原样。 */
+export interface NpmVersionDetail extends NpmLatest {
+  peers: Record<string, string>
+}
+
+/** registry base 归一（去尾斜杠；空/缺省 → 官方 npmjs）。 */
+function registryBase(registry?: string): string {
+  const base = typeof registry === 'string' && registry.trim() !== '' ? registry.trim() : 'https://registry.npmjs.org'
+  return base.replace(/\/+$/, '')
+}
+
 /** 精确 semver：接受 prerelease/build metadata，拒绝 v 前缀、range、tag 与脏尾缀。 */
 const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 
@@ -37,19 +48,27 @@ export function isExactVersion(version: string): boolean {
 }
 
 /** 读取该精确版本的 dist metadata（不使用 /latest endpoint）；integrity 缺失由调用方拒绝安装。 */
-export async function npmVersion(pkg: string, version: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmVersionMetadata> {
+export async function npmVersion(pkg: string, version: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<NpmVersionDetail> {
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   if (!isExactVersion(version)) throw new Error(`不是精确版本（拒绝 range/tag/前缀）: ${version}`)
   const data = await fetchJsonLimited<{
     version?: unknown
     dist?: { integrity?: unknown; tarball?: unknown }
-  }>(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/${version}`, { timeoutMs, signal })
+    peerDependencies?: unknown
+  }>(`${registryBase(registry)}/${encodeURIComponent(pkg)}/${version}`, { timeoutMs, signal })
   const resolved = typeof data.version === 'string' ? data.version : ''
   if (!resolved) throw new Error(`npm 未返回版本: ${pkg}@${version}`)
+  const peers: Record<string, string> = {}
+  if (data.peerDependencies !== null && typeof data.peerDependencies === 'object') {
+    for (const [name, range] of Object.entries(data.peerDependencies as Record<string, unknown>)) {
+      if (typeof range === 'string') peers[name] = range
+    }
+  }
   return {
     version: resolved,
     integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
     tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
+    peers,
   }
 }
 
@@ -57,7 +76,7 @@ export async function npmVersion(pkg: string, version: string, timeoutMs = 20_00
  * 拉取完整 packument（NO_MATCHING_VERSION 退避重试前的预热/校验原语）。
  * 返回该包已知的全部版本号；解析不出 versions 时返回空列表（不抛）。
  */
-export async function npmPackument(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<{ versions: string[] }> {
+export async function npmPackument(pkg: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<{ versions: string[] }> {
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   const data = await fetchJsonLimited<{ versions?: unknown }>(
     `https://registry.npmjs.org/${encodeURIComponent(pkg)}`,
@@ -67,13 +86,13 @@ export async function npmPackument(pkg: string, timeoutMs = 20_000, signal?: Abo
   return { versions }
 }
 
-export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<NpmLatest> {
+export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<NpmLatest> {
   // 允许 scoped 包名：@scope/name（isSafePkgName 同款字符集）
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   const data = await fetchJsonLimited<{
     version?: unknown
     dist?: { integrity?: unknown; tarball?: unknown }
-  }>(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/latest`, { timeoutMs, signal })
+  }>(`${registryBase(registry)}/${encodeURIComponent(pkg)}/latest`, { timeoutMs, signal })
   const version = typeof data.version === 'string' ? data.version : ''
   if (!version) throw new Error(`npm 未返回版本: ${pkg}`)
   return {
