@@ -4,8 +4,17 @@
  */
 
 export interface LoaderEntry {
+  /** 合成条目 id（cordis.patch.yml 覆盖行的匹配键，官方 pluginEntryId 同源） */
+  id?: string
   options?: { name?: string; disabled?: boolean | null }
-  fiber?: unknown
+  /**
+   * entry 顶层的有效停用态（含被禁用的祖先组）——官方 readPluginInventory 的
+   * `enabled = !entry.disabled` 读法（dsh-host-plugin-inventory L131）。与
+   * options.disabled 不同层：后者只是本行声明，前者是合成后的有效值。
+   */
+  disabled?: boolean
+  /** root fiber 存在性即活体判定（flipEntry 现行用法）；state 为数字枚举 0-5 */
+  fiber?: { state?: number | string } | undefined
   update?(patch: { disabled: boolean | null }, ...rest: unknown[]): Promise<unknown> | unknown
 }
 

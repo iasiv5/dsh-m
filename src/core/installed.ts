@@ -12,6 +12,7 @@
 import { open, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { webProfileDir } from './env.js'
+import { readBundlePatchRows, type BundlePatchRows } from './patch-yaml.js'
 
 const PKG_NAME_RE = /^(@[A-Za-z0-9-*~][A-Za-z0-9-*._~]*\/)?[A-Za-z0-9-._~]+$/
 
@@ -32,6 +33,8 @@ export interface InstalledPlugin {
   path: string
   /** package.json repository 解析出的 github owner/repo（头像用） */
   githubRepo?: string | null
+  /** 包内 cordis.patch.yml（dsh.bundle.patch 层）的行枚举——开关粒度判定原料；文件缺失 → readable:false */
+  patchRows?: BundlePatchRows
 }
 
 export interface InstalledPluginsResult {
@@ -217,6 +220,11 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
       continue
     }
     const info = sanitizePkgJson(raw, pkg)
+    // 包内补丁层行枚举（开关粒度判定原料）：缺失 → readable:false（按多行 → Bundle 级处理）
+    const patchText = await readTextLimited(join(dir, 'cordis.patch.yml'), PATCH_MAX_BYTES)
+    const patchRows = patchText
+      ? readBundlePatchRows(patchText.text)
+      : { inserts: [], configRows: 0, readable: false }
     items.push({
       pkg,
       name: info.name,
@@ -228,6 +236,7 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
       dsh: true,
       path: dir,
       githubRepo: githubRepoFromRepository(raw.repository),
+      patchRows,
     })
   }
   return { items, others, complete, profileDir: root }
@@ -237,6 +246,8 @@ export async function listInstalledPlugins(profileDir: string = webProfileDir())
 
 const README_MAX_BYTES = 64 * 1024
 const README_FILES = ['README.md', 'README.markdown', 'README']
+/** 包内 cordis.patch.yml 读取上限（补丁层是小文件，256KB 远超正常体积）。 */
+const PATCH_MAX_BYTES = 256 * 1024
 
 export interface PluginReadme {
   pkg: string
