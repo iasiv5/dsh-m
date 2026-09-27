@@ -260,6 +260,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
         registry: { version: 1, plugins: [entry] },
       }),
       npmLatest: async () => ({ version: '1.2.3', integrity: sha512('good') }),
+      precheck: async () => null, // 预检桩：兼容（不打网络；incompatible 路径在 market.test 覆盖）
       ...rest,
       transaction: {
         profileDir: profile,

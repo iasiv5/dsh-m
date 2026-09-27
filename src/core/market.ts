@@ -8,6 +8,7 @@
  * 新发布后 NO_MATCHING_VERSION 的退避重试 + packument 预热（B3）。
  */
 import { existsSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { dshHome, webProfileDir } from './env.js'
 import {
@@ -21,7 +22,10 @@ import {
   listInstalledPlugins as defaultListInstalledPlugins,
   type InstalledPlugin,
 } from './installed.js'
-import { setLivePluginDisabled } from './live-plugin.js'
+import { setLivePluginDisabled, loaderHost, type LoaderEntry } from './live-plugin.js'
+import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
+import { PROTECTED_MODULES, composeEnablement, type PluginEnablement } from './enablement.js'
+import { readProfileOverrides } from './patch-yaml.js'
 import {
   loadRegistry as defaultLoadRegistry,
   type LoadedRegistry,
@@ -82,11 +86,46 @@ export interface MarketDeps {
   githubLatestTag: typeof defaultGithubLatestTag
   /** 元数据源竞速探测（Task 8）；缺省 = 不探测（默认 npmjs） */
   probe?: ProbeLike
+  /** enablement 合成注入（Task 13）；缺省 = composeEnablement */
+  composeEnablement?: typeof composeEnablement
 }
 
 /** 元数据源竞速探测的最小结构类型（RegistryProbe 注入；只读元数据源，不动安装链路）。 */
 export interface ProbeLike {
   fastest(): Promise<'npmjs' | 'npmmirror' | null>
+}
+
+/** profile package.json 的 dsh.profile.bundles 数组（读不到 → []；Task 13）。 */
+async function readProfileBundles(profileDir: string): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as {
+      dsh?: { profile?: { bundles?: unknown } }
+    }
+    const bundles = raw?.dsh?.profile?.bundles
+    return Array.isArray(bundles) ? bundles.filter((name): name is string => typeof name === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** profile cordis.patch.yml 覆盖行（读不到 → []；Task 13）。 */
+async function readProfileOverrideRows(profileDir: string): Promise<Array<{ id: string; disabled: boolean }>> {
+  try {
+    return readProfileOverrides(await readFile(join(profileDir, 'cordis.patch.yml'), 'utf8'))
+  } catch {
+    return []
+  }
+}
+
+/** 宿主内 loader entries（CLI/测试进程 → null；Task 13 读路径始终自读）。 */
+function loaderEntriesOrNull(): LoaderEntry[] | null {
+  const entries = loaderHost()?.loader?.entries
+  if (typeof entries !== 'function') return null
+  try {
+    return [...entries.call(loaderHost()!.loader)]
+  } catch {
+    return null
+  }
 }
 
 /** 探测结果 → versions.ts 的 registry base；探测失败/禁用 → undefined（默认 npmjs）。 */
@@ -506,7 +545,19 @@ export async function listInstalledWithMeta(
   const installedPromise = d.listInstalledPlugins()
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
   const installed = await installedPromise
-  const items: InstalledItem[] = installed.items.map((it) => ({ ...it, outdated: false }))
+  // enablement join（Task 13，ADR-0001 读路径自读）：loader ⋈ bundles ⋈ profile 覆盖行
+  const compose = d.composeEnablement ?? composeEnablement
+  const enablement = await compose({
+    items: installed.items,
+    loaderEntries: loaderEntriesOrNull(),
+    bundles: await readProfileBundles(installed.profileDir),
+    profileOverrides: await readProfileOverrideRows(installed.profileDir),
+  })
+  const items: InstalledItem[] = installed.items.map((it) => ({
+    ...it,
+    outdated: false,
+    ...(enablement.get(it.pkg) ?? { pkg: it.pkg, enabled: true, phase: null, granularity: 'bundle' as const, toggleable: false, lockReason: 'no-entry' as const }),
+  }))
 
   let loaded: LoadedRegistry | 'deadline'
   try {
@@ -579,6 +630,8 @@ export async function listInstalledWithMeta(
 /** 安装/升级路径可注入依赖（测试用；生产走真实实现）。Task 9 起事务注入走 `transaction`。 */
 export interface InstallDeps extends Partial<MarketDeps> {
   npmVersion?: typeof npmVersion
+  /** peer 兼容预检注入（Task 11）；缺省 = precheckNpmCompat */
+  precheck?: typeof precheckNpmCompat
   /** 事务依赖注入（runner/预热/退避/tmpdir 等）；B3 预热统一走 transaction.warmPackument */
   transaction?: TransactionDeps
 }
@@ -594,6 +647,12 @@ export interface InstallResult {
   buildApprovals: string[]
   /** pending 名单读不出时的全量兜底标记 */
   fallbackAllBuilds: boolean
+  /** verify 阶段观察：装成纯依赖（无补丁层且不在 bundles）——只警告不回滚 */
+  bundleWarning?: 'no-patch-layer'
+  /** peer 兼容预检结果（null = 兼容或未检；Task 11） */
+  compat?: CompatIssue | null
+  /** github 源不做兼容预检的明示（Task 11） */
+  compatSkipped?: 'github-source'
   needsRestart: true
   output: string
   /** 事务自愈动作（机器可断言 code + 给人看的 note） */
@@ -604,7 +663,7 @@ export interface InstallResult {
 export async function installFromRegistry(
   id: string,
   cfg: RegistryConfig = {},
-  opts: { version?: string } & RegistryRuntimeOptions = {},
+  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<InstallResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })
@@ -619,7 +678,7 @@ export async function installFromRegistry(
 export async function installEntry(
   entry: RegistryEntry,
   cfg: RegistryConfig = {},
-  opts: { version?: string } & RegistryRuntimeOptions = {},
+  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<InstallResult> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
@@ -643,6 +702,19 @@ export async function installEntry(
       expectedIntegrity = latest.integrity
     }
     if (!expectedIntegrity) throw new Error(`npm metadata 缺少 dist integrity：${pkg}@${version}，拒绝安装`)
+    // peer 兼容预检（Task 11，事务外 metadata 阶段；force = 用户已确认风险）。
+    // 预检自身的元数据读取失败（网络错/404）不拦安装——视为未检，安装事务自有失败语义。
+    let compat: CompatIssue | null = null
+    try {
+      compat = await (deps?.precheck ?? precheckNpmCompat)(pkg, version, {
+        timeoutMs,
+        signal: opts.signal,
+        registry: d.registry,
+      })
+    } catch {
+      compat = null
+    }
+    if (compat !== null && opts.forceIncompatible !== true) throw new IncompatibleError(compat)
     // 生产预热绑定：未注入时 B3 用 makeNpmWarmPackument（保留 timeout/signal、失败吞错）
     const result = await runProfileTransaction(
       { kind: 'install-npm', pkg, version, integrity: expectedIntegrity, signal: opts.signal },
@@ -660,6 +732,8 @@ export async function installEntry(
       version: result.version ?? version,
       buildApprovals: result.buildApprovals ?? [],
       fallbackAllBuilds: result.fallbackAllBuilds === true,
+      ...(result.bundleWarning ? { bundleWarning: result.bundleWarning } : {}),
+      compat: compat ?? null,
       needsRestart: true,
       output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
       healActions: result.healActions,
@@ -682,6 +756,8 @@ export async function installEntry(
       tag: result.tag ?? tag,
       buildApprovals: result.buildApprovals ?? [],
       fallbackAllBuilds: result.fallbackAllBuilds === true,
+      ...(result.bundleWarning ? { bundleWarning: result.bundleWarning } : {}),
+      compatSkipped: 'github-source',
       needsRestart: true,
       output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
       healActions: result.healActions,
@@ -711,6 +787,12 @@ export async function uninstallPlugin(
   opts: RegistryRuntimeOptions = {},
   deps: UninstallDeps = {},
 ): Promise<UninstallResult> {
+  // 保护门（Task 12，grilling Q3）：dsh-m 自身与官方宿主命脉拒绝卸载（升级不受影响）
+  if (pkg === 'dsh-m' || PROTECTED_MODULES.includes(pkg)) {
+    throw new Error(
+      `拒绝卸载受保护插件: ${pkg}（dsh-m 自身或官方宿主命脉）。如确需移除，请使用官方插件管理页或 dsh plugin CLI`,
+    )
+  }
   const result = await runProfileTransaction(
     { kind: 'uninstall', pkg, signal: opts.signal },
     deps.transaction ?? {},
@@ -735,7 +817,7 @@ export interface UpgradeResult extends InstallResult {
 export async function upgradePlugin(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })

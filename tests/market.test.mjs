@@ -9,7 +9,8 @@ import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin } from '../lib/core/market.js'
+import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin } from '../lib/core/market.js'
+import { IncompatibleError } from '../lib/core/compat-check.js'
 
 const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -315,6 +316,7 @@ function txRegistryDeps(entry, npmLatestResult) {
       registry: { version: 1, plugins: [entry] },
     }),
     npmLatest: async () => npmLatestResult,
+    precheck: async () => null, // 预检桩：兼容（不打网络）
   }
 }
 
@@ -365,6 +367,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
         seen.push(registry)
         return { version: '1.2.3', integrity: sha512('good') }
       },
+      precheck: async () => null,
       probe,
     })
     dir = txProfile({
@@ -756,5 +759,163 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
       { err: () => {} },
     )
     assert.equal(code, 1)
+  })
+})
+
+describe('0.4.0：兼容预检门 / 卸载保护门 / 结果透传（Tasks 11-13）', () => {
+  const installed = {
+    items: [{
+      pkg: 'pkg-1',
+      name: 'P1',
+      version: '1.0.0',
+      description: '',
+      homepage: '',
+      spec: '1.0.0',
+      source: 'npm',
+      dsh: true,
+      path: '/tmp/node_modules/pkg-1',
+    }, {
+      pkg: 'dsh-m',
+      name: 'dshm',
+      version: '0.4.0',
+      description: '',
+      homepage: '',
+      spec: '0.4.0',
+      source: 'npm',
+      dsh: true,
+      path: '/tmp/node_modules/dsh-m',
+    }],
+    others: 0,
+    complete: true,
+    profileDir: '/tmp/profile',
+  }
+  let dir = ''
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = ''
+  })
+
+  const ISSUE = {
+    pkg: 'pkg-a', version: '1.2.3', runtimeVersion: '0.1.7-rc.2',
+    peers: { '@deepseek-ai/dsh': '<=0.1.6' },
+  }
+  const issueDeps = (extra = {}) => ({
+    ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+    precheck: async () => ({ ...ISSUE }),
+    ...extra,
+  })
+  const okTx = (dirPath, bundleWarning) => ({
+    runner: () => ({
+      add: async () => {
+        writeFileSync(join(dirPath, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+        writeFileSync(join(dirPath, 'pnpm-lock.yaml'), LOCK_GOOD)
+        return { class: 'ok', output: 'ok', buildApprovals: [], fallbackAllBuilds: false, ...(bundleWarning ? { bundleWarning } : {}) }
+      },
+      remove: async () => ({ class: 'ok', output: 'ok' }),
+      frozenInstall: async () => ({ class: 'ok', output: 'ok' }),
+      rebuildInstall: async () => ({ class: 'ok', output: 'ok' }),
+    }),
+    profileDir: dirPath,
+  })
+
+  it('Task 11：预检不兼容且未 force → IncompatibleError（结构化 issue）', async () => {
+    await assert.rejects(
+      () => installFromRegistry('p', {}, {}, issueDeps()),
+      (err) => err instanceof IncompatibleError && err.issue.peers['@deepseek-ai/dsh'] === '<=0.1.6',
+    )
+  })
+
+  it('Task 11：force → 放行且结果记录 compat issue（已强制）', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: {} }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const res = await installFromRegistry('p', {}, { forceIncompatible: true }, {
+      ...issueDeps(),
+      transaction: okTx(dir),
+    })
+    assert.equal(res.version, '1.2.3')
+    assert.deepEqual(res.compat, ISSUE)
+  })
+
+  it('Task 11：github 源 → compatSkipped 明示', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: {} }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const ghSpec = `github:owner/repo#${'a'.repeat(40)}`
+    const res = await installFromRegistry('p', {}, {}, {
+      loadRegistry: async () => ({
+        configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
+        isDefault: true, stale: false, fetchedAt: null, errors: [], count: 1,
+        registry: { version: 1, plugins: [{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'github', github: 'owner/repo' }] },
+      }),
+      githubLatestTag: async () => ({ tag: 'v2.0.0', sha: 'a'.repeat(40) }),
+      transaction: {
+        runner: () => ({
+          add: async () => {
+            writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { 'owner-repo': ghSpec } }, null, 2) + '\n')
+            return { class: 'ok', output: 'gh-added', buildApprovals: [], fallbackAllBuilds: false }
+          },
+          remove: async () => ({ class: 'ok', output: 'ok' }),
+          frozenInstall: async () => ({ class: 'ok', output: 'ok' }),
+          rebuildInstall: async () => ({ class: 'ok', output: 'ok' }),
+        }),
+        profileDir: dir,
+      },
+    })
+    assert.equal(res.compatSkipped, 'github-source')
+    assert.equal(res.compat, undefined)
+  })
+
+  it('Task 12：卸载 dsh-m / 官方命脉 → 拒绝（零事务调用）；普通插件正常进入事务', async () => {
+    let txCalls = 0
+    const guardDeps = { transaction: { runner: () => ({ add: async () => { throw new Error('不应装') }, remove: async () => { txCalls += 1; return { class: 'ok', output: 'ok' } }, frozenInstall: async () => ({ class: 'ok', output: 'ok' }), rebuildInstall: async () => ({ class: 'ok', output: 'ok' }) }) } }
+    await assert.rejects(
+      () => uninstallPlugin('dsh-m', {}, {}, guardDeps),
+      (err) => /拒绝卸载受保护插件/.test(err.message),
+    )
+    await assert.rejects(
+      () => uninstallPlugin('@deepseek-ai/dsh-hmr', {}, {}, guardDeps),
+      (err) => /受保护/.test(err.message),
+    )
+    assert.equal(txCalls, 0, '保护门零事务调用')
+  })
+
+  it('Task 13：bundleWarning 从事务透传到 InstallResult', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: {} }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const res = await installFromRegistry('p', {}, {}, {
+      ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+      transaction: okTx(dir, 'no-patch-layer'),
+    })
+    assert.equal(res.bundleWarning, 'no-patch-layer')
+  })
+
+  it('Task 13：listInstalledWithMeta join enablement（注入 composeEnablement）', async () => {
+    const base = fakeDeps({ listInstalledPlugins: async () => installed })
+    const map = new Map([
+      ['pkg-1', { pkg: 'pkg-1', enabled: true, phase: 'active', granularity: 'row', toggleable: true }],
+      ['dsh-m', { pkg: 'dsh-m', enabled: true, phase: 'active', granularity: 'bundle', toggleable: false, lockReason: 'self' }],
+    ])
+    const res = await listInstalledWithMeta(cfg, {}, { ...base.deps, composeEnablement: async () => map })
+    const byPkg = Object.fromEntries(res.items.map((it) => [it.pkg, it]))
+    assert.equal(byPkg['pkg-1'].phase, 'active')
+    assert.equal(byPkg['pkg-1'].toggleable, true)
+    assert.equal(byPkg['dsh-m'].lockReason, 'self')
+    assert.equal(byPkg['dsh-m'].toggleable, false)
+  })
+
+  it('Task 13：composeEnablement 缺省注入也工作（真实 compose，fake profileDir → no-entry 兜底不抛）', async () => {
+    const { deps } = fakeDeps({ listInstalledPlugins: async () => installed })
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(res.items.length >= 1, true)
+    assert.equal(res.items[0].enabled, false, '/tmp/profile 无 bundles → 推断未启用')
+    assert.equal(res.items[0].toggleable, false)
   })
 })
