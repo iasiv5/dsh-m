@@ -14,6 +14,7 @@ import {
   type InstalledResult,
   type MarketResult,
 } from './core/market.js'
+import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { scheduleRestart } from './core/restart.js'
 import { pathToFileURL } from 'node:url'
@@ -32,6 +33,7 @@ export interface CliDeps {
   installFromRegistry?: typeof installFromRegistry
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
+  togglePlugin?: typeof coreTogglePlugin
 }
 
 export interface CliIo {
@@ -136,9 +138,10 @@ const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
   dshm registry                      查看收录清单来源与条目
 
 变更命令（必须 --yes）：
-  dshm install --id <收录id> [--version 1.2.3]
-  dshm upgrade --pkg <包名> --yes
+  dshm install --id <收录id> [--version 1.2.3] [--force]   （--force：确认兼容风险后跳过预检拦截）
+  dshm upgrade --pkg <包名> --yes [--force]
   dshm uninstall --pkg <包名> --yes
+  dshm toggle --pkg <包名> --on|--off --yes   （切换运行状态；文件级编辑，重启生效）
   dshm restart --yes
   注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
@@ -166,6 +169,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     installFromRegistry: deps.installFromRegistry ?? installFromRegistry,
     uninstallPlugin: deps.uninstallPlugin ?? uninstallPlugin,
     upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
+    togglePlugin: deps.togglePlugin ?? coreTogglePlugin,
   }
   const { cmd, flags } = parseArgs(argv)
   const cfg = cliConfig()
@@ -263,7 +267,11 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'install': {
       const id = needFlag(flags, 'id')
       const version = typeof flags.version === 'string' ? flags.version : undefined
-      const res = await d.installFromRegistry(id, cfg, { version, namespace: 'cli' })
+      const res = await d.installFromRegistry(id, cfg, {
+        version,
+        forceIncompatible: flags.force === true,
+        namespace: 'cli',
+      })
       out(`✅ 已安装 ${res.pkg}（${res.spec}）`)
       outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -273,12 +281,28 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'upgrade': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '升级')
-      const res = await d.upgradePlugin(target, cfg, { namespace: 'cli' })
+      const res = await d.upgradePlugin(target, cfg, {
+        forceIncompatible: flags.force === true,
+        namespace: 'cli',
+      })
       const from = res.fromVersion ? `v${res.fromVersion} → ` : ''
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'
       out(`✅ 已升级 ${res.pkg}（${from}${to}）`)
       outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
+      return 0
+    }
+
+    case 'toggle': {
+      const target = needFlag(flags, 'pkg')
+      const onFlag = flags.on === true
+      const offFlag = flags.off === true
+      if (onFlag === offFlag) throw new Error('开关命令需要恰好一个 --on 或 --off')
+      requireYes(flags, '切换插件运行状态')
+      const res = await d.togglePlugin(target, onFlag)
+      out(`✅ 已${onFlag ? '启用' : '停用'} ${res.pkg}（profile 文件已更新）`)
+      if (res.applied === 'live') out('本次进程内已即时生效；重启后状态保持。')
+      else out('需要重启 DSH Web 生效：dshm restart --yes')
       return 0
     }
 
