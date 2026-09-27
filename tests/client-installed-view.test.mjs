@@ -78,3 +78,21 @@ describe('registrySourceKey', () => {
     assert.equal(registrySourceKey({ source: 'brand-new' }), 'brand-new')
   })
 })
+
+describe('installedViewModel：0.4.0 相位/开关字段（Task 17）', () => {
+  const base = { source: 'npm', spec: 'pkg@1.0.0' }
+  it('有相位 → phaseKey；enabled:false → off 标签', () => {
+    const vm = installedViewModel({ ...base, phase: 'failed', enabled: false })
+    assert.equal(vm.phaseKey, 'phase.failed')
+    assert.equal(vm.enabledLabelKey, 'toggle.state.off')
+  })
+  it('无相位 → null；enabled:true → on 标签', () => {
+    const vm = installedViewModel({ ...base, phase: null, enabled: true })
+    assert.equal(vm.phaseKey, null)
+    assert.equal(vm.enabledLabelKey, 'toggle.state.on')
+  })
+  it('旧字段缺省（无 phase/enabled）→ on 标签兼容', () => {
+    const vm = installedViewModel({ ...base })
+    assert.equal(vm.enabledLabelKey, 'toggle.state.on')
+  })
+})

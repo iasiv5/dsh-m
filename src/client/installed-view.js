@@ -25,6 +25,9 @@ export function installedViewModel(it) {
     guard: uninstallGuardKeys(it),
     latestLabel: it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : ""),
     latestLabelDetail: it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : "—"),
+    // 0.4.0（Task 17）：运行相位/开关状态的 sub 行渲染原料；相位点 class 映射归 toggle-view
+    phaseKey: it.phase ? `phase.${it.phase}` : null,
+    enabledLabelKey: it.enabled === false ? "toggle.state.off" : "toggle.state.on",
   };
 }
 
