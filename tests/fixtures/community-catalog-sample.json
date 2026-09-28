@@ -1,0 +1,952 @@
+{
+ "name": "awesome-dsh-plugin",
+ "url": "https://awesome-dsh-plugin.com",
+ "source": "https://github.com/awesome-dsh-plugin/awesome-dsh-plugin",
+ "updated": "2026-09-27",
+ "count": 30,
+ "categories": {
+  "agi": {
+   "en": "AGI Architecture Exploration",
+   "zh": "AGI 架构探索"
+  },
+  "ui": {
+   "en": "UI Enhancements",
+   "zh": "UI 增强"
+  },
+  "usage": {
+   "en": "Usage & Billing",
+   "zh": "用量与计费"
+  },
+  "theme": {
+   "en": "Themes & Appearance",
+   "zh": "主题与外观"
+  },
+  "model": {
+   "en": "Models & Providers",
+   "zh": "模型与账号接入"
+  },
+  "identity": {
+   "en": "Identity & Communication",
+   "zh": "身份与通信"
+  },
+  "session": {
+   "en": "Sessions & Messages",
+   "zh": "会话与消息"
+  },
+  "memory": {
+   "en": "Memory",
+   "zh": "记忆"
+  },
+  "tools": {
+   "en": "Tools & Capabilities",
+   "zh": "工具与能力"
+  },
+  "wsl": {
+   "en": "WSL & Windows Interop",
+   "zh": "WSL 与 Windows 互操作"
+  },
+  "browser": {
+   "en": "Browser & Web",
+   "zh": "浏览器与网页"
+  },
+  "vision": {
+   "en": "Vision & Multimodal",
+   "zh": "视觉与多模态"
+  },
+  "voice": {
+   "en": "Voice & Audio",
+   "zh": "语音与音频"
+  },
+  "docs": {
+   "en": "Docs & Rendering",
+   "zh": "文档与渲染"
+  },
+  "skill": {
+   "en": "Skills",
+   "zh": "技能包"
+  },
+  "workflow": {
+   "en": "Workflow & Automation",
+   "zh": "工作流与自动化"
+  },
+  "git": {
+   "en": "Git & Code Review",
+   "zh": "Git 与代码评审"
+  },
+  "notify": {
+   "en": "Notifications & Integrations",
+   "zh": "通知与集成"
+  },
+  "dev": {
+   "en": "Development & Runtime",
+   "zh": "开发与运行时"
+  },
+  "security": {
+   "en": "Security & Permissions",
+   "zh": "安全与权限"
+  },
+  "remote": {
+   "en": "Remote & Mobile",
+   "zh": "远程与移动端"
+  },
+  "market": {
+   "en": "Plugin Markets & Managers",
+   "zh": "插件市场与管理"
+  },
+  "fun": {
+   "en": "Just for Fun",
+   "zh": "娱乐"
+  }
+ },
+ "plugins": [
+  {
+   "name": "dsh-j-space",
+   "owner": "AnonyJcy",
+   "url": "https://github.com/AnonyJcy/dsh-j-space",
+   "page": "https://awesome-dsh-plugin.com/p/AnonyJcy/dsh-j-space/",
+   "category": "agi",
+   "description": {
+    "en": "J-Space Cognition Suite SV1 native agent preset and standalone Cordis plugin: 13 modules, persistent controller and decoupled workspace.",
+    "zh": "J-Space Cognition Suite SV1 原生智能体预设与 Cordis 插件：提供 13 大认知工程模块、持久化控制器与状态外化工作区。"
+   },
+   "npm": "@anonyjcy/dsh-j-space",
+   "version": "1.1.2",
+   "stars": 2,
+   "downloads": 591,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @anonyjcy/dsh-j-space",
+   "added": "2026-09-20"
+  },
+  {
+   "name": "dsh-status-rotator",
+   "owner": "01Virex",
+   "url": "https://github.com/01Virex/dsh-status-rotator",
+   "page": "https://awesome-dsh-plugin.com/p/01Virex/dsh-status-rotator/",
+   "category": "ui",
+   "description": {
+    "en": "Rotates the dsh turn-status label through 1059 bilingual phrases with typewriter output, an animated rainbow gradient, danmaku, 12 toggleable theme packs, live placeholders and tab-title rotation. Two star packs ship disabled by default; the stargazer pack carries one phrase per stargazer, refreshed weekly by a workflow.",
+    "zh": "把 dsh 回合状态行换成 1059 条中英文案的轮播：打字机输出、流动彩虹渐变、弹幕、12 个可开关的主题词库包、实时占位符与标签页标题轮换。两个 star 包默认关闭；星标者包每位星标者一条文案，由工作流每周刷新。"
+   },
+   "npm": "dsh-status-rotator",
+   "version": "0.27.4",
+   "stars": 92,
+   "downloads": 8006,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-status-rotator",
+   "added": "2026-08-14"
+  },
+  {
+   "name": "dsh-forge-studio#plugin-usage-billing",
+   "owner": "0x7A7A6572",
+   "url": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-usage-billing",
+   "page": "https://awesome-dsh-plugin.com/p/0x7A7A6572/dsh-forge-studio--packages-plugin-usage-billing/",
+   "category": "usage",
+   "description": {
+    "en": "Usage and cost view for DeepSeek Harness: aggregates real token usage from existing session logs, locks each cost at the price of its event time, and shows month and today spend against a budget from a sidebar card or an input-bar pill.",
+    "zh": "dsh 用量与费用视图：从既有会话日志聚合真实 token 用量，按事件发生时刻的价格写时锁定费用；侧栏卡片或输入框胶囊展示本月/今日花费与预算进度，设置页另有概览、趋势、明细三页。"
+   },
+   "npm": "@zzerx/dsh-plugin-usage-billing",
+   "version": "1.1.0",
+   "stars": 3,
+   "downloads": 487,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "install": "dsh plugin --profile web add @zzerx/dsh-plugin-usage-billing",
+   "added": "2026-09-22",
+   "screenshots": [
+    "https://raw.githubusercontent.com/0x7A7A6572/dsh-forge-studio/HEAD/packages/plugin-usage-billing/assets/1.png",
+    "https://raw.githubusercontent.com/0x7A7A6572/dsh-forge-studio/HEAD/packages/plugin-usage-billing/assets/2.png",
+    "https://raw.githubusercontent.com/0x7A7A6572/dsh-forge-studio/HEAD/packages/plugin-usage-billing/assets/3.png"
+   ]
+  },
+  {
+   "name": "dsh-client-ui-skin-real-madrid",
+   "owner": "alexfengrui",
+   "url": "https://github.com/alexfengrui/dsh-client-ui-skin-real-madrid",
+   "page": "https://awesome-dsh-plugin.com/p/alexfengrui/dsh-client-ui-skin-real-madrid/",
+   "category": "theme",
+   "description": {
+    "en": "Real Madrid dual-mode skin: Bernabeu night stadium for dark, white-kit pinstripes with crest and 1902 layers for light. Unofficial fan work.",
+    "zh": "皇家马德里双模式皮肤：暗色为夜场伯纳乌全景，亮色为纯白主场暗纹，队徽与 1902 背号作为背景层（非官方球迷作品）。"
+   },
+   "npm": "dsh-client-ui-skin-real-madrid",
+   "version": "1.1.0",
+   "stars": 0,
+   "downloads": 296,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-client-ui-skin-real-madrid",
+   "added": "2026-08-26"
+  },
+  {
+   "name": "dsh-reasoning-tiers",
+   "owner": "1069137617",
+   "url": "https://github.com/1069137617/dsh-reasoning-tiers",
+   "page": "https://awesome-dsh-plugin.com/p/1069137617/dsh-reasoning-tiers/",
+   "category": "model",
+   "description": {
+    "en": "Declares per-model reasoning-effort ladders for third-party providers in the llm-pi-ai settings section, so DSH's stock thinking-intensity selector works on models the pi-ai catalog does not describe.",
+    "zh": "在 llm-pi-ai 设置节为第三方模型提供商补齐推理档位（reasoning effort）声明，让 DSH 自带的思考强度选择器对 pi-ai 目录之外的模型真正可用。"
+   },
+   "npm": "dsh-reasoning-tiers",
+   "version": "0.3.0",
+   "stars": 0,
+   "downloads": 818,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "env",
+    "llm"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-reasoning-tiers",
+   "added": "2026-09-15"
+  },
+  {
+   "name": "dsh-awiki",
+   "owner": "AgentConnect",
+   "url": "https://github.com/AgentConnect/dsh-awiki",
+   "page": "https://awesome-dsh-plugin.com/p/AgentConnect/dsh-awiki/",
+   "category": "identity",
+   "description": {
+    "en": "Provides DeepSeek Harness agents with native identities based on the open Agent Network Protocol (ANP), plus identity-based direct, group, mail, and Agent-to-Agent communication.",
+    "zh": "为 DeepSeek Harness 智能体提供基于开放协议ANP的原生身份，以及基于该身份的私聊、群聊、邮件和智能体间通信能力。"
+   },
+   "npm": "@awiki/dsh-plugin",
+   "version": "0.3.12",
+   "stars": 19,
+   "downloads": 1735,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "dynamic-code",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env",
+    "llm"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @awiki/dsh-plugin",
+   "added": "2026-08-20"
+  },
+  {
+   "name": "dsh-undo-plugin",
+   "owner": "23swccp",
+   "url": "https://github.com/23swccp/dsh-undo/tree/master/packages/bundle-rollback",
+   "page": "https://awesome-dsh-plugin.com/p/23swccp/dsh-undo--packages-bundle-rollback/",
+   "category": "session",
+   "description": {
+    "en": "Conversation and workspace undo: use the /undo timeline, session-header action, or message icon to roll back before any sent prompt; private Shadow Git snapshots restore files, the reverted turns stay out of model context, and Undo Rollback can recover mistakes. Includes archived-session management and per-tool colored cards.",
+    "zh": "对话与工作区撤销：通过 /undo 节点轴、会话头部按钮或消息下方图标回滚到任意已发送 prompt 之前；插件私有 Shadow Git 快照恢复文件，被回滚回合不会进入模型上下文，误操作还能“撤回回滚”。附带归档会话管理与工具卡片分类配色。"
+   },
+   "npm": "dsh-undo-plugin",
+   "version": "0.1.0-rc.8",
+   "stars": 2,
+   "downloads": 452,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-24T17:02:46.730Z",
+   "install": "dsh plugin --profile web add dsh-undo-plugin",
+   "added": "2026-08-21"
+  },
+  {
+   "name": "dsh-project-memory",
+   "owner": "00080000",
+   "url": "https://github.com/00080000/dsh-project-memory",
+   "page": "https://awesome-dsh-plugin.com/p/00080000/dsh-project-memory/",
+   "category": "memory",
+   "description": {
+    "en": "Project memory for dsh with native task-system integration: session todos and file reads auto-condense into cross-session task records (task↔file links), so workflows are switchable and resumable without re-contextualizing. Read-time memory (no upfront scan): extracts code symbols, summarizes docs, and cross-links docs↔symbols; optional TS semantic enhancement (auto on when TS installed). Experience notes auto-dedup. Every recall includes a traceable citation. Pure JS, single dep, works out of the box, silent operation, zero overhead.",
+    "zh": "为 DeepSeek Harness提供持久化的项目级记忆。专门针对项目开发，原生融合 dsh 任务系统，会话内任务清单与读过的文件自动沉淀为跨会话任务记录，任务↔文件自动关联——开发工作流可切换、可续接，无需重复梳理整个项目。文档与代码符号在读取时索引，无需全量预扫；针对不同语言的项目，支持可选功能增强。经验笔记自动去重，避免重复记录。所有数据召回附带出处可溯源。纯 JS、单依赖、静默运行、零操作成本。"
+   },
+   "npm": "@yolk_vat-y/dsh-project-memory",
+   "version": "0.5.12",
+   "stars": 16,
+   "downloads": 3896,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "env",
+    "llm"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @yolk_vat-y/dsh-project-memory",
+   "added": "2026-08-20"
+  },
+  {
+   "name": "dsh-plugin-nlbi",
+   "owner": "1byteone",
+   "url": "https://github.com/1byteone/dsh-plugin-nlbi",
+   "page": "https://awesome-dsh-plugin.com/p/1byteone/dsh-plugin-nlbi/",
+   "category": "tools",
+   "description": {
+    "en": "Natural-language data queries + BI reports: Text2SQL, charts, report saving, schema/data grid panel, and a sidebar workbench — all behind DSH's MySQL connection layer.",
+    "zh": "自然语言查询 + 商业智能报表：Text2SQL、图表、报表收藏、Schema/数据面板与侧栏工作台，基于 DSH 的 MySQL 连接层。"
+   },
+   "npm": "dsh-plugin-nlbi",
+   "version": "0.2.1",
+   "stars": 2,
+   "downloads": 456,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-plugin-nlbi",
+   "added": "2026-08-25"
+  },
+  {
+   "name": "dsh-wsl-workspace",
+   "owner": "6Mikao9",
+   "url": "https://github.com/6Mikao9/dsh-wsl-workspace",
+   "page": "https://awesome-dsh-plugin.com/p/6Mikao9/dsh-wsl-workspace/",
+   "category": "wsl",
+   "description": {
+    "en": "Add a WSL workspace from the web GUI without needing to install dsh or related tools again inside WSL. Bash commands and file read/write operations run within the local WSL distribution on the host machine, while Windows files remain accessible.",
+    "zh": "从 Web GUI 添加 WSL 工作区，无需在 WSL 之中再次安装 dsh 以及相关工具，bash 命令与文件读写运行在本机 WSL 发行版内，Windows 文件仍可访问。"
+   },
+   "npm": "dsh-wsl-workspace",
+   "version": "0.7.3",
+   "stars": 52,
+   "downloads": 3473,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-wsl-workspace",
+   "added": "2026-08-14"
+  },
+  {
+   "name": "dsh-scrape-webpage",
+   "owner": "131CDA1",
+   "url": "https://github.com/131CDA1/dsh-scrape-webpage",
+   "page": "https://awesome-dsh-plugin.com/p/131CDA1/dsh-scrape-webpage/",
+   "category": "browser",
+   "description": {
+    "en": "Fetches any http/https page and returns title, description, main text, heading outline and links, with stats (char/word counts, reading time, language) and top keywords; can download content images to the session workspace for vision analysis and dispatch them to registered analyzers via the scrape.imageAnalyzer service.",
+    "zh": "抓取任意 http/https 网页，提取标题、描述、正文、标题结构与链接，输出字符/词数、阅读时长、语言等统计与高频关键词；支持下载内容图片到会话工作区供视觉分析，并通过 scrape.imageAnalyzer 服务分发给已注册的识图分析器。"
+   },
+   "npm": "dsh-scrape-webpage",
+   "version": "1.0.0",
+   "stars": 8,
+   "downloads": 584,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "network"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-scrape-webpage",
+   "added": "2026-08-19"
+  },
+  {
+   "name": "dsh-vision-fallback",
+   "owner": "1HelloMan1",
+   "url": "https://github.com/1HelloMan1/dsh-vision-fallback",
+   "page": "https://awesome-dsh-plugin.com/p/1HelloMan1/dsh-vision-fallback/",
+   "category": "vision",
+   "description": {
+    "en": "Routes chat images to a fixed OpenAI-compatible vision model, returns factual observations to the selected main model, and reuses session-scoped observations across replay, compaction, and restarts.",
+    "zh": "将聊天图片交给固定的 OpenAI 兼容视觉模型，把事实性观察交给当前主模型，并在事件回放、上下文压缩和重启时复用会话内观察。"
+   },
+   "npm": "dsh-vision-fallback",
+   "version": "0.10.0",
+   "stars": 1,
+   "downloads": 448,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "network",
+    "credentials",
+    "env",
+    "llm"
+   ],
+   "capabilityRedLines": [
+    "reads credentials/secrets AND has network access"
+   ],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-vision-fallback",
+   "added": "2026-08-18"
+  },
+  {
+   "name": "dsh-plugin-tts",
+   "owner": "1624318455",
+   "url": "https://github.com/1624318455/dsh-plugin-tts",
+   "page": "https://awesome-dsh-plugin.com/p/1624318455/dsh-plugin-tts/",
+   "category": "voice",
+   "description": {
+    "en": "Reads assistant replies aloud via free Edge TTS or your own RVC voice models: read-aloud buttons + auto-read, adaptive chunked progressive playback (gapless long reads), one-click voice-pack installs from a registry, and a portable RVC runtime.",
+    "zh": "用免费 Edge TTS 或你自己的 RVC 音色朗读 AI 回复：消息朗读与自动朗读、长文自适应分块渐进播放（无缝衔接）、音色包仓库一键安装、便携 RVC 运行时。"
+   },
+   "npm": "@memef1f1y/dsh-plugin-tts",
+   "version": "0.6.4",
+   "stars": 21,
+   "downloads": 799,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @memef1f1y/dsh-plugin-tts",
+   "added": "2026-08-15"
+  },
+  {
+   "name": "capmap-skills#dsh-capmap-viz",
+   "owner": "1741505640",
+   "url": "https://github.com/1741505640/capmap-skills/tree/main/dsh-capmap-viz",
+   "page": "https://awesome-dsh-plugin.com/p/1741505640/capmap-skills--dsh-capmap-viz/",
+   "category": "docs",
+   "description": {
+    "en": "CapMap docs visualization with Obsidian-style semantic graph and capability panel.",
+    "zh": "CapMap 文档体系可视化：Obsidian 风格语义图谱与能力面板。"
+   },
+   "npm": "@chenjh12/dsh-capmap-viz",
+   "version": "0.2.4",
+   "stars": 1,
+   "downloads": 111,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-24T17:02:46.730Z",
+   "install": "dsh plugin --profile web add @chenjh12/dsh-capmap-viz",
+   "added": "2026-09-08",
+   "screenshots": [
+    "https://raw.githubusercontent.com/1741505640/capmap-skills/HEAD/dsh-capmap-viz/assets/screenshots/1.jpg",
+    "https://raw.githubusercontent.com/1741505640/capmap-skills/HEAD/dsh-capmap-viz/assets/screenshots/2.jpg",
+    "https://raw.githubusercontent.com/1741505640/capmap-skills/HEAD/dsh-capmap-viz/assets/screenshots/3.jpg",
+    "https://raw.githubusercontent.com/1741505640/capmap-skills/HEAD/dsh-capmap-viz/assets/screenshots/4.jpg"
+   ]
+  },
+  {
+   "name": "dsh-fact-check",
+   "owner": "7starsseeker",
+   "url": "https://github.com/7starsseeker/dsh-fact-check",
+   "page": "https://awesome-dsh-plugin.com/p/7starsseeker/dsh-fact-check/",
+   "category": "skill",
+   "description": {
+    "en": "Skill that fact-checks a claim against the open web rather than model memory: it splits the claim into independently checkable fact points, routes each point to the primary-source ladder for its domain (policy, academic, medical, financial, disaster and accidents, food safety, science, education, sports, entertainment, judicial, and more), searches domestic and international ecosystems in parallel, fetches primary pages, grades sources by type, re-searches with debunking keywords, and reports conclusion-first with a full URL and citation position behind every statement, keeping unverified and undecidable points separate from confirmed ones. Three factual judgements can be routed to a TypeSafe Jev (System One) decision model when a key is configured, falling back to the skill's deterministic rules when it is not; a model verdict can only lower a confidence tier.",
+    "zh": "事实核查技能：不依赖模型记忆，去公开互联网核实——把论断拆成可独立验证的事实点，先按事实范畴（政策、学术、医疗、金融、灾害事故、食品安全、科学常识、教育考试、体育、娱乐名人、司法案件等）选定该范畴的一手来源阶梯，国内外信息生态并行搜索，抓取一手页面并按来源类型分级，再用质疑关键词反查一轮，最后结论先行地输出报告，每条论断都带完整 URL 与引用位置，「未证实」「无法裁定」与「已证实」分档呈现。三类事实判断在配置了密钥时可交给 TypeSafe Jev（System One）决策模型，未配置则回退到内置的确定性规则；模型的判断只能降档、不能升档。"
+   },
+   "npm": "dsh-fact-check",
+   "version": "1.3.0",
+   "stars": 0,
+   "downloads": 224,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-read"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-fact-check",
+   "added": "2026-09-23"
+  },
+  {
+   "name": "dsh-forge-studio#plugin-daily-log",
+   "owner": "0x7A7A6572",
+   "url": "https://github.com/0x7A7A6572/dsh-forge-studio/tree/main/packages/plugin-daily-log",
+   "page": "https://awesome-dsh-plugin.com/p/0x7A7A6572/dsh-forge-studio--packages-plugin-daily-log/",
+   "category": "workflow",
+   "description": {
+    "en": "Work reports for DeepSeek Harness: gathers Git commits and local agent conversations (DeepSeek/Claude/Codex) and renders daily, weekly or monthly reports from your own templates; the agent tool is injected on demand.",
+    "zh": "dsh 工作报告：汇总 Git 提交与本地 agent 对话（DeepSeek/Claude/Codex），按自定义模板生成日报/周报/月报，agent 工具按需注入。"
+   },
+   "npm": "@zzerx/dsh-plugin-daily-log",
+   "version": "0.4.0",
+   "stars": 3,
+   "downloads": 565,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "install": "dsh plugin --profile web add @zzerx/dsh-plugin-daily-log",
+   "added": "2026-09-18",
+   "screenshots": [
+    "https://raw.githubusercontent.com/0x7A7A6572/dsh-forge-studio/HEAD/packages/plugin-daily-log/assets/report-result.png"
+   ]
+  },
+  {
+   "name": "dsh-diff-approval",
+   "owner": "9087",
+   "url": "https://github.com/9087/dsh-diff-approval",
+   "page": "https://awesome-dsh-plugin.com/p/9087/dsh-diff-approval/",
+   "category": "git",
+   "description": {
+    "en": "Pending-change review for DeepSeek Harness: every `edit`, `write` and `str_replace_editor` change is collected automatically into the file list, where a single change block, the blocks within a selection, or the whole file can be kept or reverted, and undo/redo is supported. It imports the workspace's version-control changes, shows the diff in a single-column or side-by-side view, and provides a Markdown preview in which changes can also be kept or reverted, in-file search, block jumping and copyable line references; the diff data is stored persistently, so the review continues after a restart.",
+    "zh": "DeepSeek Harness 的待处理改动审查：每次 edit/write/str_replace_editor 改动都会自动汇总到文件列表，可对单个差异块、选区内的多块或整个文件执行保留/回退，支持撤销重做。还能导入工作区的版本控制改动，以单栏或左右对照视图展示差异，并提供亦能保留/回退差异的 Markdown 预览、文件内搜索、差异块跳转与可复制的行号引用；差异数据持久化存储，重启后可继续审查。"
+   },
+   "npm": "dsh-diff-approval",
+   "version": "0.29.1",
+   "stars": 9,
+   "downloads": 6345,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "dynamic-code",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-diff-approval",
+   "added": "2026-09-13",
+   "screenshots": [
+    "https://raw.githubusercontent.com/9087/dsh-diff-approval/HEAD/docs/images/pending-panel.png",
+    "https://raw.githubusercontent.com/9087/dsh-diff-approval/HEAD/docs/images/markdown.png",
+    "https://raw.githubusercontent.com/9087/dsh-diff-approval/HEAD/docs/images/file-list-collapsed.png",
+    "https://raw.githubusercontent.com/9087/dsh-diff-approval/HEAD/docs/images/fullscreen.png"
+   ]
+  },
+  {
+   "name": "dsh-message-gateway",
+   "owner": "a792883583",
+   "url": "https://github.com/a792883583/dsh-message-gateway",
+   "page": "https://awesome-dsh-plugin.com/p/a792883583/dsh-message-gateway/",
+   "category": "notify",
+   "description": {
+    "en": "Multi-platform message gateway and WeCom AI bot bridge with session context compression and smartsheet creation.",
+    "zh": "多平台消息网关与企微智能机器人桥接：会话自动压缩持久化与智能表格一键创建。"
+   },
+   "npm": "dsh-message-gateway",
+   "version": "0.1.35",
+   "stars": 4,
+   "downloads": 2595,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env",
+    "host-runtime"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-message-gateway",
+   "added": "2026-09-07"
+  },
+  {
+   "name": "dsh-plugin-verify",
+   "owner": "863683348",
+   "url": "https://github.com/863683348/dsh-plugin-verify",
+   "page": "https://awesome-dsh-plugin.com/p/863683348/dsh-plugin-verify/",
+   "category": "dev",
+   "description": {
+    "en": "Verification toolkit for DSH agents: evidence-based claim checking against workspace files with line citations, config validation (JSON/YAML), and read-only URL/npm/GitHub submission-readiness probes.",
+    "zh": "DSH 核验工具箱：在工作区文件中核查声明并返回带行号引用的证据，校验配置文件（JSON/YAML），以及只读的 URL / npm / GitHub 提交就绪度探测。"
+   },
+   "npm": "dsh-plugin-verify",
+   "version": "1.1.1",
+   "stars": 0,
+   "downloads": 596,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-read"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-plugin-verify",
+   "added": "2026-08-17"
+  },
+  {
+   "name": "dsh-telemetry-redactor",
+   "owner": "030611",
+   "url": "https://github.com/030611/dsh-telemetry-redactor",
+   "page": "https://awesome-dsh-plugin.com/p/030611/dsh-telemetry-redactor/",
+   "category": "security",
+   "description": {
+    "en": "Redacts supported secret patterns from the `session-telemetry/record` export copy before configured telemetry backends receive it.",
+    "zh": "在已配置遥测后端接收前，对 `session-telemetry/record` 导出副本中的已支持秘密模式进行脱敏。"
+   },
+   "npm": "dsh-telemetry-redactor",
+   "version": "0.1.0",
+   "stars": 2,
+   "downloads": 641,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-telemetry-redactor",
+   "added": "2026-08-14"
+  },
+  {
+   "name": "dsh-web-lan-access",
+   "owner": "AcidGr",
+   "url": "https://github.com/AcidGr/dsh-web-lan-access",
+   "page": "https://awesome-dsh-plugin.com/p/AcidGr/dsh-web-lan-access/",
+   "category": "remote",
+   "description": {
+    "en": "LAN/remote access for the Web UI: injects a crypto.randomUUID polyfill on plain-HTTP origins so the frontend survives LAN or Tailscale IP direct links.",
+    "zh": "Web UI 局域网/远程访问：为纯 HTTP 非安全上下文注入 crypto.randomUUID polyfill，局域网/Tailscale IP 直连时前端不再崩溃。"
+   },
+   "npm": "dsh-web-lan-access",
+   "version": "1.3.2",
+   "stars": 35,
+   "downloads": 1733,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "network"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-web-lan-access",
+   "added": "2026-08-14",
+   "screenshots": [
+    "https://raw.githubusercontent.com/AcidGr/dsh-web-lan-access/main/assets/screenshot-lan-access.jpg"
+   ]
+  },
+  {
+   "name": "dsh-plugin-mall",
+   "owner": "1e0zj",
+   "url": "https://github.com/1e0zj/dsh-plugin-mall",
+   "page": "https://awesome-dsh-plugin.com/p/1e0zj/dsh-plugin-mall/",
+   "category": "market",
+   "description": {
+    "en": "Open plugin marketplace: live GitHub dsh-plugin topic search with per-repo package.json verification (dsh.bundle/dsh.client manifest badges and a verified-only filter), npm-first installs with same-source anti-squatting checks, update detection, and five agent tools for headless use.",
+    "zh": "开放式插件市场：GitHub dsh-plugin 话题实时搜索，逐仓库 package.json 验证（dsh.bundle/dsh.client 声明徽章与只看已验证过滤），npm 优先安装带同源防抢注校验，更新检测，并附五个可在无界面环境使用的 agent 工具。"
+   },
+   "npm": "@1e0zj/dsh-plugin-mall",
+   "version": "0.4.17",
+   "stars": 4,
+   "downloads": 1367,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "dynamic-code",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env",
+    "host-runtime"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @1e0zj/dsh-plugin-mall",
+   "added": "2026-08-16"
+  },
+  {
+   "name": "dsh-pet-live2d#dsh-live2d-pet",
+   "owner": "A8Chann",
+   "url": "https://github.com/A8Chann/dsh-pet-live2d/tree/main/dsh-live2d-pet",
+   "page": "https://awesome-dsh-plugin.com/p/A8Chann/dsh-pet-live2d--dsh-live2d-pet/",
+   "category": "fun",
+   "description": {
+    "en": "A draggable Live2D desktop pet for the DSH web GUI that tracks the pointer, changes motion, expression and outfit with the session phase, and opens a right-click control panel.",
+    "zh": "DSH Web GUI 的 Live2D 桌宠：可拖动、跟随鼠标，跟着会话状态换动作、表情与装扮，右键呼出控制面板。"
+   },
+   "npm": "dsh-pet-live2d",
+   "version": "2.3.4",
+   "stars": 22,
+   "downloads": 1657,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "dynamic-code",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-24T17:02:46.730Z",
+   "install": "dsh plugin --profile web add dsh-pet-live2d",
+   "added": "2026-09-21",
+   "screenshots": [
+    "https://raw.githubusercontent.com/A8Chann/dsh-pet-live2d/HEAD/dsh-live2d-pet/docs/banner.png",
+    "https://raw.githubusercontent.com/A8Chann/dsh-pet-live2d/HEAD/dsh-live2d-pet/docs/panel.jpg",
+    "https://raw.githubusercontent.com/A8Chann/dsh-pet-live2d/HEAD/dsh-live2d-pet/docs/looks.jpg"
+   ]
+  },
+  {
+   "name": "dsh-memory",
+   "owner": "FuRongJun-1999",
+   "url": "https://github.com/FuRongJun-1999/dsh-memory",
+   "page": "https://awesome-dsh-plugin.com/p/FuRongJun-1999/dsh-memory/",
+   "category": "agi",
+   "description": {
+    "en": "White-box AGI architecture exploration: metacognition (self-cognition loop), continual learning (knowledge flywheel), world model (condition space, spatiotemporal memory graph), self-improvement (bootstrap discipline), zero-LLM white-box pipeline, and auditable trust guardrails.",
+    "zh": "白箱AGI架构探索：元认知（自我认知循环）、持续学习（知识飞轮）、世界模型（条件空间+语义时空图）、自我改进（自举纪律）、零LLM白箱管线与可审计信任护栏。"
+   },
+   "npm": "@furongjun1999/dsh-memory",
+   "version": "0.6.0",
+   "stars": 272,
+   "downloads": 16706,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "shell",
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add @furongjun1999/dsh-memory",
+   "added": "2026-08-14"
+  },
+  {
+   "name": "dsh-memory",
+   "owner": "aqsk-BLG",
+   "url": "https://github.com/aqsk-BLG/dsh-memory",
+   "page": "https://awesome-dsh-plugin.com/p/aqsk-BLG/dsh-memory/",
+   "category": "memory",
+   "description": {
+    "en": "Layered file memory for DeepSeek Harness with workspace-scoped USER/MEMORY notes, background consolidation, and hybrid session recall.",
+    "zh": "DeepSeek Harness 分层文件记忆，提供工作区隔离的 USER/MEMORY 笔记、后台沉淀与混合会话召回。"
+   },
+   "npm": "dsh-file-memory",
+   "tarball": "https://github.com/aqsk-BLG/dsh-memory/releases/download/v1.3.2/dsh-file-memory-1.3.2.tgz",
+   "version": "1.3.2",
+   "stars": 2,
+   "downloads": 288,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "network",
+    "env"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-file-memory",
+   "added": "2026-08-19"
+  },
+  {
+   "name": "amoji#amoji",
+   "owner": "5101good",
+   "url": "https://github.com/5101good/amoji/tree/main/adapters/dsh",
+   "page": "https://awesome-dsh-plugin.com/p/5101good/amoji--adapters-dsh/",
+   "category": "ui",
+   "description": {
+    "en": "AI-native expressions for two-way chat: people see images, while text-only models read fixed meanings; includes a picker, custom expressions, import/export, and two visual styles.",
+    "zh": "用于双向聊天的 AI 原生表情：人看图片，纯文本模型读取固定语义；支持表情选择、自建表情、导入导出和两套画风。"
+   },
+   "npm": null,
+   "tarball": "https://github.com/5101good/amoji/releases/download/v1.0.0/amoji-dsh-1.0.0.tgz",
+   "version": null,
+   "stars": 0,
+   "downloads": null,
+   "downloadsStart": null,
+   "downloadsEnd": null,
+   "downloadsCheckedAt": null,
+   "capabilities": [],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-24T17:02:46.730Z",
+   "install": "dsh plugin --profile web add \"https://github.com/5101good/amoji/releases/download/v1.0.0/amoji-dsh-1.0.0.tgz\"",
+   "added": "2026-09-23",
+   "screenshots": [
+    "https://raw.githubusercontent.com/5101good/amoji/HEAD/adapters/dsh/screenshots/classic.png",
+    "https://raw.githubusercontent.com/5101good/amoji/HEAD/adapters/dsh/screenshots/office.png",
+    "https://raw.githubusercontent.com/5101good/amoji/HEAD/adapters/dsh/screenshots/meaning.png"
+   ]
+  },
+  {
+   "name": "dsh-proactive",
+   "owner": "john-walks-slow",
+   "url": "https://github.com/john-walks-slow/dsh-proactive/tree/main/packages/dsh-proactive",
+   "page": "https://awesome-dsh-plugin.com/p/john-walks-slow/dsh-proactive--packages-dsh-proactive/",
+   "category": "agi",
+   "description": {
+    "en": "Host-level proactive wake-ups for DeepSeek Harness: the model schedules its own alarms (once, recurring interval, or cron, with optional random jitter), cold sessions are woken on time by session resume, model-initiated follow-ups are gated by quiet hours and a daily delivery budget, silent wake turns end with proactive_reclaim and fold out of model context as tombstones, declared schedule files glob-sync JSON schedules into host alarms idempotently, min_idle_seconds defers wakes until the destination session quiets down, and a web panel (settings section plus per-session tab, SSE live refresh) manages alarms and wake history — the heartbeat engine for AI companions and roleplay characters with their own daily routines and world evolution.",
+    "zh": "为 DeepSeek Harness 提供 host 级主动唤醒：模型用 proactive_set 给自己设定闹钟（单次 / 循环间隔 / cron，支持 jitter 随机抖动），到点自动唤醒冷会话执行心跳、定时提醒与任务跟进；安静时段与每日投递预算约束模型自主跟进，静默唤醒以 proactive_reclaim 收尾并把唤醒上下文折叠为墓碑；声明式闹钟文件把 JSON 时间表幂等同步成 host 闹钟，min_idle_seconds 静默门让唤醒等会话空闲；自带 Web 管理面板（设置页节 + 会话页签，SSE 实时刷新）管理闹钟与唤醒历史——适合驱动 AI 陪伴、角色扮演（酒馆式人设）与 living agent 的心跳、日常安排和世界演算。"
+   },
+   "npm": "dsh-proactive",
+   "version": "0.2.2",
+   "stars": 2,
+   "downloads": 498,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "install": "dsh plugin --profile web add dsh-proactive",
+   "added": "2026-09-21",
+   "screenshots": [
+    "https://raw.githubusercontent.com/john-walks-slow/dsh-proactive/HEAD/packages/dsh-proactive/assets/screenshot-1.png",
+    "https://raw.githubusercontent.com/john-walks-slow/dsh-proactive/HEAD/packages/dsh-proactive/assets/screenshot-2.png"
+   ]
+  },
+  {
+   "name": "dsh-session-diff",
+   "owner": "2002XiaoYu",
+   "url": "https://github.com/2002XiaoYu/dsh-session-diff",
+   "page": "https://awesome-dsh-plugin.com/p/2002XiaoYu/dsh-session-diff/",
+   "category": "ui",
+   "description": {
+    "en": "Session-scoped diff view for the DSH Web right sidebar: opening a file the current conversation changed renders it in place with git-style added/removed line backgrounds, +/− gutter markers and dual old/new line numbers under syntax colouring, a header with +added −removed counts, a Changes only / Whole file toggle and a Re-read button, plus a companion tab that lists every file the session changed and opens each one in the same view. Files the conversation did not touch keep the shipped text viewer.",
+    "zh": "为 DSH Web 右侧栏提供按会话的 diff 视图：打开当前对话改动过的文件时原位渲染，按 git 风格显示新增/删除行底色、+/− 行标记、新旧双行号与语法高亮，头部带 +新增 −删除 计数、「仅看改动 / 整个文件」切换和「重新读取」按钮；另有一个配套标签页列出本次会话改动过的所有文件，点开即进入同一视图。当前对话没有改动过的文件仍使用自带文本查看器。"
+   },
+   "npm": null,
+   "tarball": "https://github.com/2002XiaoYu/dsh-session-diff/releases/download/v0.1.0/dsh-session-diff-0.1.0.tgz",
+   "version": null,
+   "stars": 1,
+   "downloads": null,
+   "downloadsStart": null,
+   "downloadsEnd": null,
+   "downloadsCheckedAt": null,
+   "capabilities": [
+    "dynamic-code",
+    "fs-write",
+    "fs-read"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add \"https://github.com/2002XiaoYu/dsh-session-diff/releases/download/v0.1.0/dsh-session-diff-0.1.0.tgz\"",
+   "added": "2026-09-18",
+   "screenshots": [
+    "https://raw.githubusercontent.com/2002XiaoYu/dsh-session-diff/HEAD/assets/screenshot-1.png"
+   ]
+  },
+  {
+   "name": "dsh-all-usage",
+   "owner": "ParticleLight",
+   "url": "https://github.com/ParticleLight/dsh-all-usage",
+   "page": "https://awesome-dsh-plugin.com/p/ParticleLight/dsh-all-usage/",
+   "category": "usage",
+   "description": {
+    "en": "Analyze usage across models, providers, workspaces, and time ranges — including custom start/end dates over the full retained history — with live cache-hit visibility and separate model and provider breakdowns. Includes hourly single-day trends, daily cross-day trends, a 53-week GitHub-style heatmap, usage streaks, model and workspace Token-share donut charts with Token, cost, and percentage details, independent combinable filters, cache-efficiency trends, DeepSeek account balance, workspace aliases, CSV export, and a durable ledger that preserves successfully flushed usage after session deletion — and after a workspace is deleted, where its recorded usage is summed into one Deleted row — and rebuilds incrementally — on restart, unchanged sessions are applied from the ledger without re-reading their logs (a per-session log revision is the change signal), and only changed/new events are folded. The workspace registry is kept fresh automatically through the DSH domain/changed probe: only added/removed workspaces are reprocessed incrementally, unchanged workspaces reuse their computed aggregates and ledger with zero rescan, and usage is strictly limited to DSH-registered workspaces (unregistered cwds are ignored). After a scan, lightweight revision status fetches full history only when the Host/data state changes and exposes non-sensitive sync health (revision reuse, rereads, ledger recovery, and failures). Token accounting is explicit: input is fresh (cache read/write and reasoning are separate buckets) and zero-usage replays never overwrite recorded usage. Chinese uses local time, English uses UTC; API access is loopback-only.",
+    "zh": "支持跨多个模型、供应商、工作区与时间范围进行统一分析，并可在全部保留历史中自定义起止日期；实时呈现缓存命中率，并可分别查看模型和供应商的分类数据；单日趋势按小时、跨日趋势按日，提供 53 周 GitHub 风格热力图、连续使用、模型与工作区 Token 占比环图及 Token、成本、占比明细，以及可独立自由组合的筛选；支持查询 DeepSeek 账户余额、管理工作区别名及导出 CSV 数据；独立账本在会话删除前持久化用量，工作区被删除时同样保留并把用量汇总为一行「已删除」，增量重建只处理新增事件；重启时未变化会话不回读日志、直接复用账本（以每会话日志 revision 为变更信号）；工作区注册表通过 DSH 的 domain/changed 事件自动探针同步——只对新增/删除的工作区增量重扫，未变化的已有工作区直接复用已计算账本、零全量重扫，统计严格限定已注册工作区（未登记目录一律忽略），扫描完成后通过轻量 revision 状态判断，只有 Host/统计状态变化才获取完整历史，并显示 revision 复用、实际读取、账本恢复和失败等非敏感同步健康信息；全 0 用量的重放不会覆盖已记录的真实用量，Token 口径显式声明（输入不含缓存命中，缓存读写与推理独立成桶）。中文使用本地时区，英文统一使用 UTC；API 仅限本机访问。"
+   },
+   "npm": "dsh-all-usage",
+   "tarball": "https://github.com/ParticleLight/dsh-all-usage/releases/download/v1.1.13/dsh-all-usage-1.1.13.tgz",
+   "version": "1.1.14",
+   "stars": 8,
+   "downloads": 2567,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-read",
+    "network",
+    "credentials"
+   ],
+   "capabilityRedLines": [
+    "reads credentials/secrets AND has network access"
+   ],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-all-usage",
+   "added": "2026-08-18",
+   "screenshots": [
+    "https://raw.githubusercontent.com/ParticleLight/dsh-all-usage/HEAD/assets/screenshot-1.png",
+    "https://raw.githubusercontent.com/ParticleLight/dsh-all-usage/HEAD/assets/screenshot-2.png",
+    "https://raw.githubusercontent.com/ParticleLight/dsh-all-usage/HEAD/assets/screenshot-3.png"
+   ]
+  },
+  {
+   "name": "dsh-answer-reviewer",
+   "owner": "bycall",
+   "url": "https://github.com/bycall/dsh-answer-reviewer",
+   "page": "https://awesome-dsh-plugin.com/p/bycall/dsh-answer-reviewer/",
+   "category": "agi",
+   "description": {
+    "en": "Agentic answer reviewer for DeepSeek Harness: each final assistant turn is re-reviewed by a separate LLM graded 1-100; below-threshold scores steer the agent back with concrete feedback. The score is shown as a chip on the answer's action row (green pass / red needs-work, with retry count and reason on hover). Live gate config over a 127.0.0.1 HTTP server, plus a collapsed dock above the composer and an optional right-sidebar tab via dsh-better-sidebar."
+   },
+   "npm": "dsh-answer-reviewer",
+   "version": "0.7.4",
+   "stars": 4,
+   "downloads": 1251,
+   "downloadsStart": "2026-08-29",
+   "downloadsEnd": "2026-09-27",
+   "downloadsCheckedAt": "2026-09-28",
+   "capabilities": [
+    "fs-write",
+    "fs-read",
+    "network",
+    "env",
+    "llm"
+   ],
+   "capabilityRedLines": [],
+   "capabilityCheckedAt": "2026-09-28T03:33:08.896Z",
+   "install": "dsh plugin --profile web add dsh-answer-reviewer",
+   "added": "2026-09-09"
+  }
+ ]
+}
