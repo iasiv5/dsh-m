@@ -4,6 +4,7 @@
  * GitHub：优先最新 release/tag（更新提示只跟稳定版走，不跟 main HEAD——中间提交可能不稳定）；
  * 未认证限额 60 次/小时，自用足够。
  */
+import { gt } from 'semver'
 import { fetchJsonLimited, HttpError } from './httpx.js'
 
 /** GitHub 匿名限额（60 次/小时/IP）用尽时返回可读提示（含重置等待分钟数），否则 null。 */
@@ -102,9 +103,9 @@ export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortS
   }
 }
 
-export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget): Promise<string> {
+export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget, apiBase: string = 'https://api.github.com'): Promise<string> {
   // commits/{ref} 会自动解引用 annotated tag，返回的才是可用于 #sha 锁定的 commit
-  const data = await fetchJsonLimited<{ sha?: unknown }>(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(tag)}`, {
+  const data = await fetchJsonLimited<{ sha?: unknown }>(`${apiBase}/repos/${repo}/commits/${encodeURIComponent(tag)}`, {
     timeoutMs,
     signal,
     headers: { accept: 'application/vnd.github+json' },
@@ -225,34 +226,34 @@ function raceWaiter(promise: Promise<GithubTag>, timeoutMs: number, signal?: Abo
 }
 
 /** 共享 flight 的实际 fetch 序列：release 路径 1–2 个 wire 请求、fallback 路径逐次 reserve。 */
-async function fetchGithubTag(repo: string, timeoutMs: number, signal: AbortSignal, budget?: GithubBudget): Promise<GithubTag> {
+async function fetchGithubTag(repo: string, timeoutMs: number, signal: AbortSignal, budget?: GithubBudget, apiBase: string = 'https://api.github.com'): Promise<GithubTag> {
   const headers = { accept: 'application/vnd.github+json' }
   const reserve = wireReserve(budget)
   try {
     // 1) 最新 release（404 = 仓库从未发过 release → 回退 tags）
     try {
       const rel = await fetchJsonLimited<{ tag_name?: unknown }>(
-        `https://api.github.com/repos/${repo}/releases/latest`,
+        `${apiBase}/repos/${repo}/releases/latest`,
         { timeoutMs, signal, headers, onRequest: reserve },
       )
       const tag = typeof rel.tag_name === 'string' ? rel.tag_name.trim() : ''
-      if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs, signal, budget) }
+      if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs, signal, budget, apiBase) }
     } catch (err) {
       const status = (err as HttpError).status
       if (status !== 404) throw err
     }
 
-    // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）
-    const tags = await fetchJsonLimited<Array<{ name?: unknown; commit?: { sha?: unknown } }>>(
-      `https://api.github.com/repos/${repo}/tags`,
+    // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）——tag object sha 经 commits/{ref}
+    //    解引用为 commit sha（与 release 路径同语义，annotated tag 的 object sha 不可直接锁定）
+    const tags = await fetchJsonLimited<Array<{ name?: unknown }>>(
+      `${apiBase}/repos/${repo}/tags`,
       { timeoutMs, signal, headers, onRequest: reserve },
     )
     if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
     const first = tags[0]
     const name = typeof first.name === 'string' ? first.name : ''
-    const sha = first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : ''
-    if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`tag 信息无效: ${repo}`)
-    return { tag: name, sha }
+    if (!name) throw new Error(`tag 信息无效: ${repo}`)
+    return { tag: name, sha: await githubTagSha(repo, name, timeoutMs, signal, budget, apiBase) }
   } catch (err) {
     const rateLimit = githubRateLimitMessage(err)
     if (rateLimit) throw new Error(rateLimit)
@@ -279,13 +280,13 @@ function releaseGhFlight(key: string, flight: GhFlight): void {
  *   signal 都不影响共享请求——最后一个 waiter 离开才 abort；
  * - 无 budget 的调用（用户主动 install/upgrade/诊断）零预算交互，不受被动窗口限制。
  */
-export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget): Promise<GithubTag> {
+export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget, apiBase: string = 'https://api.github.com'): Promise<GithubTag> {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
   const key = `${budget ? 'passive' : 'active'}§${repo}`
   let flight = ghFlights.get(key)
   if (!flight) {
     const ctrl = new AbortController()
-    const created: GhFlight = { refs: 0, ctrl, promise: fetchGithubTag(repo, timeoutMs, ctrl.signal, budget) }
+    const created: GhFlight = { refs: 0, ctrl, promise: fetchGithubTag(repo, timeoutMs, ctrl.signal, budget, apiBase) }
     created.promise.finally(() => {
       if (ghFlights.get(key) === created && created.refs <= 0) ghFlights.delete(key)
     }).catch(() => undefined)
@@ -300,18 +301,17 @@ export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?:
   }
 }
 
+/**
+ * 版本前进比较（0.5.0 语义加固）：标准 semver 前进比较——prerelease < 正式版、
+ * build metadata 不参与比较。旧自定义折叠实现把 `1.2.3-beta.1` 的数字尾段参与比较、
+ * 误判为大于 `1.2.3`，本实现以 semver.gt 修正。非法输入不抛、一律 false。
+ */
 export function isNewerVersion(candidate: string, current: string): boolean {
-  const parse = (v: string): number[] =>
-    String(v || '')
-      .replace(/^v/i, '')
-      .split(/[-+.]/)
-      .map((part) => (/^\d+$/.test(part) ? Number(part) : part))
-      .map((n) => (typeof n === 'number' ? n : 0))
-  const a = parse(candidate)
-  const b = parse(current)
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const diff = (a[i] ?? 0) - (b[i] ?? 0)
-    if (diff !== 0) return diff > 0
+  // 只接受精确 semver（与收录语义一致：v 前缀/range/tag 不参与比较）；非法输入不抛、一律 false
+  if (!EXACT_VERSION_RE.test(String(candidate ?? '')) || !EXACT_VERSION_RE.test(String(current ?? ''))) return false
+  try {
+    return gt(String(candidate), String(current))
+  } catch {
+    return false
   }
-  return false
 }

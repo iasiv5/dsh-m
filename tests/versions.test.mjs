@@ -14,6 +14,7 @@ import { listInstalledWithMeta, installFromRegistry } from '../lib/core/market.j
 import {
   createGithubRequestBudget,
   githubLatestTag,
+  githubTagSha,
   GithubBudgetExhaustedError,
   _backdateGithubHourlyWindowForTests,
   _resetGithubHourlyWindowForTests,
@@ -120,12 +121,12 @@ describe('githubLatestTag 预算接线（wire 层 reserve）', () => {
     assert.equal(budget.reserve(), 'exhausted', '5-2=3 后耗尽')
   })
 
-  it('fallback 路径（releases 404 → tags）逐次计数：2 请求', async () => {
+  it('fallback 路径（releases 404 → tags → commits 解引用）逐次计数：3 请求（M2 Task 1 起）', async () => {
     installMockFetch(ghHandler({ releases: '404' }))
     const budget = createGithubRequestBudget({ perRequestMax: 5 })
     const tag = await githubLatestTag('o/r', 20_000, undefined, budget)
     assert.equal(tag.tag, 'v0.1.0')
-    assert.equal(fetchCalls.length, 2)
+    assert.equal(fetchCalls.length, 3, 'releases 404 + tags + commits/{ref} 解引用')
   })
 
   it('重定向跳也计数：releases 302 → 第二跳 reserve', async () => {
@@ -329,5 +330,119 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------- M2 Task 1：更新语义钉死（semver.gt + apiBase 贯穿 + fallback 解引用） ----------
+
+import { createServer } from 'node:http'
+import { isNewerVersion } from '../lib/core/versions.js'
+
+function localGithubServer(handler) {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      const hits = req.socket.localPort
+      handler(req, res)
+    })
+    server.listen(0, '127.0.0.1', () => resolve(server))
+  })
+}
+
+describe('M2 Task 1：isNewerVersion（semver.gt 标准语义）', () => {
+  const table = [
+    ['1.2.3-beta.1', '1.2.3', false, 'prerelease < 正式版（旧实现数字尾段误判回归）'],
+    ['1.2.3', '1.2.3-beta.1', true, '正式版 > prerelease'],
+    ['1.2.3+build.1', '1.2.3', false, 'build metadata 不参与比较'],
+    ['0.10.0', '0.9.0', true, '数字段比较 10 > 9'],
+    ['1.2.2', '1.2.3', false, '降级'],
+    ['1.2.3', '1.2.3', false, '相等'],
+    ['2.0.0', '1.9.9', true, '跨段'],
+  ]
+  for (const [candidate, current, expected, note] of table) {
+    it(`${candidate} vs ${current} → ${expected}（${note}）`, () => {
+      assert.equal(isNewerVersion(candidate, current), expected)
+    })
+  }
+  it('非法输入不抛且返回 false', () => {
+    for (const bad of ['', 'abc', '1.2', 'v1.2.3', null, undefined, 42, {}]) {
+      assert.equal(isNewerVersion(bad, '1.0.0'), false, `candidate=${String(bad)}`)
+      assert.equal(isNewerVersion('1.0.0', bad), false, `current=${String(bad)}`)
+    }
+  })
+})
+
+describe('M2 Task 1：github apiBase 贯穿与 fallback 解引用', () => {
+  const SHA = 'b'.repeat(40)
+  let server
+  let apiBase
+  let hits
+
+  beforeEach(async () => {
+    hits = []
+    server = await new Promise((resolve) => {
+      const s = createServer((req, res) => {
+        hits.push(req.url)
+        const url = req.url || ''
+        const json = (body, status = 200) => {
+          res.writeHead(status, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(body))
+        }
+        if (url.includes('/releases/latest')) return json({ tag_name: 'v2.0.0' })
+        if (url.includes('/tags')) return json([{ name: 'v1.0.0', commit: { sha: 'c'.repeat(40) } }])
+        if (url.includes('/commits/')) return json({ sha: SHA })
+        json({ message: 'not found' }, 404)
+      })
+      s.listen(0, '127.0.0.1', () => resolve(s))
+    })
+    apiBase = `http://127.0.0.1:${server.address().port}`
+  })
+  afterEach(async () => {
+    await new Promise((r) => server.close(r))
+  })
+
+  it('release 路径：releases + commits 全部命中本地 server', async () => {
+    const tag = await githubLatestTag('o/r', 20_000, undefined, undefined, apiBase)
+    assert.equal(tag.tag, 'v2.0.0')
+    assert.equal(tag.sha, SHA)
+    assert.equal(hits.length, 2)
+    assert.ok(hits[0].includes('/releases/latest'))
+    assert.ok(hits[1].includes('/commits/'))
+  })
+
+  it('fallback 路径：tags 首项经 commits/{ref} 解引用（tag object sha 不直接采用）', async () => {
+    // releases 404 → tags → commits 解引用
+    const s2 = await new Promise((resolve) => {
+      const h = []
+      const s = createServer((req, res) => {
+        h.push(req.url)
+        const url = req.url || ''
+        const json = (body, status = 200) => {
+          res.writeHead(status, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(body))
+        }
+        if (url.includes('/releases/latest')) return json({}, 404)
+        if (url.includes('/tags')) return json([{ name: 'v1.0.0', commit: { sha: 'c'.repeat(40) } }])
+        if (url.includes('/commits/')) return json({ sha: SHA })
+        json({}, 404)
+      })
+      s.listen(0, '127.0.0.1', () => resolve(s))
+      s.__hits = h
+    })
+    const base2 = `http://127.0.0.1:${s2.address().port}`
+    try {
+      const tag = await githubLatestTag('o/r', 20_000, undefined, undefined, base2)
+      assert.equal(tag.tag, 'v1.0.0')
+      assert.equal(tag.sha, SHA, 'fallback 也取 commits 解引用的 commit sha（annotated tag 修正）')
+      assert.equal(s2.__hits.length, 3)
+      assert.ok(s2.__hits[2].includes('/commits/v1.0.0'))
+    } finally {
+      await new Promise((r) => s2.close(r))
+    }
+  })
+
+  it('githubTagSha 直调命中本地 server 的 commits 端点', async () => {
+    const sha = await githubTagSha('o/r', 'v9.9.9', 20_000, undefined, undefined, apiBase)
+    assert.equal(sha, SHA)
+    assert.ok(hits.some((u) => u.includes('/commits/v9.9.9')))
   })
 })
