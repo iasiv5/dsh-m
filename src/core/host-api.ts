@@ -12,8 +12,10 @@ import {
   listInstalledWithMeta,
   listMarket,
   installFromRegistry,
+  selfUpgrade,
   uninstallPlugin,
   upgradePlugin,
+  InstallGuardError,
 } from './market.js'
 import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
 import { readInstalledPluginReadme } from './installed.js'
@@ -46,6 +48,7 @@ export interface HostApiOverrides {
   installFromRegistry?: typeof installFromRegistry
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
+  selfUpgrade?: typeof selfUpgrade
   checkRegistryEntries?: typeof checkRegistryEntries
   npmLatest?: typeof npmLatest
   /** registry 分支社区 summary 数据源（M1 Task 6；测试注入 cache-first 模拟） */
@@ -183,6 +186,22 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     const status = err.code === 'protected' ? 403 : err.code === 'not-installed' ? 404 : 409
     return { status, payload: { ok: false, error: err.message, code: err.code } }
   }
+  if (err instanceof InstallGuardError) {
+    // 装后守卫拦截（M2 Task 3）：结构化投影含 needsRestart/restartSafe/kind——GUI 一键重启只读 restartSafe
+    return {
+      status: 409,
+      payload: {
+        ok: false,
+        error: err.message,
+        kind: err.kind,
+        violations: err.violations,
+        compensation: err.compensation,
+        needsRestart: err.needsRestart,
+        restartSafe: err.restartSafe,
+        ...(err.repairBasis ? { repairBasis: err.repairBasis } : {}),
+      },
+    }
+  }
   if (err instanceof IncompatibleError) {
     // 结构化 issue：GUI 据此弹「仍要安装」确认（forceIncompatible 重试）
     return { status: 409, payload: { ok: false, error: err.message, issue: err.issue } }
@@ -216,6 +235,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     installFromRegistry: ctx.deps?.installFromRegistry ?? installFromRegistry,
     uninstallPlugin: ctx.deps?.uninstallPlugin ?? uninstallPlugin,
     upgradePlugin: ctx.deps?.upgradePlugin ?? upgradePlugin,
+    selfUpgrade: ctx.deps?.selfUpgrade ?? selfUpgrade,
     checkRegistryEntries: ctx.deps?.checkRegistryEntries ?? checkRegistryEntries,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
     getCommunitySummary: ctx.deps?.getCommunitySummary ?? getCommunitySummary,
@@ -261,19 +281,11 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'self-upgrade': {
-          const latest = await d.npmLatest(ctx.pkg.name, cfg().timeoutMs ?? 20_000)
-          // 缺 integrity 一律 fail closed，不进事务
-          if (!latest.integrity) {
-            throw new Error(`npm metadata 缺少 dist integrity：${ctx.pkg.name}@${latest.version}，拒绝升级`)
-          }
-          const result = await d.runTransaction(
-            { kind: 'install-npm', pkg: ctx.pkg.name, version: latest.version, integrity: latest.integrity, signal },
-            { warmPackument: makeNpmWarmPackument(cfg().timeoutMs ?? 20_000) },
-          )
-          if (!result.ok) throw new TransactionError(result)
+          // M2 Task 3：self-upgrade 收编 market.selfUpgrade（统一 mutation session + 守卫，直调事务旁路封死）
+          const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal })
           payload = {
-            pkg: ctx.pkg.name,
-            version: latest.version,
+            pkg: result.pkg,
+            version: result.version,
             buildApprovals: result.buildApprovals ?? [],
             fallbackAllBuilds: result.fallbackAllBuilds === true,
             needsRestart: true as const,

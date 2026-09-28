@@ -9,8 +9,10 @@ import {
   installFromRegistry,
   listInstalledWithMeta,
   listMarket,
+  selfUpgrade,
   uninstallPlugin,
   upgradePlugin,
+  InstallGuardError,
   type CommunityRegistrySummary,
   type InstalledResult,
 } from './core/market.js'
@@ -240,18 +242,26 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       presentationMeta: (_args, value) => ({ kind: 'dshm-install', ...(value as object) }),
     },
     presentCall: (args) => ({ card: 'generic', title: `安装 · ${String(args.id || '')}`, kind: 'search', content: [] }),
-    presentResult: (_args, { isError, meta }) => ({
-      card: 'generic',
-      title: isError ? '安装失败' : `已安装 · ${(meta as InstallOut | undefined)?.pkg || ''}`,
-      content: [],
-    }),
+    presentResult: (_args, { isError, meta }) => {
+      const out = meta as InstallOut | undefined
+      if (out?.guard === true) return { card: 'generic', title: `守卫拦截 · ${out.compensation?.status ?? ''}`, content: [] }
+      return { card: 'generic', title: isError ? '安装失败' : `已安装 · ${out?.pkg || ''}`, content: [] }
+    },
     timeoutMs: installTimeoutMs() + 60_000,
     async execute(args) {
       const id = String(args.id || '').trim()
       if (!id) throw new Error('缺少收录 id')
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
       const force = args.force === true
-      return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
+      try {
+        return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
+      } catch (err) {
+        if (err instanceof InstallGuardError) {
+          // 结构化 error result（M2 Task 3 ㉑-㉜）：不渲染「已安装」，无 force 通道；restartSafe 随结果携带
+          return { ok: false, guard: true, kind: err.kind, message: err.message, violations: err.violations, compensation: err.compensation, needsRestart: err.needsRestart, restartSafe: err.restartSafe, ...(err.repairBasis ? { repairBasis: err.repairBasis } : {}) }
+        }
+        throw err
+      }
     },
   }))
 
@@ -380,16 +390,23 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       presentationMeta: (_args, value) => ({ kind: 'dshm-upgrade', ...(value as object) }),
     },
     presentCall: (args) => ({ card: 'generic', title: `升级 · ${String(args.pkg || '')}`, content: [] }),
-    presentResult: (_args, { isError, meta }) => ({
-      card: 'generic',
-      title: isError ? '升级失败' : `已升级 · ${(meta as InstallOut | undefined)?.pkg || ''}`,
-      content: [],
-    }),
+    presentResult: (_args, { isError, meta }) => {
+      const out = meta as InstallOut | undefined
+      if (out?.guard === true) return { card: 'generic', title: `守卫拦截 · ${out.compensation?.status ?? ''}`, content: [] }
+      return { card: 'generic', title: isError ? '升级失败' : `已升级 · ${out?.pkg || ''}`, content: [] }
+    },
     timeoutMs: installTimeoutMs() + 60_000,
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
-      return cloneJson(await m.upgradePlugin(target, cfg, { namespace: 'host' }))
+      try {
+        return cloneJson(await m.upgradePlugin(target, cfg, { namespace: 'host' }))
+      } catch (err) {
+        if (err instanceof InstallGuardError) {
+          return { ok: false, guard: true, kind: err.kind, message: err.message, violations: err.violations, compensation: err.compensation, needsRestart: err.needsRestart, restartSafe: err.restartSafe, ...(err.repairBasis ? { repairBasis: err.repairBasis } : {}) }
+        }
+        throw err
+      }
     },
   }))
 
@@ -450,6 +467,12 @@ interface ListOut {
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }
 interface InstallOut {
+  guard?: boolean
+  kind?: string
+  message?: string
+  compensation?: { status: string; note: string }
+  restartSafe?: boolean
+  repairBasis?: string
   pkg?: string
   spec?: string
   version?: string
@@ -516,6 +539,14 @@ function renderList(out: ListOut): string {
 }
 
 function renderInstall(out: InstallOut): string {
+  const guardBlock = out.guard !== true ? null : [
+    `⛔ 安装被装后守卫拦截：${out.message ?? ''}`,
+    `终态：${out.compensation?.status ?? '—'}（${out.compensation?.note ?? ''}）`,
+    out.repairBasis ? `修复依据：${out.repairBasis}` : null,
+    out.restartSafe === true ? '可以重启 DSH Web。' : '修复后再重启（不要现在一键重启）。',
+    '对用户如实说明守卫拦截与终态，不得说「已安装成功」或「已恢复原版本」。',
+  ].filter(Boolean).join('\n')
+  if (out.guard === true) return guardBlock as unknown as string
   const extra = buildsNote(out)
   const compatNote = out.compat
     ? '注意：该版本与当前 DSH 运行时 peer 不兼容，已按用户确认强制安装。'

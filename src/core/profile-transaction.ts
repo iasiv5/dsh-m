@@ -63,6 +63,33 @@ export type TransactionRequest =
   | { kind: 'install-npm'; pkg: string; version: string; integrity: string; signal?: AbortSignal }
   | { kind: 'install-github'; repo: string; sha: string; tag?: string; signal?: AbortSignal }
   | { kind: 'uninstall'; pkg: string; signal?: AbortSignal }
+  | { kind: 'compensate-install'; pkg: string; evidence: CompensateEvidence; prior: PriorUnion; signal?: AbortSignal }
+
+// ---------- 补偿事务类型（M2 Task 3 / DESIGN §3「专用 compensate-install」） ----------
+
+/** dependency 形态 prior 的完整恢复依据。npm integrity 缺失 → restorable:false（捕获阶段即拒）。 */
+export interface PriorState {
+  manifestSpec: string
+  installSpec: string
+  resolvedVersion?: string
+  sourceKind: 'npm' | 'github' | 'other'
+  integrity?: string
+  lockResolution?: { version?: string; integrity?: string; commit?: string }
+  patchMapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }
+  restorable: boolean
+}
+
+/** prior 判别联合（v6）：none/mappingOnly/dependency 三形态 + unavailable（fail-closed）。 */
+export type PriorUnion =
+  | { kind: 'none' }
+  | { kind: 'mappingOnly'; patchMapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> } }
+  | { kind: 'dependency'; state: PriorState }
+  | { kind: 'unavailable'; reason: string }
+
+/** 分源 evidence：validate 对当前 manifest/lock 实读比对（插队复验），不匹配 → COMPENSATE_EVIDENCE_MISMATCH。 */
+export type CompensateEvidence =
+  | { source: 'npm'; manifestSpec: string; resolvedVersion: string; integrity: string }
+  | { source: 'github'; pinnedSpec: string; sha: string; lockCommitIdentity: string }
 // 自升级 = install-npm + pkg=自身（语义等同，不设独立 kind）
 
 export interface HealAction { code: (typeof TX_HEAL_CODES)[number]; note: string }
@@ -73,13 +100,14 @@ export const TX_HEAL_CODES = [
   'B3_LAG_RETRY', 'B3_PACKUMENT_WARMED', 'BUILDS_ALLOWED',
   'ROLLBACK_BYTES_RESTORED', 'ROLLBACK_CONVERGED_FROZEN', 'ROLLBACK_FALLBACK_REMOVED',
   'ROLLBACK_VERIFY_FAILED', 'LIVE_DISABLED', 'LIVE_REENABLED', 'LIVE_REENABLE_FAILED',
-  'PATCH_ENTRIES_STRIPPED',
+  'PATCH_ENTRIES_STRIPPED', 'PATCH_MAPPING_RESTORED',
 ] as const
 
 export const TX_FAILURE_CODES = [
   'DEP_MISSING_AFTER_ADD', 'DEP_VERSION_MISMATCH', 'LOCKFILE_MISSING', 'LOCK_INTEGRITY_MISMATCH',
   'GITHUB_SPEC_MISMATCH', 'ADD_RETRY_EXHAUSTED', 'ADD_FAILED', 'POST_MUTATION_CONVERGENCE_FAILED',
   'NOT_INSTALLED', 'NOT_DSH_PLUGIN', 'REMOVE_FAILED', 'STILL_PRESENT_AFTER_REMOVE',
+  'COMPENSATE_EVIDENCE_MISMATCH', 'COMPENSATE_RESTORE_FAILED',
   'ROLLBACK_FAILED', 'SNAPSHOT_FAILED', 'ABORTED', 'INTERNAL_ERROR',
   'PROFILE_MANIFEST_UNREADABLE', 'PROFILE_MANIFEST_INVALID', 'PLUGIN_METADATA_UNREADABLE',
 ] as const
@@ -175,6 +203,7 @@ function prefixOf(kind: TransactionRequest['kind'], code: TransactionFailure['co
   if (code === 'LOCK_INTEGRITY_MISMATCH') return 'integrity 校验失败'
   if (kind === 'uninstall') return '卸载失败'
   if (kind === 'install-github') return 'GitHub 安装失败'
+  if (kind === 'compensate-install') return '补偿失败'
   return '安装失败'
 }
 
@@ -939,6 +968,237 @@ async function uninstall(
   }
 }
 
+
+// ---------- compensate-install 门（M2 Task 3：专用补偿事务，四边界见 DESIGN §3） ----------
+
+/** patchMapping 结构化双落点恢复：workspace（pnpm-workspace.yaml patchedDependencies）与 manifest（pnpm.patchedDependencies）。 */
+async function restorePatchMapping(
+  profileDir: string,
+  mapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> },
+  heal: HealAction[],
+): Promise<void> {
+  const wsFile = join(profileDir, 'pnpm-workspace.yaml')
+  if (mapping.workspace.length > 0) {
+    let text = ''
+    try {
+      text = await readFile(wsFile, 'utf8')
+    } catch {
+      text = ''
+    }
+    const lines = text.replace(/\n*$/, '\n').split('\n')
+    if (!lines.some((l) => l.trim() === 'patchedDependencies:')) {
+      lines.push('patchedDependencies:')
+    }
+    for (const entry of mapping.workspace) {
+      const line = `  ${JSON.stringify(entry.key)}: ${entry.patchPath}`
+      if (!lines.includes(line)) lines.push(line)
+    }
+    await atomicWriteFile(wsFile, Buffer.from(lines.join('\n'), 'utf8'))
+    heal.push({ code: 'PATCH_MAPPING_RESTORED', note: `已恢复 pnpm-workspace.yaml 补丁映射（${mapping.workspace.map((m) => m.key).join('、')}）` })
+  }
+  if (mapping.manifest.length > 0) {
+    const mfFile = join(profileDir, 'package.json')
+    let doc: Record<string, unknown> = {}
+    try {
+      doc = JSON.parse(await readFile(mfFile, 'utf8')) as Record<string, unknown>
+    } catch {
+      doc = {}
+    }
+    const pnpm = (doc.pnpm && typeof doc.pnpm === 'object' && !Array.isArray(doc.pnpm) ? doc.pnpm : {}) as Record<string, unknown>
+    const patched = (pnpm.patchedDependencies && typeof pnpm.patchedDependencies === 'object' && !Array.isArray(pnpm.patchedDependencies)
+      ? pnpm.patchedDependencies
+      : {}) as Record<string, string>
+    for (const entry of mapping.manifest) patched[entry.key] = entry.patchPath
+    pnpm.patchedDependencies = patched
+    doc.pnpm = pnpm
+    await atomicWriteFile(mfFile, Buffer.from(JSON.stringify(doc, null, 2) + '\n', 'utf8'))
+    heal.push({ code: 'PATCH_MAPPING_RESTORED', note: `已恢复 package.json#pnpm.patchedDependencies（${mapping.manifest.map((m) => m.key).join('、')}）` })
+  }
+}
+
+/** mapping 双落点复读确认（严格读写：任一落点写入后复读不符 → 失败）。 */
+async function verifyPatchMapping(profileDir: string, mapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }): Promise<string | null> {
+  if (mapping.workspace.length > 0) {
+    try {
+      const text = await readFile(join(profileDir, 'pnpm-workspace.yaml'), 'utf8')
+      for (const entry of mapping.workspace) {
+        if (!text.includes(JSON.stringify(entry.key))) return `workspace 补丁映射复读缺失：${entry.key}`
+      }
+    } catch (err) {
+      return `pnpm-workspace.yaml 复读失败：${errText(err)}`
+    }
+  }
+  if (mapping.manifest.length > 0) {
+    try {
+      const doc = JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8')) as { pnpm?: { patchedDependencies?: Record<string, string> } }
+      for (const entry of mapping.manifest) {
+        if (doc.pnpm?.patchedDependencies?.[entry.key] !== entry.patchPath) return `manifest 补丁映射复读缺失：${entry.key}`
+      }
+    } catch (err) {
+      return `package.json 复读失败：${errText(err)}`
+    }
+  }
+  return null
+}
+
+/**
+ * 补偿门：validate（evidence 插队复验，零写入）→ 快照 → live-disable → strip → remove →
+ * verify gone → PriorUnion 分支（none 终 / mappingOnly 恢复 mapping+frozen / dependency 恢复 mapping→add→三重验证）。
+ * 无外部 signal（安装已 committed，清理不可被客户端断连取消）。
+ */
+async function compensateInstall(
+  req: Extract<TransactionRequest, { kind: 'compensate-install' }>,
+  d: ResolvedDeps,
+): Promise<TransactionResult> {
+  const heal: HealAction[] = []
+  const pkg = req.pkg
+
+  // validate：evidence 实读比对（插队复验；失配 → rejected 零写入）
+  try {
+    const depsNow = await strictReadDeps(d)
+    const current = depsNow[pkg]
+    if (req.evidence.source === 'npm') {
+      if (current !== req.evidence.manifestSpec) {
+        return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: `manifest 依赖值已变化（现值 ${current ?? '缺失'}，期望 ${req.evidence.manifestSpec}）；拒绝补偿` }, req.kind)
+      }
+    } else if (current !== req.evidence.pinnedSpec) {
+      return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: `manifest 依赖值已变化（现值 ${current ?? '缺失'}，期望 ${req.evidence.pinnedSpec}）；拒绝补偿` }, req.kind)
+    }
+    if (req.evidence.source === 'npm') {
+      const lockText = await readFile(join(d.profileDir, 'pnpm-lock.yaml'), 'utf8')
+      const version = lockVersionOf(lockText, pkg) ?? req.evidence.resolvedVersion
+      const integrity = readPnpmLockIntegrity(lockText, pkg, version)
+      if (integrity === null || integrity !== req.evidence.integrity) {
+        return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: 'lockfile integrity 与补偿证据不一致；拒绝补偿' }, req.kind)
+      }
+    } else {
+      const lockText = await readFile(join(d.profileDir, 'pnpm-lock.yaml'), 'utf8')
+      const commit = lockCommitOf(lockText, pkg)
+      if (commit === null || commit !== req.evidence.lockCommitIdentity) {
+        return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: 'lockfile commit identity 与补偿证据不一致；拒绝补偿' }, req.kind)
+      }
+    }
+  } catch (err) {
+    if (err instanceof DomainFailure) return rejected(err.failure, req.kind)
+    return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: `补偿证据复验读取失败：${errText(err)}` }, req.kind)
+  }
+  if (req.prior.kind === 'unavailable') {
+    return rejected({ code: 'COMPENSATE_EVIDENCE_MISMATCH', note: `prior 关联歧义，拒绝补偿：${req.prior.reason}` }, req.kind)
+  }
+
+  // 快照 → live-disable → strip → remove → verify gone（与卸载同序；live-disable 在快照后）
+  let snapshots: ProfileFileSnapshot[]
+  try {
+    snapshots = await snapshotFiles(d.paths)
+  } catch (err) {
+    return rejected({ code: 'SNAPSHOT_FAILED', note: errText(err) }, req.kind)
+  }
+  let liveDisabled = false
+  let orphanedPatchFiles: string[] = []
+  try {
+    liveDisabled = await d.setLiveDisabled(pkg, true)
+    if (liveDisabled) heal.push({ code: 'LIVE_DISABLED', note: '补偿前已将运行中的坏包界面下线' })
+    const patch = d.stripPatchedEntries(d.profileDir, pkg)
+    if (patch.changed) heal.push({ code: 'PATCH_ENTRIES_STRIPPED', note: '已摘除该包的 pnpm 补丁条目' })
+    orphanedPatchFiles = patch.orphanedPatchFiles
+    const rmOut = await d.runner.remove(pkg)
+    if (rmOut.class !== 'ok') {
+      return await rollbackAndConverge(d, req.kind, { code: 'REMOVE_FAILED', note: rmOut.output }, heal, snapshots)
+    }
+    const depsNow = await strictReadDeps(d)
+    if (pkg in depsNow) {
+      throw new DomainFailure({ code: 'STILL_PRESENT_AFTER_REMOVE', note: `补偿移除后仍存在 ${pkg}` })
+    }
+  } catch (err) {
+    const failure: TransactionFailure = err instanceof DomainFailure
+      ? err.failure
+      : { code: 'INTERNAL_ERROR', note: errText(err) }
+    // rolled-back：坏包可能仍在 → needsRestart=true、restartSafe=false
+    const result = await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
+    return result
+  }
+
+  // PriorUnion 分支（v9/v10：显式分支，无通用「有 prior 就 add」路径）
+  const prior = req.prior
+  if (prior.kind === 'none') {
+    return committed(req.kind, heal, `compensated:${pkg}`, { pkg, liveDisabled, orphanedPatchFiles })
+  }
+  const mapping = prior.kind === 'mappingOnly' ? prior.patchMapping : prior.state.patchMapping
+  await restorePatchMapping(d.profileDir, mapping, heal)
+  const mappingBad = await verifyPatchMapping(d.profileDir, mapping)
+  if (mappingBad !== null) {
+    return manualRepair(req.kind, { code: 'COMPENSATE_RESTORE_FAILED', note: mappingBad }, heal, mappingBad, false)
+  }
+  if (prior.kind === 'mappingOnly') {
+    // 原依赖本不存在 → 恢复 mapping 后 frozen 验证（runner.add 零调用——add 会装回不存在的包）
+    const conv = await frozenConvergeLadder(d, heal)
+    if (conv.class !== 'ok') {
+      return manualRepair(req.kind, { code: 'POST_MUTATION_CONVERGENCE_FAILED', note: `mapping 恢复后 frozen 验证未通过：${conv.output}` }, heal, conv.output, false)
+    }
+    return committed(req.kind, heal, `compensated:${pkg}`, { pkg, liveDisabled, orphanedPatchFiles })
+  }
+  // dependency：恢复 mapping → add ladder → frozen 收敛 → 三重恢复验证
+  const priorState = prior.state
+  if (!priorState.restorable) {
+    // 理论不可达（restorable:false 在 mutation 前已拒）——防御性 manual-repair
+    return manualRepair(req.kind, { code: 'COMPENSATE_RESTORE_FAILED', note: 'prior 不可自动恢复（restorable:false）' }, heal, 'restorable:false', false)
+  }
+  const addOut = await addWithLagRetry({ kind: 'install-npm', pkg, version: priorState.resolvedVersion ?? '', integrity: priorState.integrity ?? '' }, `${pkg}@${priorState.manifestSpec}`, d, heal)
+  if (addOut.class !== 'ok') {
+    const result = await rollbackAndConverge(d, req.kind, { code: 'ADD_FAILED', note: addOut.output }, heal, snapshots)
+    return result
+  }
+  const conv = await frozenConvergeLadder(d, heal)
+  if (conv.class !== 'ok') {
+    return manualRepair(req.kind, { code: 'POST_MUTATION_CONVERGENCE_FAILED', note: `恢复后 frozen 收敛未通过：${conv.output}` }, heal, conv.output, false)
+  }
+  // 三重恢复验证：manifest spec / node_modules 实际 version / lock integrity
+  try {
+    const depsNow = await strictReadDeps(d)
+    const specNow = depsNow[pkg]
+    if (specNow === undefined) throw new Error(`恢复后 manifest 缺少 ${pkg}`)
+    let versionNote = ''
+    if (priorState.sourceKind === 'npm') {
+      if (specNow !== priorState.manifestSpec) {
+        // CLI 书写规范化（^/~）：接受规范化但明示，不称「完全恢复」
+        versionNote = `；已恢复旧 resolved version，spec 已规范化为 ${specNow}`
+      }
+      const lockText = await readFile(join(d.profileDir, 'pnpm-lock.yaml'), 'utf8')
+      const version = lockVersionOf(lockText, pkg) ?? priorState.resolvedVersion ?? ''
+      const integrity = readPnpmLockIntegrity(lockText, pkg, version)
+      if (priorState.integrity && integrity !== priorState.integrity) {
+        throw new Error('lockfile integrity 与 prior 不一致')
+      }
+      const nmPkg = JSON.parse(await readFile(join(d.profileDir, 'node_modules', pkg, 'package.json'), 'utf8')) as { version?: unknown }
+      if (priorState.resolvedVersion && nmPkg.version !== priorState.resolvedVersion) {
+        throw new Error(`node_modules 实际版本（${String(nmPkg.version)}）与 prior（${priorState.resolvedVersion}）不一致`)
+      }
+    }
+    return committed(req.kind, heal, `compensated:${pkg}`, {
+      pkg,
+      liveDisabled,
+      orphanedPatchFiles,
+      ...(versionNote ? {} : {}),
+    })
+  } catch (err) {
+    return manualRepair(req.kind, { code: 'COMPENSATE_RESTORE_FAILED', note: `三重恢复验证失败：${errText(err)}` }, heal, errText(err), false)
+  }
+}
+
+/** pnpm-lock packages 段中目标包的 resolution.version（粗粒度文本提取，供补偿验证）。 */
+function lockVersionOf(lockText: string, pkg: string): string | null {
+  const re = new RegExp(`'?(?:[^'\n]*node_modules/)?${pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@[^'\n]*':\s*\n[^}]*?version:\s*(\S+)`, 'm')
+  const m = re.exec(lockText)
+  return m ? m[1]!.replace(/'/g, '') : null
+}
+
+/** pnpm-lock 目标包 resolution 的 commit（github tarball 无 integrity，以 commit identity 为准）。 */
+function lockCommitOf(lockText: string, pkg: string): string | null {
+  const re = new RegExp(`'?(?:[^'\n]*node_modules/)?${pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@[^'\n]*':\s*\n[^}]*?commit:\s*'?([0-9a-f]{40})`, 'm')
+  const m = re.exec(lockText)
+  return m ? m[1]! : null
+}
+
 // ---------- 入口：FIFO 互斥 + 分发 ----------
 
 /** 模块级 FIFO 互斥锁（进程内串行；skillhub install-lock 同款思路）。 */
@@ -997,6 +1257,8 @@ async function executeTransaction(
   // 快照已取 → 照常走统一回滚（rollbackAndConverge 已 total，不会再递归逃逸）。
   try {
     switch (req.kind) {
+      case 'compensate-install':
+        return compensateInstall(req, d)
       case 'install-npm':
         return await installNpm(req, d, snapshots)
       case 'install-github':

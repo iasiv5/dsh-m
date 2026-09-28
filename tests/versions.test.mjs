@@ -6,7 +6,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -310,9 +310,19 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
             join(dir, 'package.json'),
             JSON.stringify({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${SHA}` } }, null, 2) + '\n',
           )
+          const pkgDir = join(dir, 'node_modules', 'owner-repo')
+          mkdirSync(pkgDir, { recursive: true })
+          writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'owner-repo', version: '1.0.0', main: 'index.js', dsh: {} }))
+          writeFileSync(join(pkgDir, 'index.js'), 'x')
           return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
         },
-        remove: async () => ({ class: 'ok', output: '' }),
+        remove: async (pkg) => {
+          const doc = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+          delete doc.dependencies[pkg]
+          writeFileSync(join(dir, 'package.json'), JSON.stringify(doc, null, 2) + '\n')
+          rmSync(join(dir, 'node_modules', ...pkg.split('/')), { recursive: true, force: true })
+          return { class: 'ok', output: 'removed' }
+        },
         frozenInstall: async () => ({ class: 'ok', output: '' }),
         rebuildInstall: async () => ({ class: 'ok', output: '' }),
       }
@@ -323,6 +333,7 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
           registry: { version: 1, plugins: [{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'github', github: 'owner/repo' }] },
         }),
         githubLatestTag,
+        candidateKey: async () => 'owner-repo',
         transaction: { runner: () => runner, profileDir: dir },
       })
       assert.equal(res.sha, SHA)

@@ -22,6 +22,7 @@ import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { listInstalledPlugins, type InstalledPlugin } from './installed.js'
 import { isSingleRowPlugin, planRowOverride } from './patch-yaml.js'
 import { PROTECTED_MODULES } from './enablement.js'
+import { withMutationSession } from './market.js'
 import { setLivePluginDisabled, loaderHost, type LoaderEntry, type LoaderHost } from './live-plugin.js'
 import { webProfileDir } from './env.js'
 
@@ -96,7 +97,12 @@ interface BundlesManifest {
   [key: string]: unknown
 }
 
-export async function togglePlugin(pkg: string, enabled: boolean, deps: ToggleDeps = {}): Promise<ToggleResult> {
+export function togglePlugin(pkg: string, enabled: boolean, deps: ToggleDeps = {}): Promise<ToggleResult> {
+  // M2 Task 3：toggle 纳入统一 mutation session（本体单点获取；自身 file lock 在 session 内层）
+  return withMutationSession(() => togglePluginLocked(pkg, enabled, deps))
+}
+
+async function togglePluginLocked(pkg: string, enabled: boolean, deps: ToggleDeps = {}): Promise<ToggleResult> {
   const key = String(pkg || '').trim()
   // ① 保护门最先：纯名单检查（空 profile 也先于 not-installed 命中）
   if (key === 'dsh-m' || PROTECTED_MODULES.includes(key)) {

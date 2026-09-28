@@ -11,6 +11,7 @@ import {
   listMarket,
   uninstallPlugin,
   upgradePlugin,
+  InstallGuardError,
   type InstalledResult,
   type MarketResult,
 } from './core/market.js'
@@ -315,11 +316,22 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'install': {
       const id = needFlag(flags, 'id')
       const version = typeof flags.version === 'string' ? flags.version : undefined
-      const res = await d.installFromRegistry(id, cfg, {
-        version,
-        forceIncompatible: flags.force === true,
-        namespace: 'cli',
-      })
+      let res
+      try {
+        res = await d.installFromRegistry(id, cfg, {
+          version,
+          forceIncompatible: flags.force === true,
+          namespace: 'cli',
+        })
+      } catch (e) {
+        if (e instanceof InstallGuardError) {
+          err('[⛔ 装后守卫拦截] ' + JSON.stringify({ kind: e.kind, violations: e.violations, compensation: e.compensation, needsRestart: e.needsRestart, restartSafe: e.restartSafe, ...(e.repairBasis ? { repairBasis: e.repairBasis } : {}) }))
+          err(e.message)
+          err(e.restartSafe ? '可以重启 DSH Web：dshm restart --yes' : '修复后再重启（不要现在重启）。')
+          return 1
+        }
+        throw e
+      }
       out(`✅ 已安装 ${res.pkg}（${res.spec}）`)
       outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -329,10 +341,21 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'upgrade': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '升级')
-      const res = await d.upgradePlugin(target, cfg, {
-        forceIncompatible: flags.force === true,
-        namespace: 'cli',
-      })
+      let res
+      try {
+        res = await d.upgradePlugin(target, cfg, {
+          forceIncompatible: flags.force === true,
+          namespace: 'cli',
+        })
+      } catch (e) {
+        if (e instanceof InstallGuardError) {
+          err('[⛔ 装后守卫拦截] ' + JSON.stringify({ kind: e.kind, violations: e.violations, compensation: e.compensation, needsRestart: e.needsRestart, restartSafe: e.restartSafe, ...(e.repairBasis ? { repairBasis: e.repairBasis } : {}) }))
+          err(e.message)
+          err(e.restartSafe ? '可以重启 DSH Web：dshm restart --yes' : '修复后再重启（不要现在重启）。')
+          return 1
+        }
+        throw e
+      }
       const from = res.fromVersion ? `v${res.fromVersion} → ` : ''
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'
       out(`✅ 已升级 ${res.pkg}（${from}${to}）`)

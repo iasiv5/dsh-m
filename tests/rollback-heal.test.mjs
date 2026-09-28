@@ -8,7 +8,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, readFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -89,6 +89,13 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
   })
 
   const manifestPath = () => join(profile, 'package.json')
+  /** M2 Task 3：装后守卫的最小 marker 包（dsh 键 + main 入口；无 patch 文件保留 no-patch-layer 语义）。 */
+  const writeGuardMarker = (profileDir, pkg, version) => {
+    const pkgDir = join(profileDir, 'node_modules', ...pkg.split('/'))
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: pkg, version, main: 'index.js', dsh: {} }))
+    writeFileSync(join(pkgDir, 'index.js'), 'x')
+  }
   const lockPath = () => join(profile, 'pnpm-lock.yaml')
 
   /**
@@ -265,6 +272,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
       // 成功写入：保留 pnpm 键 + 一致 lock（好 integrity）
       writeFileSync(manifestPath(), JSON.stringify({ name: 'scratch-profile', private: true, pnpm: { overrides: OVERRIDE }, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }))
+      writeGuardMarker(profile, 'pkg-a', '1.2.3')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({
@@ -331,6 +339,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
     const fakeAdd = async () => {
       writeFileSync(manifestPath(), JSON.stringify({ name: 'scratch-profile', private: true, dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
       writeFileSync(lockPath(), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }))
+      writeGuardMarker(profile, 'pkg-a', '1.2.3')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd), frozenInstall: wrapInstall(restoreInstall) } }))

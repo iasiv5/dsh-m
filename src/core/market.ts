@@ -41,8 +41,12 @@ import {
   type LoadedCommunity,
 } from './community.js'
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
-import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
+import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { HttpError } from './httpx.js'
+import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
+import { readPnpmLockIntegrity } from './npm-integrity.js'
+import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
+import { decodeUtf8Fatal, fetchTextLimited } from './httpx.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
@@ -871,6 +875,8 @@ async function probeLatest(
 /** 安装/升级路径可注入依赖（测试用；生产走真实实现）。Task 9 起事务注入走 `transaction`。 */
 export interface InstallDeps extends Partial<MarketDeps> {
   npmVersion?: typeof npmVersion
+  /** GitHub candidate key 预解析注入（M2 Task 3 测试用；缺省 = 真实抓取 pinned package.json） */
+  candidateKey?: typeof candidateKeyOf
   /** peer 兼容预检注入（Task 11）；缺省 = precheckNpmCompat */
   precheck?: typeof precheckNpmCompat
   /** 事务依赖注入（runner/预热/退避/tmpdir 等）；B3 预热统一走 transaction.warmPackument */
@@ -890,6 +896,8 @@ export interface InstallResult {
   fallbackAllBuilds: boolean
   /** verify 阶段观察：装成纯依赖（无补丁层且不在 bundles）——只警告不回滚 */
   bundleWarning?: 'no-patch-layer'
+  /** 守卫 fail-open：结论不可定的包放行时的警告（M2 Task 3） */
+  guardWarning?: string
   /** peer 兼容预检结果（null = 兼容或未检；Task 11） */
   compat?: CompatIssue | null
   /** github 源不做兼容预检的明示（Task 11） */
@@ -919,19 +927,367 @@ export async function installFromRegistry(
 /** 安装接口收窄（M1 Task 5）：社区条目（CommunityEntry）与主清单条目同型可装。 */
 export type InstallableEntry = Pick<RegistryEntry, 'id' | 'source' | 'npm' | 'github'>
 
+// ---------- M2 Task 3：统一 mutation session + 装后守卫 + 补偿接线 ----------
+
+let sessionTail: Promise<unknown> = Promise.resolve()
+
+/**
+ * 统一 mutation 串行区间（模块级 FIFO，非重入）：包住全部五个 profile mutation 入口
+ * （installFromRegistry / upgradePlugin / uninstallPlugin / selfUpgrade / toggle）。
+ * session 单点获取——只在 core façade 获取（toggle 在 togglePlugin 本体），host-api/tools/CLI
+ * 层不得重复获取（session 非重入，多层重复获取会死锁）。锁序：mutation session 外层 →
+ * toggle file lock / 事务 FIFO 内层。
+ */
+export async function withMutationSession<T>(fn: () => Promise<T>): Promise<T> {
+  const run = sessionTail.then(
+    () => fn(),
+    () => fn(),
+  )
+  sessionTail = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
+/** 守卫拦截的结构化错误（非成功状态）：三端按 kind/needsRestart/restartSafe 渲染，无 force 通道。 */
+export class InstallGuardError extends Error {
+  readonly kind: 'compensated' | 'manual_required'
+  readonly violations: GuardViolation[]
+  readonly needsRestart: boolean
+  readonly restartSafe: boolean
+  /** 补偿终态摘要（rolled-back/manual-repair/rejected 的 note） */
+  readonly compensation: { status: string; note: string }
+  /** manual-repair 的修复依据（旧 manifestSpec/installSpec/mapping） */
+  readonly repairBasis?: string
+
+  constructor(fields: {
+    kind: 'compensated' | 'manual_required'
+    message: string
+    violations: GuardViolation[]
+    needsRestart: boolean
+    restartSafe: boolean
+    compensation: { status: string; note: string }
+    repairBasis?: string
+  }) {
+    super(fields.message)
+    this.name = 'InstallGuardError'
+    this.kind = fields.kind
+    this.violations = fields.violations
+    this.needsRestart = fields.needsRestart
+    this.restartSafe = fields.restartSafe
+    this.compensation = fields.compensation
+    this.repairBasis = fields.repairBasis
+  }
+}
+
+export interface PreMutationSnapshot {
+  deps: Record<string, string>
+  lockResolutions: Record<string, { version?: string; integrity?: string; commit?: string }>
+  mapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }
+}
+
+/** lockfile packages 段的目标包 resolution 提取（行扫描：键行 `pkg@ver:` → 收集至下一键行；引号/嵌套键兼容）。 */
+function lockResolutionOf(lockText: string, pkg: string): { version?: string; integrity?: string; commit?: string } | null {
+  // 只扫顶层 packages: 段（importer 段的同名键不参与；packages: 后条目缩进两空格）
+  const pkgsAt = lockText.split('\n').findIndex((l) => l.trim() === 'packages:')
+  if (pkgsAt < 0) return null
+  const lines = lockText.split('\n').slice(pkgsAt + 1)
+  let body: string[] | null = null
+  for (const line of lines) {
+    if (body !== null && /^\S/.test(line)) break // 顶层新段 → 收集结束
+    const keyMatch = /^  '?(?:[^'\n]*node_modules\/)?([^\s':]+):\s*$/.exec(line)
+    if (keyMatch) {
+      if (body) break
+      const key = keyMatch[1] ?? ''
+      if (key === pkg || key.startsWith(`${pkg}@`)) body = []
+      continue
+    }
+    if (body) body.push(line)
+  }
+  if (body === null) return null
+  const text = body.join('\n')
+  const version = /version:\s*'?([^'\n]+)/.exec(text)?.[1]?.trim()
+  const integrity = /integrity:\s*(\S+)/.exec(text)?.[1]?.trim()
+  const commit = /commit:\s*'?([0-9a-f]{40})/.exec(text)?.[1]?.trim()
+  if (!version && !integrity && !commit) return null
+  return { ...(version ? { version } : {}), ...(integrity ? { integrity } : {}), ...(commit ? { commit } : {}) }
+}
+
+/** 变更前全量快照（v6）：deps / lock resolutions / 双落点 mapping。读取失败 → unavailable（fail-closed 拒绝安装）。 */
+export async function capturePreMutationState(profileDir: string): Promise<{ kind: 'unavailable'; reason: string } | { kind: 'snapshot'; snapshot: PreMutationSnapshot }> {
+  try {
+    // manifest ENOENT = 无已装依赖的空 profile（与 guard readDeps 同语义）；其他读取/解析失败 → fail-closed
+    let manifestText = ''
+    try {
+      manifestText = await readFile(join(profileDir, 'package.json'), 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    const doc = manifestText
+      ? (JSON.parse(manifestText) as { dependencies?: unknown; pnpm?: { patchedDependencies?: unknown } })
+      : {}
+    const deps: Record<string, string> = {}
+    if (doc.dependencies && typeof doc.dependencies === 'object' && !Array.isArray(doc.dependencies)) {
+      for (const [name, spec] of Object.entries(doc.dependencies as Record<string, unknown>)) {
+        if (typeof spec === 'string') deps[name] = spec
+      }
+    }
+    const manifestMapping: Array<{ key: string; patchPath: string }> = []
+    const patched = doc.pnpm?.patchedDependencies
+    if (patched && typeof patched === 'object' && !Array.isArray(patched)) {
+      for (const [key, patchPath] of Object.entries(patched as Record<string, unknown>)) {
+        if (typeof patchPath === 'string') manifestMapping.push({ key, patchPath })
+      }
+    }
+    let lockText = ''
+    try {
+      lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
+    } catch {
+      lockText = ''
+    }
+    const lockResolutions: PreMutationSnapshot['lockResolutions'] = {}
+    for (const name of Object.keys(deps)) {
+      const res = lockResolutionOf(lockText, name)
+      if (res) lockResolutions[name] = res
+    }
+    const workspaceMapping: Array<{ key: string; patchPath: string }> = []
+    try {
+      const ws = await readFile(join(profileDir, 'pnpm-workspace.yaml'), 'utf8')
+      const inBlock = /^patchedDependencies:/m
+      if (inBlock.test(ws)) {
+        const section = ws.split(/^patchedDependencies:/m)[1]?.split(/^\S/m)?.[0] ?? ''
+        for (const line of section.split('\n')) {
+          const m = /^\s+'?([^':]+)'?:\s*(\S+)/.exec(line)
+          if (m) workspaceMapping.push({ key: m[1]!.trim(), patchPath: m[2]!.trim() })
+        }
+      }
+    } catch {
+      /* 无 workspace 文件 = 无 workspace mapping */
+    }
+    return { kind: 'snapshot', snapshot: { deps, lockResolutions, mapping: { workspace: workspaceMapping, manifest: manifestMapping } } }
+  } catch (err) {
+    return { kind: 'unavailable', reason: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/** mapping 条目按真实 key 精确关联（key === realKey 或版本化 key `realKey@x`）；不按 repo/id/相似名猜。 */
+function mappingFor(mapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }, realKey: string) {
+  const pick = (rows: Array<{ key: string; patchPath: string }>) => rows.filter((r) => r.key === realKey || r.key.startsWith(`${realKey}@`))
+  return { workspace: pick(mapping.workspace), manifest: pick(mapping.manifest) }
+}
+
+/**
+ * prior 派生（add 返回真实 key 后、守卫前）：严格按真实 key 关联快照；判定表唯一映射。
+ * 来源白名单（独立实现，不复用 parseSpecSource）：精确 npm version（含 ^/~ 书写）与
+ * pinned github commit + lock identity 可自动恢复；alias/workspace/tarball URL/git+ssh/link/file 一律 restorable:false。
+ */
+export function derivePrior(
+  snapshot: PreMutationSnapshot,
+  realKey: string,
+): { kind: 'none' } | { kind: 'mappingOnly'; patchMapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> } } | { kind: 'dependency'; state: PriorStateExport } | { kind: 'unavailable'; reason: string } {
+  const spec = snapshot.deps[realKey]
+  const mapping = mappingFor(snapshot.mapping, realKey)
+  if (spec === undefined) {
+    if (mapping.workspace.length > 0 || mapping.manifest.length > 0) {
+      return { kind: 'mappingOnly', patchMapping: mapping }
+    }
+    return { kind: 'none' }
+  }
+  const lock = snapshot.lockResolutions[realKey] ?? null
+  let sourceKind: 'npm' | 'github' | 'other' = 'other'
+  let restorable = false
+  if (isExactVersion(spec)) {
+    sourceKind = 'npm'
+    restorable = Boolean(lock?.integrity)
+  } else if (/^[~^]\d/.test(spec) && isExactVersion(spec.slice(1))) {
+    // ^/~ 锚定（0.4.x 旧 CLI 书写）：恢复后接受规范化并明示
+    sourceKind = 'npm'
+    restorable = Boolean(lock?.integrity)
+  } else if (/^github:[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+#[0-9a-f]{40}$/.test(spec)) {
+    sourceKind = 'github'
+    restorable = Boolean(lock?.commit)
+  }
+  return {
+    kind: 'dependency',
+    state: {
+      manifestSpec: spec,
+      installSpec: spec,
+      resolvedVersion: lock?.version,
+      sourceKind,
+      ...(lock?.integrity ? { integrity: lock.integrity } : {}),
+      ...(lock ? { lockResolution: lock } : {}),
+      patchMapping: mapping,
+      restorable,
+    },
+  }
+}
+
+interface PriorStateExport {
+  manifestSpec: string
+  installSpec: string
+  resolvedVersion?: string
+  sourceKind: 'npm' | 'github' | 'other'
+  integrity?: string
+  lockResolution?: { version?: string; integrity?: string; commit?: string }
+  patchMapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }
+  restorable: boolean
+}
+
+/** GitHub candidate preflight：只读抓取 pinned SHA 的 package.json 解析 name（预算外 read-only 通道，不写 profile）。 */
+async function candidateKeyOf(repo: string, sha: string, timeoutMs: number): Promise<string | null> {
+  const text = await fetchTextLimited(`https://raw.githubusercontent.com/${repo}/${sha}/package.json`, { timeoutMs, maxBytes: 512 * 1024 })
+  const doc = JSON.parse(text) as { name?: unknown }
+  return typeof doc.name === 'string' && doc.name.trim() !== '' ? doc.name.trim() : null
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** 补偿执行 + InstallGuardError 抛出（四态 → needsRestart/restartSafe 映射；rejected 复读 profile 实况）。 */
+async function throwCompensated(args: {
+  pkg: string
+  guard: Awaited<ReturnType<typeof verifyInstalledAdditions>>
+  deps?: TransactionDeps
+  evidence: CompensateEvidence
+  prior: ReturnType<typeof derivePrior>
+}): Promise<never> {
+  const { pkg, guard, deps, evidence, prior } = args
+  const violations = guard.violations
+  const violationText = violations.map((v) => `${v.code}: ${v.detail}`).join('；')
+  let comp: TransactionResult
+  const priorForTx: PriorUnion =
+    prior.kind === 'mappingOnly'
+      ? { kind: 'mappingOnly', patchMapping: prior.patchMapping }
+      : prior.kind === 'dependency'
+        ? { kind: 'dependency', state: prior.state }
+        : { kind: 'none' }
+  try {
+    comp = await runProfileTransaction(
+      { kind: 'compensate-install', pkg, evidence, prior: priorForTx },
+      deps,
+    )
+  } catch (err) {
+    throw new InstallGuardError({
+      kind: 'manual_required',
+      message: `安装违例（${violationText}），补偿事务执行异常：${err instanceof Error ? err.message : String(err)}——需人工处理`,
+      violations,
+      needsRestart: true,
+      restartSafe: false,
+      compensation: { status: 'manual-repair', note: errText(err) },
+    })
+  }
+  if (comp.ok) {
+    // committed(fresh/restore) + 补偿验证完整 → 可一键重启
+    throw new InstallGuardError({
+      kind: 'compensated',
+      message: `安装违例（${violationText}），已${prior.kind === 'dependency' ? '恢复原版本' : '自动卸载'}（补偿事务 committed）`,
+      violations,
+      needsRestart: true,
+      restartSafe: true,
+      compensation: { status: 'committed', note: comp.output },
+      ...(prior.kind === 'dependency' ? { repairBasis: `prior: ${prior.state.manifestSpec}（${prior.state.resolvedVersion ?? 'version 未知'}）` } : {}),
+    })
+  }
+  const status = comp.status
+  const note = comp.failure?.note ?? ''
+  if (status === 'rejected') {
+    // 复读 profile 实况决定 restartSafe（不因零写入直接 false）
+    let pkgStillThere = false
+    try {
+      const now = await capturePreMutationState(deps?.profileDir ?? webProfileDir())
+      pkgStillThere = now.kind === 'snapshot' && pkg in now.snapshot.deps
+    } catch {
+      pkgStillThere = true
+    }
+    throw new InstallGuardError({
+      kind: 'compensated',
+      message: `安装违例（${violationText}），补偿未执行（profile 状态已变化：${note}）`,
+      violations,
+      needsRestart: pkgStillThere,
+      restartSafe: !pkgStillThere,
+      compensation: { status: 'rejected', note },
+    })
+  }
+  if (status === 'rolled-back') {
+    throw new InstallGuardError({
+      kind: 'compensated',
+      message: `安装违例（${violationText}），补偿未完成：已回到补偿前状态，坏包可能仍在，需人工处理（${note}）`,
+      violations,
+      needsRestart: true,
+      restartSafe: false,
+      compensation: { status: 'rolled-back', note },
+    })
+  }
+  // manual-repair：状态未知；post-add 兜底场景附修复依据，任何端不显示「已恢复原版本/已安装成功」
+  throw new InstallGuardError({
+    kind: 'manual_required',
+    message: `安装违例（${violationText}），补偿进入 manual-repair：需人工处理（${note}）`,
+    violations,
+    needsRestart: true,
+    restartSafe: false,
+    compensation: { status: 'manual-repair', note },
+    ...(prior.kind === 'dependency'
+      ? { repairBasis: `旧 manifestSpec=${prior.state.manifestSpec}；installSpec=${prior.state.installSpec}；mapping=${JSON.stringify(prior.state.patchMapping)}` }
+      : prior.kind === 'mappingOnly'
+        ? { repairBasis: `旧 mapping=${JSON.stringify(prior.patchMapping)}` }
+        : {}),
+  })
+}
+
+function guardManualRequired(message: string, violations: GuardViolation[]): InstallGuardError {
+  // 零副作用：未进 mutation → needsRestart=false、restartSafe=false
+  return new InstallGuardError({
+    kind: 'manual_required',
+    message,
+    violations,
+    needsRestart: false,
+    restartSafe: false,
+    compensation: { status: 'pre-mutation', note: '未开始变更，profile 零写入' },
+  })
+}
+
 export async function installEntry(
   entry: InstallableEntry,
   cfg: RegistryConfig = {},
   opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<InstallResult> {
+  return withMutationSession(() => installEntryLocked(entry, cfg, opts, deps))
+}
+
+/** installEntry 主体（session 区间内；installEntry 是唯一外部入口——upgradePlugin 复用本 helper）。 */
+async function installEntryLocked(
+  entry: InstallableEntry,
+  cfg: RegistryConfig = {},
+  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  deps?: InstallDeps,
+): Promise<InstallResult> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
+  const profileDir = deps?.transaction?.profileDir ?? webProfileDir()
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
   }
   if (entry.source === 'npm' && entry.npm) {
     const pkg = entry.npm
+    // 变更前全量快照（unavailable → fail-closed，零写入）
+    const pre = await capturePreMutationState(profileDir)
+    if (pre.kind === 'unavailable') {
+      throw new Error(`变更前状态捕获失败：${pre.reason}；拒绝安装（fail-closed）`)
+    }
+    // npm key 事务前已知：prior 派生与 restorable 检查在事务前完成
+    const prior = derivePrior(pre.snapshot, pkg)
+    if (prior.kind === 'unavailable') {
+      throw new Error(`prior 关联歧义：${prior.reason}；拒绝安装（fail-closed）`)
+    }
+    if (prior.kind === 'dependency' && !prior.state.restorable) {
+      throw guardManualRequired(
+        `「${pkg}」的原安装形态（${prior.state.sourceKind === 'other' ? 'link/file 等非 registry 来源' : '缺少 integrity 的 npm 依赖'}）无法自动回退，请先手动处理（卸载或修复后重试）`,
+        [{ pkg, code: 'NO_DSH_MARKER', detail: `prior restorable:false（sourceKind=${prior.state.sourceKind}）` }],
+      )
+    }
     // npm：无论 latest 还是用户指定 exact，都先读取该精确版本的 dist metadata（事务外解析）
     let version: string
     let expectedIntegrity: string | undefined
@@ -966,6 +1322,43 @@ export async function installEntry(
       },
     )
     if (!result.ok) throw new TransactionError(result)
+    // 装后守卫（session 区间内；fail-open 仅限结论不可定）
+    const guard = await verifyInstalledAdditions({
+      profileDir,
+      addedPkgs: [result.pkg ?? pkg],
+      ...(prior.kind === 'dependency' ? { priorPkgs: [pkg] } : {}),
+    })
+    if (guard.unavailable.length > 0) {
+      return {
+        id: entry.id,
+        pkg: result.pkg ?? pkg,
+        spec: result.spec ?? `${pkg}@${version}`,
+        version: result.version ?? version,
+        buildApprovals: result.buildApprovals ?? [],
+        fallbackAllBuilds: result.fallbackAllBuilds === true,
+        ...(result.bundleWarning ? { bundleWarning: result.bundleWarning } : {}),
+        compat: compat ?? null,
+        needsRestart: true,
+        output: result.output,
+        healActions: result.healActions,
+        guardWarning: `装后守卫不可用（${guard.unavailable.map((u) => u.reason).slice(0, 2).join('；')}），未执行三项检查——如异常请人工核查`,
+      }
+    }
+    if (!guard.ok) {
+      await throwCompensated({
+        pkg: result.pkg ?? pkg,
+        guard,
+        deps: deps?.transaction,
+        evidence: {
+          source: 'npm',
+          // manifestSpec = 安装后 manifest deps 值（pnpm add 写入裸 version）；validate 对当前 manifest 实读比对
+          manifestSpec: result.version ?? version,
+          resolvedVersion: result.version ?? version,
+          integrity: expectedIntegrity ?? '',
+        },
+        prior,
+      })
+    }
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
     return {
       id: entry.id,
@@ -982,17 +1375,101 @@ export async function installEntry(
     }
   }
   if (entry.github) {
-    // 版本解析在事务外（DI 修正：githubLatestTag 此前绕过注入）
+    // 变更前全量快照（fail-closed）
+    const pre = await capturePreMutationState(profileDir)
+    if (pre.kind === 'unavailable') {
+      throw new Error(`变更前状态捕获失败：${pre.reason}；拒绝安装（fail-closed）`)
+    }
+    // candidate preflight（M2 Task 0 gate 已证明 name→key 映射）：只读抓取 pinned package.json；
+    // 抓取失败/解析歧义 → fail-closed 拒绝安装（零写入）；candidate 命中 link/file 或 restorable:false
+    // prior → mutation 前 GUARD_MANUAL_REQUIRED（runner.add 零调用）
     const { tag, sha } = await (deps?.githubLatestTag ?? defaultGithubLatestTag)(entry.github, timeoutMs, opts.signal)
+    let candidate: string | null
+    try {
+      candidate = await (deps?.candidateKey ?? candidateKeyOf)(entry.github, sha, timeoutMs)
+    } catch (err) {
+      throw new Error(`GitHub candidate key 预解析失败（${entry.github}@${sha.slice(0, 7)}）：${err instanceof Error ? err.message : String(err)}；拒绝安装（fail-closed）`)
+    }
+    if (candidate === null || !/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(candidate)) {
+      throw new Error(`GitHub candidate key 不可用（${candidate ?? 'name 缺失'}）：拒绝安装（fail-closed）`)
+    }
+    const candidatePrior = derivePrior(pre.snapshot, candidate)
+    if (candidatePrior.kind === 'unavailable') {
+      throw new Error(`prior 关联歧义：${candidatePrior.reason}；拒绝安装（fail-closed）`)
+    }
+    if (candidatePrior.kind === 'dependency' && !candidatePrior.state.restorable) {
+      throw guardManualRequired(
+        `「${candidate}」的原安装形态（link/file 等非 registry 来源）无法自动回退，请先手动处理（卸载或修复后重试）`,
+        [{ pkg: candidate, code: 'NO_DSH_MARKER', detail: 'candidate 命中 restorable:false prior（link/file）' }],
+      )
+    }
     const result = await runProfileTransaction(
       { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
       deps?.transaction ?? {},
     )
     if (!result.ok) throw new TransactionError(result)
+    const realKey = result.pkg ?? candidate
+    // post-add derivePrior 复核（兜底网）：真实 key 与 candidate 不符且发现不可自动恢复 prior
+    // → manual-repair 非成功状态（不冒充 pre-mutation 拒绝、不承诺 prior 无损）
+    let prior = candidatePrior
+    if (realKey !== candidate) {
+      const real = derivePrior(pre.snapshot, realKey)
+      if (real.kind === 'unavailable') {
+        throw new Error(`prior 关联歧义（真实 key ${realKey}）：${real.reason}；拒绝继续（fail-closed）`)
+      }
+      if (real.kind === 'dependency' && !real.state.restorable) {
+        throw new InstallGuardError({
+          kind: 'manual_required',
+          message: `安装违例后复核：真实 dependency key（${realKey}）与预解析 candidate（${candidate}）不符，且旧 prior 为 link/file 等不可自动恢复来源——旧 prior 可能已被覆盖，需人工恢复`,
+          violations: [{ pkg: realKey, code: 'NO_DSH_MARKER', detail: 'candidate 与真实 key 不符且 prior restorable:false' }],
+          needsRestart: true,
+          restartSafe: false,
+          compensation: { status: 'manual-repair', note: '真实 key ≠ candidate 且旧 prior 不可自动恢复' },
+          repairBasis: `旧 manifestSpec=${real.state.manifestSpec}；installSpec=${real.state.installSpec}；mapping=${JSON.stringify(real.state.patchMapping)}`,
+        })
+      }
+      if (real.kind !== 'none') prior = real
+    }
+    // 装后守卫
+    const guard = await verifyInstalledAdditions({
+      profileDir,
+      addedPkgs: [realKey],
+      ...(prior.kind === 'dependency' ? { priorPkgs: [realKey] } : {}),
+    })
+    if (guard.unavailable.length > 0) {
+      const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
+      return {
+        id: entry.id,
+        pkg: realKey,
+        spec: result.spec ?? `github:${entry.github}#${sha}`,
+        sha: result.sha ?? sha,
+        tag: result.tag ?? tag,
+        buildApprovals: result.buildApprovals ?? [],
+        fallbackAllBuilds: result.fallbackAllBuilds === true,
+        ...(result.bundleWarning ? { bundleWarning: result.bundleWarning } : {}),
+        compatSkipped: 'github-source',
+        needsRestart: true,
+        output: result.output + (notes.length > 0 ? `\n[dsh-m 自愈] ${notes.join('；')}` : ''),
+        healActions: result.healActions,
+        guardWarning: `装后守卫不可用（${guard.unavailable.map((u) => u.reason).slice(0, 2).join('；')}），未执行三项检查——如异常请人工核查`,
+      }
+    }
+    if (!guard.ok) {
+      // lock commit identity 从实际 pnpm-lock.yaml 解析（InstallResult.sha 是请求时期望值，非独立观测）
+      const lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
+      const lockCommit = lockResolutionOf(lockText, realKey)?.commit ?? sha
+      await throwCompensated({
+        pkg: realKey,
+        guard,
+        deps: deps?.transaction,
+        evidence: { source: 'github', pinnedSpec: `github:${entry.github}#${sha}`, sha, lockCommitIdentity: lockCommit },
+        prior,
+      })
+    }
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
     return {
       id: entry.id,
-      pkg: result.pkg ?? entry.github,
+      pkg: realKey,
       spec: result.spec ?? `github:${entry.github}#${sha}`,
       sha: result.sha ?? sha,
       tag: result.tag ?? tag,
@@ -1023,7 +1500,16 @@ export interface UninstallDeps {
 }
 
 /** 卸载：validate（严格读取）→ live-disable → 摘补丁 → pnpm remove → verify gone（DESIGN.md §3：删包不删数据）。 */
-export async function uninstallPlugin(
+export function uninstallPlugin(
+  pkg: string,
+  cfg: RegistryConfig = {},
+  opts: RegistryRuntimeOptions = {},
+  deps: UninstallDeps = {},
+): Promise<UninstallResult> {
+  return withMutationSession(() => uninstallPluginLocked(pkg, cfg, opts, deps))
+}
+
+async function uninstallPluginLocked(
   pkg: string,
   _cfg: RegistryConfig = {},
   opts: RegistryRuntimeOptions = {},
@@ -1056,7 +1542,16 @@ export interface UpgradeResult extends InstallResult {
 }
 
 /** 升级 = 按最新重新安装（npm 拉最新精确版；github 重新锁 HEAD）。 */
-export async function upgradePlugin(
+export function upgradePlugin(
+  pkg: string,
+  cfg: RegistryConfig = {},
+  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  deps?: InstallDeps,
+): Promise<UpgradeResult> {
+  return withMutationSession(() => upgradePluginLocked(pkg, cfg, opts, deps))
+}
+
+async function upgradePluginLocked(
   pkg: string,
   cfg: RegistryConfig = {},
   opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
@@ -1073,6 +1568,40 @@ export async function upgradePlugin(
   if (!entry) throw new Error(`「${pkg}」不是经 dsh-m 收录的插件；直接升级请用 dsh plugin update 或先在 registry 收录它`)
   const result = await installEntry(entry, cfg, opts, deps)
   return { ...result, fromVersion: target.version }
+}
+
+/** 自升级（0.5.0 收编：host-api 直调事务的旁路封死）：npmLatest + integrity fail-closed + installEntryLocked（session/守卫经 installEntry）。 */
+export async function selfUpgrade(
+  pkgName: string,
+  currentVersion: string,
+  cfg: RegistryConfig = {},
+  opts: RegistryRuntimeOptions = {},
+  deps?: InstallDeps,
+): Promise<InstallResult> {
+  return withMutationSession(async () => {
+    const timeoutMs = cfg.timeoutMs ?? 20_000
+    const latest = await (deps?.npmLatest ?? defaultNpmLatest)(pkgName, timeoutMs, opts.signal)
+    if (!latest.integrity) {
+      throw new Error(`npm metadata 缺少 dist integrity：${pkgName}@${latest.version}，拒绝升级`)
+    }
+    const result = await runProfileTransaction(
+      { kind: 'install-npm', pkg: pkgName, version: latest.version, integrity: latest.integrity, signal: opts.signal },
+      { ...(deps?.transaction ?? {}), warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs) },
+    )
+    if (!result.ok) throw new TransactionError(result)
+    return {
+      id: pkgName,
+      pkg: result.pkg ?? pkgName,
+      spec: result.spec ?? `${pkgName}@${latest.version}`,
+      version: result.version ?? latest.version,
+      buildApprovals: result.buildApprovals ?? [],
+      fallbackAllBuilds: result.fallbackAllBuilds === true,
+      ...(result.bundleWarning ? { bundleWarning: result.bundleWarning } : {}),
+      needsRestart: true as const,
+      output: result.output,
+      healActions: result.healActions,
+    }
+  })
 }
 
 /** 疑似残留路径（存在才列出）：删包不删数据，只报告。 */

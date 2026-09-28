@@ -73,6 +73,9 @@ const ZH = {
   "badge.community": "社区收录",
   "community.stale": "社区目录为缓存快照（显示的不是最新数据）", "community.fallback": "收录清单不可用，当前展示社区清单条目",
   "detail.capabilities": "能力披露", "detail.capabilities.unscanned": "未扫描 ≠ 未检出", "detail.redlines": "能力红线",
+  "guard.blocked": "安装被装后守卫拦截", "guard.compstatus": "补偿终态", "guard.repairbasis": "修复依据",
+  "guard.restartsafenow": "可以重启 DSH Web", "guard.restartunsafe": "修复后再重启（不要现在一键重启）",
+  "guard.noforce": "守卫拦截无「仍要安装」通道，请按修复依据人工处理",
   "detail.screenshots": "截图", "installed.check.incomplete": "检查未完成",
   "settings.community": "社区清单（awesome-dsh-plugin 目录）", "settings.community.none": "社区清单未启用或不可用",
   "settings.community.status": "状态", "settings.community.version": "目录版本", "settings.community.route": "获取线路",
@@ -162,6 +165,9 @@ const EN = {
   "badge.community": "Community",
   "community.stale": "Community catalog served from cache (not the latest data)", "community.fallback": "Registry unavailable — showing community listings",
   "detail.capabilities": "Capabilities", "detail.capabilities.unscanned": "Not scanned ≠ not detected", "detail.redlines": "Capability red lines",
+  "guard.blocked": "Install blocked by post-install guard", "guard.compstatus": "Compensation status", "guard.repairbasis": "Repair basis",
+  "guard.restartsafenow": "You can restart DSH Web now", "guard.restartunsafe": "Fix before restarting (do not one-click restart now)",
+  "guard.noforce": "Guard blocks have no force channel — repair manually per the basis above",
   "detail.screenshots": "Screenshots", "installed.check.incomplete": "Check incomplete",
   "settings.community": "Community catalog (awesome-dsh-plugin)", "settings.community.none": "Community catalog disabled or unavailable",
   "settings.community.status": "Status", "settings.community.version": "Catalog version", "settings.community.route": "Route",
@@ -366,6 +372,10 @@ async function api(method, params, signal) {
   if (!res.ok || data.ok === false) {
     const err = new Error(data.error || `API ${res.status}`);
     if (data && typeof data === "object" && data.issue) err.issue = data.issue; // IncompatibleError 结构化载体
+    // M2 Task 3：装后守卫拦截的字段全保留（GUI 一键重启只读 restartSafe，不得由 needsRestart 推导）
+    if (data && typeof data === "object" && data.kind && Array.isArray(data.violations)) {
+      err.guard = { kind: data.kind, violations: data.violations, compensation: data.compensation, needsRestart: data.needsRestart === true, restartSafe: data.restartSafe === true, repairBasis: data.repairBasis };
+    }
     throw err;
   }
   return data;
@@ -661,7 +671,19 @@ function MarketTab({ notify, market, onMutation }) {
       installDone(res);
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
-      if (e && e.issue) {
+      if (e && e.guard) {
+        // 装后守卫拦截（M2 Task 3）：无 force 通道；一键重启只读 restartSafe
+        notify({
+          kind: "err",
+          text: [
+            lookup("guard.blocked"),
+            `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
+            e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
+            lookup("guard.noforce"),
+            e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
+          ].filter(Boolean).join(" | "),
+        });
+      } else if (e && e.issue) {
         // peer 预检拦截 → 弹「仍要安装」确认（用户确认后带 force 重发）
         setCompatConfirm({ it, version, issue: e.issue });
       } else {
@@ -977,7 +999,20 @@ function InstalledTab({ notify, installed, onMutation }) {
       });
       await (onMutation ? onMutation() : reload());
     } catch (e) {
-      notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
+      if (e && e.guard) {
+        notify({
+          kind: "err",
+          text: [
+            lookup("guard.blocked"),
+            `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
+            e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
+            lookup("guard.noforce"),
+            e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
+          ].filter(Boolean).join(" | "),
+        });
+      } else {
+        notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
+      }
     } finally {
       setBusyPkg(null);
     }
@@ -1313,7 +1348,20 @@ function SettingsTab({ notify, onRegistryChanged }) {
       notify({ kind: "ok", text: lookup("self.upgraded", { v: res.version }), needsRestart: true });
       await self.reload();
     } catch (e) {
-      notify({ kind: "err", text: lookup("failed.selfupdate", { err: (e && e.message) || e }) });
+      if (e && e.guard) {
+        notify({
+          kind: "err",
+          text: [
+            lookup("guard.blocked"),
+            `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
+            e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
+            lookup("guard.noforce"),
+            e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
+          ].filter(Boolean).join(" | "),
+        });
+      } else {
+        notify({ kind: "err", text: lookup("failed.selfupdate", { err: (e && e.message) || e }) });
+      }
     } finally {
       setUpgrading(false);
     }
@@ -1579,14 +1627,18 @@ function registerSlot(slots, options, component) {
 
 function ToolCardRow({ it, onInstalled }) {
   const [busy, setBusy] = useState(false);
+  const [guardNote, setGuardNote] = useState(null);
   const install = async (e) => {
     e.stopPropagation();
     setBusy(true);
     try {
       const res = await api("install", { id: it.id });
       onInstalled({ ...it, installed: true, installedPkg: res.pkg, installedVersion: res.version });
-    } catch {
-      /* 安装失败静默：对话区文本已给出结果 */
+    } catch (e) {
+      // M2 Task 3：静默分支不再吞守卫拦截——工具卡片就地标注（对话区文本仍为主通道）
+      if (e && e.guard) {
+        setGuardNote(`${lookup("guard.blocked")} · ${e.guard.compensation?.status || "—"} · ${lookup("guard.noforce")}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -1606,6 +1658,7 @@ function ToolCardRow({ it, onInstalled }) {
         it.installed ? h("span", { className: "dshm-badge" }, "已安装") : null,
       ),
       h("div", { className: "dshm-desc" }, it.description),
+      guardNote ? h("div", { className: "dshm-err" }, guardNote) : null,
       h("div", { className: "dshm-sub" }, `${it.id} · ${(it.tags || []).join("、") || it.category}`),
       h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
       h(

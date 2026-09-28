@@ -5,7 +5,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, readFileSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdirSync, rmSync, mkdtempSync, existsSync } from 'node:fs'
 import { readdir, rename as realRename, open as realOpen } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1674,5 +1674,245 @@ describe('install-npm：bundle 身份观察（Task 10，只警告不回滚）', 
     assert.equal(r.bundleWarning, undefined)
     const doc = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
     assert.deepEqual(doc.dsh.profile.bundles, ['pkg-a'])
+  })
+})
+
+// ---------- M2 Task 3：compensate-install 专用补偿事务（真实 runProfileTransaction + fake runner + 临时 profile） ----------
+
+const INTEGRITY = 'sha512-' + 'A'.repeat(20)
+const INTEGRITY_2 = 'sha512-' + 'C'.repeat(20)
+
+function compTempProfile() {
+  const dir = mkdtempSync(join(tmpdir(), 'dshm-comp-'))
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'profile', private: true, dependencies: {} }, null, 2) + '\n')
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+  return dir
+}
+
+function compManifestDeps(dir) {
+  const file = join(dir, 'package.json')
+  if (!existsSync(file)) return {}
+  return JSON.parse(readFileSync(file, 'utf8')).dependencies ?? {}
+}
+
+function compWriteManifestDeps(dir, deps) {
+  const file = join(dir, 'package.json')
+  const doc = JSON.parse(readFileSync(file, 'utf8'))
+  doc.dependencies = deps
+  writeFileSync(file, JSON.stringify(doc, null, 2) + '\n')
+}
+
+function compWriteLock(dir, body) {
+  writeFileSync(join(dir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'\n\nimporters:\n  .:\n    dependencies:\n      pkg-a:\n        specifier: 2.0.0\n        version: 2.0.0\n\npackages:\n${body}\n`)
+}
+
+function compInstallBadPkg(dir, pkg) {
+  const pkgDir = join(dir, 'node_modules', ...pkg.split('/'))
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: pkg, version: '2.0.0' }, null, 2))
+}
+
+function compFakeRunner(dir, opts = {}) {
+  const calls = { add: [], remove: [], frozen: [], rebuild: [] }
+  return {
+    calls,
+    runner: {
+      add: async (arg) => {
+        calls.add.push(arg)
+        if (opts.addBehavior) return opts.addBehavior(arg)
+        const m = /^([^@]+(?:\/[^@]+)?)@(.+)$/.exec(arg)
+        if (m) compWriteManifestDeps(dir, { ...compManifestDeps(dir), [m[1]]: m[2] })
+        return { class: 'ok', output: `added ${arg}`, buildApprovals: [], fallbackAllBuilds: false }
+      },
+      remove: async (pkg) => {
+        calls.remove.push(pkg)
+        if (opts.removeBehavior) return opts.removeBehavior(pkg)
+        const deps = compManifestDeps(dir)
+        delete deps[pkg]
+        compWriteManifestDeps(dir, deps)
+        rmSync(join(dir, 'node_modules', ...pkg.split('/')), { recursive: true, force: true })
+        return { class: 'ok', output: `removed ${pkg}` }
+      },
+      frozenInstall: async () => {
+        calls.frozen.push(1)
+        return { class: 'ok', output: 'frozen-ok' }
+      },
+      rebuildInstall: async () => {
+        calls.rebuild.push(1)
+        return { class: 'ok', output: 'rebuild-ok' }
+      },
+    },
+  }
+}
+
+describe('M2 Task 3：compensate-install 补偿事务', () => {
+  let dir = ''
+  beforeEach(() => {
+    dir = compTempProfile()
+  })
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = ''
+  })
+
+  it('① fresh + prior none：违例新包移除 committed；live-disable 先于 remove', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY}}`)
+    const live = []
+    const tx = compFakeRunner(dir)
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '2.0.0', resolvedVersion: '2.0.0', integrity: INTEGRITY },
+        prior: { kind: 'none' },
+      },
+      {
+        runner: () => tx.runner,
+        profileDir: dir,
+        setLiveDisabled: async (pkg, disabled) => {
+          live.push([pkg, disabled])
+          return false
+        },
+      },
+    )
+    assert.equal(res.ok, true, JSON.stringify(res))
+    assert.deepEqual(tx.calls.remove, ['pkg-a'])
+    assert.ok(live.length >= 1 && live[0][1] === true, 'live-disable 在 remove 之前')
+    assert.equal('pkg-a' in compManifestDeps(dir), false, '坏包已移除')
+  })
+
+  it('⑧ evidence 篡改（manifest 不符）→ rejected + COMPENSATE_EVIDENCE_MISMATCH 零写入', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY}}`)
+    const tx = compFakeRunner(dir)
+    const before = readFileSync(join(dir, 'package.json'), 'utf8')
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '9.9.9', resolvedVersion: '9.9.9', integrity: INTEGRITY },
+        prior: { kind: 'none' },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.status, 'rejected')
+    assert.equal(res.failure.code, 'COMPENSATE_EVIDENCE_MISMATCH')
+    assert.deepEqual(tx.calls.remove, [], '零写入')
+    assert.equal(readFileSync(join(dir, 'package.json'), 'utf8'), before)
+  })
+
+  it('㉒ mappingOnly：移除新包 + 双落点 mapping 恢复 + 相邻条目不变 + add 零调用', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    // 刚装的坏包在 manifest 中（补偿对象）；mappingOnly 指其「装上前」的旧 prior 形态
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0', 'other-pkg': '1.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY}}\n  other-pkg@1.0.0:\n    resolution: {integrity: sha512-BBBBBBBBBBBBBBBBBBBBBBBB}`)
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\npatchedDependencies:\n  "pkg-a@2.0.0": patches/pkg-a.patch\n  "other-pkg@1.0.0": patches/other.patch\n')
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'profile', private: true, dependencies: { 'pkg-a': '2.0.0', 'other-pkg': '1.0.0' }, pnpm: { patchedDependencies: { 'pkg-a@2.0.0': 'patches/pkg-a.patch', 'other-pkg@1.0.0': 'patches/other.patch' } } }, null, 2) + '\n')
+    const tx = compFakeRunner(dir)
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '2.0.0', resolvedVersion: '2.0.0', integrity: INTEGRITY },
+        prior: { kind: 'mappingOnly', patchMapping: { workspace: [{ key: 'pkg-a@2.0.0', patchPath: 'patches/pkg-a.patch' }], manifest: [{ key: 'pkg-a@2.0.0', patchPath: 'patches/pkg-a.patch' }] } },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.ok, true, JSON.stringify(res))
+    assert.deepEqual(tx.calls.add, [], 'mappingOnly：runner.add 零调用')
+    assert.equal('pkg-a' in compManifestDeps(dir), false, 'dependency 保持不存在')
+    const ws = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')
+    assert.ok(ws.includes('"pkg-a@2.0.0"') && ws.includes('"other-pkg@1.0.0"'), 'workspace mapping 恢复且相邻条目不变')
+    const mf = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    assert.equal(mf.pnpm.patchedDependencies['pkg-a@2.0.0'], 'patches/pkg-a.patch')
+  })
+
+  it('③ dependency：恢复旧版本（add 用 prior manifestSpec）+ node_modules version 断言', async () => {
+    // 安装后状态：坏包 2.0.0 在 manifest/node_modules（旧 prior ^1.0.0 已被覆盖）
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY_2}}\n  pkg-a@1.0.0:\n    resolution: {integrity: ${INTEGRITY}}`)
+    const tx = compFakeRunner(dir, {
+      addBehavior: async (arg) => {
+        compWriteManifestDeps(dir, { ...compManifestDeps(dir), 'pkg-a': arg.split('@').slice(1).join('@') })
+        const pkgDir = join(dir, 'node_modules', 'pkg-a')
+        mkdirSync(pkgDir, { recursive: true })
+        writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.0.0' }))
+        return { class: 'ok', output: 'restored', buildApprovals: [], fallbackAllBuilds: false }
+      },
+    })
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '2.0.0', resolvedVersion: '2.0.0', integrity: INTEGRITY_2 },
+        prior: {
+          kind: 'dependency',
+          state: {
+            manifestSpec: '^1.0.0', installSpec: '^1.0.0', resolvedVersion: '1.0.0', sourceKind: 'npm',
+            integrity: INTEGRITY, lockResolution: { version: '1.0.0', integrity: INTEGRITY },
+            patchMapping: { workspace: [], manifest: [] }, restorable: true,
+          },
+        },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.ok, true, JSON.stringify(res))
+    assert.deepEqual(tx.calls.add, ['pkg-a@^1.0.0'])
+    assert.equal(JSON.parse(readFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), 'utf8')).version, '1.0.0')
+  })
+
+  it('⑨ 插队复验（恢复后 version 不符）→ manual-repair + COMPENSATE_RESTORE_FAILED', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY_2}}\n  pkg-a@1.0.0:\n    resolution: {integrity: ${INTEGRITY}}`)
+    const tx = compFakeRunner(dir, {
+      addBehavior: async (arg) => {
+        compWriteManifestDeps(dir, { ...compManifestDeps(dir), 'pkg-a': arg.split('@').slice(1).join('@') })
+        const pkgDir = join(dir, 'node_modules', 'pkg-a')
+        mkdirSync(pkgDir, { recursive: true })
+        writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: 'pkg-a', version: '9.9.9' }))
+        return { class: 'ok', output: 'restored', buildApprovals: [], fallbackAllBuilds: false }
+      },
+    })
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '2.0.0', resolvedVersion: '2.0.0', integrity: INTEGRITY_2 },
+        prior: {
+          kind: 'dependency',
+          state: {
+            manifestSpec: '^1.0.0', installSpec: '^1.0.0', resolvedVersion: '1.0.0', sourceKind: 'npm',
+            integrity: INTEGRITY, lockResolution: { version: '1.0.0', integrity: INTEGRITY },
+            patchMapping: { workspace: [], manifest: [] }, restorable: true,
+          },
+        },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.status, 'manual-repair')
+    assert.equal(res.failure.code, 'COMPENSATE_RESTORE_FAILED')
+  })
+
+  it('⑪ remove 失败 → rolled-back（坏包可能仍在）', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '2.0.0' })
+    compWriteLock(dir, `  pkg-a@2.0.0:\n    resolution: {integrity: ${INTEGRITY}}`)
+    const tx = compFakeRunner(dir, { removeBehavior: async () => ({ class: 'hard-fail', output: 'pnpm remove 失败（模拟）' }) })
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '2.0.0', resolvedVersion: '2.0.0', integrity: INTEGRITY },
+        prior: { kind: 'none' },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.status, 'rolled-back')
+    assert.equal(res.snapshotRestoreVerified, true)
   })
 })

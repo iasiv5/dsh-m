@@ -384,27 +384,23 @@ describe('host-api：self-upgrade 事务委派（Task 7）', () => {
     assert.equal(res.body.ok, true)
   })
 
-  it('npmLatest 无 integrity → 报错且 runTransaction 零调用', async () => {
-    const txCalls = []
+  it('M2 收编：selfUpgrade 抛错 → 500 透传（integrity 检查在 market.selfUpgrade 内，⑦ 已测）', async () => {
     const { dispatcher } = setup({
-      npmLatest: async () => ({ version: '9.9.9' }), // 缺 integrity
-      runTransaction: async (req, deps) => {
-        txCalls.push({ req, deps })
-        return committedUpgrade
+      selfUpgrade: async () => {
+        throw new Error('npm metadata 缺少 dist integrity：dsh-m@9.9.9，拒绝升级')
       },
     })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
     assert.equal(res.status, 500)
     assert.match(res.body.error, /缺少 dist integrity/)
-    assert.equal(txCalls.length, 0, '不进事务')
   })
 
-  it('委派参数：pkg/version/integrity/signal + 生产 warmPackument 绑定', async () => {
-    const txCalls = []
+  it('M2 收编：self-upgrade 委派 market.selfUpgrade（pkg/signal 透传）', async () => {
+    const calls = []
     const { dispatcher } = setup({
-      runTransaction: async (req, deps) => {
-        txCalls.push({ req, deps })
-        return committedUpgrade
+      selfUpgrade: async (pkgName, currentVersion, cfg, opts) => {
+        calls.push({ pkgName, currentVersion, signal: opts?.signal })
+        return { pkg: pkgName, version: '9.9.9', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true }
       },
     })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
@@ -413,13 +409,9 @@ describe('host-api：self-upgrade 事务委派（Task 7）', () => {
     assert.deepEqual(res.body.buildApprovals, [])
     assert.equal(res.body.fallbackAllBuilds, false)
     assert.equal(res.body.needsRestart, true)
-    assert.equal(txCalls.length, 1)
-    assert.equal(txCalls[0].req.kind, 'install-npm')
-    assert.equal(txCalls[0].req.pkg, 'dsh-m')
-    assert.equal(txCalls[0].req.version, '9.9.9')
-    assert.equal(txCalls[0].req.integrity, 'sha512-x')
-    assert.ok(txCalls[0].req.signal instanceof AbortSignal, 'signal 贯通到 request')
-    assert.equal(typeof txCalls[0].deps?.warmPackument, 'function', '生产 warm 绑定 makeNpmWarmPackument')
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].pkgName, 'dsh-m')
+    assert.ok(calls[0].signal instanceof AbortSignal, 'signal 贯通到 selfUpgrade')
   })
 
   it('rolled-back → 500 且 message 含「已回滚到安装前状态」（兼容契约端到端）', async () => {
@@ -433,7 +425,13 @@ describe('host-api：self-upgrade 事务委派（Task 7）', () => {
       snapshotRestoreVerified: true,
       profileConverged: true,
     }
-    const { dispatcher } = setup({ runTransaction: async () => rolled })
+    const { dispatcher } = setup({
+      selfUpgrade: async () => {
+        const err = new Error('安装失败，已回滚到安装前状态（三文件已按快照逐字节还原并重读复验）：boom')
+        err.result = rolled
+        throw err
+      },
+    })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
     assert.equal(res.status, 500)
     assert.equal(res.body.ok, false)

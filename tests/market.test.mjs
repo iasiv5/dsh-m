@@ -5,7 +5,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -345,11 +345,27 @@ packages:
     resolution: {integrity: ${sha512('good')}}
 `
 
+/** M2 Task 3：写入最小 marker 包（守卫三项检查的最小通过形态：dsh 键 + main 入口 + patch 文件）。 */
+function writeInstalledMarkerPkg(profileDir, pkg) {
+  // marker = package.json 的 dsh 键（不写 cordis.patch.yml——保留 bundleWarning/no-patch-layer 语义，
+  // 且 loader id 集合贡献为空，不干扰冲突判定）
+  const pkgDir = join(profileDir, 'node_modules', ...pkg.split('/'))
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: pkg, version: '9.9.9', main: 'index.js', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(pkgDir, 'index.js'), 'module.exports = {}\n')
+}
+
 /** 记录调用的 mock PnpmRunner（四操作俱全，永不 spawn）。 */
-function mockTxRunner(script = {}) {
+function mockTxRunner(script = {}, profileDir = null) {
   const calls = { add: [], remove: [], frozen: [], rebuild: [] }
   const op = (name) => async (arg, signal) => {
     calls[name].push({ arg, signal })
+    // M2 Task 3：add 成功后写最小 marker 包（装后守卫三项检查需要真实包内容）
+    if (name === 'add' && profileDir) {
+      const spec = String(arg || '')
+      const pkg = spec.startsWith('github:') ? (spec.slice(7).split('#')[0].split('/')[1]) : (spec.split('@').slice(0, -1).join('@') || spec)
+      if (pkg) writeInstalledMarkerPkg(profileDir, pkg)
+    }
     const seq = script[name] || []
     const step = seq[Math.min(calls[name].length - 1, seq.length - 1)]
     if (!step) return { class: 'ok', output: `${name}-ok` }
@@ -378,7 +394,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
         writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
         return { class: 'ok', output: 'added-via-tx-runner', buildApprovals: [], fallbackAllBuilds: false }
       }],
-    })
+    }, dir)
     const res = await installFromRegistry('p', {}, {}, {
       ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
       transaction: { runner: () => tx.runner, profileDir: dir },
@@ -402,9 +418,10 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     const tx = mockTxRunner({
       add: [async () => {
         writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'owner-repo': `github:owner/repo#${'a'.repeat(40)}` } }, null, 2) + '\n')
+        writeInstalledMarkerPkg(dir, 'owner-repo')
         return { class: 'ok', output: 'gh-added', buildApprovals: [], fallbackAllBuilds: false }
       }],
-    })
+    }, dir)
     const res = await installFromRegistry('p', {}, {}, {
       loadRegistry: async () => ({
         configuredAddress: '', activeAddress: null, source: 'default-raw', status: 'ready',
@@ -415,6 +432,7 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
         },
       }),
       githubLatestTag: async () => ({ tag: 'v2.0.0', sha: 'a'.repeat(40) }),
+      candidateKey: async () => 'owner-repo',
       transaction: { runner: () => tx.runner, profileDir: dir },
     })
     assert.equal(res.sha, 'a'.repeat(40))
@@ -777,6 +795,8 @@ describe('0.4.0：兼容预检门 / 卸载保护门 / 结果透传（Tasks 11-13
       add: async () => {
         writeFileSync(join(dirPath, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
         writeFileSync(join(dirPath, 'pnpm-lock.yaml'), LOCK_GOOD)
+        // M2 Task 3：写最小 marker 包（装后守卫三项检查）
+        writeInstalledMarkerPkg(dirPath, 'pkg-a')
         return { class: 'ok', output: 'ok', buildApprovals: [], fallbackAllBuilds: false, ...(bundleWarning ? { bundleWarning } : {}) }
       },
       remove: async () => ({ class: 'ok', output: 'ok' }),
@@ -821,13 +841,21 @@ describe('0.4.0：兼容预检门 / 卸载保护门 / 结果透传（Tasks 11-13
         registry: { version: 1, plugins: [{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'github', github: 'owner/repo' }] },
       }),
       githubLatestTag: async () => ({ tag: 'v2.0.0', sha: 'a'.repeat(40) }),
+      candidateKey: async () => 'owner-repo',
       transaction: {
         runner: () => ({
           add: async () => {
             writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { 'owner-repo': ghSpec } }, null, 2) + '\n')
+            writeInstalledMarkerPkg(dir, 'owner-repo')
             return { class: 'ok', output: 'gh-added', buildApprovals: [], fallbackAllBuilds: false }
           },
-          remove: async () => ({ class: 'ok', output: 'ok' }),
+          remove: async (pkg) => {
+            const doc = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+            delete doc.dependencies[pkg]
+            writeFileSync(join(dir, 'package.json'), JSON.stringify(doc, null, 2) + '\n')
+            rmSync(join(dir, 'node_modules', ...pkg.split('/')), { recursive: true, force: true })
+            return { class: 'ok', output: 'ok' }
+          },
           frozenInstall: async () => ({ class: 'ok', output: 'ok' }),
           rebuildInstall: async () => ({ class: 'ok', output: 'ok' }),
         }),
@@ -1405,5 +1433,93 @@ describe('M1 Task 7：probe deadline 硬上限与双 waiter 顺序', () => {
     assert.equal(summaryOutcome.summary.status, 'unavailable')
     const marketOutcome = await marketP
     assert.equal(marketOutcome.summary.status, 'ready', 'summary 提前退出不中止共享 flight')
+  })
+})
+
+// ---------- M2 Task 3：统一 session + 装后守卫接线 ----------
+
+describe('M2 Task 3：守卫接线与 mutation session', () => {
+  const GUARD_DIR_BASE = () => mkdtempSync(join(tmpdir(), 'dshm-guard3-'))
+
+  it('㉑b npm prior 为 link/file → mutation 前 GUARD_MANUAL_REQUIRED（add/remove 零调用、零写入）', async () => {
+    const profileDir = GUARD_DIR_BASE()
+    try {
+      writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { 'pkg-a': 'link:../local/pkg-a' } }, null, 2) + '\n')
+      writeFileSync(join(profileDir, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n")
+      writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+      let addCalls = 0
+      const tx = { runner: () => ({ add: async () => { addCalls += 1; return { class: 'ok', output: '' } }, remove: async () => ({ class: 'ok', output: '' }), frozenInstall: async () => ({ class: 'ok', output: '' }), rebuildInstall: async () => ({ class: 'ok', output: '' }) }), profileDir }
+      let caught = null
+      try {
+        await installFromRegistry('p-a', {}, {}, {
+          loadRegistry: async () => readyLoaded([{ id: 'p-a', name: 'A', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' }]),
+          npmLatest: async () => ({ version: '2.0.0', integrity: 'sha512-x' }),
+          precheck: async () => null,
+          transaction: tx,
+        })
+      } catch (e) {
+        caught = e
+      }
+      assert.ok(caught, '应拒绝')
+      assert.equal(caught.kind, 'manual_required')
+      assert.equal(caught.needsRestart, false)
+      assert.equal(caught.restartSafe, false)
+      assert.equal(addCalls, 0, 'runner.add 零调用（mutation 前拒绝）')
+      assert.ok(!readFileSync(join(profileDir, 'package.json'), 'utf8').includes('2.0.0'), '零写入')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('⑫ 守卫不可定 → fail-open committed + guardWarning', async () => {
+    const profileDir = GUARD_DIR_BASE()
+    try {
+      writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: {} }, null, 2) + '\n')
+      // node_modules 全量不可定：模拟 deps 读失败由 guard readDeps 缺省路径触发（坏 JSON）
+      const tx = mockTxRunner({
+        add: [async () => {
+          // 安装链写入完整依赖状态 + marker；其 cordis.patch.yml 是目录（EISDIR）→ guard insertIdsOf unreadable → fail-open
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), LOCK_GOOD)
+          writeInstalledMarkerPkg(profileDir, 'pkg-a')
+          mkdirSync(join(profileDir, 'node_modules', 'pkg-a', 'cordis.patch.yml'), { recursive: true })
+          return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const res = await installFromRegistry('p', {}, {}, {
+        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+        transaction: { runner: () => tx.runner, profileDir },
+      })
+      assert.equal(res.needsRestart, true, 'fail-open 返回 committed 形态结果')
+      assert.ok(res.guardWarning && res.guardWarning.includes('守卫不可用'))
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('⑰ selfUpgrade：导出可用且 integrity 缺失 fail-closed', async () => {
+    const { selfUpgrade } = await import('../lib/core/market.js')
+    await assert.rejects(
+      () => selfUpgrade('dsh-m', '0.0.0', {}, {}, { npmLatest: async () => ({ version: '9.9.9' }) }),
+      /缺少 dist integrity/,
+    )
+  })
+
+  it('㉓ withMutationSession 串行：并发安装/卸载不交错（FIFO）', async () => {
+    const { withMutationSession } = await import('../lib/core/market.js')
+    const events = []
+    const p1 = withMutationSession(async () => {
+      events.push('a-start')
+      await sleep(30)
+      events.push('a-end')
+      return 'a'
+    })
+    const p2 = withMutationSession(async () => {
+      events.push('b-start')
+      events.push('b-end')
+      return 'b'
+    })
+    assert.deepEqual(await Promise.all([p1, p2]), ['a', 'b'])
+    assert.deepEqual(events, ['a-start', 'a-end', 'b-start', 'b-end'], 'b 在 a 完成后才开始')
   })
 })

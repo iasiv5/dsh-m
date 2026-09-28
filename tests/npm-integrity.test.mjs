@@ -4,7 +4,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -238,6 +238,13 @@ describe('snapshot/restore', () => {
   })
 })
 
+function writeMarkerPkg(profileDir, pkg, version) {
+  const pkgDir = join(profileDir, 'node_modules', ...pkg.split('/'))
+  mkdirSync(pkgDir, { recursive: true })
+  writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: pkg, version, main: 'index.js', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+  writeFileSync(join(pkgDir, 'index.js'), 'module.exports = {}\n')
+}
+
 describe('installEntry：integrity fail-closed 与回滚', () => {
   let profile = ''
   beforeEach(() => {
@@ -280,6 +287,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
+      writeMarkerPkg(profile, 'pkg-a', '1.2.3')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
@@ -291,6 +299,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '^1.2.3' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
+      writeMarkerPkg(profile, 'pkg-a', '1.2.3')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
@@ -307,6 +316,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
       const spec = specWrites === 1 ? '~1.2.3' : '1.2.4'
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': spec } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.2.3', sha512('good')))
+      writeMarkerPkg(profile, 'pkg-a', '1.2.3')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, {}, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
@@ -412,6 +422,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.0.5' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.0.5', sha512('exact')))
+      writeMarkerPkg(profile, 'pkg-a', '1.0.5')
       return { output: 'ok', buildApprovals: [], fallbackAllBuilds: false }
     }
     const res = await installFromRegistry('p', {}, { version: '1.0.5' }, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
