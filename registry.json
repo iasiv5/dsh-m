@@ -139,6 +139,25 @@
       "homepage": "https://github.com/iasiv5/dsh-onetree-log"
     },
     {
+      "id": "dsh-quota-watch",
+      "name": "DSH Quota Watch",
+      "description": "侧栏额度监控卡片：显示 GLM Coding Plan 窗口与 Copilot 额度快照，凭据宿主解析，不留存历史；已适配 0.1.7-rc.2，详见仓库。",
+      "category": "tools",
+      "tags": [
+        "配额",
+        "监控",
+        "GLM",
+        "Copilot"
+      ],
+      "verified": [
+        "0.1.7-rc.2"
+      ],
+      "source": "npm",
+      "npm": "@iasiv5/dsh-quota-watch",
+      "github": "iasiv5/dsh-quota-watch",
+      "homepage": "https://github.com/iasiv5/dsh-quota-watch"
+    },
+    {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
