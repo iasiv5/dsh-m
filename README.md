@@ -127,7 +127,7 @@ main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优
 优先使用该源最近一次成功的缓存并标记「缓存来源」；完全没有缓存时市场显示「收录清单不可用」，已安装插件仍可正常管理。修正地址或恢复默认即可。
 
 **5. 支持哪些 DSH Web 版本？**
-与 dsh-skip-browser-auth 同一口径：`0.1.2-rc.1`、`0.1.5-rc.1/rc.2`、`0.1.7-rc.1`、`0.1.7-rc.2` 的公开包契约均已核对。其中 0.1.7 把 settings 服务重塑为 `SettingsForms`（旧的 `settings.register` 消失），dsh-m 以运行时形态探测双代兼容：≤0.1.5 全代际走 `register()` scope 通路（0.1.5-rc.2 的 dsh-settings 仍为旧 API，已并入核对），0.1.7-rc.1 / rc.2 走 Config `.volatile()` 字段 + `settings.update` + `loader/volatile-update` 通路（经 tarball 逐字节比对，两个 rc 的 dsh-settings 完全相同、loader 同版，一套实现通吃）；形态不识别时自动降级 cordis 配置文件通路，市场主功能不受影响。重启方面各版本都提供 dsh-m 使用的 `appExit` launcher hook；0.1.5-rc.1 运行时已实际加载并完成 `/dshm` ping 与带认证页面 `303 → 200` 核验，0.1.7 适配的 live E2E（装机 + 设置页写值持久化）随发布后核验。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
+与 dsh-skip-browser-auth 同一口径：`0.1.2-rc.1`、`0.1.5-rc.1/rc.2`、`0.1.7-rc.1`、`0.1.7-rc.2` 的公开包契约均已核对。其中 0.1.7 把 settings 服务重塑为 `SettingsForms`（旧的 `settings.register` 消失），dsh-m 以运行时形态探测双代兼容：≤0.1.5 全代际走 `register()` scope 通路（0.1.5-rc.2 的 dsh-settings 仍为旧 API，已并入核对），0.1.7-rc.1 / rc.2 走 Config `.volatile()` 字段 + `settings.update` + `loader/volatile-update` 通路（经 tarball 逐字节比对，两个 rc 的 dsh-settings 完全相同、loader 同版，一套实现通吃）；形态不识别时自动降级 cordis 配置文件通路，市场主功能不受影响。重启方面各版本都提供 dsh-m 使用的 `appExit` launcher hook；0.1.5-rc.1 运行时已实际加载并完成 `/dshm` ping 与带认证页面 `303 → 200` 核验。0.1.7 适配的 live E2E 结论（2026-09-28 回写）：装机与 `/dshm` 工具链活性已在 0.1.7-rc.2 实证——0.4.0 → 0.4.2 连续三个版本发布收编，跨两次服务重启后 `dshm list/upgrade` 全链路可用，registry 21 条（自研七件套齐）下发正常；设置页写值持久化未单独核验（0.1.7 已迁移用户层设置存储，旧 `~/.dsh/settings.yaml` 不复存在，核验需 GUI 会话写值后重启对照，留待首次实际使用设置面板时顺手完成）。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
 
 ## License
 
