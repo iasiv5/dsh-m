@@ -11,7 +11,7 @@ const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖）
-const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice } = require("./market-state.js");
+const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, splitCategories, marketNotice, sortMergedItems } = require("./market-state.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -69,6 +69,14 @@ const ZH = {
   "market.page.prev": "上一页", "market.page.next": "下一页", "market.page.info": "第 {page} / {pages} 页 · 共 {total} 条",
   "market.perf": "收录超过 200 条：仅查询当前页的最新版本（每页 50 条），如需全部请用搜索/分类过滤",
   "notice.toolview.err": "收录清单暂不可用",
+  "cat.primaryonly": "只看主清单", "community.group": "社区", "community.newgroup": "社区 · 新分类",
+  "badge.community": "社区收录",
+  "community.stale": "社区目录为缓存快照（显示的不是最新数据）", "community.fallback": "收录清单不可用，当前展示社区清单条目",
+  "detail.capabilities": "能力披露", "detail.capabilities.unscanned": "未扫描 ≠ 未检出", "detail.redlines": "能力红线",
+  "detail.screenshots": "截图", "installed.check.incomplete": "检查未完成",
+  "settings.community": "社区清单（awesome-dsh-plugin 目录）", "settings.community.none": "社区清单未启用或不可用",
+  "settings.community.status": "状态", "settings.community.version": "目录版本", "settings.community.route": "获取线路",
+  "settings.community.accepted": "收录 / 上游", "settings.community.displaced": "与主清单重复让位",
   "self.upgraded": "dsh-m 已更新到 v{v}，重启后生效", "self.failed": "自更新失败：{err}",
   "registry.refreshed": "收录清单已强制刷新",
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
@@ -150,6 +158,14 @@ const EN = {
   "market.page.prev": "Previous", "market.page.next": "Next", "market.page.info": "Page {page} / {pages} · {total} listings",
   "market.perf": "200+ listings: latest versions are queried for the current page only (50 per page); use search/category filters",
   "notice.toolview.err": "Registry temporarily unavailable",
+  "cat.primaryonly": "Primary only", "community.group": "Community", "community.newgroup": "Community · New",
+  "badge.community": "Community",
+  "community.stale": "Community catalog served from cache (not the latest data)", "community.fallback": "Registry unavailable — showing community listings",
+  "detail.capabilities": "Capabilities", "detail.capabilities.unscanned": "Not scanned ≠ not detected", "detail.redlines": "Capability red lines",
+  "detail.screenshots": "Screenshots", "installed.check.incomplete": "Check incomplete",
+  "settings.community": "Community catalog (awesome-dsh-plugin)", "settings.community.none": "Community catalog disabled or unavailable",
+  "settings.community.status": "Status", "settings.community.version": "Catalog version", "settings.community.route": "Route",
+  "settings.community.accepted": "Accepted / upstream", "settings.community.displaced": "Displaced (duplicate of primary)",
   "self.upgraded": "dsh-m updated to v{v} — restart to take effect", "self.failed": "Self-update failed: {err}",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
@@ -395,6 +411,7 @@ function useMarketData() {
     const params = {
       query: nextQuery.query || undefined,
       category: nextQuery.category || undefined,
+      primaryOnly: nextQuery.primaryOnly === true ? true : undefined,
       offset: nextQuery.offset,
       limit: nextQuery.limit,
       ...(force ? { force: true } : {}),
@@ -450,6 +467,25 @@ function Spin() {
   return h("span", { className: "dshm-spin" });
 }
 
+
+// ---------- 社区截图消费端校验（M1 Task 9 / Q44：GitHub 图床白名单由上游保证，客户端二次校验） ----------
+function safeScreenshots(entry) {
+  const list = Array.isArray(entry && entry.screenshots) ? entry.screenshots : [];
+  return list
+    .filter((u) => typeof u === "string" && u.length <= 2048)
+    .map((u) => {
+      try {
+        const parsed = new URL(u);
+        if (parsed.protocol !== "https:") return null;
+        if (parsed.hostname === "github.com" || parsed.hostname.endsWith(".githubusercontent.com")) return u;
+        return null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
 
 // ---------- 「详情」官方外链（GitHub / npm / homepage） ----------
 function officialLinks({ npm, github, homepage }) {
@@ -589,15 +625,15 @@ function MarketTab({ notify, market, onMutation }) {
   const [qInput, setQInput] = useState(query.query);
   const debounceRef = useRef(null);
 
-  // 服务端分页数据
-  const items = (data && data.items) || [];
+  // 服务端分页数据（展示序：主置顶 + 社区 downloads 降序）
+  const items = sortMergedItems((data && data.items) || []);
   const total = (data && data.total) || 0;
   const limit = (data && data.limit) || MARKET_PAGE_SIZE;
   const offset = (data && data.offset) || 0;
   const page = total > 0 ? Math.floor(offset / limit) + 1 : 1;
   const pages = total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
   const counts = (data && data.categoryCounts) || {};
-  const notice = data ? registryNotice(data.registryState, total) : null;
+  const notice = data ? marketNotice(data.registryState, data.community) : null;
 
   const onSearchInput = (value) => {
     setQInput(value);
@@ -684,6 +720,8 @@ function MarketTab({ notify, market, onMutation }) {
       ? h("div", { className: notice.key === "notice.unavailable" ? "dshm-err" : "dshm-hint" },
           lookup(notice.key, { count: notice.count }))
       : null,
+    notice && notice.communityFallback ? h("div", { className: "dshm-hint" }, lookup("community.fallback")) : null,
+    notice && notice.communityStale ? h("div", { className: "dshm-hint" }, lookup("community.stale")) : null,
     total > 200 ? h("div", { className: "dshm-hint" }, lookup("market.perf")) : null,
     h(
       "div",
@@ -699,7 +737,8 @@ function MarketTab({ notify, market, onMutation }) {
     h(
       "div",
       { className: "dshm-chips" },
-      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, offset: 0 }) }, lookup("cat.all")),
+      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, primaryOnly: false, offset: 0 }) }, lookup("cat.all")),
+      h("button", { className: `dshm-chip${query.primaryOnly === true ? " on" : ""}`, onClick: () => updateQuery({ primaryOnly: query.primaryOnly !== true, offset: 0 }) }, lookup("cat.primaryonly")),
       CATEGORIES.map((key) => {
         const n = typeof counts[key] === "number" ? counts[key] : 0;
         return h(
@@ -709,6 +748,29 @@ function MarketTab({ notify, market, onMutation }) {
         );
       }),
     ),
+    (() => {
+      const groups = splitCategories(counts);
+      if (!groups.community.length && !groups.unknown.length) return null;
+      const chip = (c) => h(
+        "button",
+        { key: c.id, className: `dshm-chip${query.category === c.id ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === c.id ? null : c.id, offset: 0 }) },
+        `${c.label}${c.count ? ` ${c.count}` : ""}`,
+      );
+      return h(
+        React.Fragment,
+        null,
+        groups.community.length
+          ? h("div", { className: "dshm-chips" },
+              h("span", { className: "dshm-hint" }, lookup("community.group")),
+              ...groups.community.map(chip))
+          : null,
+        groups.unknown.length
+          ? h("div", { className: "dshm-chips" },
+              h("span", { className: "dshm-hint" }, lookup("community.newgroup")),
+              ...groups.unknown.map(chip))
+          : null,
+      );
+    })(),
     busyId ? h(ProgressLine, { key: "prog" }) : null,
     loading && !data
       ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())
@@ -729,6 +791,7 @@ function MarketTab({ notify, market, onMutation }) {
                   badges: [
                     it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
                     it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
+                    it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
                     h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
                   ],
                   desc: it.description,
@@ -749,6 +812,13 @@ function MarketTab({ notify, market, onMutation }) {
                     [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
                     [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
                     it.latestError ? [lookup("version.failed"), it.latestError] : null,
+                    it.community === true ? [lookup("detail.capabilities"), Array.isArray(it.capabilities) && it.capabilities.length
+                      ? `${it.capabilities.join(", ")}${Array.isArray(it.capabilityRedLines) && it.capabilityRedLines.length ? `；${lookup("detail.redlines")}: ${it.capabilityRedLines.join("; ")}` : ""}`
+                      : lookup("detail.capabilities.unscanned")] : null,
+                    it.community === true && safeScreenshots(it).length
+                      ? [lookup("detail.screenshots"), h("div", { className: "dshm-chips" },
+                          ...safeScreenshots(it).map((src) => h("img", { key: src, src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", style: { maxWidth: "220px", maxHeight: "140px", borderRadius: "6px", border: "1px solid rgba(127,127,127,.25)" } })))]
+                      : null,
                   ]),
                   actions: [
                     it.installed
@@ -943,7 +1013,11 @@ function InstalledTab({ notify, installed, onMutation }) {
           }),
           badges: [
             it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, `⬆ ${vm.latestLabel}`.trim()) : null,
-            it.registryId ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market")) : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
+            it.community === true
+              ? h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.community"))
+              : it.registryId
+                ? h("span", { className: "dshm-badge", key: "r" }, lookup("badge.market"))
+                : h("span", { className: "dshm-badge info", key: "r" }, lookup("badge.nonmarket")),
           ],
           desc: it.description || "（无描述）",
           sub: [
@@ -951,7 +1025,9 @@ function InstalledTab({ notify, installed, onMutation }) {
             vm.phaseKey ? lookup(vm.phaseKey) : lookup(vm.enabledLabelKey),
             `v${it.version || "?"}`,
             vm.sourceLabelKey ? lookup(vm.sourceLabelKey) : it.source,
+            vm.latestIssue ? lookup("installed.check.incomplete") : null,
           ]
+            .filter(Boolean)
             .map((part, i) => (i === 0 ? part : [" · ", part]))
             .flat(),
           links: h(LinksRow, {
@@ -968,6 +1044,7 @@ function InstalledTab({ notify, installed, onMutation }) {
                 [lookup("detail.latest"), vm.latestLabelDetail],
                 [lookup("detail.listed"), it.registryId || lookup("detail.listed.no")],
                 [lookup("detail.path"), it.path],
+                vm.latestIssue ? [lookup("installed.check.incomplete"), vm.latestIssue.note] : null,
                 vm.guard.warnKey ? [lookup("detail.note"), lookup(vm.guard.warnKey, vm.guard.warnParams)] : null,
               ]),
           actions: [
@@ -1112,10 +1189,29 @@ function SettingsTab({ notify, onRegistryChanged }) {
 
   const snap = cfgData || {};
   const state = snap.registryState || (reg.data ? reg.data.registryState : null) || null;
+  // 设置页社区 summary 数据源 = registry 响应（Task 6 契约：registry 分支携带 community）
+  const communitySummary = reg.data && reg.data.community && typeof reg.data.community === "object" ? reg.data.community : null;
+  const communityRows = communitySummary && (communitySummary.status === "ready" || communitySummary.status === "stale")
+    ? [
+        [lookup("settings.community.status"), communitySummary.status === "stale" ? lookup("community.stale") : lookup("settings.status.ready")],
+        [lookup("settings.community.version"), communitySummary.version || "—"],
+        [lookup("settings.community.route"), communitySummary.route || "—"],
+        [lookup("settings.community.accepted"), `${communitySummary.acceptedCount} / ${communitySummary.upstreamCount ?? "—"}`],
+        [lookup("settings.community.displaced"), String(communitySummary.displaced ?? 0)],
+      ]
+    : [[lookup("settings.community.status"), lookup("settings.community.none")]];
 
   return h(
     React.Fragment,
     null,
+    Section(lookup("settings.community"),
+      ...communityRows.map(([k, v]) => h("div", { key: k, className: "dshm-row", style: { justifyContent: "space-between" } },
+        h("span", { className: "dshm-hint" }, k),
+        h("span", null, v))),
+      communitySummary && Array.isArray(communitySummary.errors) && communitySummary.errors.length
+        ? h("div", { className: "dshm-err" }, communitySummary.errors.join("；"))
+        : null,
+    ),
     Section(lookup("settings.registry"),
       h("div", { className: "dshm-row", style: { flexDirection: "column", alignItems: "stretch", gap: "4px" } },
         h("input", {
