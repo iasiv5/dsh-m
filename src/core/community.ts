@@ -9,7 +9,7 @@
 import { mkdir, readFile, rm, rename, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import { cacheDir } from './env.js'
-import { decodeUtf8Fatal, fetchBytesLimited, HttpError } from './httpx.js'
+import { decodeUtf8Fatal, fetchBytesLimited, describeFetchFailure } from './httpx.js'
 import { isExactVersion, npmLatest } from './versions.js'
 import { communityOutcome, type CommunityRegistrySummary } from './market.js'
 import type { RegistryEntry } from './registry.js'
@@ -278,15 +278,7 @@ function withinTtl(cfg: CommunityConfig, meta: CommunityMeta): boolean {
 }
 
 function routeError(label: string, err: unknown, ms: number): string {
-  const reason =
-    err instanceof HttpError
-      ? err.message
-      : err instanceof Error && err.name === 'AbortError'
-        ? '超时或被中止'
-        : err instanceof Error
-          ? err.message
-          : String(err)
-  return `${label} 失败：${reason}（耗时 ${(ms / 1000).toFixed(1)}s）；可稍后重试或检查网络后重试`
+  return describeFetchFailure({ label, err, elapsedMs: ms })
 }
 
 function stateOf(partial: Partial<CommunityCatalogState> & { status: CommunityStatus }): CommunityCatalogState {

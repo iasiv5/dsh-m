@@ -172,6 +172,40 @@ export async function isReachable(url: string, timeoutMs = 8000, signal?: AbortS
   }
 }
 
+export interface DescribeFetchFailureInput {
+  label: string
+  /** 仅用于诊断记录，不进用户可见消息（防本地路径/内部 URL 泄露） */
+  url?: string
+  err: unknown
+  attempts?: number
+  elapsedMs?: number
+}
+
+/**
+ * 拉取失败三要素统一（M2 Task 4）：发生了什么（label + 根因）/ 代价（尝试次数 + 耗时）/ 现在怎么办。
+ * 根因分类：AbortError=「请求被取消」；TimeoutError/超时=「请求超时」；message 形如 `HTTP <n>`
+ * 才映射状态码；其余保留安全化根因（不吞协议错误细节）。
+ */
+export function describeFetchFailure({ label, err, attempts, elapsedMs }: DescribeFetchFailureInput): string {
+  let reason: string
+  if (err instanceof Error && err.name === 'AbortError') {
+    reason = '请求被取消'
+  } else if (err instanceof Error && (err.name === 'TimeoutError' || /timed?\s?out|超时/i.test(err.message))) {
+    reason = '请求超时'
+  } else if (err instanceof HttpError || (err instanceof Error && /^HTTP \d{3}/.test(err.message))) {
+    reason = err instanceof Error ? err.message : String(err)
+  } else if (err instanceof Error) {
+    reason = err.message
+  } else {
+    reason = String(err)
+  }
+  const cost: string[] = []
+  if (typeof attempts === 'number' && attempts > 0) cost.push(`${attempts} 次尝试`)
+  if (typeof elapsedMs === 'number' && elapsedMs > 0) cost.push(`耗时 ${(elapsedMs / 1000).toFixed(1)}s`)
+  const costText = cost.length > 0 ? `（${cost.join('，')}）` : ''
+  return `${label} 失败：${reason}${costText}；可稍后重试或检查网络后重试`
+}
+
 /** 字节下载（社区目录正文用）：非 2xx 抛 HttpError；bytes = 完整响应体。 */
 export async function fetchBytesLimited(
   url: string,

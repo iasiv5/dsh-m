@@ -770,3 +770,27 @@ describe('verified 字段（0.4.0 Task 19）', () => {
     assert.equal(r.registry.plugins[0].verified, undefined)
   })
 })
+
+// ---------- M2 Task 4：loadRegistryCandidate 全失败 → errors 三要素 ----------
+
+describe('M2 Task 4：registry 全失败三要素文案', () => {
+  it('② 默认链全失败 → errors 含 label/代价段/「可稍后重试」三要素', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-fail3-'))
+    process.env.DSHM_CACHE_DIR = join(dir, 'cache')
+    try {
+      const dead = createServer()
+      await new Promise((r) => dead.listen(0, '127.0.0.1', r))
+      const port = dead.address().port
+      await new Promise((r) => dead.close(r))
+      const candidate = await loadRegistryCandidate({ registryUrl: `http://127.0.0.1:${port}/registry.json` })
+      assert.equal(candidate.status, 'unavailable')
+      assert.ok(candidate.errors.length > 0)
+      const joined = candidate.errors.join('\n')
+      assert.ok(joined.includes('失败：'), '要素一：发生了什么')
+      assert.ok(joined.includes('；可稍后重试或检查网络后重试'), '要素三：现在怎么办')
+    } finally {
+      delete process.env.DSHM_CACHE_DIR
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

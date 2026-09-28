@@ -9,7 +9,7 @@ import { isAbsolute, join, normalize } from 'node:path'
 import { constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { cacheDir } from './env.js'
-import { decodeUtf8Fatal, fetchJsonLimitedMeta, type HttpError } from './httpx.js'
+import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure, type HttpError } from './httpx.js'
 
 export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other'] as const
 export type Category = (typeof CATEGORIES)[number]
@@ -727,7 +727,7 @@ async function loadDefaultChain(
         registry,
       }
     } catch (err) {
-      errors.push(`${candidate.source}: ${errorMessage(err)}`)
+      errors.push(describeFetchFailure({ label: candidate.source, url: candidate.url, err, elapsedMs: Date.now() - startedAt }))
     }
   }
   const cached = await readCacheFile(chain.namespace, DEFAULT_CACHE_KEY)
@@ -806,7 +806,7 @@ async function loadCustomChain(
       registry: result.registry,
     }
   } catch (err) {
-    errors.push(`${source}: ${errorMessage(err)}`)
+    errors.push(describeFetchFailure({ label: source, url: address.normalized, err, elapsedMs: Date.now() - startedAt }))
   }
   if (chain.allowCacheFallback) {
     const cached = await readCacheFile(chain.namespace, address.cacheKey)

@@ -353,3 +353,34 @@ describe('onRequest 钩子（M1 Task 1，wire 层逐物理请求计数）', () =
     assert.equal(s.hits(), 0)
   })
 })
+
+// ---------- M2 Task 4：describeFetchFailure 三要素 ----------
+
+describe('describeFetchFailure（M2 Task 4）', () => {
+  it('① 四形态原因段：AbortError/超时/HTTP n/安全化根因', async () => {
+    const { describeFetchFailure, HttpError: HttpErr } = await import('../lib/core/httpx.js')
+    const abort = new Error('This operation was aborted')
+    abort.name = 'AbortError'
+    const timeout = new Error('The operation was timed out')
+    timeout.name = 'TimeoutError'
+    const http = new HttpErr(502, 'HTTP 502')
+    const other = new Error('响应超过上限 2097152 字节')
+    const a = describeFetchFailure({ label: '线路一', err: abort, elapsedMs: 1500 })
+    assert.ok(a.startsWith('线路一 失败：请求被取消'), a)
+    assert.ok(a.includes('耗时 1.5s'))
+    assert.ok(a.endsWith('；可稍后重试或检查网络后重试'))
+    const t = describeFetchFailure({ label: '线路一', err: timeout })
+    assert.ok(t.includes('请求超时'), t)
+    const h = describeFetchFailure({ label: '线路二', err: http, attempts: 2, elapsedMs: 3000 })
+    assert.ok(h.includes('HTTP 502'), '502 根因词保留')
+    assert.ok(h.includes('2 次尝试，耗时 3.0s'))
+    const o = describeFetchFailure({ label: '线路二', err: other })
+    assert.ok(o.includes('响应超过上限'), '其余保留安全化根因')
+  })
+
+  it('无 attempts/elapsedMs → 不带代价段', async () => {
+    const { describeFetchFailure } = await import('../lib/core/httpx.js')
+    const out = describeFetchFailure({ label: 'L', err: new Error('boom') })
+    assert.equal(out, 'L 失败：boom；可稍后重试或检查网络后重试')
+  })
+})
