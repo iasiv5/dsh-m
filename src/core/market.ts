@@ -35,6 +35,14 @@ import {
   type RegistryState,
 } from './registry.js'
 import {
+  fetchCommunityCatalog as defaultFetchCommunityCatalog,
+  type CommunityCatalogState,
+  type CommunityStatus,
+  type LoadedCommunity,
+} from './community.js'
+import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
+import { createGithubRequestBudget, type GithubBudget } from './versions.js'
+import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
   npmLatest as defaultNpmLatest,
@@ -51,7 +59,9 @@ export interface RegistryRuntimeOptions {
 
 export type LatestErrorCode = 'LATEST_TIMEOUT' | 'LATEST_ERROR'
 
-export interface MarketItem extends RegistryEntry {
+export interface MarketItem extends Omit<RegistryEntry, 'category'> {
+  /** 合并市场开放分类（M1 Task 5）：主清单 5 值 + 社区开放 slug */
+  category: string
   latestVersion?: string
   latestTag?: string
   latestSha?: string
@@ -62,18 +72,47 @@ export interface MarketItem extends RegistryEntry {
   /** 查询最新版本失败的说明（不阻塞列表） */
   latestError?: string
   latestErrorCode?: LatestErrorCode
+  /** 社区收录条目标记（M1 Task 5）；主清单条目不带 */
+  community?: true
+  /** 以下为社区旁路字段（Q44：能力披露/截图只进详情折叠区，卡片不打标） */
+  stars?: number | null
+  downloads?: number | null
+  capabilities?: string[]
+  capabilityRedLines?: string[]
+  screenshots?: string[]
 }
 
-export type CategoryCounts = Record<RegistryEntry['category'], number>
+/** 开放分类计数：精选 5 键恒在 + 社区开放 slug 键（M1 Task 5）。 */
+export type CategoryCounts = Record<string, number>
+
+/** 社区 registry summary 完整字段口径（Task 6 getCommunitySummary 同型；status=disabled/unavailable 时计数字段 0/null，不伪造）。 */
+export interface CommunityRegistrySummary {
+  enabled: boolean
+  status: CommunityStatus
+  version: string | null
+  checkedAt: string | null
+  fetchedAt: string | null
+  route: string | null
+  acceptedCount: number
+  upstreamCount: number | null
+  displaced: number
+  skippedDirty: number
+  skippedSubpathNoNpm: number
+  errors: string[]
+  warnings: string[]
+}
 
 export interface MarketQuery extends RegistryRuntimeOptions {
   query?: string
-  category?: RegistryEntry['category'] | null
+  /** 精选 5 分类或社区开放分类 slug（host-api 层校验安全 slug；core 侧原样匹配） */
+  category?: string | null
   offset?: number
   /** core 按 withLatest hard clamp：true 最大 50，false 最大 80 */
   limit?: number
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
+  /** 只看主清单：跳过社区加载（loader 零调用） */
+  primaryOnly?: boolean
   force?: boolean
   /** default 60_000；测试注入短 deadline */
   deadlineMs?: number
@@ -84,6 +123,8 @@ export interface MarketDeps {
   listInstalledPlugins: typeof defaultListInstalledPlugins
   npmLatest: typeof defaultNpmLatest
   githubLatestTag: typeof defaultGithubLatestTag
+  /** 社区清单加载（M1 Task 5；测试注入） */
+  fetchCommunityCatalog: typeof defaultFetchCommunityCatalog
   /** enablement 合成注入（Task 13）；缺省 = composeEnablement */
   composeEnablement?: typeof composeEnablement
 }
@@ -131,6 +172,8 @@ export interface MarketResult {
   installedComplete: boolean
   latestComplete: boolean
   latestTimedOut: boolean
+  /** 社区清单状态 summary（M1 Task 5；primaryOnly → disabled） */
+  community: CommunityRegistrySummary
 }
 
 export interface InstalledItem extends InstalledPlugin {
@@ -142,6 +185,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestVersion?: string
   outdated: boolean
   latestError?: string
+  /** 命中社区收录条目（主清单未收录；M1 Task 5） */
+  community?: true
 }
 
 export interface InstalledResult {
@@ -149,6 +194,8 @@ export interface InstalledResult {
   others: number
   profileDir: string
   registryState: RegistryState
+  /** CLI outdated 双源判定的状态来源（M1 Task 5，v3 缺口闭合） */
+  community: CommunityRegistrySummary
 }
 
 // ---------- 通用工具 ----------
@@ -260,7 +307,7 @@ interface LatestCacheEntry {
 const latestCache = new Map<string, LatestCacheEntry>()
 const LATEST_CACHE_MAX = 5000
 
-function latestCacheKey(namespace: RegistryCacheNamespace, registryKey: string, item: RegistryEntry): string {
+function latestCacheKey(namespace: RegistryCacheNamespace, registryKey: string, item: Pick<RegistryEntry, 'source' | 'npm' | 'github' | 'id'>): string {
   const id = item.source === 'npm' && item.npm ? `npm:${item.npm}` : item.github ? `gh:${item.github}` : item.id
   return `${namespace}|${registryKey}|${id}`
 }
@@ -340,7 +387,7 @@ function applyProbe(item: ProbeTarget, value: LatestValue): void {
   if (value.sha !== undefined) item.latestSha = value.sha
 }
 
-function matchInstalledByEntry(entry: RegistryEntry, installed: InstalledPlugin[]): InstalledPlugin | undefined {
+function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github'>, installed: InstalledPlugin[]): InstalledPlugin | undefined {
   return installed.find((it) => {
     if (entry.npm && it.pkg === entry.npm) return true
     if (entry.npm && it.name === entry.npm) return true
@@ -352,6 +399,167 @@ function matchInstalledByEntry(entry: RegistryEntry, installed: InstalledPlugin[
   })
 }
 
+// ---------- 合并层（M1 Task 5 / Q41 / Q45） ----------
+
+export interface MergeRegistriesResult {
+  /** 主清单在前（组内原顺序）+ 社区条目在后（downloads 降序、无数据按名称） */
+  items: Array<RegistryEntry | CommunityEntry>
+  /** 与主清单撞名而让位的社区条目数（Q41：去重键序 npm 名 → owner/repo → 合成 id） */
+  displaced: number
+  /** 合并层 warning（让位计数聚合；社区层 warnings 由 summary 另行合并） */
+  warnings: string[]
+}
+
+/**
+ * 合并去重（Q41）：社区条目依次与主清单的 npm 名集 / github owner-repo 集 / id 集比对，
+ * 任一相撞即让位（每条只计一次）；社区内部 npm 名重复同样让位（首条优先）。
+ * 主清单恒优先——让位只影响社区条目，主条目原样保留。
+ */
+export function mergeRegistries(primary: RegistryEntry[], community: CommunityEntry[]): MergeRegistriesResult {
+  const primaryNpm = new Set(primary.filter((e) => e.npm).map((e) => e.npm as string))
+  const primaryGithub = new Set(primary.filter((e) => e.github).map((e) => e.github as string))
+  const primaryIds = new Set(primary.map((e) => e.id))
+  const displaced: string[] = []
+  const kept: CommunityEntry[] = []
+  const seenNpm = new Set<string>()
+  for (const c of community) {
+    if (c.npm !== undefined) {
+      if (primaryNpm.has(c.npm) || seenNpm.has(c.npm)) {
+        displaced.push(c.id)
+        continue
+      }
+      seenNpm.add(c.npm)
+    }
+    if ((c.github !== undefined && primaryGithub.has(c.github)) || primaryIds.has(c.id)) {
+      displaced.push(c.id)
+      continue
+    }
+    kept.push(c)
+  }
+  // Q45：主清单置顶（组内原顺序）+ 社区按 30 天下载量降序（无数据按名称）
+  const sorted = [...kept].sort((a, b) => {
+    const da = a.downloads ?? -1
+    const db = b.downloads ?? -1
+    if (da !== db) return db - da
+    return a.name.localeCompare(b.name)
+  })
+  const warnings = displaced.length > 0 ? [`${displaced.length} 条社区条目与主清单重复，已让位（主清单恒优先）`] : []
+  return { items: [...primary, ...sorted], displaced: displaced.length, warnings }
+}
+
+function communitySummary(state: CommunityCatalogState, counts: Partial<CommunityRegistrySummary>, extraWarnings: string[]): CommunityRegistrySummary {
+  const unavailableLike = state.status === 'disabled' || state.status === 'unavailable'
+  return {
+    enabled: state.enabled,
+    status: state.status,
+    version: state.version,
+    checkedAt: state.checkedAt,
+    fetchedAt: state.fetchedAt,
+    route: state.route,
+    acceptedCount: unavailableLike ? 0 : (counts.acceptedCount ?? 0),
+    upstreamCount: unavailableLike ? (state.status === 'disabled' ? null : 0) : (counts.upstreamCount ?? state.count),
+    displaced: unavailableLike ? 0 : (counts.displaced ?? 0),
+    skippedDirty: unavailableLike ? 0 : (counts.skippedDirty ?? 0),
+    skippedSubpathNoNpm: unavailableLike ? 0 : (counts.skippedSubpathNoNpm ?? 0),
+    errors: [...state.errors],
+    warnings: [...state.warnings, ...extraWarnings],
+  }
+}
+
+function disabledCommunitySummary(): CommunityRegistrySummary {
+  return communitySummary(
+    { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] },
+    {},
+    [],
+  )
+}
+
+function communityTimeoutSummary(): CommunityRegistrySummary {
+  return communitySummary(
+    { enabled: true, status: 'unavailable', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: ['社区目录状态获取超时，可稍后刷新'], warnings: [] },
+    {},
+    [],
+  )
+}
+
+interface CommunityOutcome {
+  summary: CommunityRegistrySummary
+  /** 合并后全量条目（主清单 + 存活社区条目）；社区不可用/未启用时 = 主清单原样 */
+  merged: Array<RegistryEntry | CommunityEntry>
+}
+
+/**
+ * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
+ * 本函数作为 waiter 用剩余 deadline race 自己的等待；到点只结束本 waiter（summary 标超时），
+ * 共享 flight 照常继续。primaryOnly/未启用 → loader 零调用（task 传 null）。
+ */
+async function communityOutcome(
+  task: Promise<LoadedCommunity> | null,
+  deadlineAt: number,
+  primary: RegistryEntry[],
+): Promise<CommunityOutcome> {
+  if (!task) return { summary: disabledCommunitySummary(), merged: primary }
+  let loaded: LoadedCommunity | 'deadline'
+  try {
+    loaded = await deadlineRace(task, deadlineAt - Date.now())
+  } finally {
+    // race 输出后共享 promise 若仍悬挂（deadline 先到），收尾防 unhandled rejection
+    void task.catch(() => undefined)
+  }
+  if (loaded === 'deadline') return { summary: communityTimeoutSummary(), merged: primary }
+  const state = loaded.state
+  if (state.status === 'disabled') return { summary: disabledCommunitySummary(), merged: primary }
+  if (state.status === 'unavailable' || !loaded.catalog) {
+    return {
+      summary: communitySummary(state, { acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0 }, []),
+      merged: primary,
+    }
+  }
+  const adapted = adaptCommunityCatalog(loaded.catalog)
+  const merge = mergeRegistries(primary, adapted.entries)
+  const summary = communitySummary(
+    state,
+    {
+      acceptedCount: adapted.entries.length,
+      upstreamCount: loaded.catalog.plugins.length,
+      displaced: merge.displaced,
+      skippedDirty: adapted.skippedDirty,
+      skippedSubpathNoNpm: adapted.skippedSubpathNoNpm,
+    },
+    [...adapted.warnings, ...merge.warnings],
+  )
+  return { summary, merged: merge.items }
+}
+
+function isCommunityEntry(entry: RegistryEntry | CommunityEntry): entry is CommunityEntry {
+  return (entry as CommunityEntry).descriptionEn !== undefined
+}
+
+/** 合并条目 → MarketItem：社区条目带 community 标记与旁路字段。 */
+function toMarketItem(entry: RegistryEntry | CommunityEntry, installedItems: InstalledPlugin[]): MarketItem {
+  const inst = matchInstalledByEntry(entry, installedItems)
+  const item: MarketItem = { ...entry, installed: Boolean(inst), outdated: false }
+  if (inst) {
+    item.installedPkg = inst.pkg
+    item.installedVersion = inst.version
+  }
+  if (isCommunityEntry(entry)) {
+    item.community = true
+    item.stars = entry.stars
+    item.downloads = entry.downloads
+    item.capabilities = entry.capabilities
+    item.capabilityRedLines = entry.capabilityRedLines
+    item.screenshots = entry.screenshots
+  }
+  return item
+}
+
+/** 合并条目的搜索串：社区条目附英文描述原文（Q45 搜索同时匹配中英文）。 */
+function searchableText(entry: RegistryEntry | CommunityEntry): string {
+  const base = `${entry.id} ${entry.name} ${entry.description} ${entry.tags.join(' ')}`
+  return isCommunityEntry(entry) ? `${base} ${entry.descriptionEn}` : base
+}
+
 // ---------- 市场列表 ----------
 
 function marketDeps(): MarketDeps {
@@ -360,6 +568,7 @@ function marketDeps(): MarketDeps {
     listInstalledPlugins: defaultListInstalledPlugins,
     npmLatest: defaultNpmLatest,
     githubLatestTag: defaultGithubLatestTag,
+    fetchCommunityCatalog: defaultFetchCommunityCatalog,
   }
 }
 
@@ -383,12 +592,17 @@ export async function listMarket(
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
   const installedTask: Promise<Awaited<ReturnType<MarketDeps['listInstalledPlugins']>> | null> =
     d.listInstalledPlugins().catch(() => null)
+  // 社区 flight 并发启动（primaryOnly 零调用）；共享 loader 不接收调用者 deadline——
+  // listMarket 作为 waiter 在 communityOutcome 内 race 自己的剩余 deadline/signal（v10 契约）
+  const communityTask =
+    opts.primaryOnly === true ? null : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
 
   let loaded: LoadedRegistry | 'deadline'
   try {
     loaded = await deadlineRace(registryTask, remaining())
   } catch (err) {
     void installedTask
+    void communityTask?.catch(() => undefined)
     throw err
   }
   if (loaded === 'deadline') {
@@ -403,55 +617,36 @@ export async function listMarket(
       installedComplete: false,
       latestComplete: false,
       latestTimedOut: true,
+      community: communityTimeoutSummary(),
     }
   }
   const registryState = stateOf(loaded)
-
-  if (loaded.status === 'unavailable') {
-    void installedTask
-    return {
-      items: [],
-      total: 0,
-      offset: 0,
-      limit: maxLimit,
-      categoryCounts: zeroCounts(),
-      registryState,
-      installedComplete: false,
-      latestComplete: false,
-      latestTimedOut: false,
-    }
-  }
 
   const installed = await installedTask
   // 完整性两层来源：枚举 throw → null；枚举 partial resolve → complete:false（installed.ts 完整性契约）
   const installedComplete = installed !== null && installed.complete === true
   const installedItems = installed?.items ?? []
 
+  // 社区 waiter 收敛：主 unavailable 时 merged = 存活社区条目（Q42 出页不返空）；两层皆不可用 → 空页契约
+  const community = await communityOutcome(communityTask, deadlineAt, loaded.registry.plugins)
+
   // 全量统计 + query/category 过滤 + 分页（同步，极轻）
-  const all = loaded.registry.plugins
-  const counts = zeroCounts()
-  for (const entry of all) counts[entry.category] += 1
+  const all = community.merged
+  const counts: CategoryCounts = zeroCounts()
+  for (const entry of all) counts[entry.category] = (counts[entry.category] ?? 0) + 1
   const q = (opts.query ?? '').trim().toLowerCase()
   const cat = opts.category ?? null
   const filtered = all.filter((entry) => {
     if (cat && entry.category !== cat) return false
     if (!q) return true
-    return `${entry.id} ${entry.name} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(q)
+    return searchableText(entry).toLowerCase().includes(q)
   })
   const total = filtered.length
   const limit = clampLimit(opts.limit, maxLimit)
   let offset = normalizeOffset(opts.offset)
   if (total > 0 && offset >= total) offset = Math.floor((total - 1) / limit) * limit
 
-  const items: MarketItem[] = filtered.slice(offset, offset + limit).map((entry) => {
-    const inst = matchInstalledByEntry(entry, installedItems)
-    const item: MarketItem = { ...entry, installed: Boolean(inst), outdated: false }
-    if (inst) {
-      item.installedPkg = inst.pkg
-      item.installedVersion = inst.version
-    }
-    return item
-  })
+  const items: MarketItem[] = filtered.slice(offset, offset + limit).map((entry) => toMarketItem(entry, installedItems))
 
   let latestComplete = true
   let latestTimedOut = false
@@ -462,7 +657,14 @@ export async function listMarket(
       const cached = readLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), ttlMin)
       if (cached) applyProbe(item, cached)
     }
-    const todo = items.filter((it) => it.latestVersion === undefined && it.latestTag === undefined && it.latestSha === undefined)
+    const todo = items.filter(
+      (it) =>
+        it.latestVersion === undefined &&
+        it.latestTag === undefined &&
+        it.latestSha === undefined &&
+        // Q46 探测边界：社区 github 条目不做浏览页 REST 探测（配额不可控）；社区 npm 条目照常
+        !(it.community === true && it.source === 'github'),
+    )
     if (todo.length > 0) {
       const budget = remaining()
       if (budget <= 0) {
@@ -501,7 +703,18 @@ export async function listMarket(
     }
   }
 
-  return { items, total, offset, limit, categoryCounts: counts, registryState, installedComplete, latestComplete, latestTimedOut }
+  return {
+    items,
+    total,
+    offset,
+    limit,
+    categoryCounts: counts,
+    registryState,
+    installedComplete,
+    latestComplete,
+    latestTimedOut,
+    community: community.summary,
+  }
 }
 
 // ---------- 已装列表 ----------
@@ -523,6 +736,9 @@ export async function listInstalledWithMeta(
 
   const installedPromise = d.listInstalledPlugins()
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
+  // 社区 flight 并发启动 + request-scoped GitHub 预算（本次检查 ≤25 个 wire 请求、宿主滚动 50/h）
+  const communityTask = d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
+  const githubBudget = createGithubRequestBudget()
   const installed = await installedPromise
   // enablement join（Task 13，ADR-0001 读路径自读）：loader ⋈ bundles ⋈ profile 覆盖行
   const compose = d.composeEnablement ?? composeEnablement
@@ -545,46 +761,68 @@ export async function listInstalledWithMeta(
     loaded = 'deadline'
   }
 
+  const community = await communityOutcome(communityTask, deadlineAt, loaded === 'deadline' ? [] : loaded.registry.plugins)
+
   if (loaded === 'deadline' || loaded.status === 'unavailable') {
-    // registry 不可用：不做 matching，直接返回已装列表
+    // registry 不可用：不做 matching/探测（原行为），但社区 summary 照常携带（CLI outdated 双源判定）
     const registryState = loaded === 'deadline' ? timeoutRegistryState(cfg) : stateOf(loaded)
-    return { items, others: installed.others, profileDir: installed.profileDir, registryState }
+    void community.merged
+    return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
   }
 
   const registryState = stateOf(loaded)
 
-  const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
+  matchInstalled(items, community.merged)
+  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+
+  return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
+}
+
+/** matching（主+社区合并条目）：命中主条目或社区条目都写 registryId；社区命中再标 community。 */
+function matchInstalled(items: InstalledItem[], merged: Array<RegistryEntry | CommunityEntry>): void {
+  for (const item of items) {
+    const entry = merged.find((e) => matchInstalledByEntry(e, [item]))
+    if (!entry) continue
+    item.registryId = entry.id
+    item.registryGithub = entry.github ?? null
+    item.registryIcon = (entry as RegistryEntry).icon ?? null
+    if (isCommunityEntry(entry)) item.community = true
+  }
+}
+
+/** 已装页 latest 探测（Q46 已装页豁免，但 GitHub 计入 request 预算 + 宿主滚动窗口）。 */
+async function probeLatest(
+  items: InstalledItem[],
+  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number },
+  d: MarketDeps,
+  rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
+): Promise<void> {
   await mapWithConcurrency(items, LATEST_WORKERS, async (item) => {
-    const entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [item]))
-    if (entry) {
-      item.registryId = entry.id
-      item.registryGithub = entry.github ?? null
-      item.registryIcon = entry.icon ?? null
-    }
+    const entry = ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
     // latest 探测沿用 listMarket 的 TTL cache
     const cacheKey = entry
-      ? latestCacheKey(namespace, loaded.configuredAddress, entry)
+      ? latestCacheKey(rt.namespace, ctx.registryAddress ?? '', entry)
       : item.source === 'npm'
-        ? `npm-only|${namespace}|npm:${item.pkg}`
+        ? `npm-only|${rt.namespace}|npm:${item.pkg}`
         : null
     if (cacheKey) {
-      const cached = readLatestCache(cacheKey, ttlMin)
+      const cached = readLatestCache(cacheKey, ctx.ttlMin)
       if (cached) {
         applyProbe(item, cached)
-      } else if (remaining() > 0) {
-        const budget = Math.max(1, remaining())
+      } else if (rt.remaining() > 0) {
+        const budget = Math.max(1, rt.remaining())
         try {
           let value: LatestValue | null = null
           if (!entry && item.source === 'npm') {
-            const latest = await d.npmLatest(item.pkg, Math.min(cfg.timeoutMs ?? 20_000, budget), signal)
+            const latest = await d.npmLatest(item.pkg, Math.min(rt.timeoutMs, budget), rt.signal)
             value = { version: latest.version }
           } else if (entry?.source === 'npm' && entry.npm) {
-            const latest = await d.npmLatest(entry.npm, Math.min(cfg.timeoutMs ?? 20_000, budget), signal)
+            const latest = await d.npmLatest(entry.npm, Math.min(rt.timeoutMs, budget), rt.signal)
             value = { version: latest.version }
           } else if (item.source === 'github') {
             const m = /^github:([^#]+)/.exec(item.spec)
             if (m) {
-              const latest = await d.githubLatestTag(m[1], Math.min(cfg.timeoutMs ?? 20_000, budget), signal)
+              const latest = await d.githubLatestTag(m[1], Math.min(rt.timeoutMs, budget), rt.signal, rt.githubBudget)
               value = { tag: latest.tag, sha: latest.sha }
             }
           }
@@ -600,8 +838,6 @@ export async function listInstalledWithMeta(
     if (item.latestVersion !== undefined && item.version) item.outdated = isNewerVersion(item.latestVersion, item.version)
     else if (item.latestSha !== undefined) item.outdated = !item.spec.includes(item.latestSha)
   })
-
-  return { items, others: installed.others, profileDir: installed.profileDir, registryState }
 }
 
 // ---------- 安装 / 升级 ----------
@@ -654,8 +890,11 @@ export async function installFromRegistry(
   return installEntry(entry, cfg, opts, deps)
 }
 
+/** 安装接口收窄（M1 Task 5）：社区条目（CommunityEntry）与主清单条目同型可装。 */
+export type InstallableEntry = Pick<RegistryEntry, 'id' | 'source' | 'npm' | 'github'>
+
 export async function installEntry(
-  entry: RegistryEntry,
+  entry: InstallableEntry,
   cfg: RegistryConfig = {},
   opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,

@@ -86,6 +86,14 @@ function fakeDeps(overrides = {}) {
       calls.github.push(repo)
       return { tag: 'v1.0.0', sha: 'a'.repeat(40) }
     },
+    // 默认 disabled 社区 loader：既有用例语义与 0.4.x（无社区层）一致；社区用例经 withCommunity 覆盖
+    fetchCommunityCatalog: async () => ({
+      state: {
+        enabled: false, status: 'disabled', version: null, checkedAt: null,
+        fetchedAt: null, route: null, count: 0, errors: [], warnings: [],
+      },
+      catalog: null,
+    }),
   }
   return { deps: { ...deps, ...overrides }, calls, maxInFlight: () => maxInFlight }
 }
@@ -201,7 +209,9 @@ describe('listMarket：unavailable 与 abort', () => {
     const sum = Object.values(res.categoryCounts).reduce((a, b) => a + b, 0)
     assert.equal(sum, 0)
     assert.equal(calls.npm.length, 0)
-    assert.equal(res.installedComplete, false)
+    // M1 Task 5：主 unavailable 不再提前返回（Q42 统一路径）→ installed 正常 join，完整性如实反映
+    assert.equal(res.installedComplete, true)
+    assert.equal(res.community.status, 'disabled')
   })
 
   it('外部 signal abort 抛 AbortError，不返回 partial page', async () => {
@@ -874,5 +884,220 @@ describe('0.4.0：兼容预检门 / 卸载保护门 / 结果透传（Tasks 11-13
     assert.equal(res.items.length >= 1, true)
     assert.equal(res.items[0].enabled, false, '/tmp/profile 无 bundles → 推断未启用')
     assert.equal(res.items[0].toggleable, false)
+  })
+})
+
+// ---------- M1 Task 5：合并市场（主清单 ∪ 社区清单，主恒优先） ----------
+
+function communityRaw(name, owner, props = {}) {
+  return {
+    name,
+    owner,
+    url: `https://github.com/${owner}/${name}`,
+    category: 'c-ui',
+    description: { en: `${name} awesome thing`, zh: `${name} 中文描述` },
+    npm: `${name}-pkg`,
+    downloads: 100,
+    ...props,
+  }
+}
+
+function communityLoaded(plugins, stateOverrides = {}) {
+  const count = plugins.length
+  return {
+    state: {
+      enabled: true,
+      status: 'ready',
+      version: '2026.928.1',
+      checkedAt: '2026-09-28T00:00:00.000Z',
+      fetchedAt: '2026-09-28T00:00:00.000Z',
+      route: 'jsdelivr',
+      count,
+      errors: [],
+      warnings: [],
+      ...stateOverrides,
+    },
+    catalog: {
+      name: 'awesome-dsh-plugin',
+      url: 'https://awesome.example',
+      source: 'https://github.com/x/y',
+      updated: '2026-09-28',
+      count,
+      categories: {},
+      plugins,
+    },
+  }
+}
+
+/** 注入社区 loader（记录调用与 opts）；base = fakeDeps() 产物。 */
+function withCommunity(base, loaded, overrides = {}) {
+  const ccalls = { n: 0, opts: [] }
+  const deps = {
+    ...base.deps,
+    fetchCommunityCatalog: async (cfg2, opts) => {
+      ccalls.n += 1
+      ccalls.opts.push(opts ?? null)
+      if (overrides.hangForever) return new Promise(() => {})
+      if (overrides.slowMs) await sleep(overrides.slowMs)
+      if (overrides.rejectAbort && opts?.signal) {
+        return new Promise((_, rej) => {
+          opts.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })
+        })
+      }
+      return loaded
+    },
+  }
+  return { deps, ccalls }
+}
+
+describe('M1 Task 5：合并市场', () => {
+  it('① 去重主恒优先：npm 名/github/id 三键撞名 → 社区条目让位并计数进 warnings', async () => {
+    const primary = [
+      { id: 'p-a', name: 'A', description: 'da', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' },
+      { id: 'own--name', name: 'N', description: 'dn', category: 'ui', tags: [], source: 'github', github: 'own/name' },
+    ]
+    const base = fakeDeps({
+      loadRegistry: async () => readyLoaded(primary),
+    })
+    const { deps, ccalls } = withCommunity(base, communityLoaded([
+      communityRaw('dup-npm', 'o1', { npm: 'pkg-a' }),   // npm 名撞主条目
+      communityRaw('name', 'own', { npm: 'other-npm' }), // github owner/repo 与 id 双撞主条目
+      communityRaw('keep', 'o2'),                         // 无撞 → 收录
+    ]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    const ids = res.items.map((it) => it.id)
+    assert.deepEqual(ids, ['p-a', 'own--name', 'o2--keep'])
+    assert.equal(res.community.displaced, 2)
+    assert.ok(res.community.warnings.some((w) => w.includes('2')))
+    assert.equal(ccalls.n, 1)
+  })
+
+  it('② 排序：主清单置顶组内原顺序，社区按 downloads 降序、无数据按名称', async () => {
+    const primary = [
+      { id: 'p-1', name: 'B', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+      { id: 'p-0', name: 'A', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-0' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('zeta', 'o1', { downloads: null }),
+      communityRaw('beta', 'o2', { downloads: 50 }),
+      communityRaw('alpha', 'o3', { downloads: 500 }),
+      communityRaw('yyyy', 'o4', { downloads: null }),
+    ]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), [
+      'p-1', 'p-0',          // 主置顶原序
+      'o3--alpha',           // downloads 500
+      'o2--beta',            // 50
+      'o4--yyyy', 'o1--zeta', // 无数据按名称（yyyy < zeta）
+    ])
+  })
+
+  it('③ primaryOnly：社区 loader 零调用，items 只主条目，community=disabled', async () => {
+    const base = fakeDeps()
+    const { deps, ccalls } = withCommunity(base, communityLoaded([communityRaw('x', 'o')]))
+    const res = await listMarket(cfg, { withLatest: false, primaryOnly: true }, deps)
+    assert.equal(ccalls.n, 0)
+    assert.ok(res.items.every((it) => it.community === undefined))
+    assert.equal(res.community.enabled, false)
+    assert.equal(res.community.status, 'disabled')
+  })
+
+  it('④ 主 unavailable + 社区 ready 有条目 → 出页不返空（Q42）', async () => {
+    const base = fakeDeps({ loadRegistry: async () => unavailableLoaded() })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('a', 'o1'), communityRaw('b', 'o2')]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    assert.equal(res.items.length, 2)
+    assert.equal(res.registryState.status, 'unavailable')
+    assert.equal(res.community.status, 'ready')
+    assert.equal(res.community.acceptedCount, 2)
+    assert.equal(res.community.upstreamCount, 2)
+  })
+
+  it('⑤ 社区 unavailable：主清单照常出页，community.errors 透传', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([], { status: 'unavailable', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: ['三线路全挂'] }))
+    const res = await listMarket(cfg, { withLatest: false, limit: 10 }, deps)
+    assert.equal(res.items.length, 10)
+    assert.equal(res.community.status, 'unavailable')
+    assert.ok(res.community.errors.includes('三线路全挂'))
+    assert.equal(res.community.acceptedCount, 0)
+  })
+
+  it('⑥ 浏览页探测边界：社区 github 条目零探测，社区 npm 条目照常', async () => {
+    const base = fakeDeps()
+    const { deps, ccalls } = withCommunity(base, communityLoaded([
+      communityRaw('gh-only', 'o9', { npm: null, tarball: 'https://github.com/o9/gh-only/releases/x.tgz', category: 'c-gh' }),
+      communityRaw('npm-ok', 'o8', { category: 'c-npm' }),
+    ]))
+    const res = await listMarket(cfg, { category: 'c-gh', withLatest: true }, deps)
+    assert.equal(res.items.length, 1)
+    assert.equal(res.items[0].id, 'o9--gh-only')
+    assert.equal(res.items[0].latestTag, undefined, '社区 github 条目浏览页不探测')
+    assert.equal(ccalls.n, 1, '社区 loader 每次市场请求各跑一个 waiter')
+    const res2 = await listMarket(cfg, { category: 'c-npm', withLatest: true }, deps)
+    assert.equal(res2.items[0].latestVersion, '2.0.0', '社区 npm 条目探测照常')
+  })
+
+  it('⑦ 搜索匹配英文描述', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('special', 'o7')]))
+    const res = await listMarket(cfg, { query: 'AWESOME Thing', withLatest: false }, deps)
+    assert.equal(res.total, 1)
+    assert.equal(res.items[0].id, 'o7--special')
+  })
+
+  it('⑧ categoryCounts 含社区开放键且保留精选 5 键', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('a', 'o1', { category: 'c-ui' }),
+      communityRaw('b', 'o2', { category: 'my-slug' }),
+      communityRaw('c', 'o3', { category: 'tools' }), // 与精选共享桶
+    ]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    assert.equal(res.categoryCounts['c-ui'], 1)
+    assert.equal(res.categoryCounts['my-slug'], 1)
+    assert.equal(res.categoryCounts.tools, 201, '共享桶：主清单 200 + 社区 1')
+    assert.equal(res.categoryCounts.market, 200)
+    assert.equal(typeof res.categoryCounts.other, 'number')
+  })
+
+  it('⑩ 已装页合并匹配社区条目并标 community，InstalledResult 携带 community summary', async () => {
+    const installed = {
+      items: [{
+        pkg: 'special-pkg', name: 'S', version: '0.9.0', description: '', homepage: '',
+        spec: '0.9.0', source: 'npm', dsh: true, path: '/tmp/node_modules/special-pkg',
+      }],
+      others: 0,
+      complete: true,
+      profileDir: '/tmp/profile',
+    }
+    const base = fakeDeps({ listInstalledPlugins: async () => installed })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('special', 'o5', { npm: 'special-pkg' })]))
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(res.items[0].registryId, 'o5--special')
+    assert.equal(res.items[0].community, true)
+    assert.equal(res.community.status, 'ready')
+    assert.equal(res.community.acceptedCount, 1)
+  })
+
+  it('⑪ 端到端 deadline：主慢 + 社区慢 → deadline 收敛，community 标超时；社区 waiter abort 传播', async () => {
+    const slowBase = fakeDeps({
+      loadRegistry: () => new Promise((r) => setTimeout(() => r(readyLoaded(makeThousand())), 400)),
+    })
+    const { deps } = withCommunity(slowBase, communityLoaded([communityRaw('x', 'o')]), { hangForever: true })
+    const t0 = Date.now()
+    const res = await listMarket(cfg, { deadlineMs: 120, withLatest: false }, deps)
+    assert.ok(Date.now() - t0 < 5000, 'deadline 收敛而不是等慢服务器')
+    assert.equal(res.registryState.status, 'unavailable')
+    assert.equal(res.community.status, 'unavailable')
+    assert.ok(res.community.errors[0]?.includes('超时'), 'waiter 到点 → summary 标超时')
+
+    const abortBase = fakeDeps()
+    const { deps: deps2, ccalls: ccalls2 } = withCommunity(abortBase, communityLoaded([communityRaw('x', 'o')]), { rejectAbort: true })
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 20)
+    await assert.rejects(() => listMarket(cfg, { signal: ac.signal, withLatest: false }, deps2), (err) => err.name === 'AbortError')
+    assert.ok(ccalls2.opts[0]?.signal, 'listMarket 以 waiter 身份携带调用者 signal')
   })
 })

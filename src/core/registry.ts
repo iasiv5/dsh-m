@@ -115,6 +115,10 @@ export interface RegistryConfig {
   registryUrl?: string
   timeoutMs?: number
   cacheTtlMin?: number
+  /** 社区清单开关（M1 Task 5；volatile，默认 true——语义见 community.ts/DESIGN §2.5） */
+  communityCatalog?: boolean
+  /** 社区清单 npm 版本 pin（可选，精确 semver；Task 5 透传社区 loader） */
+  communityCatalogPin?: string
 }
 
 export function registrySummary(state: RegistryState): RegistrySummary {

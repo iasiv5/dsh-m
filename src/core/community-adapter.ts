@@ -30,6 +30,8 @@ export interface CommunityEntry extends Omit<RegistryEntry, 'category'> {
   capabilities: string[]
   capabilityRedLines: string[]
   screenshots: string[]
+  /** 英文描述原文（Q45「搜索同时匹配中英文」：zh 收录后搜索仍要命中英文；zh 回退 en 时与 description 同文） */
+  descriptionEn: string
 }
 
 export interface AdaptCommunityResult {
@@ -196,6 +198,7 @@ export function adaptCommunityCatalog(catalog: CommunityCatalog): AdaptCommunity
       capabilities: strArray(raw.capabilities),
       capabilityRedLines: strArray(raw.capabilityRedLines),
       screenshots: strArray(raw.screenshots),
+      descriptionEn: en,
     })
   }
 

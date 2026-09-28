@@ -28,6 +28,8 @@ export function installedViewModel(it) {
     // 0.4.0（Task 17）：运行相位/开关状态的 sub 行渲染原料；相位点 class 映射归 toggle-view
     phaseKey: it.phase ? `phase.${it.phase}` : null,
     enabledLabelKey: it.enabled === false ? "toggle.state.off" : "toggle.state.on",
+    // M1 Task 5：社区收录徽标（卡片/已装卡显示「社区收录」）
+    community: it.community === true,
   };
 }
 

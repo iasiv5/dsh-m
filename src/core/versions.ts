@@ -102,12 +102,13 @@ export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortS
   }
 }
 
-export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<string> {
+export async function githubTagSha(repo: string, tag: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget): Promise<string> {
   // commits/{ref} 会自动解引用 annotated tag，返回的才是可用于 #sha 锁定的 commit
   const data = await fetchJsonLimited<{ sha?: unknown }>(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(tag)}`, {
     timeoutMs,
     signal,
     headers: { accept: 'application/vnd.github+json' },
+    onRequest: wireReserve(budget),
   })
   const sha = typeof data.sha === 'string' ? data.sha : ''
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`GitHub 未返回有效 SHA: ${repo}@${tag}`)
@@ -120,40 +121,182 @@ export interface GithubTag {
   sha: string
 }
 
-/** GitHub 来源的“最新稳定点”：优先最新 release（排除 draft/prerelease），无则回退 tags 列表首项。 */
-export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal): Promise<GithubTag> {
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
-  const headers = { accept: 'application/vnd.github+json' }
-  try {
+// ---------- GitHub 请求预算（M1 Task 5 / Q46） ----------
 
-  // 1) 最新 release（404 = 仓库从未发过 release → 回退 tags）
-  try {
-    const rel = await fetchJsonLimited<{ tag_name?: unknown }>(
-      `https://api.github.com/repos/${repo}/releases/latest`,
-      { timeoutMs, signal, headers },
-    )
-    const tag = typeof rel.tag_name === 'string' ? rel.tag_name.trim() : ''
-    if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs, signal) }
-  } catch (err) {
-    const status = (err as HttpError).status
-    if (status !== 404) throw err
+export type BudgetReserve = 'ok' | 'exhausted'
+
+/** request-scoped 预算对象：listInstalledWithMeta 每次检查创建一个，跨 repo 与 fallback 共享。 */
+export interface GithubBudget {
+  reserve(): BudgetReserve
+}
+
+/** 预算拒绝：该跳 fetch 不发出，错误可识别（latestError 呈现，不与其他网络错误混淆）。 */
+export class GithubBudgetExhaustedError extends Error {
+  constructor() {
+    super('GitHub 更新检查预算已用尽，本次检查的剩余条目未完成')
+    this.name = 'GithubBudgetExhaustedError'
   }
+}
 
-  // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）
-  const tags = await fetchJsonLimited<Array<{ name?: unknown; commit?: { sha?: unknown } }>>(
-    `https://api.github.com/repos/${repo}/tags`,
-    { timeoutMs, signal, headers },
-  )
-  if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
-  const first = tags[0]
-  const name = typeof first.name === 'string' ? first.name : ''
-  const sha = first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : ''
-  if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`tag 信息无效: ${repo}`)
-  return { tag: name, sha }
+export const GITHUB_PASSIVE_PER_REQUEST_MAX = 25
+export const GITHUB_PASSIVE_HOURLY_MAX = 50
+const HOURLY_MS = 3_600_000
+
+/** 宿主级滚动 1 小时命中窗（仅被动探测路径计数；active 调用不经过 reserve 即不受限）。 */
+const hourlyHits: number[] = []
+
+function hourlyReserve(): BudgetReserve {
+  const now = Date.now()
+  while (hourlyHits.length > 0 && now - hourlyHits[0] >= HOURLY_MS) hourlyHits.shift()
+  if (hourlyHits.length >= GITHUB_PASSIVE_HOURLY_MAX) return 'exhausted'
+  hourlyHits.push(now)
+  return 'ok'
+}
+
+/** 测试钩子：清空宿主滚动窗口。 */
+export function _resetGithubHourlyWindowForTests(): void {
+  hourlyHits.length = 0
+}
+
+/** 测试钩子：把窗口内全部命中回拨指定毫秒（模拟时间流逝，测过期滑出）。 */
+export function _backdateGithubHourlyWindowForTests(ms: number): void {
+  for (let i = 0; i < hourlyHits.length; i++) hourlyHits[i] = (hourlyHits[i] ?? 0) - ms
+}
+
+export function createGithubRequestBudget(opts: { perRequestMax?: number } = {}): GithubBudget {
+  let used = 0
+  const max = Math.max(0, Math.floor(opts.perRequestMax ?? GITHUB_PASSIVE_PER_REQUEST_MAX))
+  return {
+    reserve(): BudgetReserve {
+      if (used >= max) return 'exhausted'
+      if (hourlyReserve() === 'exhausted') return 'exhausted'
+      used += 1
+      return 'ok'
+    },
+  }
+}
+
+/** wire 层 reserve 钩子（httpx onRequest）：拒绝即中止该跳且不发出请求；无预算 → undefined（零预算交互）。 */
+function wireReserve(budget?: GithubBudget): ((url: string) => void) | undefined {
+  if (!budget) return undefined
+  return () => {
+    if (budget.reserve() === 'exhausted') throw new GithubBudgetExhaustedError()
+  }
+}
+
+// ---------- 同仓库 single-flight（预算策略池分池） ----------
+
+interface GhFlight {
+  promise: Promise<GithubTag>
+  refs: number
+  ctrl: AbortController
+}
+
+const ghFlights = new Map<string, GhFlight>()
+
+function ghAbortError(): Error {
+  const err = new Error('Aborted')
+  err.name = 'AbortError'
+  return err
+}
+
+function raceWaiter(promise: Promise<GithubTag>, timeoutMs: number, signal?: AbortSignal): Promise<GithubTag> {
+  return new Promise<GithubTag>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`GitHub 请求超时（${timeoutMs}ms）`)), Math.max(1, timeoutMs))
+    const onAbort = () => reject(ghAbortError())
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timer)
+        reject(ghAbortError())
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    const done = (fn: () => void) => {
+      clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+      fn()
+    }
+    promise.then(
+      (value) => done(() => resolve(value)),
+      (err) => done(() => reject(err)),
+    )
+  })
+}
+
+/** 共享 flight 的实际 fetch 序列：release 路径 1–2 个 wire 请求、fallback 路径逐次 reserve。 */
+async function fetchGithubTag(repo: string, timeoutMs: number, signal: AbortSignal, budget?: GithubBudget): Promise<GithubTag> {
+  const headers = { accept: 'application/vnd.github+json' }
+  const reserve = wireReserve(budget)
+  try {
+    // 1) 最新 release（404 = 仓库从未发过 release → 回退 tags）
+    try {
+      const rel = await fetchJsonLimited<{ tag_name?: unknown }>(
+        `https://api.github.com/repos/${repo}/releases/latest`,
+        { timeoutMs, signal, headers, onRequest: reserve },
+      )
+      const tag = typeof rel.tag_name === 'string' ? rel.tag_name.trim() : ''
+      if (tag) return { tag, sha: await githubTagSha(repo, tag, timeoutMs, signal, budget) }
+    } catch (err) {
+      const status = (err as HttpError).status
+      if (status !== 404) throw err
+    }
+
+    // 2) 回退：tags 列表（GitHub 按创建时间倒序，首项即最新）
+    const tags = await fetchJsonLimited<Array<{ name?: unknown; commit?: { sha?: unknown } }>>(
+      `https://api.github.com/repos/${repo}/tags`,
+      { timeoutMs, signal, headers, onRequest: reserve },
+    )
+    if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
+    const first = tags[0]
+    const name = typeof first.name === 'string' ? first.name : ''
+    const sha = first.commit && typeof first.commit.sha === 'string' ? first.commit.sha : ''
+    if (!name || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`tag 信息无效: ${repo}`)
+    return { tag: name, sha }
   } catch (err) {
     const rateLimit = githubRateLimitMessage(err)
     if (rateLimit) throw new Error(rateLimit)
     throw err
+  }
+}
+
+function releaseGhFlight(key: string, flight: GhFlight): void {
+  flight.refs -= 1
+  if (flight.refs <= 0) {
+    flight.ctrl.abort()
+    if (ghFlights.get(key) === flight) ghFlights.delete(key)
+  }
+}
+
+/**
+ * GitHub 来源的“最新稳定点”：优先最新 release（排除 draft/prerelease），无则回退 tags 列表首项。
+ * Q46 预算语义（M1 Task 5）：
+ * - 同仓库 in-flight single-flight，key = 仓库 + 预算策略池（passive-budgeted / active-unbudgeted 互不 join）；
+ * - 记账：flight 创建时绑定 leader 的预算对象（一次）；reserve() 挂 httpx onRequest，
+ *   每个物理 outbound fetch（含重定向每一跳）各一次；joiner 不重复 reserve（join 零 wire 成本，
+ *   预算已耗尽的 waiter 可免费加入既有 flight）；
+ * - waiter-scoped：每个 waiter 用自己的 timeoutMs/signal race 共享 Promise；任何 waiter 的
+ *   signal 都不影响共享请求——最后一个 waiter 离开才 abort；
+ * - 无 budget 的调用（用户主动 install/upgrade/诊断）零预算交互，不受被动窗口限制。
+ */
+export async function githubLatestTag(repo: string, timeoutMs = 20_000, signal?: AbortSignal, budget?: GithubBudget): Promise<GithubTag> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/.test(repo)) throw new Error(`无效 GitHub 仓库: ${repo}`)
+  const key = `${budget ? 'passive' : 'active'}§${repo}`
+  let flight = ghFlights.get(key)
+  if (!flight) {
+    const ctrl = new AbortController()
+    const created: GhFlight = { refs: 0, ctrl, promise: fetchGithubTag(repo, timeoutMs, ctrl.signal, budget) }
+    created.promise.finally(() => {
+      if (ghFlights.get(key) === created && created.refs <= 0) ghFlights.delete(key)
+    }).catch(() => undefined)
+    ghFlights.set(key, created)
+    flight = created
+  }
+  flight.refs += 1
+  try {
+    return await raceWaiter(flight.promise, timeoutMs, signal)
+  } finally {
+    releaseGhFlight(key, flight)
   }
 }
 
