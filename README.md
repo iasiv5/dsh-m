@@ -99,6 +99,18 @@ dshm restart --yes
 
 安全基线：拉取仅 HTTPS（loopback HTTP 除外）+ 重定向逐跳校验 + 体积上限 + 超时；npm 安装按精确版本 dist integrity 对照 pnpm lockfile 校验，不一致 fail closed 并回滚；GitHub 安装强制锁定 commit SHA；pnpm 构建脚本被拦时按策略放行并明确报告。
 
+## 社区清单（awesome-dsh-plugin 目录，0.5.0）
+
+除手工 curated 的主清单外，市场还会叠加一层**只读的社区清单**：锚定 npm 包 [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog)（CC0-1.0，awesome-dsh-plugin 全量目录，4,000+ 条），与主清单合并为合并市场（**主清单恒优先**，重名条目社区侧让位）。
+
+- **数据获取**：dist-tags 探测最新版本 → jsDelivr 按精确版本直取 → npmmirror → unpkg 三线路兜底；版本未变不重拉正文，TTL 内跳过探测。失败回落 `<缓存目录>/awesome/` 运行时缓存并**显式标注「缓存快照」**——过期数据绝不冒充最新。
+- **开关与锁定**：设置页 `communityCatalog` 开关（默认开，live 生效）、`communityCatalogPin` 可锁定目录版本（精确 semver）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出、`DSHM_COMMUNITY_CATALOG_PIN` 锁版本。
+- **分类与搜索**：社区分类是开放集（已知 20 个带中文标签进筛选栏「社区」组，上游新增分类进「社区·新分类」临时组）；搜索同时匹配中英文描述；排序主清单置顶 + 社区按 30 天下载量降序。
+- **安装语义**：社区条目与主清单走同一 `installEntry`（npm 锁精确版本 / GitHub 锁 commit SHA）；市场浏览页只对 npm 条目做更新探测，GitHub 条目不做页面级探测（匿名配额 60 次/小时不可控）。
+- **已装页预算（best-effort）**：已装页对 GitHub 来源插件做更新检查，单次请求 ≤25 个、宿主进程滚动 1 小时 ≤50 个（仅被动检查；主动安装/升级不受限）；超限条目如实标注「检查未完成」而不冒充「全部最新」。独立 CLI 进程不共享宿主内预算，并发场景不承诺 60 次/小时绝不耗尽。
+- **能力披露**：社区条目的 capabilities/红线只出现在详情折叠区（**缺省 = 未扫描 ≠ 未检出**），卡片不打标；截图仅在详情层加载并经客户端白名单校验。
+- **非安全审查警示**：社区目录为全量收录，**未经安全审查**——安装前请自行确认插件来源与能力；主清单的手工 curated 与 CI 校验不适用于社区条目。
+
 ## 开发
 
 ```sh

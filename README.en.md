@@ -99,6 +99,18 @@ Rules and limits: strict v1 schema (unknown fields / invalid ids / oversized val
 
 Security baseline: HTTPS-only fetches (loopback HTTP excepted) with per-hop redirect checks, size caps and timeouts; npm installs verify the exact version's dist integrity against the pnpm lockfile — mismatches fail closed and roll back; GitHub installs pinned to commit SHA; pnpm build scripts are allowed-by-policy with an explicit report when unblocked.
 
+## Community catalog (awesome-dsh-plugin, 0.5.0)
+
+On top of the hand-curated primary registry, the market layers a **read-only community catalog** anchored to the npm package [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog) (CC0-1.0, the full awesome-dsh-plugin directory, 4,000+ entries), merged into one market with the primary registry **always taking precedence** (duplicate entries displace the community side).
+
+- **Fetch chain**: dist-tags probe → jsDelivr pinned fetch → npmmirror → unpkg fallback; unchanged versions are not re-fetched, probes are skipped within TTL. On failure it falls back to the runtime cache under `<cache dir>/awesome/` and **explicitly labels it "cached snapshot"** — stale data never masquerades as fresh.
+- **Switch & pin**: `communityCatalog` toggle in Settings (default on, live), `communityCatalogPin` to lock the catalog version (exact semver); CLI opt-out with `DSHM_COMMUNITY_CATALOG=0`, pin with `DSHM_COMMUNITY_CATALOG_PIN`.
+- **Categories & search**: community categories are an open set (20 known ones with Chinese labels in the filter bar; upstream additions land in a "Community · New" group); search matches both Chinese and English descriptions; primary registry pinned on top, community sorted by 30-day downloads.
+- **Install semantics**: community entries go through the same `installEntry` (npm exact version / GitHub pinned commit SHA); the browse page probes npm entries only — GitHub entries are not probed at page level (anonymous 60 req/h quota is uncontrollable).
+- **Installed-page budget (best-effort)**: update checks for GitHub-sourced plugins are capped at ≤25 wire requests per run and ≤50 per rolling hour per host process (passive checks only; active install/upgrade unaffected); capped items are honestly labeled "check incomplete" instead of "all up to date". A standalone CLI process does not share the host budget and makes no guarantee under concurrency.
+- **Capability disclosure**: capabilities/red lines appear only in the detail fold (**absent = not scanned ≠ not detected**), never as card badges; screenshots load only in the detail layer and pass a client-side allowlist.
+- **Not a security review**: the community catalog is all-inclusive and **not security-reviewed** — verify plugin origin and capabilities before installing; the primary registry's curation and CI checks do not apply to community entries.
+
 ## Development
 
 ```sh
