@@ -62,6 +62,17 @@
 ### 2.4 收录文案（registry-copy-guide 定稿）
 `description`/`tags` 的写法另见 [`docs/registry-copy-guide.md`](./registry-copy-guide.md)：全条 ≤60 全角当量（对齐卡片收起态两行截断）、统一前置/依赖/兼容三种句式、依赖关系不入 tags。CI 对文案超限打软警告不阻断（§2.3 第 4 步之后追加）。
 
+### 2.5 社区清单与合并市场（0.5.0 grilling 定稿 2026-09-28）
+
+- **双层模型**：主清单（§2.1–2.4 全部语义不变）之上叠加只读的**社区清单**——awesome-dsh-plugin 维护的全量社区目录（4,377+ 条，日增约 62）。**合并市场 = 主清单 ∪ 社区清单去重（主清单恒优先）**，GUI / agent 工具 / CLI 三端同源同语义。本节修订 §9.1 Q25「不做运行时多源合并」，架构决策见 [ADR-0003](./adr/0003-community-catalog-merge.md)。
+- **数据锚定 npm 包（Q39）**：`dsh-plugin-catalog`（CC0-1.0，版本 `YYYY.MDD.RUN`）为唯一数据锚。获取链：`registry.npmjs.org` dist-tags 探测最新版本（几 KB）→ **版本未变不重拉正文（版本号即 revalidate 验证器）**→ jsDelivr 按精确版本直取 `plugins.json`（版本 pin 后内容不可变，CDN 缓存无害）→ npmmirror files API → unpkg 按精确版本直取（末位兜底；均为纯 JSON 文件线路，不引入 tar 解包依赖）。npm 精确版本不可变 = 完整性锚；**不做包内快照兜底**（对日增 62 条的目录，过期数据不得冒充最新——陈旧必须显式标注），失败如实报错（发生了什么 / 为什么 / 现在怎么办）。
+- **目录适配层**：原生条目 → 收录条目。`description.zh`（缺省回退 `en`；>500 字符截断并计数）→ description；`npm` 非空 → `source: npm`，否则 `source: github`（owner/repo 取自 url）；`url` → homepage；tags 置空；**分类保留原生值不转译**（开放集，Q40）；`stars/downloads/capabilities/screenshots` 等不进收录条目本体，仅在市场层作为旁路数据透传展示。id 合成：原生 `name` 是裸名（实测 4,377 条中 190 个重名），合成小写 `owner--name` 形态并满足 v1 id 规则（非法字符折叠为 `-`，超 64 字符截断加哈希尾缀），适配层内冲突追加序号。
+- **校验语义（Q43）**：社区清单独立校验——容器层严格（顶层键白名单、`plugins` 数组、32 MiB / 30,000 条上限，超限**整份拒收**）+ 条目层宽松（单条不合格**跳过 + 计数**，汇入 warnings，不整份拒绝）。主清单严格校验（§2.2）不变。**无 npm 的 monorepo 子包条目跳过并计数**（repo 根不是正确安装目标）；有 npm 的子包条目按 npm 安装、正常收录；tarball-only 条目按 github 源收录（dsh-m 不安装 tarball）。
+- **分类（Q40）**：精选分类（5 个，主清单 schema 不变）∪ 社区分类（开放集）。已知 20 个社区分类带中文标签进筛选栏「社区」组；`ui`/`tools`/`market` 三 id 与精选同名、共享过滤桶；上游新增的未知分类原样渲染进「社区·新分类」临时组，发版收录标签。
+- **降级语义（Q42）**：主清单 unavailable + 社区可用 → 显示社区条目 + 顶部错误横幅 + 安装不禁用；社区 unavailable → 主清单照常 + 静默 notice；探测失败时回落 `<ns>/awesome/` **运行时缓存**并显式标注 stale（市场页可见「缓存快照」提示，绝不冒充 ready）——运行时缓存语义与主清单自定义源一致，被禁止的只是**包内快照**；社区**绝不**回退主清单伪装。
+- **开关与缓存**：`communityCatalog`（默认 true，volatile live 生效）+ `communityCatalogPin`（可选锁 npm 版本）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出。社区缓存放 `<namespace>/awesome/` 子目录（不参与 `pruneCaches` 的顶层 `*.json` 清理），正文按版本文件缓存，`fetchedAt`/版本号/线路进设置页展示；TTL 复用 `cacheTtlMin`（只约束 dist-tags 探测频率）。
+- **市场行为（Q45/Q46）**：默认排序主清单置顶（组内维持原顺序）+ 社区按 30 天下载量降序（无数据按名称）；搜索同时匹配中英文描述；「只看主清单」chip 常驻筛选栏首位。**探测边界**：市场浏览页对社区 npm 条目做 latest 探测（registry 无配额限制）；社区 github 条目**不做**浏览页 REST 探测（GitHub 匿名 60 次/小时在 50 条/页 × 2 调用下不可控），更新检查收敛到详情/安装时的按需解析——配额耗尽时已有可读提示（versions.ts `githubRateLimitMessage`）。**已装页豁免**：探测对象受已装数量天然约束，继续探测；计量在**真实 GitHub HTTP 请求层**（一次 `githubLatestTag` ≈ 1–3 个请求：release 路径 1–2 个、fallback 路径 releases→tags→commits 最多 3 个）：单请求 ≤25 次、宿主进程滚动 1 小时 ≤50 次（**仅作用于被动探测**——用户主动 install/upgrade/诊断不经此预算）、同仓库 in-flight single-flight、超限标 `latestError` 不阻塞列表——否则用户装的社区 github 插件永远没有更新徽标。独立 CLI 进程不共享宿主内预算，文档如实标注 best-effort（并发场景不承诺 60/h 绝不耗尽）。能力披露（capabilities/红线）只在详情折叠区展示（缺省 = 未扫描 ≠ 未检出），卡片不打标（Q44，防警告疲劳）；截图仅详情层加载（GitHub 图床白名单由上游保证）。
+
 ## 3. 安装 / 卸载 / 升级 / 重启
 
 底层原语（本机实证）：`dsh plugin --profile web add|remove|update`（转发 pnpm，作用于 `$DSH_HOME/profiles/web`）。**profile 的 `package.json` 就是唯一事实源**——不引入任何额外状态文件。
@@ -92,6 +103,8 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **peer 兼容预检（0.4.0）**：install/upgrade 事务外 metadata 阶段，校验 `@deepseek-ai/dsh(-*)` peers 与运行时版本（`workspace:^/~/ *` 视为运行时版本；semver includePrerelease；官方 `evaluatePluginCompatibility` 同语义）。运行时版本解析失败或预检元数据读取失败 → 不拦（如实标注未检）；不兼容 → GUI 弹确认 / agent 回结构化 issue / CLI `--force`；无豁免机制（确认即通道）；GitHub 源明示 `compatSkipped`。
 - **精确构建放行（0.4.0，[ADR-0002](./adr/0002-precise-build-approval.md)）**：needs-builds 拦截点（adapter 的 `makeAddViaLadder`）先读 `pnpm-workspace.yaml` 的 pnpm 待决名单（值为 `set this to true or false` 的无通配符键），逐键写 `allowBuilds.<pkg>: true`；名单空/不可读才走全量兜底并如实标注。放行结果沿 `RunnerOutcome.buildApprovals`/`fallbackAllBuilds` 上行（`usedAllowAllBuilds` 字段已删除）。
 - **bundle 身份验证（0.4.0）**：事务 verify 阶段观察——包内无 `cordis.patch.yml` 且不在 bundles 数组 → `bundleWarning: 'no-patch-layer'`（装成纯依赖），只警告不回滚（存在合法的无补丁层 dsh 包）。
+- **装后假成功守卫（0.5.0）**：npm/GitHub 安装事务提交后、结果返回前，对**新增包**校验三项——① 包内含 dsh 插件标记（`package.json` 的 `dsh.bundle`/`dsh.client` 键或包内 `cordis.patch.yml`，与 bundle 身份验证同族判定）；② 入口可解析（main/exports 指向的文件在包目录内存在）；③ 新增 loader 条目 id 与 profile 现有 patch 行/bundles 条目无冲突（两个同 id entry 会让下次开机整个 profile 起不来）。任一违例 → 走**专用 `compensate-install` 补偿事务**（不通用，四条边界：① 证据 = 提交后**实读**的 manifest 依赖值——安装源 spec `pkg@version` 与 manifest 值不等，不可混用；② 事务前捕获完整 prior state（manifestSpec/installSpec/version/patch mapping）——**升级与重复安装都携带 prior**，补偿恢复旧版本而非删包，仅真正全新安装才移除；③ 恢复验证 = node_modules 实际版本 + manifest + 旧 patch mapping 三者，不只比 manifest；④ 不接受外部 signal——安装已 committed，清理不可被客户端断连取消），绕开 `NOT_DSH_PLUGIN` 门——无 marker 的包恰好是最需要补偿的对象。live-disable 排序与卸载同款。返回结构化失败而非假成功。守卫自身不可用（读取异常、入口解析歧义、patch 文件损坏等 `unavailable` 非空）时 fail-open：返回 committed 结果 + `guardWarning` 字段（GUI/agent/CLI 三端展示），不执行补偿——宁可带警告放行也不误删刚装好的包，与 0.4.0 兼容预检「预检自身失败不拦安装」同一取舍传统。**残余风险（owner 2026-09-28 确认接受）**：GitHub 安装的真实 dependency key 需 add 后经 manifest diff 确认；pre-mutation 只读预解析 pinned SHA 的 package.json 可覆盖绝大多数场景，但 candidate 与 pnpm 实际 key 不一致且旧 prior 不可自动恢复（link/file 等）的极端场景下，补偿只能是 manual-repair 非成功状态（错误体携带旧 manifestSpec/installSpec/mapping 修复依据）——不承诺该场景 prior 无损。可自动恢复来源限严格白名单：canonical npm exact + dist integrity，或 pinned GitHub commit + 唯一 lock commit identity。
+- **更新语义加固（0.5.0）**：`isNewerVersion` 从自定义折叠比较切换为 `semver.gt`（prerelease < 正式版的标准语义——旧实现把 `1.2.3-beta.1` 的数字尾段参与比较、误判为大于 `1.2.3`；semver 已是运行时依赖），补回归测试钉死降级/相等/prerelease/build 边界；GitHub `/tags` 回退路径的 annotated tag 由 tag object sha 修正为经 `commits/{ref}` 解引用的 commit sha（与 release 路径同语义）；GitHub 匿名配额的页面级探测边界按 Q46 收敛（社区 github 条目不做页面级 REST 探测）；`githubTagSha` 走 `commits/{ref}` 自动解引用 annotated tag（peeled 语义已正确），同样补测试钉死。
 - **实测版本清单（0.4.0，术语「实测版本清单」）**：registry 条目可选 `verified: string[]`（精确 semver），来自各仓库对照源的实测声明；只展示与收录质量提示，**不做安装拦截依据**。
 - **元数据源竞速（0.4.0 引入，0.4.x 退役）**：曾照搬官方 `dsh-client-ui-plugin-manager` 的 `PluginRegistryProbe`（npmjs/npmmirror `/-/ping` 竞速选元数据读取源）。退役理由：官方竞速只服务于「安装对话框 registry 默认预选」这一交互，dsh-m 无此交互；host 实测 npmjs（~175ms）稳定快于 npmmirror（~360-1400ms），探测恒等默认值；且元数据读取已有 TTL cache + deadline 预算。npmjs 真不可达时按官方 host 语义补**失败驱动 fallback**（对 network/timeout/not-found/no-matching-version 顺序重试镜像），不再引入主动探测。残留 `probeEnabled/probeTimeoutMs/probeCacheTtlMin` 配置键被非 strict Config schema 静默忽略，无需迁移。
 - **重启**：内置**一键重启**。在服务管理器托管的 DSH 进程内，只有确认 unit 的 `Restart=on-failure` / `Restart=always` 且 `75` 未被 `SuccessExitStatus` / `RestartPreventExitStatus` 覆盖时，才调用 launcher 提供的 `appExit(75)`；策略未知或不满足时改用 manager-owned transient `systemd-run` 调用 `systemctl`，不猜测或硬编码 unit 名称，也不在即将停止的 cgroup 内 detached spawn `systemctl`。无 systemd/appExit 时再退回 detached-helper 兼容路径。安装/卸载/升级完成后 GUI 弹「需重启生效 [一键重启]」横幅；客户端以 boot id 确认替换进程后关闭横幅，交由 DSH Web 自身后台连接恢复，不强制整页刷新；工具返回重启提示。
@@ -106,6 +119,8 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 
 0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）。
 
+0.5.0 增补（合并市场，详见 §2.5）：筛选栏分组「精选（5）｜社区（已知 20 带计数 + 新分类临时组）」，「只看主清单」chip 常驻首位；市场卡与已装卡对社区条目显示「社区收录」徽标；排序主清单置顶 + 社区按 30 天下载量降序；详情折叠区展示能力披露与截图（仅社区条目、缺省=未扫描≠未检出）；notice 双源状态（主清单状态 + 社区清单状态互相独立，社区失败静默）。
+
 3 个视图，卡片展开式详情（不做独立详情页），**中文优先**，跟随 DSH Web 深色主题：
 
 1. **市场页**（默认）：registry 卡片流；搜索/分类为**服务端过滤**（Host 强制 `withLatest=true`、每页 50、1,000 条清单第一页只探测当前页）；`MarketPanel` 是市场/已装数据唯一 owner（请求 generation + AbortController 丢弃旧响应）；安装/卸载/升级完成后通过统一协调器同时刷新市场与已装快照，不要求关闭并重新打开面板；分页控件 + 超过 200 条性能提示 + 默认/自定义/缓存/不可用短提示（不含本地路径）；卡片详情保留 README markdown 预览与 npm/GitHub 官方外链。
@@ -118,6 +133,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 ## 5. Agent 工具（host）与 CLI
 
 - 工具前缀 `dshm_`，共 7 个：`dshm_search` / `dshm_list` / `dshm_install` / `dshm_uninstall` / `dshm_outdated` / `dshm_upgrade` / `dshm_restart`。Agent tools 运行于 Host 进程，与 Web GUI **共用 `host` namespace 缓存与 active config**；`dshm_search` 走服务端过滤（metadata-only，`withLatest=false`、limit ≤80），返回不含本地路径的短 summary。
+- 0.5.0：`dshm_search`/`dshm_install` 消费**合并市场**（§2.5）；category 参数接受精选 5 分类 + 任意社区分类 slug；summary 增加社区清单状态（条数/来源/是否 stale）；CLI 默认合并社区清单，`DSHM_COMMUNITY_CATALOG=0` 退出，缓存用 `cli/awesome/` 子目录。
 - CLI bin `dshm`：同名同义命令集（`dshm list|search|install|uninstall|outdated|upgrade|restart`），固定 `cli` namespace。`registry`/`search`/`outdated` 在清单不可用时打印配置/实际生效地址并 **exit 1**；`list` 仍列出已装并标记不可用；本地终端可显示完整路径。
 - 本地 API：`POST /dshm` 单路由 method 分发；除 `ping` 外全部要求 JSON Content-Type + `trustedRestartRequest` host 等价同源防护；typed 错误映射 400/403/404/405/413/415/422/500；`registry-config-apply` 校验失败 422；清单不可用的 `registry`/`market` 仍返回 200 + 结构化状态。
 - 实现顺序：**GUI 先行，CLI 收尾**（核心逻辑同一层，CLI 是薄封装）。
@@ -185,6 +201,20 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 | Q35 | integrity | npm 精确版本 dist integrity 对照 pnpm lockfile v9，fail closed + best-effort 快照回滚（Q12 的落地实现） |
 | Q36 | namespace | Agent tools 与 Host GUI 共用 host namespace 及 active config；仅独立 CLI 用 cli namespace（Q48-A 修正） |
 | Q37 | CLI | registry/search/outdated 不可用 exit 1 并输出配置/实际生效地址；agent 输出不泄露本地路径 |
+
+### 9.3 双层 Registry 追加决策（0.5.0 grilling 定稿 2026-09-28，修订 Q25）
+
+| # | 决策 | 结论 |
+|---|------|------|
+| Q38 | 双层定位 | 修订 Q25：主清单（§2.1–2.4 不变）+ 社区清单只读叠加 = 合并市场，三端一致；主清单保留 verified/文案差异化，npm 包内快照仍只含主清单。ADR-0003 |
+| Q39 | 社区数据源 | 只锚定 npm `dsh-plugin-catalog`：dist-tags 版本号即 revalidate 验证器；jsDelivr pinned → npmmirror files → unpkg pinned 兜底；无包内快照；`communityCatalogPin` 可锁版本 |
+| Q40 | 分类 | 开放集：社区分类保留原生值不转译；精选 5 + 社区已知 20（ui/tools/market 共享桶）；未知分类进「社区·新分类」临时组 |
+| Q41 | 合并语义 | 去重键 npm 包名 → owner/repo → 合成 id；主清单恒优先；被让位条目计数进 warnings；`registryUrl` 替换只作用于主清单层，社区叠加与其无关 |
+| Q42 | 降级 | 主 unavailable + 社区可用 → 显示社区 + 错误横幅 + 不禁装；社区失败 → 主照常 + 静默 notice；社区绝不伪装/不做包内快照 |
+| Q43 | 容量与卫生 | 社区 32 MiB / 30,000 条超限整份拒收；条目层宽松（脏条目跳过计数）；无 npm 的子包条目跳过计数；tarball-only 按 github 收录 |
+| Q44 | 能力披露 | capabilities/红线只进详情折叠区（缺省=未扫描≠未检出）；卡片不打标；截图仅详情层 |
+| Q45 | 排序与筛选 | 主清单置顶（原顺序）+ 社区按 30 天下载量降序；筛选栏「精选｜社区」分组 + 常驻「只看主清单」 |
+| Q46 | 探测边界 | 市场浏览页：社区 npm 条目探测、社区 github 条目不探测（60/h 配额），详情/安装时按需解析；已装页豁免但按**真实 GitHub HTTP 请求数**计量：单请求 ≤25 次 + 宿主进程滚动 1 小时 ≤50 次（仅被动探测；主动安装/升级/诊断不受限）+ 同仓库 in-flight single-flight（`githubLatestTag` 一次调用 ≈ 1–3 个 HTTP 请求，fallback 路径最多 3 个）；独立 CLI 进程不共享宿主预算——文档如实标注 best-effort |
 
 ## 10. 实现参考（本地镜像）
 
