@@ -46,6 +46,11 @@ export interface FetchOptions {
   maxBytes?: number
   headers?: Record<string, string>
   signal?: AbortSignal
+  /**
+   * wire 层钩子（M1 Q46 预算计数点）：每个物理 outbound 请求（含重定向每一跳）发起前调用一次。
+   * 抛错（如预算 reserve 拒绝）→ 该跳 fetch 立即中止、错误原样上抛。
+   */
+  onRequest?: (url: string) => void
 }
 
 export interface LimitedResponse {
@@ -88,6 +93,7 @@ export async function fetchLimited(url: string, opts: FetchOptions & { method?: 
   let current = assertSafeUrl(url)
   const seen = new Set<string>([current.toString()])
   for (let hop = 0; ; hop++) {
+    opts.onRequest?.(current.toString())
     const res = await fetch(current, {
       redirect: 'manual',
       signal,
@@ -164,4 +170,14 @@ export async function isReachable(url: string, timeoutMs = 8000, signal?: AbortS
   } catch {
     return false
   }
+}
+
+/** 字节下载（社区目录正文用）：非 2xx 抛 HttpError；bytes = 完整响应体。 */
+export async function fetchBytesLimited(
+  url: string,
+  opts: FetchOptions = {},
+): Promise<{ bytes: Buffer; finalUrl: string }> {
+  const res = await fetchLimited(url, opts)
+  if (!res.ok) throw new HttpError(res.status, `HTTP ${res.status}`, res.headers)
+  return { bytes: res.buffer, finalUrl: res.finalUrl }
 }

@@ -10,6 +10,7 @@ import {
   HttpError,
   assertSafeUrl,
   decodeUtf8Fatal,
+  fetchBytesLimited,
   fetchJsonLimited,
   fetchJsonLimitedMeta,
   fetchTextLimited,
@@ -230,5 +231,125 @@ describe('fetchTextLimited / isReachable', () => {
     assert.equal(await isReachable(`http://127.0.0.1:${s.port}/ok`, 5000), true)
     assert.equal(await isReachable(`http://127.0.0.1:${s.port}/nope`, 5000), false)
     assert.equal(await isReachable(`http://127.0.0.1:${s.port}/method`, 5000), true)
+  })
+})
+
+describe('fetchBytesLimited（M1 Task 1）', () => {
+  it('200 二进制 body：bytes 原样返回、finalUrl 正确', async () => {
+    const payload = Buffer.from([0x00, 0x01, 0xfe, 0xff, 0x7f, 0x80])
+    const s = await start((req, res, u) => {
+      if (u === '/bin') {
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': String(payload.length) })
+        res.end(payload)
+      } else {
+        res.writeHead(404)
+        res.end()
+      }
+    })
+    const { bytes, finalUrl } = await fetchBytesLimited(`http://127.0.0.1:${s.port}/bin`, { timeoutMs: 5000 })
+    assert.deepEqual(bytes, payload)
+    assert.equal(finalUrl, `http://127.0.0.1:${s.port}/bin`)
+  })
+
+  it('超过 maxBytes：抛 HttpError 且文案含「超过」', async () => {
+    const s = await start((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' })
+      res.end(Buffer.alloc(64 * 1024, 1))
+    })
+    await assert.rejects(
+      () => fetchBytesLimited(`http://127.0.0.1:${s.port}/big`, { timeoutMs: 5000, maxBytes: 1024 }),
+      (err) => err instanceof HttpError && err.message.includes('超过'),
+    )
+  })
+
+  it('非 2xx：抛 HttpError(status, "HTTP <status>")', async () => {
+    const s = await start((req, res) => {
+      res.writeHead(500)
+      res.end()
+    })
+    await assert.rejects(
+      () => fetchBytesLimited(`http://127.0.0.1:${s.port}/e`, { timeoutMs: 5000 }),
+      (err) => err instanceof HttpError && err.status === 500 && err.message === 'HTTP 500',
+    )
+  })
+
+  it('301 重定向：finalUrl 为目标、body 为目标响应', async () => {
+    const payload = Buffer.from('redirected-bytes')
+    const s = await start((req, res, u) => {
+      if (u === '/a') {
+        res.writeHead(301, { location: '/b' })
+        res.end()
+      } else {
+        res.writeHead(200, { 'content-length': String(payload.length) })
+        res.end(payload)
+      }
+    })
+    const { bytes, finalUrl } = await fetchBytesLimited(`http://127.0.0.1:${s.port}/a`, { timeoutMs: 5000 })
+    assert.deepEqual(bytes, payload)
+    assert.equal(finalUrl, `http://127.0.0.1:${s.port}/b`)
+  })
+})
+
+describe('onRequest 钩子（M1 Task 1，wire 层逐物理请求计数）', () => {
+  const jsonHandler = (req, res, u) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end('{"ok":true}')
+  }
+
+  it('无重定向：恰好调用 1 次，URL 为请求地址', async () => {
+    const s = await start(jsonHandler)
+    const calls = []
+    await fetchJsonLimited(`http://127.0.0.1:${s.port}/x`, { timeoutMs: 5000, onRequest: (u) => calls.push(u) })
+    assert.deepEqual(calls, [`http://127.0.0.1:${s.port}/x`])
+  })
+
+  it('单次 redirect（初始+目标）：调用 2 次，逐跳 URL 按序', async () => {
+    const s = await start((req, res, u) => {
+      if (u === '/a') {
+        res.writeHead(302, { location: '/b' })
+        res.end()
+      } else {
+        jsonHandler(req, res, u)
+      }
+    })
+    const calls = []
+    await fetchJsonLimited(`http://127.0.0.1:${s.port}/a`, { timeoutMs: 5000, onRequest: (u) => calls.push(u) })
+    assert.deepEqual(calls, [`http://127.0.0.1:${s.port}/a`, `http://127.0.0.1:${s.port}/b`])
+  })
+
+  it('两次连续 redirect：调用 3 次，逐跳 URL 按序', async () => {
+    const s = await start((req, res, u) => {
+      if (u === '/a') {
+        res.writeHead(302, { location: '/b' })
+        res.end()
+      } else if (u === '/b') {
+        res.writeHead(302, { location: '/c' })
+        res.end()
+      } else {
+        jsonHandler(req, res, u)
+      }
+    })
+    const calls = []
+    await fetchJsonLimited(`http://127.0.0.1:${s.port}/a`, { timeoutMs: 5000, onRequest: (u) => calls.push(u) })
+    assert.deepEqual(calls, [
+      `http://127.0.0.1:${s.port}/a`,
+      `http://127.0.0.1:${s.port}/b`,
+      `http://127.0.0.1:${s.port}/c`,
+    ])
+  })
+
+  it('钩子抛错：该跳 fetch 立即中止、错误上抛、服务器零命中', async () => {
+    const s = await start(jsonHandler)
+    await assert.rejects(
+      () =>
+        fetchJsonLimited(`http://127.0.0.1:${s.port}/x`, {
+          timeoutMs: 5000,
+          onRequest: () => {
+            throw new Error('budget-exhausted')
+          },
+        }),
+      (err) => err.message === 'budget-exhausted',
+    )
+    assert.equal(s.hits(), 0)
   })
 })
