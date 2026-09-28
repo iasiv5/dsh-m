@@ -9,7 +9,7 @@ import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin } from '../lib/core/market.js'
+import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome } from '../lib/core/market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 
 const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
@@ -180,7 +180,7 @@ describe('listMarket：latest cache 与 deadline', () => {
     assert.equal(res.items.length, 50)
     assert.equal(res.latestComplete, false)
     assert.equal(res.latestTimedOut, true)
-    assert.ok(res.items.every((it) => it.latestErrorCode === 'LATEST_TIMEOUT'))
+    assert.ok(res.items.every((it) => it.latestErrorCode === 'timeout'))
   })
 
   it('registry 在 deadline 内未就绪 → 空页 + unavailable 状态', async () => {
@@ -669,6 +669,7 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
         categoryCounts: { market: 0, tools: 0, ui: 0, search: 0, other: 0 },
         registryState: unavailableLoaded('/tmp/custom.json'),
         installedComplete: false, latestComplete: false, latestTimedOut: false,
+        community: { enabled: false, status: 'unavailable', version: null, checkedAt: null, fetchedAt: null, route: null, acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
       }) },
       { err: (l) => lines.push(l) },
     )
@@ -1099,5 +1100,310 @@ describe('M1 Task 5：合并市场', () => {
     setTimeout(() => ac.abort(), 20)
     await assert.rejects(() => listMarket(cfg, { signal: ac.signal, withLatest: false }, deps2), (err) => err.name === 'AbortError')
     assert.ok(ccalls2.opts[0]?.signal, 'listMarket 以 waiter 身份携带调用者 signal')
+  })
+})
+
+// ---------- M1 Task 7：三端语义（工具 deadline 对齐 / CLI 双源 / latestError 结构化呈现） ----------
+
+function toolContext(signal) {
+  return signal ? { signal } : undefined
+}
+
+describe('M1 Task 7：agent 工具契约', () => {
+  async function loadToolsWith(overrides = {}) {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+    const calls = { search: [], list: [], outdated: [] }
+    const marketResult = overrides.marketResult ?? (await (async () => {
+      const { deps } = fakeDeps()
+      return listMarket(cfg, { limit: 5, withLatest: false }, deps)
+    })())
+    const installedResult = overrides.installedResult ?? (await (async () => {
+      const { deps } = fakeDeps({ listInstalledPlugins: async () => ({ items: [], others: 0, complete: true, profileDir: '/tmp/p' }) })
+      return listInstalledWithMeta(cfg, {}, deps)
+    })())
+    registerTools(ctx, cfg, {
+      listMarket: async (c, opts) => {
+        calls.search.push(opts)
+        return marketResult
+      },
+      listInstalledWithMeta: async (c, opts) => {
+        calls[overrides.tool === 'outdated' ? 'outdated' : 'list'].push(opts)
+        return installedResult
+      },
+    })
+    return { registered, calls }
+  }
+
+  it('① dshm_search 接受社区 slug 与 primary_only 并透传 core', async () => {
+    const { registered, calls } = await loadToolsWith()
+    const search = registered.find((t) => t.name === 'dshm_search')
+    await search.execute({ category: 'memory', primary_only: true })
+    assert.equal(calls.search[0].category, 'memory')
+    assert.equal(calls.search[0].primaryOnly, true)
+    await assert.rejects(() => search.execute({ category: 'BAD!' }), /非法分类/)
+    assert.equal(calls.search.length, 1, '非法 slug 不下发 core')
+  })
+
+  it('⑦ deadline 对齐：search 44s、list/outdated 60s，且透传 exec.signal', async () => {
+    const { registered, calls } = await loadToolsWith()
+    const search = registered.find((t) => t.name === 'dshm_search')
+    const list = registered.find((t) => t.name === 'dshm_list')
+    const outdated = registered.find((t) => t.name === 'dshm_outdated')
+    assert.equal(search.timeoutMs, 45_000)
+    assert.equal(list.timeoutMs, 65_000)
+    assert.equal(outdated.timeoutMs, 65_000)
+    const ac = new AbortController()
+    await search.execute({}, toolContext(ac.signal))
+    assert.equal(calls.search[0].deadlineMs, 44_000)
+    assert.equal(calls.search[0].signal, ac.signal)
+    await list.execute({}, toolContext(ac.signal))
+    assert.equal(calls.list[0].deadlineMs, 60_000)
+    assert.equal(calls.list[0].signal, ac.signal)
+    await outdated.execute({}, toolContext(ac.signal))
+    assert.equal(calls.outdated.length + calls.list.length >= 2, true)
+    const outdatedCall = calls.outdated[0] ?? calls.list[1]
+    assert.equal(outdatedCall.deadlineMs, 60_000)
+    assert.equal(outdatedCall.signal, ac.signal)
+  })
+
+  it('⑦-2 慢 core + exec.signal abort → 工具 execute 随 signal 中止（不悬挂到 65s）', async () => {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    registerTools({ tools: { register: (t) => registered.push(t) }, inject: () => {} }, cfg, {
+      listInstalledWithMeta: (_c, opts) => new Promise((_, rej) => {
+        opts?.signal?.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })
+      }),
+    })
+    const list = registered.find((t) => t.name === 'dshm_list')
+    const ac = new AbortController()
+    setTimeout(() => ac.abort(), 30)
+    const t0 = Date.now()
+    await assert.rejects(() => list.execute({}, toolContext(ac.signal)), (err) => err.name === 'AbortError')
+    assert.ok(Date.now() - t0 < 5000, 'signal 贯通：abort 即中止而不是等 65s 工具超时')
+  })
+
+  it('② dshm_search/list/outdated 投影 community summary 四键', async () => {
+    const community = {
+      enabled: true, status: 'ready', version: '2026.928.1', checkedAt: 't', fetchedAt: 't',
+      route: 'jsdelivr', acceptedCount: 4189, upstreamCount: 4377, displaced: 3,
+      skippedDirty: 0, skippedSubpathNoNpm: 188, errors: [], warnings: [],
+    }
+    const { registered } = await loadToolsWith({
+      marketResult: { items: [], total: 0, offset: 0, limit: 80, categoryCounts: {}, registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 }, installedComplete: true, latestComplete: true, latestTimedOut: false, community },
+      installedResult: { items: [], others: 0, profileDir: '/tmp/p', registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 }, community },
+    })
+    for (const name of ['dshm_search', 'dshm_list', 'dshm_outdated']) {
+      const tool = registered.find((t) => t.name === name)
+      const out = await tool.execute({})
+      assert.deepEqual(out.community, { acceptedCount: 4189, route: 'jsdelivr', status: 'ready', version: '2026.928.1' })
+    }
+  })
+
+  it('⑨ dshm_outdated：有未完成时标题不写「全部最新」，投影含 code 与未完成数', async () => {
+    const installedItem = (i, extra = {}) => ({
+      pkg: `p-${i}`, name: `P${i}`, version: '1.0.0', source: 'npm', spec: '1.0.0',
+      outdated: false, ...extra,
+    })
+    const installedResult = {
+      items: [
+        installedItem(1, { latestVersion: '2.0.0', outdated: true }),
+        installedItem(2, { latestErrorCode: 'budget-exhausted', latestError: 'GitHub 更新检查预算已用尽' }),
+        installedItem(3),
+      ],
+      others: 0,
+      profileDir: '/tmp/p',
+      registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 3 },
+      community: { enabled: true, status: 'ready', version: 'v', checkedAt: 't', fetchedAt: 't', route: 'r', acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
+    }
+    const { registered } = await loadToolsWith({ installedResult, tool: 'outdated' })
+    const outdated = registered.find((t) => t.name === 'dshm_outdated')
+    const out = await outdated.execute({})
+    assert.equal(out.incompleteCount, 1)
+    assert.equal(out.items[1].latestErrorCode, 'budget-exhausted')
+    const rendered = outdated.output.render({}, out)
+    assert.ok(rendered[0].text.includes('1 项检查未完成'))
+    assert.ok(rendered[0].text.includes('因 GitHub 预算未完成'))
+    const title = outdated.presentResult({}, { isError: false, meta: out }).title
+    assert.ok(title.includes('检查未完成'), `标题不得写「全部最新」：${title}`)
+  })
+
+  it('⑩ installed-view 视图模型含 latestError 标注字段', async () => {
+    const { installedViewModel } = await import('../src/client/installed-view.js')
+    const base = { pkg: 'p', spec: '1.0.0', source: 'npm' }
+    assert.equal(installedViewModel({ ...base }).latestIssue, null)
+    const withIssue = installedViewModel({ ...base, latestError: 'GitHub 更新检查预算已用尽', latestErrorCode: 'budget-exhausted' })
+    assert.deepEqual(withIssue.latestIssue, { code: 'budget-exhausted', note: 'GitHub 更新检查预算已用尽' })
+  })
+})
+
+describe('M1 Task 7：CLI 双源判定与 latestError 呈现', () => {
+  async function run(argv, deps, io) {
+    const { runCli } = await import('../lib/cli.js')
+    return runCli(argv, deps, io)
+  }
+
+  function readyCommunitySummary(overrides = {}) {
+    return {
+      enabled: true, status: 'ready', version: '2026.928.1', checkedAt: 't', fetchedAt: 't',
+      route: 'jsdelivr', acceptedCount: 4189, upstreamCount: 4377, displaced: 3,
+      skippedDirty: 0, skippedSubpathNoNpm: 188, errors: [], warnings: [], ...overrides,
+    }
+  }
+
+  it('③④ CLI search 双源：主 unavailable + 社区 ready → exit 0 + 提示；两层不可用 → exit 1', async () => {
+    const lines = []
+    const errs = []
+    const code1 = await run(['search'], {
+      listMarket: async () => ({
+        items: [{ id: 'o--x', name: 'X', description: 'd', category: 'ui', tags: [], source: 'npm', npm: 'x', installed: false }],
+        total: 1, offset: 0, limit: 80, categoryCounts: { ui: 1 },
+        registryState: { configuredAddress: '', activeAddress: null, source: 'default-cache', status: 'unavailable', isDefault: true, stale: false, fetchedAt: null, errors: ['x'], count: 0 },
+        installedComplete: true, latestComplete: true, latestTimedOut: false,
+        community: readyCommunitySummary({ acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedSubpathNoNpm: 0 }),
+      }),
+    }, { out: (l) => lines.push(l), err: (l) => errs.push(l) })
+    assert.equal(code1, 0)
+    assert.ok(errs.some((l) => l.includes('社区清单条目')))
+    assert.ok(lines.some((l) => l.includes('o--x')))
+
+    const code2 = await run(['search'], {
+      listMarket: async () => ({
+        items: [], total: 0, offset: 0, limit: 80, categoryCounts: {},
+        registryState: { configuredAddress: '', activeAddress: null, source: 'default-cache', status: 'unavailable', isDefault: true, stale: false, fetchedAt: null, errors: ['x'], count: 0 },
+        installedComplete: false, latestComplete: false, latestTimedOut: false,
+        community: readyCommunitySummary({ status: 'unavailable', acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedSubpathNoNpm: 0, version: null, route: null }),
+      }),
+    }, { out: (l) => lines.push(l), err: (l) => errs.push(l) })
+    assert.equal(code2, 1)
+  })
+
+  it('⑥ CLI env 映射：DSHM_COMMUNITY_CATALOG=0 → communityCatalog:false', async () => {
+    process.env.DSHM_COMMUNITY_CATALOG = '0'
+    try {
+      const seen = []
+      await run(['search'], {
+        listMarket: async (c) => {
+          seen.push(c)
+          return { items: [], total: 0, offset: 0, limit: 80, categoryCounts: {}, registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 }, installedComplete: true, latestComplete: true, latestTimedOut: false, community: readyCommunitySummary({ status: 'disabled', acceptedCount: 0, upstreamCount: null, displaced: 0, skippedSubpathNoNpm: 0, version: null, route: null }) }
+        },
+      }, { out: () => {}, err: () => {} })
+      assert.equal(seen[0].communityCatalog, false)
+    } finally {
+      delete process.env.DSHM_COMMUNITY_CATALOG
+    }
+  })
+
+  it('⑧ CLI outdated 双源：主 unavailable + 社区 ready → 正常输出 + warning；stale → 缓存快照行；两层不可用 → exit 1', async () => {
+    const lines = []
+    const errs = []
+    const code1 = await run(['outdated'], {
+      listInstalledWithMeta: async () => ({
+        items: [], others: 0, profileDir: '/tmp/p',
+        registryState: { configuredAddress: '', activeAddress: null, source: 'default-cache', status: 'unavailable', isDefault: true, stale: false, fetchedAt: null, errors: ['x'], count: 0 },
+        community: readyCommunitySummary(),
+      }),
+    }, { out: (l) => lines.push(l), err: (l) => errs.push(l) })
+    assert.equal(code1, 0)
+    assert.ok(errs.some((l) => l.includes('收录清单不可用')))
+
+    const code2 = await run(['outdated'], {
+      listInstalledWithMeta: async () => ({
+        items: [], others: 0, profileDir: '/tmp/p',
+        registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 },
+        community: readyCommunitySummary({ status: 'stale' }),
+      }),
+    }, { out: (l) => lines.push(l), err: (l) => errs.push(l) })
+    assert.equal(code2, 0)
+    assert.ok(errs.some((l) => l.includes('缓存快照')))
+
+    const code3 = await run(['outdated'], {
+      listInstalledWithMeta: async () => ({
+        items: [], others: 0, profileDir: '/tmp/p',
+        registryState: { configuredAddress: '', activeAddress: null, source: 'default-cache', status: 'unavailable', isDefault: true, stale: false, fetchedAt: null, errors: ['x'], count: 0 },
+        community: readyCommunitySummary({ status: 'unavailable', acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedSubpathNoNpm: 0, version: null, route: null }),
+      }),
+    }, { out: (l) => lines.push(l), err: (l) => errs.push(l) })
+    assert.equal(code3, 1)
+  })
+
+  it('⑨ CLI outdated：有未完成时不输出「全部最新」，按 code 列原因', async () => {
+    const lines = []
+    const code = await run(['outdated'], {
+      listInstalledWithMeta: async () => ({
+        items: [
+          { pkg: 'a', name: 'A', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false, latestErrorCode: 'timeout', latestError: '更新检查未完成：超时' },
+          { pkg: 'b', name: 'B', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false },
+        ],
+        others: 0, profileDir: '/tmp/p',
+        registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 2 },
+        community: readyCommunitySummary(),
+      }),
+    }, { out: (l) => lines.push(l), err: () => {} })
+    assert.equal(code, 0)
+    const text = lines.join('\n')
+    assert.ok(!text.includes('均已是最新版本'), '未完成时禁止「全部最新」结论')
+    assert.ok(text.includes('1 项检查未完成'))
+    assert.ok(text.includes('检查超时'))
+  })
+})
+
+describe('M1 Task 7：probe deadline 硬上限与双 waiter 顺序', () => {
+  it('⑪b probe 级硬上限：deadline 后排队条目标未完成且停止派发新 probe', async () => {
+    const { deps } = fakeDeps()
+    let probeCalls = 0
+    const sha = 'a'.repeat(40)
+    const installed = {
+      items: Array.from({ length: 20 }, (_, i) => ({
+        pkg: `gh-${i}`, name: `G${i}`, version: '1.0.0', description: '', homepage: '',
+        spec: `github:o/r${i}#${sha}`, source: 'github', dsh: true, path: `/x/gh-${i}`,
+      })),
+      others: 0, complete: true, profileDir: '/tmp/profile',
+    }
+    const registryPlugins = Array.from({ length: 20 }, (_, i) => ({
+      id: `g-${i}`, name: `G${i}`, description: 'd', category: 'tools', tags: [], source: 'github', github: `o/r${i}`,
+    }))
+    const testDeps = {
+      ...deps,
+      listInstalledPlugins: async () => installed,
+      loadRegistry: async () => readyLoaded(registryPlugins, { configuredAddress: `probe-cap-${Date.now()}` }),
+      githubLatestTag: async () => {
+        probeCalls += 1
+        await sleep(300)
+        return { tag: 'v1.0.0', sha }
+      },
+      fetchCommunityCatalog: async () => ({
+        state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] },
+        catalog: null,
+      }),
+    }
+    const res = await listInstalledWithMeta({ timeoutMs: 20_000, cacheTtlMin: 0 }, { deadlineMs: 590 }, testDeps)
+    assert.ok(probeCalls <= 16, `deadline 后停止派发新 probe（实际 ${probeCalls}）`)
+    const unfinished = res.items.filter((it) => it.latestErrorCode === 'timeout')
+    assert.ok(unfinished.length >= 4, `排队条目标未完成（实际 ${unfinished.length}）`)
+    assert.ok(res.items.every((it) => it.latestTag !== undefined || it.latestErrorCode !== undefined), '每条要么完成要么标未完成（不漏计）')
+  })
+
+  it('⑫e (A) 短 deadline summary waiter 先建共享 flight → 长 deadline market waiter 加入且社区加载完成', async () => {
+    const loaded = communityLoaded([communityRaw('x', 'o')])
+    const slowTask = () => new Promise((resolve) => setTimeout(() => resolve(loaded), 400))
+    const primary = [{ id: 'p-0', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-0' }]
+    const sharedTask = slowTask()
+    const summaryOutcome = await communityOutcome(sharedTask, Date.now() + 120, primary)
+    assert.equal(summaryOutcome.summary.status, 'unavailable', 'summary waiter 120ms 到点返回 unavailable')
+    const marketOutcome = await communityOutcome(sharedTask, Date.now() + 5000, primary)
+    assert.equal(marketOutcome.summary.status, 'ready', 'flight 未被 3s/120ms 截断——market waiter 正常完成')
+  })
+
+  it('⑫e (B) listMarket 先建 flight → summary waiter 提前退出 → market 照常完成', async () => {
+    const loaded = communityLoaded([communityRaw('x', 'o')])
+    const primary = [{ id: 'p-0', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-0' }]
+    const sharedTask = new Promise((resolve) => setTimeout(() => resolve(loaded), 400))
+    const marketP = communityOutcome(sharedTask, Date.now() + 5000, primary)
+    const summaryOutcome = await communityOutcome(sharedTask, Date.now() + 120, primary)
+    assert.equal(summaryOutcome.summary.status, 'unavailable')
+    const marketOutcome = await marketP
+    assert.equal(marketOutcome.summary.status, 'ready', 'summary 提前退出不中止共享 flight')
   })
 })

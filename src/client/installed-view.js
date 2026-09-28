@@ -30,6 +30,8 @@ export function installedViewModel(it) {
     enabledLabelKey: it.enabled === false ? "toggle.state.off" : "toggle.state.on",
     // M1 Task 5：社区收录徽标（卡片/已装卡显示「社区收录」）
     community: it.community === true,
+    // M1 Task 7 ⑩：检查未完成标注（latestError 行渲染原料；code → 安全化原因由调用方 i18n/lookup）
+    latestIssue: it.latestError ? { code: it.latestErrorCode ?? null, note: it.latestError } : null,
   };
 }
 

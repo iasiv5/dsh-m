@@ -11,6 +11,7 @@ import {
   listMarket,
   uninstallPlugin,
   upgradePlugin,
+  type CommunityRegistrySummary,
   type InstalledResult,
 } from './core/market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
@@ -23,6 +24,45 @@ export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   ui: '界面',
   search: '搜索',
   other: '其他',
+}
+
+/** 工具 deadline 对齐（M1 Task 7）：search 45s（core 44s）、list/outdated 65s（core 60s + 5s 回包余量）。 */
+const SEARCH_TOOL_TIMEOUT_MS = 45_000
+const SEARCH_CORE_DEADLINE_MS = 44_000
+const INSTALLED_TOOL_TIMEOUT_MS = 65_000
+const INSTALLED_CORE_DEADLINE_MS = 60_000
+/** 社区开放分类安全 slug（与 host-api 侧同语义） */
+const COMMUNITY_SLUG_RE = /^[a-z0-9-]{1,32}$/
+
+/** 社区 summary 四键投影（Task 7 ②）：agent 工具输出只带这四个字段。 */
+export function communityToolSummary(c: CommunityRegistrySummary | null | undefined): {
+  acceptedCount: number | null
+  route: string | null
+  status: string
+  version: string | null
+} {
+  if (!c) return { acceptedCount: null, route: null, status: 'unavailable', version: null }
+  const unavailableLike = c.status === 'disabled' || c.status === 'unavailable'
+  return {
+    acceptedCount: unavailableLike ? null : c.acceptedCount,
+    route: unavailableLike ? null : c.route,
+    status: c.status,
+    version: c.version,
+  }
+}
+
+/** latestErrorCode → 安全化原因（Task 7 ⑨）：不泄露内部细节，按 code 归类。 */
+export function latestErrorCodeReason(code: string | null | undefined): string {
+  switch (code) {
+    case 'budget-exhausted':
+      return '因 GitHub 预算未完成'
+    case 'rate-limited':
+      return 'GitHub 限流'
+    case 'timeout':
+      return '检查超时'
+    default:
+      return '网络错误'
+  }
 }
 
 /** 可注入 market 依赖（测试用；生产走真实 core）。 */
@@ -68,9 +108,10 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       query: { type: 'string', description: 'Main keyword, e.g. 主题 or 搜索. Optional.' },
       category: {
         type: 'string',
-        description: `Optional first-level category: ${Object.keys(CATEGORY_LABELS).join(', ')}`,
+        description: `Optional category: curated ${Object.keys(CATEGORY_LABELS).join('/')} or any community slug ([a-z0-9-]{1,32}, e.g. theme/memory/git).`,
       },
       limit: { type: 'number', description: 'Cards in this batch. Default all (registry is curated & small).' },
+      primary_only: { type: 'boolean', description: '只看主清单（排除社区条目）. Optional.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -88,19 +129,28 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       title: isError ? '市场搜索失败' : `DSH 市场 · ${(meta as SearchOut | undefined)?.items?.length ?? 0} 条`,
       content: [],
     }),
-    timeoutMs: timeoutMs + 5000,
-    async execute(args) {
-      const category = typeof args.category === 'string' && args.category ? (args.category as RegistryEntry['category']) : null
+    timeoutMs: SEARCH_TOOL_TIMEOUT_MS,
+    async execute(args, exec) {
+      const categoryRaw = typeof args.category === 'string' ? args.category.trim() : ''
+      let category: string | null = null
+      if (categoryRaw !== '') {
+        if (categoryRaw in CATEGORY_LABELS || COMMUNITY_SLUG_RE.test(categoryRaw)) category = categoryRaw
+        else throw new Error(`非法分类: ${categoryRaw}（需精选分类或 [a-z0-9-]{1,32} slug）`)
+      }
       const rawLimit = Number(args.limit)
       const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? clamp(rawLimit, 1, 80) : undefined
-      // metadata-only：agent 卡片不需要 latest；与 Host GUI 共用 host namespace
+      // metadata-only：agent 卡片不需要 latest；与 Host GUI 共用 host namespace；
+      // deadline 44s 是本 waiter 的绝对上限（工具 timeout 45s 先到兜底）
       const result = await m.listMarket(cfg, {
         query: String(args.query || ''),
         category,
         offset: 0,
         limit,
+        primaryOnly: args.primary_only === true,
         withLatest: false,
         namespace: 'host',
+        deadlineMs: SEARCH_CORE_DEADLINE_MS,
+        signal: exec?.signal,
       })
       // 安装标注唯一来源：listMarket 的单次 profile 快照。
       // 状态不完整且存在可被误标的条目时 fail-closed——不把未知安装状态呈现成未安装；
@@ -113,6 +163,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         category,
         total: result.total,
         registry: summaryOf(result.registryState),
+        community: communityToolSummary(result.community),
         items: result.items.map((e) => ({
           id: e.id,
           name: e.name,
@@ -147,11 +198,16 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       title: isError ? '列出失败' : `已装 · ${(meta as ListOut | undefined)?.items?.length ?? 0} 个`,
       content: [],
     }),
-    timeoutMs: timeoutMs + 5000,
-    async execute() {
-      const result: InstalledResult = await m.listInstalledWithMeta(cfg, { namespace: 'host' })
+    timeoutMs: INSTALLED_TOOL_TIMEOUT_MS,
+    async execute(_args, exec) {
+      const result: InstalledResult = await m.listInstalledWithMeta(cfg, {
+        namespace: 'host',
+        deadlineMs: INSTALLED_CORE_DEADLINE_MS,
+        signal: exec?.signal,
+      })
       return cloneJson({
         registry: summaryOf(result.registryState),
+        community: communityToolSummary(result.community),
         profileDir: result.profileDir,
         others: result.others,
         items: result.items.map((it) => ({
@@ -162,6 +218,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
           registryId: it.registryId ?? null,
           latestVersion: it.latestVersion ?? null,
           outdated: it.outdated,
+          latestError: it.latestError ?? null,
+          latestErrorCode: it.latestErrorCode ?? null,
         })),
       })
     },
@@ -269,11 +327,24 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     presentResult: (_args, { isError, meta }) => {
       const out = meta as ListOut | undefined
       const n = out?.items?.filter((it) => it.outdated).length ?? 0
-      return { card: 'generic', title: isError ? '检查失败' : n ? `${n} 个可升级` : '全部最新', content: [] }
+      const incomplete = out?.incompleteCount ?? 0
+      // 禁止「未完成检查」冒充「全部最新」（Task 7 ⑨）
+      const title = isError
+        ? '检查失败'
+        : incomplete > 0
+          ? `${n} 个可升级（${incomplete} 项检查未完成）`
+          : n
+            ? `${n} 个可升级`
+            : '全部最新'
+      return { card: 'generic', title, content: [] }
     },
-    timeoutMs: timeoutMs + 10_000,
-    async execute() {
-      const result: InstalledResult = await m.listInstalledWithMeta(cfg, { namespace: 'host' })
+    timeoutMs: INSTALLED_TOOL_TIMEOUT_MS,
+    async execute(_args, exec) {
+      const result: InstalledResult = await m.listInstalledWithMeta(cfg, {
+        namespace: 'host',
+        deadlineMs: INSTALLED_CORE_DEADLINE_MS,
+        signal: exec?.signal,
+      })
       const items = result.items.map((it) => ({
         pkg: it.pkg,
         name: it.name,
@@ -282,11 +353,16 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         latestVersion: it.latestVersion ?? null,
         latestTag: it.latestTag ?? null,
         outdated: it.outdated,
+        latestError: it.latestError ?? null,
+        latestErrorCode: it.latestErrorCode ?? null,
       }))
+      const incompleteCount = items.filter((it) => it.latestErrorCode !== null).length
       return cloneJson({
         registry: summaryOf(result.registryState),
+        community: communityToolSummary(result.community),
         items,
         outdatedCount: items.filter((it) => it.outdated).length,
+        incompleteCount,
       })
     },
   }))
@@ -369,7 +445,9 @@ interface SearchOut {
   total?: number
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null }>
+  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; latestError?: string | null; latestErrorCode?: string | null }>
+  incompleteCount?: number
+  community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }
 interface InstallOut {
   pkg?: string
@@ -463,14 +541,26 @@ function renderUninstall(out: UninstallOut): string {
 
 function renderOutdated(out: ListOut): string {
   const outdated = (out.items || []).filter((it) => it.outdated)
+  const incomplete = (out.items || []).filter((it) => it.latestErrorCode)
   if (!out.items?.length) return 'web profile 没有已装插件。'
-  if (!outdated.length) return `全部 ${out.items.length} 个插件均已是最新版本。对用户一句短话。`
-  const lines = outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}`)
-  return [
-    `${outdated.length}/${out.items.length} 个插件可升级：`,
-    lines.join('\n'),
-    '询问用户要升级哪个，确认后调 dshm_upgrade（pkg）。',
-  ].join('\n')
+  const head: string[] = []
+  if (outdated.length) {
+    head.push(
+      `${outdated.length}/${out.items.length} 个插件可升级：`,
+      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}`).join('\n'),
+    )
+  } else {
+    head.push(`全部 ${out.items.length} 个插件均已是最新版本。`)
+  }
+  // 禁止「未完成检查」冒充「全部最新」（Task 7 ⑨）：按 code 安全化原因列出
+  if (incomplete.length) {
+    head.push(
+      `${incomplete.length} 项检查未完成：`,
+      incomplete.map((it) => `· ${it.name} (${it.pkg})——${latestErrorCodeReason(it.latestErrorCode)}`).join('\n'),
+    )
+  }
+  head.push('询问用户要升级哪个，确认后调 dshm_upgrade（pkg）。')
+  return head.join('\n')
 }
 
 function renderUpgrade(out: InstallOut): string {

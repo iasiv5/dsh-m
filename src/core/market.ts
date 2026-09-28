@@ -41,7 +41,8 @@ import {
   type LoadedCommunity,
 } from './community.js'
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
-import { createGithubRequestBudget, type GithubBudget } from './versions.js'
+import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
+import { HttpError } from './httpx.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
@@ -51,13 +52,17 @@ import {
 
 // ---------- 契约类型 ----------
 
-export interface RegistryRuntimeOptions {
+export type RegistryRuntimeOptions = {
   /** Host API / Agent tools 固定 host；独立 CLI 固定 cli */
   namespace?: RegistryCacheNamespace
   signal?: AbortSignal
 }
 
-export type LatestErrorCode = 'LATEST_TIMEOUT' | 'LATEST_ERROR'
+/**
+ * latestError 结构化 code（M1 Task 7 / v8 ⑥）：预算拒绝、GitHub 限流、超时、其他网络错误
+ * 各自归类——三端按 code 呈现安全化原因，禁止「未完成检查」冒充「全部最新」。
+ */
+export type LatestErrorCode = 'budget-exhausted' | 'rate-limited' | 'timeout' | 'network-error'
 
 export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   /** 合并市场开放分类（M1 Task 5）：主清单 5 值 + 社区开放 slug */
@@ -185,6 +190,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestVersion?: string
   outdated: boolean
   latestError?: string
+  /** 结构化 code（Task 7 ⑨）：非空 = 该条检查未完成（三端按 code 呈现，不冒充「全部最新」） */
+  latestErrorCode?: LatestErrorCode
   /** 命中社区收录条目（主清单未收录；M1 Task 5） */
   community?: true
 }
@@ -385,6 +392,14 @@ function applyProbe(item: ProbeTarget, value: LatestValue): void {
   if (value.version !== undefined) item.latestVersion = value.version
   if (value.tag !== undefined) item.latestTag = value.tag
   if (value.sha !== undefined) item.latestSha = value.sha
+}
+
+/** probe 错误 → 结构化 code（Task 7 ⑨）：预算/限流/超时/其他网络错误各自归类，不得一律归因预算。 */
+function classifyLatestError(err: unknown): LatestErrorCode {
+  if (err instanceof GithubBudgetExhaustedError) return 'budget-exhausted'
+  if (err instanceof HttpError && err.status === 403) return 'rate-limited'
+  if (err instanceof Error && /限额已用尽/.test(err.message)) return 'rate-limited'
+  return 'network-error'
 }
 
 function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github'>, installed: InstalledPlugin[]): InstalledPlugin | undefined {
@@ -669,7 +684,10 @@ export async function listMarket(
     if (todo.length > 0) {
       const budget = remaining()
       if (budget <= 0) {
-        for (const item of todo) item.latestErrorCode = 'LATEST_TIMEOUT'
+        for (const item of todo) {
+          item.latestError = '更新检查未完成：时间预算已用尽'
+          item.latestErrorCode = 'timeout'
+        }
         latestComplete = false
         latestTimedOut = true
       } else {
@@ -681,13 +699,14 @@ export async function listMarket(
             applyProbe(item, outcome.value)
             writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value)
           } else if (outcome.timeout) {
-            item.latestErrorCode = 'LATEST_TIMEOUT'
+            item.latestError = '更新检查未完成：超时'
+            item.latestErrorCode = 'timeout'
             latestComplete = false
             latestTimedOut = true
           } else if (outcome.error !== undefined) {
             if (signal?.aborted) throw abortError()
             item.latestError = outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
-            item.latestErrorCode = 'LATEST_ERROR'
+            item.latestErrorCode = classifyLatestError(outcome.error)
           }
         })
       }
@@ -811,7 +830,8 @@ async function probeLatest(
       if (cached) {
         applyProbe(item, cached)
       } else if (rt.remaining() > 0) {
-        const budget = Math.max(1, rt.remaining())
+        // 绝对剩余预算贯穿整个 probe（多跳 githubLatestTag 不逐子请求重置——v9 ②）
+        const budget = rt.remaining()
         try {
           let value: LatestValue | null = null
           if (!entry && item.source === 'npm') {
@@ -833,7 +853,12 @@ async function probeLatest(
           }
         } catch (err) {
           item.latestError = err instanceof Error ? err.message : String(err)
+          item.latestErrorCode = classifyLatestError(err)
         }
+      } else {
+        // deadline 已到且未启动：标未完成并停止派发（v9 ②「未启动条目也标未完成」）
+        item.latestError = '更新检查未完成：时间预算已用尽'
+        item.latestErrorCode = 'timeout'
       }
     }
     if (item.latestVersion !== undefined && item.version) item.outdated = isNewerVersion(item.latestVersion, item.version)

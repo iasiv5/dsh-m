@@ -64,6 +64,27 @@ function cliConfig(): RegistryConfig {
     registryUrl: process.env.DSHM_REGISTRY_URL || undefined,
     timeoutMs: Number(process.env.DSHM_TIMEOUT_MS) || 20_000,
     cacheTtlMin: Number(process.env.DSHM_CACHE_TTL_MIN) || 60,
+    // DSHM_COMMUNITY_CATALOG=0 → 退出社区清单（合并市场退回纯主清单）
+    communityCatalog: process.env.DSHM_COMMUNITY_CATALOG === '0' ? false : undefined,
+    communityCatalogPin: process.env.DSHM_COMMUNITY_CATALOG_PIN || undefined,
+  }
+}
+
+/** 搜索工具 deadline 对齐（Task 7）：CLI 无请求 signal，deadline 44s 与工具侧一致。 */
+const SEARCH_CORE_DEADLINE_MS = 44_000
+const INSTALLED_CORE_DEADLINE_MS = 60_000
+
+/** latestErrorCode → 安全化原因（与 tools.ts 同表；CLI 终端呈现）。 */
+function latestErrorCodeReason(code: string | null | undefined): string {
+  switch (code) {
+    case 'budget-exhausted':
+      return '因 GitHub 预算未完成'
+    case 'rate-limited':
+      return 'GitHub 限流'
+    case 'timeout':
+      return '检查超时'
+    default:
+      return '网络错误'
   }
 }
 
@@ -132,7 +153,7 @@ const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
 用法：dshm <命令> [参数]
 
 只读命令：
-  dshm search [--query 关键词] [--category market|tools|ui|search|other] [--limit N]
+  dshm search [--query 关键词] [--category market|tools|ui|search|other|<社区slug>] [--limit N] [--primary-only]
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
@@ -145,7 +166,8 @@ const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
   dshm restart --yes
   注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
-环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR
+环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR、
+  DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）
 `
 
 export async function runCli(argv: string[], deps: CliDeps = {}, io: CliIo = {}): Promise<number> {
@@ -182,20 +204,27 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       return 0
 
     case 'search': {
-      // metadata-only：不构造全量 latest，query/category/limit 直接交给 core
+      // metadata-only：不构造全量 latest，query/category/limit 直接交给 core；
+      // 双源判定：主清单 unavailable 但社区有条目 → 照常出页（Q42）；两层皆不可用 → exit 1
       const limit = Number.isFinite(Number(flags.limit)) && Number(flags.limit) > 0 ? Number(flags.limit) : undefined
       const result: MarketResult = await d.listMarket(cfg, {
         query: typeof flags.query === 'string' ? flags.query : undefined,
-        category: typeof flags.category === 'string' ? (flags.category as never) : null,
+        category: typeof flags.category === 'string' ? flags.category : null,
         offset: 0,
         limit,
+        primaryOnly: flags['primary-only'] === true,
         withLatest: false,
         namespace: 'cli',
+        deadlineMs: SEARCH_CORE_DEADLINE_MS,
       })
       if (result.registryState.status === 'unavailable') {
-        for (const line of unavailableLines(result.registryState)) err(line)
-        return 1
+        if (result.community.status !== 'ready' && result.community.status !== 'stale') {
+          for (const line of unavailableLines(result.registryState)) err(line)
+          return 1
+        }
+        err(`提示：收录清单不可用，当前展示社区清单条目（${result.community.acceptedCount} 条）。`)
       }
+      if (result.community.status === 'stale') err('提示：社区目录为缓存快照（探测未完成，显示的不是最新数据）。')
       if (!result.items.length) {
         out('没有匹配的收录条目。')
         return 0
@@ -207,6 +236,8 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       }
       const s = result.registryState
       out(`\n来源：${registrySourceLabel(s.source)}${s.stale ? '（缓存）' : ''} · 更新：${s.fetchedAt ?? '—'} · 共 ${result.total} 条`)
+      const c = result.community
+      out(`社区：${c.status === 'ready' ? '就绪' : c.status === 'stale' ? '缓存快照' : c.status} · 收录 ${c.acceptedCount} · 版本 ${c.version ?? '—'} · 线路 ${c.route ?? '—'}`)
       return 0
     }
 
@@ -232,18 +263,35 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     }
 
     case 'outdated': {
-      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli' })
+      // 双源判定（Task 7 ⑧）：主 unavailable + 社区 ready → 正常输出 + warning；
+      // 社区 stale → 「缓存快照」行；两层皆不可用 → exit 1
+      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli', deadlineMs: INSTALLED_CORE_DEADLINE_MS })
       if (result.registryState.status === 'unavailable') {
-        for (const line of unavailableLines(result.registryState)) err(line)
-        return 1
+        if (result.community.status !== 'ready' && result.community.status !== 'stale') {
+          for (const line of unavailableLines(result.registryState)) err(line)
+          return 1
+        }
+        err('提示：收录清单不可用，更新判定仅覆盖社区收录与本地源。')
       }
+      if (result.community.status === 'stale') err('提示：社区目录为缓存快照（显示的不是最新数据）。')
       const outdated = result.items.filter((it) => it.outdated)
+      const incomplete = result.items.filter((it) => it.latestErrorCode)
+      // 禁止「未完成检查」冒充「全部最新」（Task 7 ⑨）
       if (!outdated.length) {
+        if (incomplete.length) {
+          out(`${result.items.length} 个插件中没有可升级项；另有 ${incomplete.length} 项检查未完成：`)
+          for (const it of incomplete) out(`  · ${it.name} (${it.pkg})——${latestErrorCodeReason(it.latestErrorCode)}`)
+          return 0
+        }
         out(`全部 ${result.items.length} 个插件均已是最新版本。`)
         return 0
       }
       for (const it of outdated) {
         out(`• ${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}`)
+      }
+      if (incomplete.length) {
+        out(`\n另有 ${incomplete.length} 项检查未完成：`)
+        for (const it of incomplete) out(`  · ${it.name} (${it.pkg})——${latestErrorCodeReason(it.latestErrorCode)}`)
       }
       out(`\n升级：dshm upgrade --pkg <包名> --yes`)
       return 0
