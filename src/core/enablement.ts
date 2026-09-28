@@ -14,7 +14,7 @@
  *
  * PROTECTED_MODULES：'dsh-m' 自保护 + 逐字镜像官方 16 项全集（锚点：
  * @deepseek-ai/dsh-plugin-manager@0.1.7-rc.2 lib/index.js 的 protectedModules，
- * L1077-1092）。每次 DSH 升级后 diff 官方名单同步（know-how 008 升级必查口径）。
+ * L1077-1094）。每次 DSH 升级后 diff 官方名单同步（know-how 008 升级必查口径）。
  */
 import type { LoaderEntry } from './live-plugin.js'
 import type { InstalledPlugin } from './installed.js'

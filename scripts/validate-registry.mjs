@@ -2,6 +2,8 @@
  * registry CI 校验（DESIGN.md §2.3）。复用 lib/core/registry.js 的 validateRegistry，
  * 避免两套 schema 检查漂移。用法：npm run build && node scripts/validate-registry.mjs
  * 可选 env GITHUB_TOKEN：提高 GitHub API 限额（仅读公开数据，无自定义密钥）。
+ * 可选 env DSH_RUNTIME_VERSION：提供当前宿主版本时，额外软警告「verified 未覆盖
+ * 当前宿主」（know-how 008 升级必查的门禁化；缺省跳过该项）。
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -32,6 +34,7 @@ const widthUnits = (s) => [...s].reduce((acc, ch) => acc + (/[ -~]/.test(ch) ? 0
 const COPY_LIMIT = 60
 
 let warned = false
+const runtimeVersion = process.env.DSH_RUNTIME_VERSION || null
 for (const entry of parsed.registry?.plugins || []) {
   const where = `[${entry.id}]`
   const desc = entry.description || ''
@@ -50,6 +53,25 @@ for (const entry of parsed.registry?.plugins || []) {
   if (tail) {
     warned = true
     console.warn(`⚠ ${where} description 含全角括号尾巴「${tail[0]}」——兼容/前置应改写为末句句式（已适配 …，详见仓库 / 需 …），见 registry-copy-guide §4`)
+  }
+  // 008 升级必查的门禁化（只 warn 不 fail）：
+  // a) description 里的版本号必须 ⊆ verified——兼容句与实测清单的最低一致性。
+  //    只对含「适配」兼容句式的描述生效：「需 better-sidebar ≥0.4.0」这类
+  //    依赖版本不是 DSH 兼容声明，不在检查范围（copy-guide §4 的两种句式）。
+  if (/适配/.test(desc)) {
+    for (const v of desc.match(/\b0\.\d+\.\d+(?:-(?:rc|alpha)\.\d+)?\b/g) ?? []) {
+      if (!(entry.verified || []).includes(v)) {
+        warned = true
+        console.warn(`⚠ ${where} description 提到 ${v} 但 verified 未收录——升级后必查（know-how 008）`)
+      }
+    }
+  }
+  // b) 已声明 verified 的条目应覆盖当前宿主版本（DSH_RUNTIME_VERSION 提供时检查）
+  if (runtimeVersion && Array.isArray(entry.verified) && entry.verified.length > 0) {
+    if (!entry.verified.includes(runtimeVersion)) {
+      warned = true
+      console.warn(`⚠ ${where} verified 未覆盖当前宿主 ${runtimeVersion}——升级后必查（know-how 008）`)
+    }
   }
 }
 
