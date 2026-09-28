@@ -330,3 +330,43 @@ describe('registry-controller：dispose 与辅助方法', () => {
     assert.equal(await readAcceptedSourceMetadata(), null)
   })
 })
+
+// ---------- M1 Task 6：社区配置接线（watch 同步 / bootstrap 初始值两代） ----------
+
+describe('M1 Task 6：社区配置接线', () => {
+  it('③ 外部 watch：同 URL 仅社区字段变化 → config 原地同步且不触发主清单重载', async () => {
+    const file = localRegistryFile(cacheRoot, 'watch-c.json', [1])
+    const { store, externalWrite } = fakeStore({ registryUrl: file, communityCatalog: true })
+    const controller = createRegistryController({ registryUrl: file })
+    controller.attachStore(store)
+    await controller.ensureReady()
+    const loadedBefore = controller.snapshot().loaded
+    externalWrite({ communityCatalog: false, communityCatalogPin: '2026.928.1' })
+    await sleep(30)
+    const snap = controller.snapshot()
+    assert.equal(controller.config.communityCatalog, false, '社区开关 live 同步')
+    assert.equal(controller.config.communityCatalogPin, '2026.928.1', '社区 pin live 同步')
+    assert.equal(snap.loaded, loadedBefore, '同 URL 社区变化不触发主清单重载（同一 loaded 引用）')
+    controller.dispose()
+  })
+
+  it('③b bootstrap 从 store 初始值同步社区字段（legacy store 形态）', async () => {
+    const file = localRegistryFile(cacheRoot, 'boot-c.json', [1])
+    const { store } = fakeStore({ registryUrl: file, communityCatalog: false, communityCatalogPin: '1.2.3' })
+    const controller = createRegistryController({ registryUrl: file })
+    controller.attachStore(store)
+    await controller.ensureReady()
+    const snap = controller.snapshot()
+    assert.equal(controller.config.communityCatalog, false)
+    assert.equal(controller.config.communityCatalogPin, '1.2.3')
+    controller.dispose()
+  })
+
+  it('③b-2 无 store：initial 即 bootstrap 来源，社区字段同步（forms 代共享 RegistrySettingsStore 接口同型）', async () => {
+    const controller = createRegistryController({ communityCatalogPin: '9.9.9' })
+    await controller.ensureReady()
+    assert.equal(controller.config.communityCatalogPin, '9.9.9')
+    assert.equal(controller.config.communityCatalog, undefined, '未设置 → undefined（host Config 缺省 true 由 schema default 承载）')
+    controller.dispose()
+  })
+})

@@ -396,3 +396,26 @@ describe('host Config schema 的 volatile 标记（环境自适应）', () => {
     assert.equal(host.name, 'dshm')
   })
 })
+
+// ---------- M1 Task 6：unwrapConfig 社区字段透传 ----------
+
+describe('M1 Task 6：unwrapConfig 社区字段', () => {
+  it('① boolean 开关 + string pin 透传；类型不符丢弃', () => {
+    const out = unwrapConfig({ communityCatalog: false, communityCatalogPin: '2026.928.1' })
+    assert.equal(out.communityCatalog, false)
+    assert.equal(out.communityCatalogPin, '2026.928.1')
+    const bad = unwrapConfig({ communityCatalog: 'yes', communityCatalogPin: 123 })
+    assert.equal(bad.communityCatalog, undefined)
+    assert.equal(bad.communityCatalogPin, undefined)
+  })
+
+  it('Volatile 引用形态同样透传（0.1.7 loader 解析值）', () => {
+    const ref = {
+      [Symbol.for('cosmokit.volatile.write')]: () => {},
+      get: () => ({ communityCatalog: true, communityCatalogPin: '1.0.0' }),
+    }
+    const out = unwrapConfig(ref)
+    assert.equal(out.communityCatalog, true)
+    assert.equal(out.communityCatalogPin, '1.0.0')
+  })
+})

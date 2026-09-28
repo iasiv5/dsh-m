@@ -50,12 +50,20 @@ export function unwrapValue<T>(value: T, depth = 4): T {
 
 /** 从任意形态（plain / 带 Volatile 引用 / 未知脏值）提取已知 registry 字段，类型不符丢弃。 */
 export function unwrapConfig(source: unknown): RegistryConfig {
-  const raw = unwrapValue(source) as { registryUrl?: unknown; timeoutMs?: unknown; cacheTtlMin?: unknown } | null | undefined
+  const raw = unwrapValue(source) as {
+    registryUrl?: unknown
+    timeoutMs?: unknown
+    cacheTtlMin?: unknown
+    communityCatalog?: unknown
+    communityCatalogPin?: unknown
+  } | null | undefined
   const out: RegistryConfig = {}
   if (raw && typeof raw === 'object') {
     if (typeof raw.registryUrl === 'string') out.registryUrl = raw.registryUrl
     if (typeof raw.timeoutMs === 'number') out.timeoutMs = raw.timeoutMs
     if (typeof raw.cacheTtlMin === 'number') out.cacheTtlMin = raw.cacheTtlMin
+    if (typeof raw.communityCatalog === 'boolean') out.communityCatalog = raw.communityCatalog
+    if (typeof raw.communityCatalogPin === 'string') out.communityCatalogPin = raw.communityCatalogPin
   }
   return out
 }

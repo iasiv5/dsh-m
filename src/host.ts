@@ -22,6 +22,8 @@ export interface Config {
   registryUrl?: string
   timeoutMs?: number
   cacheTtlMin?: number
+  communityCatalog?: boolean
+  communityCatalogPin?: string
 }
 
 /**
@@ -38,6 +40,8 @@ export const Config: Schema<Config> = Schema.object({
   registryUrl: live(Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）')),
   timeoutMs: live(Schema.number().default(20000).description('上游请求超时（毫秒）')),
   cacheTtlMin: live(Schema.number().default(60).description('registry 缓存时长（分钟）')),
+  communityCatalog: live(Schema.boolean().default(true).description('社区清单：awesome-dsh-plugin 全量社区目录叠加进市场（只读，live 生效）')),
+  communityCatalogPin: live(Schema.string().description('社区目录版本锁定：精确 semver（如 2026.928.1），空值跟随 latest')),
 })
 
 export function apply(ctx: Context, config: Config): void {

@@ -177,6 +177,8 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
       const source = store ? store.get() : initial
       config.timeoutMs = source.timeoutMs
       config.cacheTtlMin = source.cacheTtlMin
+      // 社区字段初始值（两代 store 同型：legacy/forms 的 get() 都经 unwrapConfig 透传）
+      syncCommunityFields(source)
       const raw = trimAddress(source.registryUrl)
       const attempt = await loadRegistry({ ...config, registryUrl: raw }, { namespace: 'host' })
       if (disposed || gen !== generation) return
@@ -219,8 +221,15 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
     return bootstrapPromise
   }
 
+  function syncCommunityFields(source: RegistryConfig): void {
+    // 社区字段（M1 Task 6）：live 生效——同 URL 分支前也要同步（开关/pin 变化不触发主清单重载）
+    config.communityCatalog = source.communityCatalog
+    config.communityCatalogPin = source.communityCatalogPin
+  }
+
   function handleExternalWatch(next: RegistryConfig): Promise<void> {
     if (disposed) return Promise.resolve()
+    syncCommunityFields(next)
     const raw = trimAddress(next.registryUrl)
     if (lastSelfWrite !== null && raw === lastSelfWrite) {
       lastSelfWrite = null

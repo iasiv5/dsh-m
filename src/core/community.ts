@@ -11,6 +11,8 @@ import { isAbsolute, join, relative } from 'node:path'
 import { cacheDir } from './env.js'
 import { decodeUtf8Fatal, fetchBytesLimited, HttpError } from './httpx.js'
 import { isExactVersion, npmLatest } from './versions.js'
+import { communityOutcome, type CommunityRegistrySummary } from './market.js'
+import type { RegistryEntry } from './registry.js'
 
 export const COMMUNITY_NPM_PACKAGE = 'dsh-plugin-catalog'
 export const MAX_COMMUNITY_BYTES = 32 * 1024 * 1024
@@ -553,4 +555,32 @@ export async function fetchCommunityCatalog(
   } finally {
     releaseFlight(key, flight)
   }
+}
+
+// ---------- registry 响应社区 summary（M1 Task 6） ----------
+
+export interface CommunitySummaryOptions {
+  force?: boolean
+  /** 请求 signal（waiter 隔离：只取消本次等待，见 Task 3 in-flight 合并） */
+  signal?: AbortSignal
+  /** 本 waiter 的等待上限（绝对时刻，host-api 传 now + 3s）；到点返回 unavailable summary */
+  deadlineAt: number
+}
+
+/**
+ * 单一深接口（计划 Task 6）：fetch → adapt → merge 计数 → CommunityRegistrySummary。
+ * - primaryEntries 直接取本次 registry snapshot 的 primary plugins（displaced 与本次响应同代，
+ *   不重复加载主清单；内部禁止调用 loadRegistry——单一来源约束）；
+ * - 3s 是本 waiter 的等待上限（waiter-scoped race）：到点未 materialize → unavailable +
+ *   「社区目录状态获取超时」errors，调用方主响应照常；共享 flight 按 30s hard cap 继续；
+ * - 数据源 cache-first：fetchCommunityCatalog 的版本缓存 + TTL 保证 registry 刷新无重复网络压力。
+ */
+export async function getCommunitySummary(
+  primaryEntries: RegistryEntry[],
+  cfg: CommunityConfig = {},
+  opts: CommunitySummaryOptions,
+): Promise<CommunityRegistrySummary> {
+  const task = fetchCommunityCatalog(cfg, { signal: opts.signal, force: opts.force })
+  const outcome = await communityOutcome(task, opts.deadlineAt, primaryEntries)
+  return outcome.summary
 }

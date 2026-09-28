@@ -439,3 +439,23 @@ describe('fetchCommunityCatalog（获取链）', () => {
     assert.equal(st.bodyHits, 0)
   })
 })
+
+// ---------- M1 Task 6：getCommunitySummary（registry 响应社区 summary 单一深接口） ----------
+
+describe('getCommunitySummary', () => {
+  it('disabled 配置 → disabled summary（零网络立即返回）', async () => {
+    const { getCommunitySummary } = await import('../lib/core/community.js')
+    const summary = await getCommunitySummary([], { communityCatalog: false }, { deadlineAt: Date.now() + 1000 })
+    assert.equal(summary.enabled, false)
+    assert.equal(summary.status, 'disabled')
+    assert.equal(summary.acceptedCount, 0)
+    assert.equal(summary.upstreamCount, null)
+  })
+
+  it('非法 pin → unavailable summary（零网络零写入）', async () => {
+    const { getCommunitySummary } = await import('../lib/core/community.js')
+    const summary = await getCommunitySummary([], { communityCatalogPin: '../../etc' }, { deadlineAt: Date.now() + 1000 })
+    assert.equal(summary.status, 'unavailable')
+    assert.ok(summary.errors.some((e) => e.includes('communityCatalogPin')))
+  })
+})

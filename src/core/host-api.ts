@@ -18,10 +18,11 @@ import {
 import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
 import { readInstalledPluginReadme } from './installed.js'
 import { isNewerVersion, npmLatest } from './versions.js'
+import { getCommunitySummary } from './community.js'
 import type { RegistryController, RegistryControllerSnapshot } from './registry-controller.js'
 import { RegistryConfigError } from './registry-controller.js'
 import { checkRegistryEntries } from './registry-check.js'
-import { CATEGORIES, type Category } from './registry.js'
+import { CATEGORIES } from './registry.js'
 import { servingPort, scheduleRestart, trustedRestartRequest } from './restart.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
@@ -47,6 +48,8 @@ export interface HostApiOverrides {
   upgradePlugin?: typeof upgradePlugin
   checkRegistryEntries?: typeof checkRegistryEntries
   npmLatest?: typeof npmLatest
+  /** registry 分支社区 summary 数据源（M1 Task 6；测试注入 cache-first 模拟） */
+  getCommunitySummary?: typeof getCommunitySummary
   /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
   runTransaction?: typeof runProfileTransaction
   /** Host 注入 appExit 后的重启调度器；测试可替换。 */
@@ -71,6 +74,8 @@ interface ParsedRequest {
 }
 
 const BODY_MAX_BYTES = 1 << 20
+/** 社区开放分类安全 slug（计划 Task 6；与适配层 COMMUNITY_CATEGORY_RE 同语义） */
+const COMMUNITY_SLUG_RE = /^[a-z0-9-]{1,32}$/
 
 function readBody(req: IncomingMessage, maxBytes = BODY_MAX_BYTES): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -140,7 +145,7 @@ function boolArg(v: unknown): boolean {
   return v === true || v === 'true' || v === 1 || v === '1'
 }
 
-function snapshotPayload(snap: RegistryControllerSnapshot): Record<string, unknown> {
+function snapshotPayload(snap: RegistryControllerSnapshot, config?: { communityCatalog?: boolean; communityCatalogPin?: string }): Record<string, unknown> {
   return {
     registryUrl: snap.configuredAddress,
     configuredAddress: snap.configuredAddress,
@@ -150,6 +155,9 @@ function snapshotPayload(snap: RegistryControllerSnapshot): Record<string, unkno
     configErrors: snap.configErrors,
     warnings: snap.warnings,
     registryState: snap.loaded,
+    // 社区两键（M1 Task 6）：设置页回显数据源
+    communityCatalog: config?.communityCatalog,
+    communityCatalogPin: config?.communityCatalogPin,
   }
 }
 
@@ -210,6 +218,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     upgradePlugin: ctx.deps?.upgradePlugin ?? upgradePlugin,
     checkRegistryEntries: ctx.deps?.checkRegistryEntries ?? checkRegistryEntries,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
+    getCommunitySummary: ctx.deps?.getCommunitySummary ?? getCommunitySummary,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
     resolveDshVersion: ctx.deps?.resolveDshVersion ?? resolveDshVersion,
@@ -275,7 +284,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'registry': {
           await ctx.controller.ensureReady()
           const snap = await ctx.controller.snapshot({ force: boolArg(body.force), signal })
-          payload = { plugins: snap.loaded.registry.plugins, registryState: snap.loaded }
+          // 社区 summary：primaryEntries 直接取本次 snapshot（displaced 与本次响应同代，不重拉主清单）；
+          // 3s 是本 waiter 的等待上限——到点返回 unavailable summary，主清单响应按契约照常返回
+          const community = await d.getCommunitySummary(snap.loaded.registry.plugins, cfg(), {
+            force: boolArg(body.force),
+            signal,
+            deadlineAt: Date.now() + 3_000,
+          })
+          payload = { plugins: snap.loaded.registry.plugins, registryState: snap.loaded, community }
           break
         }
 
@@ -286,14 +302,22 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.max(1, Math.floor(limitRaw))) : 50
           const offsetRaw = Number(body.offset)
           const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
-          const category = typeof body.category === 'string' && (CATEGORIES as readonly string[]).includes(body.category)
-            ? (body.category as Category)
-            : null
+          // category：精选 5 + 社区开放 slug（非法 slug → 400，不静默吞）
+          const categoryRaw = typeof body.category === 'string' ? body.category.trim() : ''
+          let category: string | null = null
+          if (categoryRaw !== '') {
+            if ((CATEGORIES as readonly string[]).includes(categoryRaw) || COMMUNITY_SLUG_RE.test(categoryRaw)) {
+              category = categoryRaw
+            } else {
+              throw new ApiProtocolError(400, `非法分类: ${categoryRaw}（需精选分类或 [a-z0-9-]{1,32} slug）`)
+            }
+          }
           const result = await d.listMarket(cfg(), {
             query: strArg(body, 'query'),
             category,
             offset,
             limit,
+            primaryOnly: boolArg(body.primaryOnly),
             force: boolArg(body.force),
             withLatest: true,
             namespace: 'host',
@@ -373,14 +397,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'registry-config': {
           const snap = await ctx.controller.snapshot()
-          payload = { ...snapshotPayload(snap) }
+          payload = { applied: false, ...snapshotPayload(snap, cfg()) }
           break
         }
 
         case 'registry-config-apply': {
           if (typeof body.registryUrl !== 'string') throw new ApiProtocolError(400, '缺少 registryUrl')
           const snap = await ctx.controller.apply(body.registryUrl, { signal })
-          payload = { applied: true, ...snapshotPayload(snap) }
+          payload = { applied: true, ...snapshotPayload(snap, cfg()) }
           break
         }
 

@@ -73,8 +73,8 @@ async function callApi(dispatcher, args) {
   return { status: res.statusCode, body: parsed, raw: res.bodyText }
 }
 
-function setup(overrides = {}) {
-  const controller = createRegistryController({})
+function setup(overrides = {}, controllerInitial = {}) {
+  const controller = createRegistryController(controllerInitial)
   const calls = { listMarket: [], listInstalled: [], diagnose: [], npm: [] }
   const dispatcher = createApiDispatcher({
     controller,
@@ -95,6 +95,11 @@ function setup(overrides = {}) {
           installedComplete: true,
           latestComplete: true,
           latestTimedOut: false,
+          community: {
+            enabled: true, status: 'ready', version: '2026.928.1', checkedAt: 't', fetchedAt: 't',
+            route: 'jsdelivr', acceptedCount: 2, upstreamCount: 2, displaced: 0,
+            skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
+          },
         }
       },
       listInstalledWithMeta: async (cfg, opts) => {
@@ -119,6 +124,12 @@ function setup(overrides = {}) {
       },
       // 缺省注入，避免 dispatcher 预热时真实 spawn `dsh --version`（ping 契约测试单独覆盖）
       resolveDshVersion: async () => '0.0.0-dsh-test',
+      // 缺省 disabled 社区 summary：registry 契约测试不触真实社区网络；社区用例经 overrides 覆盖
+      getCommunitySummary: async () => ({
+        enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null,
+        route: null, acceptedCount: 0, upstreamCount: null, displaced: 0,
+        skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
+      }),
       ...overrides,
     },
   })
@@ -576,5 +587,79 @@ describe('host-api：0.4.0 set-enabled / forceIncompatible（Task 14）', () => 
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'p' } })
     assert.equal(res.status, 409)
     assert.deepEqual(res.body.issue, issue)
+  })
+})
+
+// ---------- M1 Task 6：market 请求解析 / registry 社区 summary / registry-config 两键 ----------
+
+function readySummary(overrides = {}) {
+  return {
+    enabled: true, status: 'ready', version: '2026.928.1', checkedAt: '2026-09-28T00:00:00.000Z',
+    fetchedAt: '2026-09-28T00:00:00.000Z', route: 'jsdelivr', acceptedCount: 4189, upstreamCount: 4377,
+    displaced: 3, skippedDirty: 0, skippedSubpathNoNpm: 188, errors: [], warnings: [],
+    ...overrides,
+  }
+}
+
+describe('M1 Task 6：host-api 社区契约', () => {
+  it('④ market 请求：精选分类与社区 slug 透传、非法 slug → 400、primaryOnly 透传', async () => {
+    const { dispatcher, calls } = setup()
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'my-slug' } })
+    assert.equal(calls.listMarket[0].category, 'my-slug', '社区开放 slug 透传')
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'tools' } })
+    assert.equal(calls.listMarket[1].category, 'tools', '精选分类照旧')
+    const bad = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'UI!!' } })
+    assert.equal(bad.status, 400)
+    assert.ok(bad.body.error.includes('非法分类'))
+    const long = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'a'.repeat(33) } })
+    assert.equal(long.status, 400, '超 32 字符 slug 拒绝')
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', primaryOnly: true } })
+    assert.equal(calls.listMarket.at(-1).primaryOnly, true)
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(calls.listMarket.at(-1).primaryOnly, false, '缺省 false')
+  })
+
+  it('⑤ registry-config 响应携带社区两键（回显数据源）', async () => {
+    const { dispatcher } = setup({}, { communityCatalog: false, communityCatalogPin: '2026.928.1' })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry-config' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.communityCatalog, false)
+    assert.equal(res.body.communityCatalogPin, '2026.928.1')
+  })
+
+  it('⑥ market 与 registry 响应均含 community', async () => {
+    const { dispatcher } = setup()
+    const market = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(market.status, 200)
+    assert.equal(market.body.community.status, 'ready')
+    assert.equal(market.body.community.acceptedCount, 2)
+
+    const primaryLens = []
+    const { dispatcher: d2 } = setup({
+      getCommunitySummary: async (primaryEntries) => {
+        primaryLens.push(primaryEntries.length)
+        return readySummary()
+      },
+    })
+    const reg = await callApi(d2, { headers: JSON_HEADERS, body: { method: 'registry' } })
+    assert.equal(reg.status, 200)
+    assert.equal(reg.body.community.status, 'ready')
+    assert.equal(reg.body.community.acceptedCount, 4189)
+    assert.equal(reg.body.community.skippedSubpathNoNpm, 188)
+    assert.ok(primaryLens[0] >= 0 && primaryLens[0] === reg.body.plugins.length, 'primaryEntries 与本次 snapshot 同代')
+  })
+
+  it('⑥b registry 数据源 cache-first：两次调用 primaryEntries 为同一 snapshot 引用（不重拉主清单）', async () => {
+    const refs = []
+    const { dispatcher } = setup({
+      getCommunitySummary: async (primaryEntries) => {
+        refs.push(primaryEntries)
+        return readySummary()
+      },
+    })
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry' } })
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry' } })
+    assert.equal(refs.length, 2)
+    assert.ok(refs[0] === refs[1], '两次 registry 快照未变 → 同一 plugins 数组引用（单一来源约束）')
   })
 })
