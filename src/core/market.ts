@@ -492,8 +492,9 @@ interface CommunityOutcome {
  * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
  * 本函数作为 waiter 用剩余 deadline race 自己的等待；到点只结束本 waiter（summary 标超时），
  * 共享 flight 照常继续。primaryOnly/未启用 → loader 零调用（task 传 null）。
+ * 导出供 community.ts getCommunitySummary 复用（summary 组装单一产地）。
  */
-async function communityOutcome(
+export async function communityOutcome(
   task: Promise<LoadedCommunity> | null,
   deadlineAt: number,
   primary: RegistryEntry[],
