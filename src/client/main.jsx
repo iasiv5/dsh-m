@@ -20,6 +20,7 @@ const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { createOperationsStore, restoreRecords, drainRestored } = require("./operations.js");
+const { createFavoritesStore, partitionStale } = require("./favorites.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -35,6 +36,9 @@ const ZH = {
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
+  "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
+  "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
+  "fav.add": "收藏", "fav.remove": "取消收藏",
   "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
@@ -135,6 +139,9 @@ const EN = {
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
+  "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
+  "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
+  "fav.add": "Bookmark", "fav.remove": "Remove bookmark",
   "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
@@ -309,6 +316,9 @@ const CSS = `
 .dsvm-opkind{color:var(--dsw-alias-label-secondary,#4b5563)}
 .dsvm-optarget{font-weight:500;overflow-wrap:anywhere}
 .dsvm-opnote{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;overflow-wrap:anywhere}
+.dsvm-favbtn{appearance:none;border:0;background:transparent;color:var(--dsw-alias-label-caption,#9ca3af);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;margin-left:auto}
+.dsvm-favbtn:hover{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
+.dsvm-favbtn.on{color:#e0a33c}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -1020,7 +1030,7 @@ const SORT_OPTIONS = [
   ["added-asc", "sort.added.asc"],
 ];
 
-function MarketTab({ notify, markets, onMutation, ops }) {
+function MarketTab({ notify, markets, onMutation, ops, favorites }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
@@ -1054,13 +1064,13 @@ function MarketTab({ notify, markets, onMutation, ops }) {
     ...ZONE_TABS.map((z) =>
       h("button", { key: z.id, className: `dshm-chip${zone === z.id ? " on" : ""}`, onClick: () => setZone(z.id) }, lookup(z.labelKey))),
   );
-  // 收藏区（0.7.0 Task 9 占位空态；Task 14 落地本地收藏 + stale 清理）
+  // 收藏区（0.7.0 Task 14：本地 localStorage 收藏 + stale 校验清理）
   if (zone === "favorites") {
     return h(
       React.Fragment,
       null,
       zoneBar,
-      h("div", { className: "dshm-empty" }, lookup("favorites.empty")),
+      h(FavoriteZone, { favorites }),
     );
   }
 
@@ -1232,6 +1242,17 @@ function MarketTab({ notify, markets, onMutation, ops }) {
                   ].filter(Boolean).join(" · "),
                   links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
                   onToggle: () => setDetailId(it.id),
+                  topRight: favorites
+                    ? h("button", {
+                        className: `dsvm-favbtn${favorites.list.some((f) => f.id === it.id) ? " on" : ""}`,
+                        title: favorites.list.some((f) => f.id === it.id) ? lookup("fav.remove") : lookup("fav.add"),
+                        onClick: (e) => {
+                          e.stopPropagation();
+                          favorites.toggle(snapshotOf(it));
+                        },
+                      },
+                      favorites.list.some((f) => f.id === it.id) ? "★" : "☆")
+                    : null,
                 })),
               ),
               pages > 1
@@ -1810,6 +1831,104 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
   );
 }
 
+// ---------- 收藏区（0.7.0 Task 14：本地快照卡片 + stale 校验 + 一键清理） ----------
+function snapshotOf(it) {
+  const s = {
+    id: it.id,
+    name: it.name,
+    description: it.description,
+    category: it.category,
+    categoryLabel: it.categoryLabel,
+    source: it.source,
+  };
+  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated"]) {
+    if (it[k] !== undefined && it[k] !== null) s[k] = it[k];
+  }
+  return s;
+}
+
+function FavoriteZone({ favorites }) {
+  const list = favorites.list;
+  const [check, setCheck] = useState(null); // { staleIds: string[] } | null
+  useEffect(() => {
+    let live = true;
+    setCheck(null);
+    if (!list.length) return;
+    void (async () => {
+      // stale 判定 = listMarket id 精确查询的结果集成员判定（Task 3 保证 id 整串精确命中）
+      const lookup = async (fav) => {
+        try {
+          const res = await api("market", { query: fav.id, source: "all", limit: 8 });
+          const items = res && Array.isArray(res.items) ? res.items : [];
+          return items.some((x) => x && x.id === fav.id);
+        } catch {
+          return false;
+        }
+      };
+      const { stale } = await partitionStale(list, lookup);
+      if (live) setCheck({ staleIds: stale.map((f) => f.id) });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [list]);
+  if (!list.length) {
+    return h("div", { className: "dshm-empty" }, lookup("favorites.hint"));
+  }
+  const staleSet = new Set((check && check.staleIds) || []);
+  return h(
+    React.Fragment,
+    null,
+    check && staleSet.size
+      ? h(
+          "div",
+          { className: "dshm-hint" },
+          lookup("favorites.stale", { n: staleSet.size }),
+          " ",
+          h("button", { className: "dshm-btn sm", onClick: () => favorites.removeIds([...staleSet]) }, lookup("favorites.clean")),
+        )
+      : null,
+    !check ? h("div", { className: "dshm-hint" }, lookup("favorites.checking")) : null,
+    h(
+      "div",
+      { className: "dshm-cards" },
+      ...list.map((fav) => {
+        const s = fav.snapshot;
+        const isStale = staleSet.has(fav.id);
+        return Card({
+          key: fav.id,
+          icon: h(Icon, { entry: s }),
+          name: s.name,
+          badges: [
+            s.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
+            s.owner ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
+            h("span", { className: "dshm-badge info", key: "s" }, s.source === "npm" ? "npm" : "github"),
+            isStale ? h("span", { className: "dshm-badge warn", key: "st" }, lookup("favorites.stalebadge")) : null,
+          ],
+          byline: s.owner
+            ? [
+                s.owner ? { text: `by ${s.owner}` } : null,
+                typeof s.downloads === "number" ? { text: `${compactCount(s.downloads)} ↓`, title: String(s.downloads) } : null,
+                typeof s.stars === "number" ? { text: `${compactCount(s.stars)} ★`, title: String(s.stars) } : null,
+              ].filter(Boolean)
+            : null,
+          desc: s.description,
+          clampLines: 5,
+          links: h(LinksRow, { npm: s.npm, github: s.github, homepage: s.homepage }),
+          topRight: h("button", {
+            className: "dsvm-favbtn on",
+            title: lookup("fav.remove"),
+            onClick: (e) => {
+              e.stopPropagation();
+              favorites.toggle(s);
+            },
+          }, "★"),
+        });
+      }),
+    ),
+  );
+}
+
 // ---------- 全局操作记录（0.7.0 Task 13：状态不挂卡片，翻页/搜索/切 tab 不丢；持久化 + 恢复执行器） ----------
 function useOperationsStore() {
   const storeRef = useRef(null);
@@ -1922,6 +2041,18 @@ function MarketPanel({ onClose }) {
     [opsStore, syncOps],
   );
   const ops = { records: opRecords, runOp };
+  // 收藏（0.7.0 Task 14）：本地 localStorage，不进 profile 不进服务端
+  const favStoreRef = useRef(null);
+  if (!favStoreRef.current) {
+    favStoreRef.current = createFavoritesStore(typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
+  }
+  const favStore = favStoreRef.current;
+  const [favList, setFavList] = useState(() => favStore.list());
+  const favorites = {
+    list: favList,
+    toggle: useCallback((snapshot) => setFavList(favStore.toggle(snapshot)), [favStore]),
+    removeIds: useCallback((ids) => setFavList(favStore.removeIds(ids)), [favStore]),
+  };
   // DSH 运行版本：挂载时随 ping 一次性带回；失败/缺席 → chip 整个隐藏（不留占位）
   const [dshVersion, setDshVersion] = useState(null);
   useEffect(() => {
@@ -2051,7 +2182,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews, ops }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
         h(OperationsPanel, {
