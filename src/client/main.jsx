@@ -11,7 +11,7 @@ const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips）
-const { DEFAULT_PAGE_SIZE, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice } = require("./market-state.js");
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice } = require("./market-state.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -26,11 +26,13 @@ const ZH = {
   "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
   "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.other": "其他",
   "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
+  "sort.downloads.desc": "下载量 ↓", "sort.downloads.asc": "下载量 ↑", "sort.stars.desc": "Star ↓", "sort.stars.asc": "Star ↑", "sort.added.desc": "最新收录 ↓", "sort.added.asc": "最早收录 ↑",
+  "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "market.pagesize": "{n} 条/页",
   "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
   "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
-  "market.loading": "加载收录清单中… ", "market.empty": "没有匹配的收录条目",
+  "market.loading": "加载收录清单中… ", "market.empty": "无匹配插件，试试其他关键词或分类",
   "installed.loading": "读取 web profile 中… ", "installed.empty": "web profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
   "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
   "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装", "badge.custom": "自定义",
@@ -119,11 +121,13 @@ const EN = {
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
   "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.other": "Other",
   "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
+  "sort.downloads.desc": "Downloads ↓", "sort.downloads.asc": "Downloads ↑", "sort.stars.desc": "Stars ↓", "sort.stars.asc": "Stars ↑", "sort.added.desc": "Recently added ↓", "sort.added.asc": "Oldest first ↑",
+  "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "market.pagesize": "{n} / page",
   "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
   "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
-  "market.loading": "Loading listings… ", "market.empty": "No matching listings",
+  "market.loading": "Loading listings… ", "market.empty": "No matching plugins — try another keyword or category",
   "installed.loading": "Reading web profile… ", "installed.empty": "No DSH plugins installed in this web profile", "installed.none": "Not installed",
   "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
   "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market", "badge.custom": "Custom",
@@ -253,6 +257,14 @@ const CSS = `
 .dshm-chip{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:2px 10px;font:inherit;font-size:11px;cursor:pointer}
 .dshm-chip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-chip.on{background:var(--dsw-specific-sidebar-nav-item-active,rgba(38,49,72,.08));border-color:transparent;color:var(--dsw-alias-label-primary,inherit);font-weight:500}
+.dsvm-chipswrap{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 94%,transparent);padding:4px 0;margin:-4px 0}
+.dsvm-sortrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dsvm-sort{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-3,#fff);color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:2px 8px;font:inherit;font-size:11px;cursor:pointer}
+.dsvm-byline{display:flex;flex-wrap:wrap;gap:8px;color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;line-height:16px;margin:2px 0 0;font-variant-numeric:tabular-nums}
+.dsvm-pager{display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;margin-top:4px}
+.dsvm-pagebtn{min-width:26px;height:24px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);font:inherit;font-size:12px;cursor:pointer}
+.dsvm-pagebtn.on{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);color:var(--dsw-alias-interactive-bg-selected,#4f46e5);font-weight:600}
+.dsvm-pagebtn:disabled{opacity:.4;cursor:default}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -687,11 +699,102 @@ function SearchBox({ placeholder, initial, onCommit }) {
   );
 }
 
+// ---------- 分区分类 chips（0.7.0 Task 10：两行折叠 + 实测裁剪 + 收起态激活置前 + 吸顶自动收缩） ----------
+function ZoneChips({ zone, counts, labels, active, onPick }) {
+  const chips = useMemo(() => zoneChips(counts, labels, zone), [counts, labels, zone]);
+  const [expanded, setExpanded] = useState(false);
+  const [stuck, setStuck] = useState(false);
+  const [fit, setFit] = useState({ rows2: 99, rows1: 99 });
+  const wrapRef = useRef(null);
+  const sentinelRef = useRef(null);
+  // 收起态激活置前：仅当激活分类会被裁掉时才移到首位，否则不打乱顺序（dsh-market 反馈驱动方案）
+  const ordered = useMemo(() => {
+    if (!active) return chips;
+    const idx = chips.findIndex((c) => c.id === active);
+    if (idx < 0 || idx < Math.min(fit.rows2, chips.length)) return chips;
+    return [chips[idx], ...chips.slice(0, idx), ...chips.slice(idx + 1)];
+  }, [chips, active, fit.rows2]);
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el || expanded) return;
+    let rows2 = 0;
+    let rows1 = 0;
+    let rowCount = 0;
+    let lastTop = null;
+    for (const k of el.children) {
+      if (!(k instanceof HTMLElement) || k.getAttribute("data-chip") !== "1") continue;
+      const t = k.offsetTop;
+      if (lastTop === null || t !== lastTop) {
+        rowCount += 1;
+        lastTop = t;
+      }
+      if (rowCount <= 2) rows2 += 1;
+      if (rowCount <= 1) rows1 += 1;
+    }
+    setFit({ rows2, rows1 });
+  }, [ordered.length, expanded, zone]);
+  useEffect(() => {
+    const s = sentinelRef.current;
+    if (!s || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => setStuck(!entries[0].isIntersecting), { threshold: 0 });
+    io.observe(s);
+    return () => io.disconnect();
+  }, []);
+  const budget = expanded ? ordered.length : stuck ? fit.rows1 : fit.rows2;
+  const shown = ordered.slice(0, budget);
+  const hidden = ordered.length - shown.length;
+  const btn = (c) =>
+    h(
+      "button",
+      { key: c.id, "data-chip": "1", className: `dshm-chip${active === c.id ? " on" : ""}`, onClick: () => onPick(active === c.id ? null : c.id) },
+      `${c.label}${c.count ? ` ${c.count}` : ""}`,
+    );
+  return h(
+    React.Fragment,
+    null,
+    h("div", { ref: sentinelRef, style: { height: "1px" } }),
+    h(
+      "div",
+      { className: "dsvm-chipswrap" },
+      h(
+        "div",
+        { ref: wrapRef, className: "dshm-chips" },
+        h("button", { "data-chip": "1", className: `dshm-chip${active == null ? " on" : ""}`, onClick: () => onPick(null) }, lookup("cat.all")),
+        ...shown.map(btn),
+        hidden > 0
+          ? h("button", { "data-chip": "1", className: "dshm-chip", onClick: () => setExpanded(!expanded) },
+              expanded ? "⌃" : `+${hidden}`)
+          : null,
+      ),
+    ),
+  );
+}
+
+/** 计数紧凑化（11.9k 形态；title 属性给精确数）。 */
+function compactCount(n) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  if (Math.abs(n) >= 1000) {
+    const k = n / 1000;
+    return `${k >= 100 ? Math.round(k) : Number(k.toFixed(1))}k`;
+  }
+  return String(n);
+}
+
 // ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props；0.7.0 Task 9 三分区 tab 壳） ----------
 const ZONE_TABS = [
   { id: "community", labelKey: "zone.community" },
   { id: "primary", labelKey: "zone.primary" },
   { id: "favorites", labelKey: "zone.favorites" },
+];
+
+/** 社区区排序选项（0.7.0 Task 10）：downloads/stars/added × asc/desc，默认 downloads-desc。 */
+const SORT_OPTIONS = [
+  ["downloads-desc", "sort.downloads.desc"],
+  ["downloads-asc", "sort.downloads.asc"],
+  ["stars-desc", "sort.stars.desc"],
+  ["stars-asc", "sort.stars.asc"],
+  ["added-desc", "sort.added.desc"],
+  ["added-asc", "sort.added.asc"],
 ];
 
 function MarketTab({ notify, markets, onMutation }) {
@@ -710,6 +813,15 @@ function MarketTab({ notify, markets, onMutation }) {
   const pages = total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
   const counts = (data && data.categoryCounts) || {};
   const notice = data ? marketNotice(data.registryState, data.community) : null;
+  // 翻页：offset 定位 + 回滚列表顶部（吸顶 chips 行为锚点）
+  const gotoPage = (p) => {
+    updateQuery({ offset: Math.max(0, (p - 1) * limit) });
+    if (typeof document !== "undefined") {
+      const el = document.querySelector(".dsvm-chipswrap");
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" });
+    }
+  };
+  const sortValue = `${(query && query.sort && query.sort.field) || "downloads"}-${(query && query.sort && query.sort.dir) || "desc"}`;
   const zoneBar = h(
     "div",
     { className: "dshm-chips" },
@@ -826,18 +938,31 @@ function MarketTab({ notify, markets, onMutation }) {
       h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery({ query: v }) }),
       h("button", { className: "dshm-btn", onClick: () => reload(true), title: lookup("settings.policy.v") }, loading ? Spin() : `↻ ${lookup("common.refresh")}`),
     ),
-    h(
-      "div",
-      { className: "dshm-chips" },
-      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, offset: 0 }) }, lookup("cat.all")),
-      ...zoneChips(counts, (data && data.community && data.community.categoryLabels) || {}, zone).map((c) =>
-        h(
-          "button",
-          { key: c.id, className: `dshm-chip${query.category === c.id ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === c.id ? null : c.id, offset: 0 }) },
-          `${c.label}${c.count ? ` ${c.count}` : ""}`,
-        ),
-      ),
-    ),
+    zone === "community"
+      ? h(
+          "div",
+          { className: "dsvm-sortrow" },
+          h(
+            "select",
+            {
+              className: "dsvm-sort",
+              value: sortValue,
+              onChange: (e) => {
+                const [field, dir] = e.target.value.split("-");
+                updateQuery({ sort: { field, dir } });
+              },
+            },
+            ...SORT_OPTIONS.map(([v, key]) => h("option", { key: v, value: v }, lookup(key))),
+          ),
+        )
+      : null,
+    h(ZoneChips, {
+      zone,
+      counts,
+      labels: (data && data.community && data.community.categoryLabels) || {},
+      active: query.category,
+      onPick: (id) => updateQuery({ category: id, offset: 0 }),
+    }),
     busyId ? h(ProgressLine, { key: "prog" }) : null,
     loading && !data
       ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())
@@ -856,16 +981,25 @@ function MarketTab({ notify, markets, onMutation }) {
                   icon: h(Icon, { entry: it }),
                   name: it.name,
                   badges: [
+                    it.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
                     it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
                     it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
                     it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
                     h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
                   ],
-                  desc: it.description,
+                  byline: it.community === true
+                    ? [
+                        it.owner ? { text: `by ${it.owner}` } : null,
+                        typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: String(it.downloads) } : null,
+                        typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
+                      ].filter(Boolean)
+                    : null,
+                  desc: browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description,
+                  clampLines: it.community === true ? 5 : 2,
                   sub: [
                     it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
                     it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
-                    it.latestError ? lookup("version.failed") : null,
+                    it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
                   ].filter(Boolean).join(" · "),
                   links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
                   open: openId === it.id,
@@ -904,18 +1038,24 @@ function MarketTab({ notify, markets, onMutation }) {
                 })),
               ),
               pages > 1
-                ? h("div", { className: "dshm-row", style: { justifyContent: "center", marginTop: "4px" } },
-                    h("button", {
-                      className: "dshm-btn sm",
-                      disabled: page <= 1 || loading,
-                      onClick: () => updateQuery({ offset: Math.max(0, offset - limit) }),
-                    }, lookup("market.page.prev")),
-                    h("span", { className: "dshm-hint" }, lookup("market.page.info", { page, pages, total })),
-                    h("button", {
-                      className: "dshm-btn sm",
-                      disabled: page >= pages || loading,
-                      onClick: () => updateQuery({ offset: Math.min(total - 1, offset + limit) }),
-                    }, lookup("market.page.next")),
+                ? h(
+                    "div",
+                    { className: "dsvm-pager" },
+                    h("button", { className: "dsvm-pagebtn", disabled: page <= 1 || loading, onClick: () => gotoPage(page - 1) }, "‹"),
+                    ...pageItems(page, pages).map((p, i) =>
+                      p === "..."
+                        ? h("span", { key: `e${i}`, className: "dshm-hint" }, "…")
+                        : h("button", { key: p, className: `dsvm-pagebtn${p === page ? " on" : ""}`, onClick: () => gotoPage(p) }, String(p))),
+                    h("button", { className: "dsvm-pagebtn", disabled: page >= pages || loading, onClick: () => gotoPage(page + 1) }, "›"),
+                    h(
+                      "select",
+                      {
+                        className: "dsvm-sort",
+                        value: String(limit),
+                        onChange: (e) => updateQuery({ limit: Number(e.target.value), offset: 0 }),
+                      },
+                      ...MARKET_PAGE_SIZES.map((n) => h("option", { key: n, value: String(n) }, lookup("market.pagesize", { n }))),
+                    ),
                   )
                 : null,
             ),
@@ -1443,7 +1583,7 @@ function DetailRows(rows) {
 }
 
 // ---------- 卡片（市场/已装共用） ----------
-function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight }) {
+function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines }) {
   return h(
     "div",
     {
@@ -1460,7 +1600,10 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
       "div",
       { className: "dshm-meta" },
       h("div", { className: "dshm-top" }, h("span", { className: "dshm-name" }, name), ...badges.filter(Boolean), topRight || null),
-      h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : null }, desc),
+      byline && byline.length
+        ? h("div", { className: "dsvm-byline" }, ...byline.map((b, i) => h("span", { key: i, title: b.title || undefined }, b.text)))
+        : null,
+      h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : clampLines ? { WebkitLineClamp: String(clampLines) } : null }, desc),
       sub ? h("div", { className: "dshm-sub" }, sub) : null,
       links || null,
       open ? h("div", { className: "dshm-detail" }, detail) : null,
