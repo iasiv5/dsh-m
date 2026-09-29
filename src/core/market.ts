@@ -41,6 +41,7 @@ import {
   type LoadedCommunity,
 } from './community.js'
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
+import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { HttpError } from './httpx.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
@@ -659,12 +660,6 @@ function toMarketItem(entry: RegistryEntry | CommunityEntry, installedItems: Ins
   return item
 }
 
-/** 合并条目的搜索串：社区条目附英文描述原文（Q45 搜索同时匹配中英文）。 */
-function searchableText(entry: RegistryEntry | CommunityEntry): string {
-  const base = `${entry.id} ${entry.name} ${entry.description} ${entry.tags.join(' ')}`
-  return isCommunityEntry(entry) ? `${base} ${entry.descriptionEn}` : base
-}
-
 // ---------- 市场列表 ----------
 
 function marketDeps(): MarketDeps {
@@ -752,14 +747,24 @@ export async function listMarket(
         : merged
   const counts: CategoryCounts = zeroCounts()
   for (const entry of zoned) counts[entry.category] = (counts[entry.category] ?? 0) + 1
-  const q = (opts.query ?? '').trim().toLowerCase()
   const cat = opts.category ?? null
+  // 相关性搜索（0.7.0 Task 3）：归一化分词 + 字段加权评分；0 分不返回；
+  // id 整串精确匹配保证命中（收藏 stale 检测依赖）。
+  const terms = tokenizeSearchText(normalizeSearchText(opts.query ?? ''))
   const filtered = zoned.filter((entry) => {
     if (cat && entry.category !== cat) return false
-    if (!q) return true
-    return searchableText(entry).toLowerCase().includes(q)
+    if (terms.length === 0) return true
+    return relevanceScore(entry, terms) > 0
   })
-  const ordered = opts.sort ? sortEntries(filtered, opts.sort) : filtered
+  // 排序：显式 sort 先行；query 命中时相关性优先（稳定 tie-break 回到既有序——merged 现序或用户排序）
+  const afterSort = opts.sort ? sortEntries(filtered, opts.sort) : filtered
+  const ordered =
+    terms.length > 0
+      ? afterSort
+          .map((entry, idx) => ({ entry, score: relevanceScore(entry, terms), idx }))
+          .sort((a, b) => b.score - a.score || a.idx - b.idx)
+          .map((s) => s.entry)
+      : afterSort
   const total = ordered.length
   const limit = clampLimit(opts.limit, maxLimit)
   let offset = normalizeOffset(opts.offset)
