@@ -36,11 +36,18 @@ The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeC
 
 | View | Capabilities |
 |---|---|
-| **Market** | Card flow with search and category filters (server-side filtering + pagination, 50 per page — even a 1,000-entry registry probes the current page only); expandable details; "Install" — npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
+| **Market** | **Zoned** (0.7.0): **Community** (default landing, the 4,000+ full catalog) and **Curated** (hand-picked primary registry, single page) as two independent zones — each keeps its own category/search/sort/pagination state across tab switches; plus a **Favorites** zone (browser-local bookmarks with delisted-entry detection and one-click cleanup). Community zone: two-row collapsible category chips with sticky collapse, sort switch (downloads/stars/added × asc/desc), windowed pagination (24/48/96 per page), card byline (owner/downloads/stars); clicking a card opens a **detail modal** (superset of the card: download window, screenshot lightbox, capabilities collapsed by default, install command); npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
+| **Operations** | Install/upgrade/uninstall/toggle all flow through a global operation log (0.7.0): state lives off cards, surviving paging/searching/tab switches; persisted to localStorage and resumed after host reloads (each restored op re-validated "still applies" before executing); benignly-invalidated ops show as a neutral "skipped"; the Installed page gains "Update all (N)" batch queueing |
 | **Installed** | What your web profile actually has, annotated "via market / non-market"; update badges, upgrade, two-step confirm uninstall; 📖 README preview (64KB cap); **live phase badge** (●active / ●failed / ○pending) and a **one-click toggle** (0.4.0: delegates to the official pluginManager service for live application; falls back to file-level edits + restart notice when absent; dsh-m itself and official host lifelines are locked) |
 | **Settings** | Registry address draft with "Validate & apply / Restore default / Download default registry.json / Check entries reachability"; configured vs active address and status at a glance; force refresh; dsh-m self-update |
 
 After any mutation, the already-open Market and Installed views refresh the profile state together, keeping badges and cards in sync without closing and reopening the marketplace; a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The current DSH Web `0.1.5-rc.1` runtime has now live-loaded dsh-m `0.2.11`; `/dshm` ping returned version `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible once the service stabilized; journal evidence showed repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Installs stream live pnpm progress (resolve → download → link → build).
+
+### New in 0.7.0
+
+- **Zoned market** ([ADR-0004](./docs/adr/0004-zoned-market-display.md)): the dual-catalog data merge stays, but the display splits into Community (default) / Curated / Favorites zones; `dshm_search` and `dshm search` switch to `--source community|primary|all` + `--offset` real pagination (default 10 cards) — `primary_only` is retired.
+- **Relevance search**: NFKC normalization + CJK↔Latin boundaries + field weighting (name/npm > owner > description > category > tags), multi-term same-field matching; whole-id exact match takes top priority.
+- **Operation log + resume executor**, **local favorites + delisted cleanup**, **detail modal + screenshot lightbox**, community byline/deprecated badges/catalog-snapshot version fallback (never used for outdated).
 
 ### New in 0.4.0
 
@@ -72,7 +79,7 @@ After any mutation, the already-open Market and Installed views refresh the prof
 ## CLI
 
 ```sh
-dshm search [--query topic] [--category ui]
+dshm search [--query topic] [--category ui] [--source community|primary|all] [--limit N] [--offset N]
 dshm list | outdated | registry
 dshm install --id dsh-web-search [--force]   # --force: skip the precheck gate after confirming the risk
 dshm upgrade --pkg dsh-web-search --yes [--force]
@@ -101,11 +108,11 @@ Security baseline: HTTPS-only fetches (loopback HTTP excepted) with per-hop redi
 
 ## Community catalog (awesome-dsh-plugin, 0.5.0)
 
-On top of the hand-curated primary registry, the market layers a **read-only community catalog** anchored to the npm package [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog) (CC0-1.0, the full awesome-dsh-plugin directory, 4,000+ entries), merged into one market with the primary registry **always taking precedence** (duplicate entries displace the community side).
+On top of the hand-curated primary registry, the market layers a **read-only community catalog** anchored to the npm package [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog) (CC0-1.0, the full awesome-dsh-plugin directory, 4,000+ entries). The data layer still merges and dedupes with the primary registry **always taking precedence** (duplicate entries displace the community side); the display layer splits into Community / Curated zones (ADR-0004) — the community zone no longer shows entries duplicated by the primary registry, and the curated zone stays a single curated-order page.
 
 - **Fetch chain**: dist-tags probe → jsDelivr pinned fetch → npmmirror → unpkg fallback; unchanged versions are not re-fetched, probes are skipped within TTL. On failure it falls back to the runtime cache under `<cache dir>/awesome/` and **explicitly labels it "cached snapshot"** — stale data never masquerades as fresh.
 - **Switch & pin**: `communityCatalog` toggle in Settings (default on, live), `communityCatalogPin` to lock the catalog version (exact semver); CLI opt-out with `DSHM_COMMUNITY_CATALOG=0`, pin with `DSHM_COMMUNITY_CATALOG_PIN`.
-- **Categories & search**: community categories are an open set (20 known ones with Chinese labels in the filter bar; upstream additions land in a "Community · New" group); search matches both Chinese and English descriptions; primary registry pinned on top, community sorted by 30-day downloads.
+- **Categories & search**: community categories are an open set (20+ known labels, served from a single server-side source of truth); search runs a relevance-weighted pipeline (Chinese + English); the community zone offers a sort switch (downloads/stars/added × asc/desc, default downloads-desc; missing downloads ≠ zero downloads).
 - **Install semantics**: community entries go through the same `installEntry` (npm exact version / GitHub pinned commit SHA); the browse page probes npm entries only — GitHub entries are not probed at page level (anonymous 60 req/h quota is uncontrollable).
 - **Installed-page budget (best-effort)**: update checks for GitHub-sourced plugins are capped at ≤25 wire requests per run and ≤50 per rolling hour per host process (passive checks only; active install/upgrade unaffected); capped items are honestly labeled "check incomplete" instead of "all up to date". A standalone CLI process does not share the host budget and makes no guarantee under concurrency.
 - **Capability disclosure**: capabilities/red lines appear only in the detail fold (**absent = not scanned ≠ not detected**), never as card badges; screenshots load only in the detail layer and pass a client-side allowlist.

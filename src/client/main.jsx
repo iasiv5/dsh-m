@@ -1065,7 +1065,18 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
     "div",
     { className: "dshm-chips" },
     ...ZONE_TABS.map((z) =>
-      h("button", { key: z.id, className: `dshm-chip${zone === z.id ? " on" : ""}`, onClick: () => setZone(z.id) }, lookup(z.labelKey))),
+      h(
+        "button",
+        {
+          key: z.id,
+          className: `dshm-chip${zone === z.id ? " on" : ""}`,
+          onClick: () => setZone(z.id),
+        },
+        lookup(z.labelKey),
+        z.id === "community" && zone !== "favorites" && total > 0 ? ` ${total}` : "",
+        z.id === "primary" && zone === "primary" && total > 0 ? ` ${total}` : "",
+        z.id === "favorites" && favorites && favorites.list.length ? ` ${favorites.list.length}` : "",
+      )),
   );
   // 收藏区（0.7.0 Task 14：本地 localStorage 收藏 + stale 校验清理）
   if (zone === "favorites") {
