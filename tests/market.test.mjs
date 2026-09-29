@@ -1250,14 +1250,16 @@ describe('M1 Task 7：agent 工具契约', () => {
     return { registered, calls }
   }
 
-  it('① dshm_search 接受社区 slug 与 primary_only 并透传 core', async () => {
+  it('① dshm_search 接受社区 slug 与 source 分区并透传 core（0.7.0：primary_only 已删除）', async () => {
     const { registered, calls } = await loadToolsWith()
     const search = registered.find((t) => t.name === 'dshm_search')
-    await search.execute({ category: 'memory', primary_only: true })
+    await search.execute({ category: 'memory', source: 'primary' })
     assert.equal(calls.search[0].category, 'memory')
-    assert.equal(calls.search[0].primaryOnly, true)
+    assert.equal(calls.search[0].source, 'primary')
+    assert.equal(calls.search[0].primaryOnly, undefined, 'primaryOnly 契约已由 source 取代')
     await assert.rejects(() => search.execute({ category: 'BAD!' }), /非法分类/)
-    assert.equal(calls.search.length, 1, '非法 slug 不下发 core')
+    await assert.rejects(() => search.execute({ source: 'zone' }), /非法 source/)
+    assert.equal(calls.search.length, 1, '非法参数不下发 core')
   })
 
   it('⑦ deadline 对齐：search 44s、list/outdated 60s，且透传 exec.signal', async () => {

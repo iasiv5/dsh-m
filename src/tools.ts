@@ -17,6 +17,7 @@ import {
   type InstalledResult,
 } from './core/market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
+import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 
@@ -26,6 +27,15 @@ export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   ui: '界面',
   search: '搜索',
   other: '其他',
+}
+
+/** 分类中文标签（0.7.0 Task 5）：精选 5 类 + 社区已知标签（单一事实源 COMMUNITY_CATEGORY_LABELS）；未知 slug 原样。 */
+function categoryLabelOf(category: string): string {
+  return (
+    (CATEGORY_LABELS as Record<string, string>)[category] ??
+    COMMUNITY_CATEGORY_LABELS[category] ??
+    category
+  )
 }
 
 /** 工具 deadline 对齐（M1 Task 7）：search 45s（core 44s）、list/outdated 65s（core 60s + 5s 回包余量）。 */
@@ -105,15 +115,19 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   ctx.tools.register(defineTool({
     name: 'dshm_search',
     description:
-      'Search your personal DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse their curated DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Omit query to browse all listings. After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
+      'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~22 hand-curated 精选 entries plus a 4,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
     parameters: {
-      query: { type: 'string', description: 'Main keyword, e.g. 主题 or 搜索. Optional.' },
+      query: { type: 'string', description: 'Main keyword, e.g. 主题 or 搜索. Optional; omit to browse.' },
       category: {
         type: 'string',
         description: `Optional category: curated ${Object.keys(CATEGORY_LABELS).join('/')} or any community slug ([a-z0-9-]{1,32}, e.g. theme/memory/git).`,
       },
-      limit: { type: 'number', description: 'Cards in this batch. Default all (registry is curated & small).' },
-      primary_only: { type: 'boolean', description: '只看主清单（排除社区条目）. Optional.' },
+      source: {
+        type: 'string',
+        description: 'Zone filter: "community" (4,000+ community catalog), "primary" (hand-curated 精选), or "all" (default).',
+      },
+      limit: { type: 'number', description: 'Cards in this batch. Default 10, clamp 1-80.' },
+      offset: { type: 'number', description: 'Pagination offset (0-based). Pass nextOffset from the previous result to fetch the next batch.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -122,7 +136,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     },
     presentCall: (args) => ({
       card: 'generic',
-      title: `DSH 市场 · ${String(args.query || args.category || '浏览')}`,
+      title: `DSH 市场 · ${String(args.query || args.category || (args.source && args.source !== 'all' ? args.source : '') || '浏览')}`,
       kind: 'search',
       content: [],
     }),
@@ -139,16 +153,24 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         if (categoryRaw in CATEGORY_LABELS || COMMUNITY_SLUG_RE.test(categoryRaw)) category = categoryRaw
         else throw new Error(`非法分类: ${categoryRaw}（需精选分类或 [a-z0-9-]{1,32} slug）`)
       }
+      // 分区参数（0.7.0 Task 5）：与 GUI 分区对齐；primary_only 已删除（D6a 允许破坏性变更）
+      const sourceRaw = typeof args.source === 'string' ? args.source.trim() : ''
+      if (sourceRaw !== '' && sourceRaw !== 'primary' && sourceRaw !== 'community' && sourceRaw !== 'all') {
+        throw new Error(`非法 source: ${sourceRaw}（需 primary/community/all）`)
+      }
+      const source: 'primary' | 'community' | 'all' = sourceRaw === '' ? 'all' : (sourceRaw as 'primary' | 'community' | 'all')
       const rawLimit = Number(args.limit)
-      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? clamp(rawLimit, 1, 80) : undefined
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? clamp(rawLimit, 1, 80) : 10
+      const rawOffset = Number(args.offset)
+      const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0
       // metadata-only：agent 卡片不需要 latest；与 Host GUI 共用 host namespace；
       // deadline 44s 是本 waiter 的绝对上限（工具 timeout 45s 先到兜底）
       const result = await m.listMarket(cfg, {
         query: String(args.query || ''),
         category,
-        offset: 0,
+        source,
+        offset,
         limit,
-        primaryOnly: args.primary_only === true,
         withLatest: false,
         namespace: 'host',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
@@ -160,9 +182,14 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       if (!result.installedComplete && result.items.length > 0) {
         throw new Error('读取 web profile 安装状态失败，安装标注不可用；请稍后重试')
       }
+      const shown = result.items.length
+      const nextOffset: number | null = offset + shown < result.total ? offset + shown : null
       return cloneJson({
         query: String(args.query || ''),
         category,
+        source,
+        offset,
+        nextOffset,
         total: result.total,
         registry: summaryOf(result.registryState),
         community: communityToolSummary(result.community),
@@ -171,6 +198,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
           name: e.name,
           description: e.description,
           category: e.category,
+          categoryLabel: categoryLabelOf(e.category),
           tags: e.tags,
           source: e.source,
           npm: e.npm,
@@ -179,6 +207,9 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
           installed: e.installed,
           installedPkg: e.installedPkg,
           installedVersion: e.installedVersion,
+          community: e.community === true,
+          downloads: e.downloads ?? null,
+          stars: e.stars ?? null,
         })),
       })
     },
@@ -460,8 +491,17 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
 
 // ---------- 渲染文本 ----------
 interface SearchOut {
-  items?: Array<RegistryEntry & { installed?: boolean; installedVersion?: string }>
+  items?: Array<RegistryEntry & {
+    installed?: boolean
+    installedVersion?: string
+    categoryLabel?: string
+    community?: boolean
+    downloads?: number | null
+    stars?: number | null
+  }>
   total?: number
+  offset?: number
+  nextOffset?: number | null
 }
 interface ListOut {
   items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; latestError?: string | null; latestErrorCode?: string | null }>
@@ -513,13 +553,21 @@ interface UninstallOut {
 
 function renderSearch(out: SearchOut): string {
   if (!out.items?.length) return '收录清单中没有匹配的插件。对用户只说一句：没找到，可以换个词再搜。不要写长文。'
+  const offset = out.offset ?? 0
   const lines = out.items.map((it, i) => {
     const inst = it.installed ? `（已安装 v${it.installedVersion || '?'}）` : ''
-    return `${i + 1}. ${it.name} · ${it.id}${inst} · ${CATEGORY_LABELS[it.category] || it.category}`
+    const zone = it.community === true ? '[社区]' : ''
+    return `${i + 1}. ${it.name} · ${it.id}${zone}${inst} · ${it.categoryLabel || it.category}`
   })
+  // 翻页尾行（0.7.0 Task 5）：nextOffset 为空 = 已到末尾
+  const pager =
+    typeof out.nextOffset === 'number'
+      ? `共 ${out.total ?? out.items.length} 条 · 已显示 ${offset + 1}–${offset + out.items.length} · 传 offset=${out.nextOffset} 翻页`
+      : `共 ${out.total ?? out.items.length} 条 · 已到末尾`
   return [
     `插件卡片已展示 ${out.items.length}${out.total && out.total > out.items.length ? `/${out.total}` : ''} 条（内部序号，禁止复述给用户）：`,
     lines.join('\n'),
+    pager,
     '对用户最多回一句短话。禁止清单和长文。用户点名安装时才调 dshm_install（id）。',
   ].join('\n')
 }
