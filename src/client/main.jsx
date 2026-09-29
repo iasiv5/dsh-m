@@ -28,6 +28,8 @@ const ZH = {
   "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
   "sort.downloads.desc": "下载量 ↓", "sort.downloads.asc": "下载量 ↑", "sort.stars.desc": "Star ↓", "sort.stars.asc": "Star ↑", "sort.added.desc": "最新收录 ↓", "sort.added.asc": "最早收录 ↑",
   "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "market.pagesize": "{n} 条/页", "badge.verified": "已实测",
+  "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
+  "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
   "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
   "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
@@ -123,6 +125,8 @@ const EN = {
   "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
   "sort.downloads.desc": "Downloads ↓", "sort.downloads.asc": "Downloads ↑", "sort.stars.desc": "Stars ↓", "sort.stars.asc": "Stars ↑", "sort.added.desc": "Recently added ↓", "sort.added.asc": "Oldest first ↑",
   "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "market.pagesize": "{n} / page", "badge.verified": "Verified",
+  "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
+  "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
   "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
   "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
@@ -265,6 +269,27 @@ const CSS = `
 .dsvm-pagebtn{min-width:26px;height:24px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);font:inherit;font-size:12px;cursor:pointer}
 .dsvm-pagebtn.on{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5);color:var(--dsw-alias-interactive-bg-selected,#4f46e5);font-weight:600}
 .dsvm-pagebtn:disabled{opacity:.4;cursor:default}
+.dsvm-modal{position:fixed;inset:0;z-index:2147483100;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.55));display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.dsvm-modalbox{width:min(720px,100%);max-height:86vh;overflow:auto;background:var(--dsw-alias-bg-elevated,#fff);background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 94%,transparent);backdrop-filter:blur(14px);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);padding:16px;display:flex;flex-direction:column;gap:10px}
+.dsvm-modalhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsvm-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px;margin:0}
+.dsvm-kv dt{color:var(--dsw-alias-label-caption,#6b7280);white-space:nowrap}
+.dsvm-kv dd{margin:0;color:var(--dsw-alias-label-secondary,#4b5563);overflow-wrap:anywhere}
+.dsvm-fold{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:6px 10px;font-size:12px}
+.dsvm-fold summary{cursor:pointer;color:var(--dsw-alias-label-secondary,#4b5563)}
+.dsvm-cmdrow{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.dsvm-code{background:rgba(127,127,127,.12);padding:3px 8px;border-radius:6px;font-size:11px;overflow-wrap:anywhere}
+.dsvm-modalactions{display:flex;justify-content:flex-end;gap:8px}
+.dsvm-shotrow{display:flex;gap:6px;overflow-x:auto;padding:2px 0}
+.dsvm-shotbox{min-width:120px;min-height:84px;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.08);border-radius:6px;cursor:zoom-in;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
+.dsvm-shot{max-width:220px;max-height:130px;border-radius:6px;display:block}
+.dsvm-lightbox{position:fixed;inset:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.dsvm-lightbox img{max-width:94vw;max-height:80vh;border-radius:8px}
+.dsvm-lbnav{display:flex;align-items:center;gap:10px}
+.dsvm-lbcount{color:rgba(255,255,255,.75);font-size:12px}
+.dsvm-lbdots{display:flex;gap:6px}
+.dsvm-lbdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
+.dsvm-lbdot.on{background:#fff}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -780,6 +805,185 @@ function compactCount(n) {
   return String(n);
 }
 
+// ---------- 截图三层懒加载（0.7.0 Task 12：IO 200px 挂 src + loading=lazy + fetchPriority=low） ----------
+function Shot({ src, onClick }) {
+  const [show, setShow] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setShow(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShow(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return h(
+    "div",
+    { ref, className: "dsvm-shotbox", onClick, role: "button", tabIndex: 0 },
+    show
+      ? h("img", { className: "dsvm-shot", src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", fetchPriority: "low" })
+      : null,
+  );
+}
+
+// ---------- 截图灯箱（←→/Esc 键盘、圆点导航、禁自动轮播——大图必须停住直到观看者主动移动） ----------
+function Lightbox({ shots, index, onNav, onClose }) {
+  return h(
+    "div",
+    { className: "dsvm-lightbox", onClick: onClose },
+    h("img", { src: shots[index], alt: "", onClick: (e) => e.stopPropagation(), referrerPolicy: "no-referrer" }),
+    h(
+      "div",
+      { className: "dsvm-lbnav", onClick: (e) => e.stopPropagation() },
+      h("button", { className: "dsvm-btn", onClick: () => onNav((index - 1 + shots.length) % shots.length) }, "‹"),
+      h("span", { className: "dsvm-lbcount" }, `${index + 1} / ${shots.length}`),
+      h("button", { className: "dsvm-btn", onClick: () => onNav((index + 1) % shots.length) }, "›"),
+    ),
+    h(
+      "div",
+      { className: "dsvm-lbdots", onClick: (e) => e.stopPropagation() },
+      ...shots.map((s, i) => h("span", { key: s, className: `dsvm-lbdot${i === index ? " on" : ""}`, onClick: () => onNav(i) })),
+    ),
+  );
+}
+
+// ---------- 详情 Modal = 卡片超集（0.7.0 Task 12：「detail 显示少于摘要就是倒退」） ----------
+function DetailModal({ it, labels, busy, onClose, onInstall }) {
+  const shots = it.community === true ? safeScreenshots(it) : [];
+  const [lb, setLb] = useState(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        if (lb !== null) setLb(null);
+        else onClose();
+      }
+      if (lb !== null && shots.length > 1) {
+        if (e.key === "ArrowLeft") setLb((i) => (i - 1 + shots.length) % shots.length);
+        if (e.key === "ArrowRight") setLb((i) => (i + 1) % shots.length);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [lb, shots.length, onClose]);
+  const catLabel =
+    (labels && labels[it.category]) ||
+    (["market", "tools", "ui", "search", "other"].includes(it.category) ? lookup("cat." + it.category) : it.category);
+  const installCmd =
+    typeof it.install === "string" && it.install !== ""
+      ? it.install
+      : it.source === "npm"
+        ? `dsh plugin --profile web add ${it.npm}`
+        : `dsh plugin --profile web add github:${it.github}`;
+  const copyCmd = async () => {
+    try {
+      await navigator.clipboard.writeText(installCmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* 剪贴板不可用静默 */
+    }
+  };
+  const descFull = browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description;
+  const kv = (k, v) => h(React.Fragment, { key: k }, h("dt", null, k), h("dd", null, v));
+  return h(
+    "div",
+    { className: "dsvm-modal", onClick: onClose },
+    h(
+      "div",
+      { className: "dsvm-modalbox", onClick: (e) => e.stopPropagation() },
+      h(
+        "div",
+        { className: "dsvm-modalhead" },
+        h(Icon, { entry: it }),
+        h("span", { className: "dshm-name" }, it.name),
+        it.deprecated === true ? h("span", { className: "dshm-badge warn" }, lookup("badge.deprecated")) : null,
+        it.community !== true && Array.isArray(it.verified) && it.verified.length ? h("span", { className: "dshm-badge", title: it.verified.join("、") }, lookup("badge.verified")) : null,
+        it.installed ? h("span", { className: "dshm-badge" }, lookup("badge.installed")) : null,
+        it.community === true ? h("span", { className: "dshm-badge info" }, lookup("badge.community")) : null,
+        h("span", { className: "dshm-badge info" }, it.source === "npm" ? "npm" : "github"),
+        h("span", { className: "dshm-spacer" }),
+        h("button", { className: "dshm-btn sm", onClick: onClose }, "×"),
+      ),
+      it.community === true
+        ? h(
+            "div",
+            { className: "dsvm-byline" },
+            it.owner ? h("span", null, `by ${it.owner}`) : null,
+            typeof it.stars === "number" ? h("span", { title: String(it.stars) }, `${compactCount(it.stars)} ★`) : null,
+          )
+        : null,
+      h(
+        "dl",
+        { className: "dsvm-kv" },
+        kv(lookup("modal.category"), catLabel),
+        kv(lookup("modal.added"), it.added || "—"),
+        it.community === true
+          ? kv(
+              lookup("modal.dlwindow"),
+              typeof it.downloads === "number"
+                ? `${compactCount(it.downloads)}（${it.downloadsStart || "?"} ~ ${it.downloadsEnd || "?"}${it.downloadsCheckedAt ? `，${lookup("modal.checkedat")} ${it.downloadsCheckedAt}` : ""}）`
+                : lookup("modal.dlnone"),
+            )
+          : null,
+        kv(lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : it.latestError) : "—"),
+        kv(lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")),
+        it.community !== true && Array.isArray(it.verified) && it.verified.length ? kv(lookup("modal.verified"), it.verified.join("、")) : null,
+        (it.tags || []).length ? kv(lookup("modal.tags"), it.tags.join(", ")) : null,
+        it.deprecated === true && it.replacement ? kv(lookup("modal.replacement"), it.replacement) : null,
+      ),
+      h("div", { className: "dshm-desc", style: { WebkitLineClamp: "unset" } }, descFull),
+      shots.length
+        ? h(
+            "div",
+            { className: "dsvm-shotrow" },
+            ...shots.map((src, i) => h(Shot, { key: src, src, onClick: () => setLb(i) })),
+          )
+        : null,
+      it.community === true
+        ? h(
+            "details",
+            { className: "dsvm-fold" },
+            h("summary", null, lookup("detail.capabilities")),
+            Array.isArray(it.capabilities) && it.capabilities.length
+              ? h("div", null,
+                  h("div", null, it.capabilities.join(", ")),
+                  Array.isArray(it.capabilityRedLines) && it.capabilityRedLines.length
+                    ? h("div", { className: "dshm-err" }, `${lookup("detail.redlines")}: ${it.capabilityRedLines.join("; ")}`)
+                    : null)
+              : h("div", { className: "dshm-hint" }, lookup("detail.capabilities.unscanned")),
+          )
+        : null,
+      h(
+        "details",
+        { className: "dsvm-fold" },
+        h("summary", null, lookup("modal.installcmd")),
+        h("div", { className: "dsvm-cmdrow" },
+          h("code", { className: "dsvm-code" }, installCmd),
+          h("button", { className: "dshm-btn sm", onClick: copyCmd }, copied ? lookup("modal.copied") : lookup("modal.copy"))),
+      ),
+      h(
+        "div",
+        { className: "dsvm-modalactions" },
+        it.installed
+          ? h("span", { className: "dshm-hint" }, lookup("manage.hint"))
+          : h("button", { className: "dshm-btn primary", disabled: busy, onClick: () => onInstall(it) }, busy ? h(Spin) : lookup("action.install")),
+      ),
+    ),
+    lb !== null && shots.length ? h(Lightbox, { shots, index: lb, onNav: setLb, onClose: () => setLb(null) }) : null,
+  );
+}
+
 // ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props；0.7.0 Task 9 三分区 tab 壳） ----------
 const ZONE_TABS = [
   { id: "community", labelKey: "zone.community" },
@@ -801,7 +1005,7 @@ function MarketTab({ notify, markets, onMutation }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
-  const [openId, setOpenId] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
   // 服务端分页数据（0.7.0 Task 8：服务端单一排序源，客户端不再重排）
@@ -822,6 +1026,8 @@ function MarketTab({ notify, markets, onMutation }) {
     }
   };
   const sortValue = `${(query && query.sort && query.sort.field) || "downloads"}-${(query && query.sort && query.sort.dir) || "desc"}`;
+  const detailItem = detailId ? items.find((x) => x.id === detailId) : null;
+  const detailLabels = (data && data.community && data.community.categoryLabels) || {};
   const zoneBar = h(
     "div",
     { className: "dshm-chips" },
@@ -1003,39 +1209,7 @@ function MarketTab({ notify, markets, onMutation }) {
                     it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
                   ].filter(Boolean).join(" · "),
                   links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
-                  open: openId === it.id,
-                  onToggle: () => setOpenId(openId === it.id ? null : it.id),
-                  detail: DetailRows([
-                    [lookup("detail.id"), it.id],
-                    [lookup("detail.source"), it.source === "npm"
-                      ? h(ExtLink, { href: `https://www.npmjs.com/package/${it.npm}` }, `npm · ${it.npm}`)
-                      : h(ExtLink, { href: `https://github.com/${it.github}` }, `GitHub · ${it.github}`)],
-                    [lookup("detail.latest"), it.latestVersion ? `v${it.latestVersion}` : it.latestTag ? it.latestTag : it.latestSha ? it.latestSha : it.latestError || "—"],
-                    [lookup("detail.installed"), it.installedPkg ? `${it.installedPkg} v${it.installedVersion || "?"}` : lookup("installed.none")],
-                    [lookup("detail.tags"), (it.tags || []).join(", ") || "—"],
-                    it.latestError ? [lookup("version.failed"), it.latestError] : null,
-                    it.community === true ? [lookup("detail.capabilities"), Array.isArray(it.capabilities) && it.capabilities.length
-                      ? `${it.capabilities.join(", ")}${Array.isArray(it.capabilityRedLines) && it.capabilityRedLines.length ? `；${lookup("detail.redlines")}: ${it.capabilityRedLines.join("; ")}` : ""}`
-                      : lookup("detail.capabilities.unscanned")] : null,
-                    it.community === true && safeScreenshots(it).length
-                      ? [lookup("detail.screenshots"), h("div", { className: "dshm-chips" },
-                          ...safeScreenshots(it).map((src) => h("img", { key: src, src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", style: { maxWidth: "220px", maxHeight: "140px", borderRadius: "6px", border: "1px solid rgba(127,127,127,.25)" } })))]
-                      : null,
-                  ]),
-                  actions: [
-                    it.installed
-                      ? h("span", { className: "dshm-hint", key: "hint" }, lookup("manage.hint"))
-                      : h("button", {
-                          key: "install",
-                          className: "dshm-btn primary sm",
-                          disabled: busyId === it.id,
-                          onClick: (e) => {
-                            e.stopPropagation();
-                            doInstall(it);
-                          },
-                        },
-                        busyId === it.id ? h(Spin) : lookup("action.install")),
-                  ],
+                  onToggle: () => setDetailId(it.id),
                 })),
               ),
               pages > 1
@@ -1060,6 +1234,15 @@ function MarketTab({ notify, markets, onMutation }) {
                   )
                 : null,
             ),
+    detailItem
+      ? h(DetailModal, {
+          it: detailItem,
+          labels: detailLabels,
+          busy: busyId === detailItem.id,
+          onClose: () => setDetailId(null),
+          onInstall: (it2) => doInstall(it2),
+        })
+      : null,
   );
 }
 
