@@ -4,12 +4,12 @@
 
 ## 1. 定位与形态
 
-- **dsh-m** = 个人自用的 DSH（DeepSeek Harness）插件市场。
+- **dsh-m** = 面向大众的 DSH（DeepSeek Harness）插件市场（2026-09-29 由「个人自用」升级定位，见 §2.6）。
 - 形态：**一个 DSH web 插件**（旗舰是 Web GUI）+ **7 个 agent 工具** + **薄 CLI `dshm`**，全部在同一个 npm 包里，不搞 monorepo。
 - npm 包名 `dsh-m`（已占位发布 0.0.x），插件 id `dsh-m`，显示名 **DSH Marketplace**。
 - 管理对象：**只管 DSH 插件**，不管 Agent Skills（skills 归 skillhub）。
 - 与 `@cocofhu/skillhub` **完全独立并存**：不读不写它的数据与配置，仅在实现机制上借鉴（其源码镜像见 §10）。
-- 单机自用：无服务端、无账号、无提交入口；收录变更 = 改本仓库的 registry（他人可发 PR）。
+- 单机形态：无服务端、无账号、无提交入口；收录变更 = 改本仓库的 registry（他人可发 PR）。
 
 ## 2. Registry（收录清单）
 
@@ -64,6 +64,8 @@
 
 ### 2.5 社区清单与合并市场（0.5.0 grilling 定稿 2026-09-28）
 
+> **2026-09-29 修订**：本节 Q45（混排 + 主清单置顶 + 「只看主清单」chip）、Q40（ui/tools/market 共享过滤桶）、Q44（能力披露在卡片折叠区）的**展示层**语义被 §2.6 分区制修订；数据层（获取链、适配层、校验、降级、缓存）全部不变。
+
 - **双层模型**：主清单（§2.1–2.4 全部语义不变）之上叠加只读的**社区清单**——awesome-dsh-plugin 维护的全量社区目录（4,377+ 条，日增约 62）。**合并市场 = 主清单 ∪ 社区清单去重（主清单恒优先）**，GUI / agent 工具 / CLI 三端同源同语义。本节修订 §9.1 Q25「不做运行时多源合并」，架构决策见 [ADR-0003](./adr/0003-community-catalog-merge.md)。
 - **数据锚定 npm 包（Q39）**：`dsh-plugin-catalog`（CC0-1.0，版本 `YYYY.MDD.RUN`）为唯一数据锚。获取链：`registry.npmjs.org` dist-tags 探测最新版本（几 KB）→ **版本未变不重拉正文（版本号即 revalidate 验证器）**→ jsDelivr 按精确版本直取 `plugins.json`（版本 pin 后内容不可变，CDN 缓存无害）→ npmmirror files API → unpkg 按精确版本直取（末位兜底；均为纯 JSON 文件线路，不引入 tar 解包依赖）。npm 精确版本不可变 = 完整性锚；**不做包内快照兜底**（对日增 62 条的目录，过期数据不得冒充最新——陈旧必须显式标注），失败如实报错（发生了什么 / 为什么 / 现在怎么办）。
 - **目录适配层**：原生条目 → 收录条目。`description.zh`（缺省回退 `en`；>500 字符截断并计数）→ description；`npm` 非空 → `source: npm`，否则 `source: github`（owner/repo 取自 url）；`url` → homepage；tags 置空；**分类保留原生值不转译**（开放集，Q40）；`stars/downloads/capabilities/screenshots` 等不进收录条目本体，仅在市场层作为旁路数据透传展示。id 合成：原生 `name` 是裸名（实测 4,377 条中 190 个重名），合成小写 `owner--name` 形态并满足 v1 id 规则（非法字符折叠为 `-`，超 64 字符截断加哈希尾缀），适配层内冲突追加序号。
@@ -72,6 +74,26 @@
 - **降级语义（Q42）**：主清单 unavailable + 社区可用 → 显示社区条目 + 顶部错误横幅 + 安装不禁用；社区 unavailable → 主清单照常 + 静默 notice；探测失败时回落 `<ns>/awesome/` **运行时缓存**并显式标注 stale（市场页可见「缓存快照」提示，绝不冒充 ready）——运行时缓存语义与主清单自定义源一致，被禁止的只是**包内快照**；社区**绝不**回退主清单伪装。
 - **开关与缓存**：`communityCatalog`（默认 true，volatile live 生效）+ `communityCatalogPin`（可选锁 npm 版本）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出。社区缓存放 `<namespace>/awesome/` 子目录（不参与 `pruneCaches` 的顶层 `*.json` 清理），正文按版本文件缓存，`fetchedAt`/版本号/线路进设置页展示；TTL 复用 `cacheTtlMin`（只约束 dist-tags 探测频率）。
 - **市场行为（Q45/Q46）**：默认排序主清单置顶（组内维持原顺序）+ 社区按 30 天下载量降序（无数据按名称）；搜索同时匹配中英文描述；「只看主清单」chip 常驻筛选栏首位。**探测边界**：市场浏览页对社区 npm 条目做 latest 探测（registry 无配额限制）；社区 github 条目**不做**浏览页 REST 探测（GitHub 匿名 60 次/小时在 50 条/页 × 2 调用下不可控），更新检查收敛到详情/安装时的按需解析——配额耗尽时已有可读提示（versions.ts `githubRateLimitMessage`）。**已装页豁免**：探测对象受已装数量天然约束，继续探测；计量在**真实 GitHub HTTP 请求层**（一次 `githubLatestTag` ≈ 1–3 个请求：release 路径 1–2 个、fallback 路径 releases→tags→commits 最多 3 个）：单请求 ≤25 次、宿主进程滚动 1 小时 ≤50 次（**仅作用于被动探测**——用户主动 install/upgrade/诊断不经此预算）、同仓库 in-flight single-flight、超限标 `latestError` 不阻塞列表——否则用户装的社区 github 插件永远没有更新徽标。独立 CLI 进程不共享宿主内预算，文档如实标注 best-effort（并发场景不承诺 60/h 绝不耗尽）。能力披露（capabilities/红线）只在详情折叠区展示（缺省 = 未扫描 ≠ 未检出），卡片不打标（Q44，防警告疲劳）；截图仅详情层加载（GitHub 图床白名单由上游保证）。
+
+### 2.6 双清单分区市场与交互升级（0.7.0 grilling 定稿 2026-09-29）
+
+> 本节只动**展示层与三端契约**；数据层（§2.5 获取链、适配层、校验、降级、缓存）与 Profile 变更事务（§3）不变。参考实现：`.dsh-research/dsh-market-clone/`（同一上游目录的原生市场应用，**结构级借鉴其浏览体验，不借鉴其安装链路**——dsh-m 的差异化 = 策展精选层 + 三端同源 + Profile 变更事务）。
+
+- **定位升级**：dsh-m 从「个人自用」转向**面向大众发布**（§1 定位句同步改写）。
+- **分区制（修订 §2.5 Q45）**：市场面板改为分区 tab——**「社区」为默认落地页**（全量社区条目）、**「精选」在后**（主清单条目，单页、策展顺序即排序）、**「收藏」第三**（本地收藏）。各区**独立状态实例**：分类、搜索、排序、分页互不重置。「只看主清单」chip 退役；Q40 的共享过滤桶退役（各区分类独立：精选区 5 chips、社区区全量 chips），「分类保留原生值不转译」仍成立。社区区**排除与主清单重复的条目**（displaced 数据现成）。**数据层 `mergeRegistries` 去重不变**（ADR-0003 架构不动）——「合并市场」的合并收敛为数据层语义，展示层分区。
+- **社区区浏览设施**（dsh-market 结构级借鉴）：
+  - 分类 chips：两行折叠 + 实测裁剪（渲染后逐 chip 测量可容纳数）+ 收起时激活分类置前 + 滚动吸顶自动收缩（不改写用户开合选择）；分类标签**单一事实源**（core 提供标签表，杀掉客户端内嵌副本）。
+  - 排序：`downloads | stars | added × asc/desc`，默认 `downloads-desc`；**无下载量（github-only）≠ 0 下载**（永远排在有真实计数条目之后，彼此按 stars 排）；时间窗过滤明确不做（`added` 排序覆盖「找最新」诉求）。
+  - 卡片 byline：`owner / downloads / ★stars`（旁路数据已透传，Tooltip 给精确数）；`deprecated` 徽章 + 详情内 replacement 替代链接（适配层补透传原生字段）。
+  - 分页：页码窗口化（`1 … n-1 n n+1 … total`，≤7 页全显）+ 页大小 24/48/96 + 筛选变化重置页 1 + 翻页回顶；仅 prev/next 的旧分页退役。
+  - 搜索：相关性加权管线——NFKC 归一化 + 中西文边界插空格 + 字段权重（name/npm > owner > 描述 > 分类）+ 命中类型加分 + 按条目缓存归一化结果；输入 250ms debounce + IME composition 全程处理 + draft/已提交 query 分离。
+  - 描述 5 行钳制（真实溢出才显示展开钮）；**数据层双语**——描述按 UI 语言取 zh/en（数据现成），UI 完整双语字典列 backlog。
+- **详情 = Modal 且为卡片超集**（「detail 显示少于摘要就是倒退」）：byline / 分类 / 收录日期 / 下载量窗口三要素（计数 + 窗口 + 核对时间）/ 描述全文 / 截图灯箱（←→/Esc、**禁自动轮播**）/ 能力披露 + 红线（**默认收起**）/ 安装命令折叠行 / deprecated 替代链接；精选条目超集另加 verified 与 tags。**安装确认走 Modal**。卡片瘦身：能力披露、截图、安装命令全部迁出卡片（Q44 精神「只在详情层、默认收起」不变，载体升级）。
+- **全局操作记录**：每个变更操作一条 record（`queued / running / input=冲突待决 / done / warned / failed`），**状态不挂卡片**——翻页、搜索、切 tab 不丢；**localStorage 持久化队列**，宿主重载恢复时逐条校验「此刻仍成立才执行，否则报告」；覆盖安装、升级、卸载、开关。已装侧跟随一致化：「全部更新 (N)」批量入口 + tab 更新红点 + 卡片视觉与发现侧同体系；组管理、个人备注列 backlog。
+- **收藏**：浏览器 localStorage 本地收藏（不进 profile、不进服务端）；收藏区 stale 条目（目录中已下架）单独提示 + 一键清理。
+- **agent/CLI 契约（允许破坏性变更）**：`dshm_search` 参数改为 `query / category / source('primary'|'community'|'all'，默认 all，与 GUI 分区对齐) / limit(默认 10，clamp 1–80) / offset(真翻页)`；`primary_only` 删除。输出补 `community` 标记与 `downloads/stars`；社区分类直出中文标签（不再回退英文 slug）；工具描述整体重写（真实规模 + 翻页语义，删「registry is curated & small」）。CLI 对齐 `--source / --offset / --limit`，默认 10 条。
+- **技术默认件**：图片三层懒加载（IntersectionObserver + `loading=lazy` + `fetchPriority=low`；缩略图本机直连原图，不引第三方代理服务）；移除客户端重复排序（服务端单一排序源）；`total>200` 性能提示随分区退役；host-api limit 上限对齐新页大小；空状态逐分区定制；错误态带具体原因 + 重试。
+- **Backlog（明确不做）**：UI 完整双语字典、时间窗过滤、浏览层宿主兼容徽章/过滤、组管理、个人备注、giscus 评论、静态官网。
 
 ## 3. 安装 / 卸载 / 升级 / 重启
 

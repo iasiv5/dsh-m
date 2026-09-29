@@ -1,6 +1,6 @@
 # dsh-m · DSH 插件市场
 
-个人自用的 DeepSeek Harness 插件市场：收录（registry）、安装、卸载、升级 DSH 插件。
+面向大众的 DeepSeek Harness 插件市场：双清单收录（精选策展 + 社区目录）、安装、卸载、升级 DSH 插件。
 设计共识见 `docs/DESIGN.md`；本文件只是领域术语表。
 
 ## Language
@@ -66,21 +66,37 @@ awesome-dsh-plugin 维护的全量社区目录，经 npm 包 dsh-plugin-catalog 
 _Avoid_: awesome registry、第二清单、社区 registry
 
 **合并市场（Merged Market）**:
-主清单 ∪ 社区清单去重后的展示集合；GUI、agent 工具与 CLI 三端同源同语义。
-_Avoid_: 混合清单、全量列表
+主清单 ∪ 社区清单去重后的数据集合；合并只发生在数据层（主清单恒优先），展示层按社区区/精选区分区呈现；GUI、agent 工具与 CLI 三端同源同语义。
+_Avoid_: 混合清单、全量列表、合并视图（展示层已分区）
 
 **目录适配层（Catalog Adapter）**:
 把社区清单原生条目转换为收录条目的翻译模块；分类保留原生值不转译，id 需合成保证唯一。
 _Avoid_: schema 转换器、normalize 层
 
 **精选分类（Primary Categories）**:
-主清单使用的五个一级分类（market/tools/ui/search/other），主清单 schema 严格校验维持不变；ui/tools/market 三个 id 与社区分类同名共享过滤桶。
+主清单使用的五个一级分类（market/tools/ui/search/other），主清单 schema 严格校验维持不变；分区制下与社区分类彻底解耦，仅作用于精选区。
 _Avoid_: 原生分类、旧分类
 
 **社区分类（Community Categories）**:
-社区清单的原生分类，开放集：已知条目带中文标签进筛选栏「社区」组，上游新增的未知分类原样渲染进临时组，等发版收录标签。
+社区清单的原生分类，开放集，仅作用于社区区：已知条目带中文标签，上游新增的未知分类原样渲染进临时组，等发版收录标签。
 _Avoid_: 扩展分类、子分类
 
 **能力披露（Capability Disclosure）**:
-社区条目自带的能力扫描结果与红线组合；缺省 = 未扫描 ≠ 未检出；只在详情折叠区展示，卡片不打标。
+社区条目自带的能力扫描结果与红线组合；缺省 = 未扫描 ≠ 未检出；只在详情 Modal 展示且默认收起，卡片不打标。
 _Avoid_: 权限声明、安全审查（收录清单明确不做）
+
+**社区区（Community Zone）**:
+市场面板的默认落地分区，展示合并市场中的社区清单条目（排除与主清单重复者），自带独立的分类、搜索、排序、分页状态。
+_Avoid_: 社区 tab（口语可，文档用术语）、社区市场
+
+**精选区（Primary Zone）**:
+展示主清单条目的市场分区，单页无分页，策展顺序即排序；verified 与收录文案标准的展示载体。
+_Avoid_: 精选 tab（口语可，文档用术语）、主清单区
+
+**收藏（Favorites）**:
+浏览器 localStorage 本地的插件收藏（市场第三分区）；目录中已下架的 stale 条目单独提示并可一键清理，不进 profile、不进服务端。
+_Avoid_: 订阅、书签
+
+**操作记录（Operation Record）**:
+一个变更操作（安装/升级/卸载/开关）的全局状态条目（queued/running/input=冲突待决/done/warned/failed），持久化于 localStorage，恢复时逐条校验仍成立才执行；状态不挂卡片。
+_Avoid_: 任务列表、任务队列（指持久化整体时口语可）
