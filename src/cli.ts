@@ -17,9 +17,23 @@ import {
 } from './core/market.js'
 import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
+import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
+
+/** 分类中文标签（0.7.0 Task 6）：精选 5 类本地表 + 社区已知标签单一事实源；未知 slug 原样。 */
+const CLI_CATEGORY_LABELS: Record<string, string> = {
+  market: '市场',
+  tools: '工具',
+  ui: '界面',
+  search: '搜索',
+  other: '其他',
+}
+
+function categoryLabelOf(category: string): string {
+  return CLI_CATEGORY_LABELS[category] ?? COMMUNITY_CATEGORY_LABELS[category] ?? category
+}
 
 interface Parsed {
   cmd: string
@@ -149,12 +163,13 @@ function unavailableLines(state: { configuredAddress: string; activeAddress: str
   ].filter(Boolean)
 }
 
-const HELP = `dshm — DSH Marketplace（个人自用 DSH 插件市场）
+const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社区目录双清单）
 
 用法：dshm <命令> [参数]
 
 只读命令：
-  dshm search [--query 关键词] [--category market|tools|ui|search|other|<社区slug>] [--limit N] [--primary-only]
+  dshm search [--query 关键词] [--category market|tools|ui|search|other|<社区slug>] [--source primary|community|all] [--limit N] [--offset N]
+                                        （source 分区：community=社区目录 4000+ 条 / primary=精选策展 / all=默认；limit 默认 10；offset 翻页）
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
@@ -205,15 +220,24 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       return 0
 
     case 'search': {
-      // metadata-only：不构造全量 latest，query/category/limit 直接交给 core；
+      // metadata-only：不构造全量 latest；source/offset/limit 直接交给 core（0.7.0 Task 6：与工具同语义）；
       // 双源判定：主清单 unavailable 但社区有条目 → 照常出页（Q42）；两层皆不可用 → exit 1
-      const limit = Number.isFinite(Number(flags.limit)) && Number(flags.limit) > 0 ? Number(flags.limit) : undefined
+      const sourceRaw = typeof flags.source === 'string' ? flags.source : ''
+      if (sourceRaw !== '' && sourceRaw !== 'primary' && sourceRaw !== 'community' && sourceRaw !== 'all') {
+        err(`错误：非法 source: ${sourceRaw}（需 primary/community/all）`)
+        return 1
+      }
+      const source = sourceRaw === '' ? 'all' : sourceRaw
+      const limitRaw = Number(flags.limit)
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(80, Math.max(1, Math.floor(limitRaw))) : 10
+      const offsetRaw = Number(flags.offset)
+      const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
       const result: MarketResult = await d.listMarket(cfg, {
         query: typeof flags.query === 'string' ? flags.query : undefined,
         category: typeof flags.category === 'string' ? flags.category : null,
-        offset: 0,
+        source,
+        offset,
         limit,
-        primaryOnly: flags['primary-only'] === true,
         withLatest: false,
         namespace: 'cli',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
@@ -232,13 +256,24 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       }
       for (const it of result.items) {
         const inst = it.installed ? ` [已安装 v${it.installedVersion || '?'}]` : ''
-        out(`• ${it.name} (${it.id}) · ${it.category} · ${it.source}${inst}`)
+        const zone = it.community === true ? '[社区] ' : ''
+        out(`• ${it.name} (${it.id})${zone}· ${categoryLabelOf(it.category)} · ${it.source}${inst}`)
         out(`  ${it.description}`)
       }
+      const shown = result.items.length
+      const nextOffset = offset + shown < result.total ? offset + shown : null
       const s = result.registryState
       out(`\n来源：${registrySourceLabel(s.source)}${s.stale ? '（缓存）' : ''} · 更新：${s.fetchedAt ?? '—'} · 共 ${result.total} 条`)
       const c = result.community
-      out(`社区：${c.status === 'ready' ? '就绪' : c.status === 'stale' ? '缓存快照' : c.status} · 收录 ${c.acceptedCount} · 版本 ${c.version ?? '—'} · 线路 ${c.route ?? '—'}`)
+      if (c.status !== 'skipped') {
+        const cLabel = c.status === 'ready' ? '就绪' : c.status === 'stale' ? '缓存快照' : c.status
+        out(`社区：${cLabel} · 收录 ${c.acceptedCount} · 版本 ${c.version ?? '—'} · 线路 ${c.route ?? '—'}`)
+      }
+      out(
+        nextOffset !== null
+          ? `已显示 ${offset + 1}–${offset + shown} · 翻页：加 --offset ${nextOffset}（其余参数不变）`
+          : `已显示 ${offset + 1}–${offset + shown} · 已到末尾`,
+      )
       return 0
     }
 
