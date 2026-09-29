@@ -158,7 +158,9 @@ export interface CommunityConfig {
   communityCatalogPin?: string
 }
 
-export type CommunityStatus = 'ready' | 'stale' | 'unavailable' | 'disabled'
+/** skipped = 查询层主动不加载（0.7.0 Task 2：source='primary' 分区跳过，loader 零调用）；
+ *  disabled = 配置关闭（communityCatalog=false，真任务 disabled 分支）——两者语义不同，勿混用。 */
+export type CommunityStatus = 'ready' | 'stale' | 'unavailable' | 'disabled' | 'skipped'
 
 export interface CommunityCatalogState {
   enabled: boolean

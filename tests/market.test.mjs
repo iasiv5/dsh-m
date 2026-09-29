@@ -1022,14 +1022,88 @@ describe('M1 Task 5：合并市场', () => {
     ])
   })
 
-  it('③ primaryOnly：社区 loader 零调用，items 只主条目，community=disabled', async () => {
+  it('③ primaryOnly（shim）：社区 loader 零调用，items 只主条目，community=skipped（0.7.0 Task 2 跳过语义）', async () => {
     const base = fakeDeps()
     const { deps, ccalls } = withCommunity(base, communityLoaded([communityRaw('x', 'o')]))
     const res = await listMarket(cfg, { withLatest: false, primaryOnly: true }, deps)
     assert.equal(ccalls.n, 0)
     assert.ok(res.items.every((it) => it.community === undefined))
-    assert.equal(res.community.enabled, false)
-    assert.equal(res.community.status, 'disabled')
+    assert.equal(res.community.enabled, true)
+    assert.equal(res.community.status, 'skipped')
+  })
+
+  it('⑦ source 分区（0.7.0 Task 2）：primary=只主清单零社区加载；community=只社区条目', async () => {
+    const primary = [
+      { id: 'p-1', name: 'A', description: 'da', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps, ccalls } = withCommunity(base, communityLoaded([communityRaw('c-1', 'o1')]))
+    const rp = await listMarket(cfg, { withLatest: false, source: 'primary' }, deps)
+    assert.equal(ccalls.n, 0)
+    assert.deepEqual(rp.items.map((it) => it.id), ['p-1'])
+    assert.equal(rp.community.status, 'skipped')
+    const rc = await listMarket(cfg, { withLatest: false, source: 'community' }, deps)
+    assert.equal(ccalls.n, 1)
+    assert.deepEqual(rc.items.map((it) => it.id), ['o1--c-1'])
+    assert.equal(rc.community.status, 'ready')
+  })
+
+  it('⑧ 双口径计数：categoryCounts=分区集合（不含过滤），total=分区∩query∩category', async () => {
+    const primary = [
+      { id: 'p-1', name: 'A', description: 'da', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('t1', 'o1', { category: 'theme' }),
+      communityRaw('t2', 'o2', { category: 'theme' }),
+      communityRaw('d1', 'o3', { category: 'dev' }),
+    ]))
+    const res = await listMarket(cfg, { withLatest: false, source: 'community', category: 'theme' }, deps)
+    assert.equal(res.total, 2)
+    assert.deepEqual(res.categoryCounts, { market: 0, tools: 0, ui: 0, search: 0, other: 0, theme: 2, dev: 1 })
+    const rp = await listMarket(cfg, { withLatest: false, source: 'primary', category: 'theme' }, deps)
+    assert.equal(rp.total, 0)
+    assert.deepEqual(rp.categoryCounts, { market: 0, tools: 1, ui: 0, search: 0, other: 0 })
+  })
+
+  it('⑨ sort downloads：无计数 ≠ 0——无数据恒排有数据之后（组内 stars 降序），dir 只翻转有数据组', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('small', 'o1', { downloads: 50, stars: 99 }),
+      communityRaw('big', 'o2', { downloads: 500, stars: 10 }),
+      communityRaw('nodl-lowstar', 'o3', { downloads: null, stars: 5 }),
+      communityRaw('nodl-highstar', 'o4', { downloads: null, stars: 9 }),
+    ]))
+    const desc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'downloads', dir: 'desc' } }, deps)
+    assert.deepEqual(desc.items.map((it) => it.id), ['o2--big', 'o1--small', 'o4--nodl-highstar', 'o3--nodl-lowstar'])
+    const asc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'downloads', dir: 'asc' } }, deps)
+    assert.deepEqual(asc.items.map((it) => it.id), ['o1--small', 'o2--big', 'o4--nodl-highstar', 'o3--nodl-lowstar'])
+  })
+
+  it('⑩ sort stars：缺失视为 -1 参与正常比较', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('mid', 'o1', { stars: 5 }),
+      communityRaw('nostar', 'o2', { stars: null }),
+      communityRaw('top', 'o3', { stars: 20 }),
+    ]))
+    const desc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'stars', dir: 'desc' } }, deps)
+    assert.deepEqual(desc.items.map((it) => it.id), ['o3--top', 'o1--mid', 'o2--nostar'])
+    const asc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'stars', dir: 'asc' } }, deps)
+    assert.deepEqual(asc.items.map((it) => it.id), ['o2--nostar', 'o1--mid', 'o3--top'])
+  })
+
+  it('⑪ sort added：缺失视为最旧（空串日期）参与比较', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('jan', 'o1', { added: '2026-01-01' }),
+      communityRaw('noadded', 'o2', {}),
+      communityRaw('jun', 'o3', { added: '2026-06-01' }),
+    ]))
+    const desc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'added', dir: 'desc' } }, deps)
+    assert.deepEqual(desc.items.map((it) => it.id), ['o3--jun', 'o1--jan', 'o2--noadded'])
+    const asc = await listMarket(cfg, { withLatest: false, source: 'community', sort: { field: 'added', dir: 'asc' } }, deps)
+    assert.deepEqual(asc.items.map((it) => it.id), ['o2--noadded', 'o1--jan', 'o3--jun'])
   })
 
   it('④ 主 unavailable + 社区 ready 有条目 → 出页不返空（Q42）', async () => {

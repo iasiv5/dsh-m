@@ -128,12 +128,18 @@ export interface MarketQuery extends RegistryRuntimeOptions {
   query?: string
   /** 精选 5 分类或社区开放分类 slug（host-api 层校验安全 slug；core 侧原样匹配） */
   category?: string | null
+  /** 分区过滤（0.7.0 Task 2 / ADR-0004）：'primary'=只主清单（社区 loader 零调用，summary=skipped）、
+   *  'community'=只社区条目（排除与主清单重复的 displaced 条目）、缺省 'all' 合并视图。 */
+  source?: 'primary' | 'community' | 'all'
+  /** 显式排序（0.7.0 Task 2）：不传维持 merged 现序（primary=策展序、community=downloads 降序）。
+   *  downloads 排序下无计数 ≠ 0（无数据恒排有数据之后，组内 stars 降序）；stars 缺失视为 -1；added 缺失视为最旧。 */
+  sort?: { field: 'downloads' | 'stars' | 'added'; dir: 'asc' | 'desc' }
   offset?: number
   /** core 按 withLatest hard clamp：true 最大 50，false 最大 80 */
   limit?: number
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
-  /** 只看主清单：跳过社区加载（loader 零调用） */
+  /** @deprecated 0.7.0 Task 2 过渡 shim（Task 7 删除）：改用 source='primary'——只看主清单，跳过社区加载（loader 零调用） */
   primaryOnly?: boolean
   force?: boolean
   /** default 60_000；测试注入短 deadline */
@@ -194,7 +200,7 @@ export interface MarketResult {
   installedComplete: boolean
   latestComplete: boolean
   latestTimedOut: boolean
-  /** 社区清单状态 summary（M1 Task 5；primaryOnly → disabled） */
+  /** 社区清单状态 summary（M1 Task 5；source='primary'/primaryOnly → skipped，配置关闭 → disabled） */
   community: CommunityRegistrySummary
 }
 
@@ -506,6 +512,15 @@ function disabledCommunitySummary(): CommunityRegistrySummary {
   )
 }
 
+/** 查询层主动跳过（0.7.0 Task 2：source='primary'）：本次未加载社区层，非配置关闭、非故障。 */
+function skippedCommunitySummary(): CommunityRegistrySummary {
+  return communitySummary(
+    { enabled: true, status: 'skipped', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] },
+    {},
+    [],
+  )
+}
+
 function communityTimeoutSummary(): CommunityRegistrySummary {
   return communitySummary(
     { enabled: true, status: 'unavailable', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: ['社区目录状态获取超时，可稍后刷新'], warnings: [] },
@@ -523,7 +538,8 @@ interface CommunityOutcome {
 /**
  * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
  * 本函数作为 waiter 用剩余 deadline race 自己的等待；到点只结束本 waiter（summary 标超时），
- * 共享 flight 照常继续。primaryOnly/未启用 → loader 零调用（task 传 null）。
+ * 共享 flight 照常继续。source='primary'/primaryOnly/未启用 → loader 零调用（task 传 null → skipped；
+ * 配置关闭走真任务的 disabled 分支，与跳过语义分离）。
  * 导出供 community.ts getCommunitySummary 复用（summary 组装单一产地）。
  */
 export async function communityOutcome(
@@ -531,7 +547,7 @@ export async function communityOutcome(
   deadlineAt: number,
   primary: RegistryEntry[],
 ): Promise<CommunityOutcome> {
-  if (!task) return { summary: disabledCommunitySummary(), merged: primary }
+  if (!task) return { summary: skippedCommunitySummary(), merged: primary }
   let loaded: LoadedCommunity | 'deadline'
   try {
     loaded = await deadlineRace(task, deadlineAt - Date.now())
@@ -566,6 +582,53 @@ export async function communityOutcome(
 
 function isCommunityEntry(entry: RegistryEntry | CommunityEntry): entry is CommunityEntry {
   return (entry as CommunityEntry).descriptionEn !== undefined
+}
+
+/** 旁路数值/日期读取（RegistryEntry 无这些键 → null/''；0.7.0 Task 2 排序用）。 */
+function dlOf(e: RegistryEntry | CommunityEntry): number | null {
+  const v = (e as CommunityEntry).downloads
+  return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+function starsOf(e: RegistryEntry | CommunityEntry): number {
+  const v = (e as CommunityEntry).stars
+  return typeof v === 'number' && Number.isFinite(v) ? v : -1
+}
+
+function addedOf(e: RegistryEntry | CommunityEntry): string {
+  const v = (e as CommunityEntry).added
+  return typeof v === 'string' ? v : ''
+}
+
+/**
+ * 分区排序（0.7.0 Task 2）：`dir` 只翻转有数据的比较，**不翻转「无数据垫底」语义**——
+ * downloads 无计数 ≠ 0（无数据者恒排有数据者之后，组内按 stars 降序再 name）；
+ * stars 缺失视为 -1、added 缺失视为最旧（空串日期），两者参与正常比较随 dir 翻转。
+ */
+function sortEntries(
+  entries: Array<RegistryEntry | CommunityEntry>,
+  sort: { field: 'downloads' | 'stars' | 'added'; dir: 'asc' | 'desc' },
+): Array<RegistryEntry | CommunityEntry> {
+  const dirMul = sort.dir === 'asc' ? 1 : -1
+  const nameCmp = (a: RegistryEntry | CommunityEntry, b: RegistryEntry | CommunityEntry) =>
+    String(a.name).localeCompare(String(b.name))
+  return entries.slice().sort((a, b) => {
+    if (sort.field === 'downloads') {
+      const da = dlOf(a)
+      const db = dlOf(b)
+      if (da !== null && db !== null) return (da - db) * dirMul || nameCmp(a, b)
+      if (da !== null) return -1
+      if (db !== null) return 1
+      return starsOf(b) - starsOf(a) || nameCmp(a, b)
+    }
+    if (sort.field === 'stars') {
+      const diff = starsOf(a) - starsOf(b)
+      return diff * dirMul || nameCmp(a, b)
+    }
+    const aa = addedOf(a)
+    const ab = addedOf(b)
+    return (aa < ab ? -1 : aa > ab ? 1 : 0) * dirMul || nameCmp(a, b)
+  })
 }
 
 /** 合并条目 → MarketItem：社区条目带 community 标记与旁路字段。 */
@@ -626,6 +689,9 @@ export async function listMarket(
     : DEFAULT_DEADLINE_MS
   const deadlineAt = startedAt + deadlineMs
   const namespace = opts.namespace ?? 'host'
+  // 分区归一（0.7.0 Task 2）：非法值一律按 'all'
+  const source: 'primary' | 'community' | 'all' =
+    opts.source === 'primary' || opts.source === 'community' ? opts.source : 'all'
   const withLatest = opts.withLatest !== false
   const maxLimit = withLatest ? WITH_LATEST_MAX : METADATA_ONLY_MAX
   const signal = opts.signal
@@ -634,10 +700,12 @@ export async function listMarket(
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
   const installedTask: Promise<Awaited<ReturnType<MarketDeps['listInstalledPlugins']>> | null> =
     d.listInstalledPlugins().catch(() => null)
-  // 社区 flight 并发启动（primaryOnly 零调用）；共享 loader 不接收调用者 deadline——
+  // 社区 flight 并发启动（source=primary/primaryOnly 零调用）；共享 loader 不接收调用者 deadline——
   // listMarket 作为 waiter 在 communityOutcome 内 race 自己的剩余 deadline/signal（v10 契约）
   const communityTask =
-    opts.primaryOnly === true ? null : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
+    source === 'primary' || opts.primaryOnly === true
+      ? null
+      : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
 
   let loaded: LoadedRegistry | 'deadline'
   try {
@@ -672,23 +740,32 @@ export async function listMarket(
   // 社区 waiter 收敛：主 unavailable 时 merged = 存活社区条目（Q42 出页不返空）；两层皆不可用 → 空页契约
   const community = await communityOutcome(communityTask, deadlineAt, loaded.registry.plugins)
 
-  // 全量统计 + query/category 过滤 + 分页（同步，极轻）
-  const all = community.merged
+  // 分区过滤 + 全量统计 + query/category 过滤 + 分页（同步，极轻；0.7.0 Task 2）：
+  // categoryCounts = 分区集合（不含 query/category 过滤——chips 需要全区计数）；
+  // total = 分区 ∩ query ∩ category。
+  const merged = community.merged
+  const zoned =
+    source === 'community'
+      ? merged.filter(isCommunityEntry)
+      : source === 'primary'
+        ? merged.filter((entry) => !isCommunityEntry(entry))
+        : merged
   const counts: CategoryCounts = zeroCounts()
-  for (const entry of all) counts[entry.category] = (counts[entry.category] ?? 0) + 1
+  for (const entry of zoned) counts[entry.category] = (counts[entry.category] ?? 0) + 1
   const q = (opts.query ?? '').trim().toLowerCase()
   const cat = opts.category ?? null
-  const filtered = all.filter((entry) => {
+  const filtered = zoned.filter((entry) => {
     if (cat && entry.category !== cat) return false
     if (!q) return true
     return searchableText(entry).toLowerCase().includes(q)
   })
-  const total = filtered.length
+  const ordered = opts.sort ? sortEntries(filtered, opts.sort) : filtered
+  const total = ordered.length
   const limit = clampLimit(opts.limit, maxLimit)
   let offset = normalizeOffset(opts.offset)
   if (total > 0 && offset >= total) offset = Math.floor((total - 1) / limit) * limit
 
-  const items: MarketItem[] = filtered.slice(offset, offset + limit).map((entry) => toMarketItem(entry, installedItems))
+  const items: MarketItem[] = ordered.slice(offset, offset + limit).map((entry) => toMarketItem(entry, installedItems))
 
   let latestComplete = true
   let latestTimedOut = false
