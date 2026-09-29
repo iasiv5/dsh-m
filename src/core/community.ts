@@ -42,6 +42,9 @@ export interface CommunityRawEntry {
   install?: string
   added?: string
   screenshots?: string[]
+  /** 前瞻性声明（0.7.0 Task 1）：上游目录当前无此键，形状对齐 dsh-market registry 类型；上游落地后跑 smoke 核对（尤其 replacement 是 string 还是对象）。 */
+  deprecated?: boolean
+  replacement?: string | null
 }
 
 export interface CommunityCatalogCategory {

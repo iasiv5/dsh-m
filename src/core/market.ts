@@ -89,6 +89,19 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   capabilities?: string[]
   capabilityRedLines?: string[]
   screenshots?: string[]
+  /** 0.7.0 Task 1 社区 bypass 扩展（同 CommunityEntry 契约：缺失不产生键）：
+   * owner 供 byline；added 收录日期排序；deprecated/replacement 前瞻字段 truthy 判断缺失不渲染；
+   * install 上游安装命令原文；downloadsStart/End/CheckedAt 下载量窗口三要素；
+   * version 目录快照（仅 latestError 兜底展示，带「目录快照」标注，不参与 outdated 判定）。 */
+  owner?: string
+  added?: string
+  deprecated?: true
+  replacement?: string
+  install?: string
+  downloadsStart?: string
+  downloadsEnd?: string
+  downloadsCheckedAt?: string
+  version?: string
 }
 
 /** 开放分类计数：精选 5 键恒在 + 社区开放 slug 键（M1 Task 5）。 */
@@ -570,6 +583,15 @@ function toMarketItem(entry: RegistryEntry | CommunityEntry, installedItems: Ins
     item.capabilities = entry.capabilities
     item.capabilityRedLines = entry.capabilityRedLines
     item.screenshots = entry.screenshots
+    item.owner = entry.owner
+    if (entry.added !== undefined) item.added = entry.added
+    if (entry.deprecated !== undefined) item.deprecated = entry.deprecated
+    if (entry.replacement !== undefined) item.replacement = entry.replacement
+    if (entry.install !== undefined) item.install = entry.install
+    if (entry.downloadsStart !== undefined) item.downloadsStart = entry.downloadsStart
+    if (entry.downloadsEnd !== undefined) item.downloadsEnd = entry.downloadsEnd
+    if (entry.downloadsCheckedAt !== undefined) item.downloadsCheckedAt = entry.downloadsCheckedAt
+    if (entry.version !== undefined) item.version = entry.version
   }
   return item
 }

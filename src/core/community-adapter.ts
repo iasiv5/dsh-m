@@ -32,6 +32,18 @@ export interface CommunityEntry extends Omit<RegistryEntry, 'category'> {
   screenshots: string[]
   /** 英文描述原文（Q45「搜索同时匹配中英文」：zh 收录后搜索仍要命中英文；zh 回退 en 时与 description 同文） */
   descriptionEn: string
+  /** 0.7.0 Task 1 bypass 扩展：作者（适配必填字段，直达条目本体供 byline 使用——此前仅用于 id 合成） */
+  owner: string
+  /** 0.7.0 Task 1 bypass 扩展（全部 truthy 透传、缺失不产生键；deprecated 仅布尔 true；
+   * version 仅非空字符串（null = github-only 无目录版本），只作展示兜底（带「目录快照」标注），不参与 outdated 判定）。 */
+  added?: string
+  deprecated?: true
+  replacement?: string
+  install?: string
+  downloadsStart?: string
+  downloadsEnd?: string
+  downloadsCheckedAt?: string
+  version?: string
 }
 
 export interface AdaptCommunityResult {
@@ -53,6 +65,13 @@ function strArray(v: unknown): string[] {
 
 function numOrNull(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
+}
+
+/** 非空字符串透传（trim 后），否则 undefined（键不产生）——0.7.0 Task 1 bypass 字段统一口径。 */
+function strOrUndef(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const s = v.trim()
+  return s === '' ? undefined : s
 }
 
 /** npm 形状成立（非空字符串且满足 npm 包名形状）→ source: npm。 */
@@ -199,6 +218,15 @@ export function adaptCommunityCatalog(catalog: CommunityCatalog): AdaptCommunity
       capabilityRedLines: strArray(raw.capabilityRedLines),
       screenshots: strArray(raw.screenshots),
       descriptionEn: en,
+      owner,
+      ...(strOrUndef(raw.added) !== undefined ? { added: strOrUndef(raw.added) } : {}),
+      ...(raw.deprecated === true ? { deprecated: true } : {}),
+      ...(strOrUndef(raw.replacement) !== undefined ? { replacement: strOrUndef(raw.replacement) } : {}),
+      ...(strOrUndef(raw.install) !== undefined ? { install: strOrUndef(raw.install) } : {}),
+      ...(strOrUndef(raw.downloadsStart) !== undefined ? { downloadsStart: strOrUndef(raw.downloadsStart) } : {}),
+      ...(strOrUndef(raw.downloadsEnd) !== undefined ? { downloadsEnd: strOrUndef(raw.downloadsEnd) } : {}),
+      ...(strOrUndef(raw.downloadsCheckedAt) !== undefined ? { downloadsCheckedAt: strOrUndef(raw.downloadsCheckedAt) } : {}),
+      ...(strOrUndef(raw.version) !== undefined ? { version: strOrUndef(raw.version) } : {}),
     })
   }
 

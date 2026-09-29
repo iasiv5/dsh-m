@@ -109,17 +109,21 @@ describe('adaptCommunityCatalog — 入库 fixture 全量', () => {
     assert.ok(r.entries.some((x) => x.category === 'usage'))
   })
 
-  it('旁路字段透传：downloads/stars/capabilities/screenshots', () => {
+  it('旁路字段透传：downloads/stars/capabilities/screenshots + 0.7.0 扩展（install/downloadsStart/version）', () => {
     const mem = r.entries.find((x) => x.id === 'furongjun-1999--dsh-memory')
     assert.equal(mem.downloads, 16706)
     assert.equal(mem.stars, 272)
     assert.ok(Array.isArray(mem.capabilities) && mem.capabilities.length > 0)
     const diff = r.entries.find((x) => x.name === 'dsh-session-diff')
     assert.ok(diff.screenshots.length >= 1)
-    // 防御：适配层只透传白名单旁路字段，原生其余键（install/downloadsStart 等）不外溢
-    assert.equal(diff.install, undefined)
-    assert.equal(mem.downloadsStart, undefined)
-    assert.equal(mem.version, undefined)
+    // 0.7.0 Task 1：白名单扩为 bypass 全集（install/downloadsStart/downloadsEnd/version 等 9 字段，DESIGN §2.6）。
+    // 防御口径同步演进：未入白名单的原生键（page/tarball/capabilityCheckedAt）仍不外溢。
+    assert.equal(typeof diff.install, 'string')
+    assert.equal(typeof mem.downloadsStart, 'string')
+    assert.equal(typeof mem.version, 'string')
+    assert.equal(diff.page, undefined)
+    assert.equal(diff.tarball, undefined)
+    assert.equal(diff.capabilityCheckedAt, undefined)
   })
 })
 
@@ -261,5 +265,64 @@ describe('adaptCommunityCatalog — 合成条目契约', () => {
     assert.equal(r.entries.length, 0)
     assert.equal(r.skippedSubpathNoNpm, 1)
     assert.equal(r.skippedDirty, 0)
+  })
+})
+
+describe('adaptCommunityCatalog — bypass 字段全集透传（0.7.0 Task 1）', () => {
+  const FULL = {
+    name: 'dsh-full',
+    owner: 'alice',
+    url: 'https://github.com/alice/dsh-full',
+    category: 'theme',
+    npm: 'dsh-full',
+    description: { zh: '全字段条目', en: 'full entry' },
+    version: '1.2.3',
+    added: '2026-09-01',
+    install: 'dsh plugin --profile web add dsh-full',
+    downloadsStart: '2026-08-01',
+    downloadsEnd: '2026-08-31',
+    downloadsCheckedAt: '2026-09-01T00:00:00Z',
+    deprecated: true,
+    replacement: 'dsh-full-next',
+  }
+  const BARE = {
+    name: 'dsh-bare',
+    owner: 'bob',
+    url: 'https://github.com/bob/dsh-bare',
+    category: 'fun',
+    npm: null,
+    description: { zh: '裸条目' },
+  }
+
+  it('全字段条目 → 9 个 bypass 字段齐备', () => {
+    const r = adaptCommunityCatalog(catalogOf([FULL]))
+    assert.equal(r.entries.length, 1)
+    const e = r.entries[0]
+    assert.equal(e.owner, 'alice')
+    assert.equal(e.added, '2026-09-01')
+    assert.equal(e.deprecated, true)
+    assert.equal(e.replacement, 'dsh-full-next')
+    assert.equal(e.install, 'dsh plugin --profile web add dsh-full')
+    assert.equal(e.downloadsStart, '2026-08-01')
+    assert.equal(e.downloadsEnd, '2026-08-31')
+    assert.equal(e.downloadsCheckedAt, '2026-09-01T00:00:00Z')
+    assert.equal(e.version, '1.2.3')
+  })
+
+  it('裸条目 → 8 个可选 bypass 键均不存在；owner 为适配必填字段恒在', () => {
+    const r = adaptCommunityCatalog(catalogOf([BARE]))
+    assert.equal(r.entries.length, 1)
+    const e = r.entries[0]
+    for (const k of ['added', 'deprecated', 'replacement', 'install', 'downloadsStart', 'downloadsEnd', 'downloadsCheckedAt', 'version']) {
+      assert.equal(k in e, false, `键 ${k} 不应存在`)
+    }
+    assert.equal(e.owner, 'bob')
+  })
+
+  it('deprecated 仅布尔 true 生效；version null（github-only）不产生键', () => {
+    const r = adaptCommunityCatalog(catalogOf([{ ...BARE, deprecated: 'yes', version: null }]))
+    const e = r.entries[0]
+    assert.equal('deprecated' in e, false)
+    assert.equal('version' in e, false)
   })
 })
