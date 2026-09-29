@@ -45,6 +45,7 @@ const ZH = {
   "market.loading": "加载收录清单中… ", "market.empty": "无匹配插件，试试其他关键词或分类",
   "installed.loading": "读取 web profile 中… ", "installed.empty": "web profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
   "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
+  "installed.upgradeAll": "全部更新 ({n})",
   "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装", "badge.custom": "自定义",
   "action.install": "安装", "action.upgrade": "升级", "action.uninstall": "卸载",
   "confirm.uninstall": "确认卸载？", "confirm.unlink": "确认移除本地引用？", "confirm.core": "⚠️ 确认卸载核心包？",
@@ -148,6 +149,7 @@ const EN = {
   "market.loading": "Loading listings… ", "market.empty": "No matching plugins — try another keyword or category",
   "installed.loading": "Reading web profile… ", "installed.empty": "No DSH plugins installed in this web profile", "installed.none": "Not installed",
   "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
+  "installed.upgradeAll": "Update all ({n})",
   "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market", "badge.custom": "Custom",
   "action.install": "Install", "action.upgrade": "Upgrade", "action.uninstall": "Uninstall",
   "confirm.uninstall": "Confirm uninstall?", "confirm.unlink": "Confirm remove link?", "confirm.core": "⚠️ Remove core package?",
@@ -319,6 +321,7 @@ const CSS = `
 .dsvm-favbtn{appearance:none;border:0;background:transparent;color:var(--dsw-alias-label-caption,#9ca3af);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;margin-left:auto}
 .dsvm-favbtn:hover{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dsvm-favbtn.on{color:#e0a33c}
+.dsvm-reddot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-error-primary,#ef4444);margin-left:5px;vertical-align:middle}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -1434,6 +1437,24 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
     data.others > 0
       ? h("div", { className: "dshm-others" }, lookup("installed.others", { n: data.others }))
       : null,
+    items.some((x) => x && x.outdated)
+      ? h(
+          "div",
+          { className: "dsvm-sortrow" },
+          h(
+            "button",
+            {
+              className: "dshm-btn primary sm",
+              disabled: busyPkg != null,
+              onClick: () => {
+                // 全部入队（0.7.0 Task 15）：逐条 runOp 记录，后端 Profile 变更事务 FIFO 保证串行
+                for (const it of items.filter((x) => x && x.outdated)) void doUpgrade(it);
+              },
+            },
+            lookup("installed.upgradeAll", { n: items.filter((x) => x && x.outdated).length }),
+          ),
+        )
+      : null,
     busyPkg ? h(ProgressLine, { key: "prog" }) : null,
     h(
       "div",
@@ -2128,6 +2149,10 @@ function MarketPanel({ onClose }) {
     market: marketCommunity.data ? marketCommunity.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
   };
+  // 更新红点（0.7.0 Task 15）：已装页存在 outdated 时已装 tab 打点
+  const outdatedCount = installed.data && Array.isArray(installed.data.items)
+    ? installed.data.items.filter((x) => x && x.outdated).length
+    : 0;
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
@@ -2172,6 +2197,7 @@ function MarketPanel({ onClose }) {
             },
               lookup(labelKey),
               countKey && counts[countKey] != null ? h("span", { className: "dshm-count" }, String(counts[countKey])) : null,
+              key === "installed" && outdatedCount > 0 ? h("span", { className: "dsvm-reddot", title: lookup("installed.upgradeAll", { n: outdatedCount }) }) : null,
             ),
           ),
         ),
