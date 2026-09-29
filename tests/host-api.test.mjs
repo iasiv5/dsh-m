@@ -99,6 +99,7 @@ function setup(overrides = {}, controllerInitial = {}) {
             enabled: true, status: 'ready', version: '2026.928.1', checkedAt: 't', fetchedAt: 't',
             route: 'jsdelivr', acceptedCount: 2, upstreamCount: 2, displaced: 0,
             skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
+            categoryLabels: { theme: '主题与外观' },
           },
         }
       },
@@ -625,11 +626,12 @@ describe('M1 Task 6：host-api 社区契约', () => {
     assert.equal(res.body.communityCatalogPin, '2026.928.1')
   })
 
-  it('⑥ market 与 registry 响应均含 community', async () => {
+  it('⑥ market 与 registry 响应均含 community；categoryLabels 透传冒烟（0.7.0 Task 4）', async () => {
     const { dispatcher } = setup()
     const market = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
     assert.equal(market.status, 200)
     assert.equal(market.body.community.status, 'ready')
+    assert.equal(market.body.community.categoryLabels?.theme, '主题与外观')
     assert.equal(market.body.community.acceptedCount, 2)
 
     const primaryLens = []

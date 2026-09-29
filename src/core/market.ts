@@ -35,6 +35,7 @@ import {
   type RegistryState,
 } from './registry.js'
 import {
+  COMMUNITY_CATEGORY_LABELS,
   fetchCommunityCatalog as defaultFetchCommunityCatalog,
   type CommunityCatalogState,
   type CommunityStatus,
@@ -123,6 +124,9 @@ export interface CommunityRegistrySummary {
   skippedSubpathNoNpm: number
   errors: string[]
   warnings: string[]
+  /** 社区分类中文标签单一事实源（0.7.0 Task 4）：status 非 disabled/skipped 时携带；
+   *  客户端 market-state.js 的内嵌副本随 Task 8 删除。 */
+  categoryLabels?: Record<string, string>
 }
 
 export interface MarketQuery extends RegistryRuntimeOptions {
@@ -502,6 +506,10 @@ function communitySummary(state: CommunityCatalogState, counts: Partial<Communit
     skippedSubpathNoNpm: unavailableLike ? 0 : (counts.skippedSubpathNoNpm ?? 0),
     errors: [...state.errors],
     warnings: [...state.warnings, ...extraWarnings],
+    // 标签单一事实源（0.7.0 Task 4）：disabled/skipped 下无社区数据语义，不携带
+    ...(state.status !== 'disabled' && state.status !== 'skipped'
+      ? { categoryLabels: { ...COMMUNITY_CATEGORY_LABELS } }
+      : {}),
   }
 }
 

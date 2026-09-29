@@ -64,9 +64,10 @@ export interface CommunityCatalog {
 
 /**
  * 上游 23 个分类 id 的全量中文标签（以 fixture `categories` 键为准逐条核对）。
- * 其中 ui/tools/market 与精选分类同名共享过滤桶、不进筛选栏社区组，标签供详情页等处使用。
+ * 0.7.0 Task 4 改名导出 + 作为标签单一事实源：summary 层附带（communitySummary）、
+ * GUI zoneChips 消费服务端数据，客户端内嵌副本（market-state.js）随 Task 8 删除。
  */
-export const COMMUNITY_KNOWN_CATEGORIES: Record<string, string> = {
+export const COMMUNITY_CATEGORY_LABELS: Record<string, string> = {
   agi: 'AGI 架构探索',
   ui: 'UI 增强',
   usage: '用量与计费',

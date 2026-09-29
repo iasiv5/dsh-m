@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 
 import {
   COMMUNITY_CHAIN_BUDGET_MS,
-  COMMUNITY_KNOWN_CATEGORIES,
+  COMMUNITY_CATEGORY_LABELS,
   COMMUNITY_NPM_PACKAGE,
   MAX_COMMUNITY_BYTES,
   MAX_COMMUNITY_ENTRIES,
@@ -95,19 +95,19 @@ describe('validateCommunityContainer', () => {
   })
 })
 
-describe('COMMUNITY_KNOWN_CATEGORIES 与 fixture 一致', () => {
-  it('23 个分类 id 全覆盖（含共享桶 ui/tools/market）', () => {
-    assert.equal(Object.keys(COMMUNITY_KNOWN_CATEGORIES).length, 23)
+describe('COMMUNITY_CATEGORY_LABELS 与 fixture 一致（0.7.0 Task 4 改名导出，标签单一事实源）', () => {
+  it('23 个分类 id 全覆盖', () => {
+    assert.equal(Object.keys(COMMUNITY_CATEGORY_LABELS).length, 23)
     for (const id of Object.keys(fixture.categories)) {
-      assert.ok(COMMUNITY_KNOWN_CATEGORIES[id], `标签表缺分类: ${id}`)
+      assert.ok(COMMUNITY_CATEGORY_LABELS[id], `标签表缺分类: ${id}`)
     }
-    for (const id of Object.keys(COMMUNITY_KNOWN_CATEGORIES)) {
+    for (const id of Object.keys(COMMUNITY_CATEGORY_LABELS)) {
       assert.ok(fixture.categories[id], `fixture 缺分类: ${id}`)
     }
   })
 
   it('标签为中文非空字符串', () => {
-    for (const [id, label] of Object.entries(COMMUNITY_KNOWN_CATEGORIES)) {
+    for (const [id, label] of Object.entries(COMMUNITY_CATEGORY_LABELS)) {
       assert.equal(typeof label, 'string', id)
       assert.ok(label.length > 0, id)
     }

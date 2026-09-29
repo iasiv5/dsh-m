@@ -1106,6 +1106,18 @@ describe('M1 Task 5：合并市场', () => {
     assert.deepEqual(asc.items.map((it) => it.id), ['o2--noadded', 'o1--jan', 'o3--jun'])
   })
 
+  it('⑫ community.categoryLabels 单一事实源（0.7.0 Task 4）：ready 携带、skipped 不携带', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('a', 'o1', { category: 'theme' })]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    assert.equal(res.community.status, 'ready')
+    assert.equal(res.community.categoryLabels?.theme, '主题与外观')
+    assert.equal(res.community.categoryLabels?.memory, '记忆')
+    const rp = await listMarket(cfg, { withLatest: false, source: 'primary' }, deps)
+    assert.equal(rp.community.status, 'skipped')
+    assert.equal(rp.community.categoryLabels, undefined)
+  })
+
   it('④ 主 unavailable + 社区 ready 有条目 → 出页不返空（Q42）', async () => {
     const base = fakeDeps({ loadRegistry: async () => unavailableLoaded() })
     const { deps } = withCommunity(base, communityLoaded([communityRaw('a', 'o1'), communityRaw('b', 'o2')]))
