@@ -1,12 +1,21 @@
 /**
- * 市场面板 pure state（DESIGN.md §4）：query 规范化、分页 reset、API response narrowing、
- * 短 registry notice。不依赖 DOM/React，Node tests 直接 import。
- * 客户端不自行推断来源状态，只消费 Host 返回的 registryState/RegistrySummary。
+ * 市场面板 pure state（DESIGN.md §2.6 分区制 / 0.7.0 Task 8，修订 M1 Task 8 的混排形态）：
+ * 分区状态工厂、分区 query 规范化、分页 reset（query/category/sort 变化归零）、页码窗口化、
+ * 分区 chips 构建器（社区标签消费服务端 categoryLabels 单一事实源，客户端内嵌副本已删除）、
+ * API response narrowing、短 registry notice。不依赖 DOM/React，Node tests 直接 import。
+ * 客户端不自行推断来源状态，只消费 Host 返回的 registryState/RegistrySummary；
+ * 排序单一事实源在服务端（客户端不再重排，sortMergedItems 已删除）。
  */
 
-export const MARKET_PAGE_SIZE = 50
+export const MARKET_PAGE_SIZES = [24, 48, 96]
+export const DEFAULT_PAGE_SIZE = 24
 
-const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
+const CURATED_ORDER = ['market', 'tools', 'ui', 'search', 'other']
+const CURATED_LABELS = { market: '市场', tools: '工具', ui: '界面', search: '搜索', other: '其他' }
+const CURATED_IDS = new Set(CURATED_ORDER)
+/** 社区开放分类安全 slug（与服务端同语义） */
+const SLUG_RE = /^[a-z0-9-]{1,32}$/
+const SORT_FIELDS = new Set(['downloads', 'stars', 'added'])
 
 function toSafeInt(value, fallback, min, max) {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : fallback
@@ -15,28 +24,66 @@ function toSafeInt(value, fallback, min, max) {
   return n
 }
 
-/** 规范化市场查询：query trim、category 精选白名单 ∪ 安全 slug、primaryOnly、offset ≥0、limit clamp 1..50。 */
-export function normalizeMarketQuery(input) {
-  const raw = input && typeof input === 'object' ? input : {}
-  const query = typeof raw.query === 'string' ? raw.query.trim() : ''
-  const category =
-    typeof raw.category === 'string' && (CATEGORIES.includes(raw.category) || COMMUNITY_SLUG_RE.test(raw.category))
-      ? raw.category
-      : null
-  const offset = toSafeInt(raw.offset, 0, 0)
-  const limit = toSafeInt(raw.limit, MARKET_PAGE_SIZE, 1, MARKET_PAGE_SIZE)
-  const primaryOnly = raw.primaryOnly === true
-  return { query, category, offset, limit, primaryOnly }
+/** 分区初始状态（0.7.0 Task 8）：community 默认 downloads-desc；primary 策展序（sort 恒 null，单页直出）。 */
+export function createZoneState(zone) {
+  const z = zone === 'primary' ? 'primary' : 'community'
+  return {
+    zone: z,
+    query: '',
+    category: null,
+    sort: z === 'community' ? { field: 'downloads', dir: 'desc' } : null,
+    offset: 0,
+    limit: DEFAULT_PAGE_SIZE,
+  }
 }
 
-/** query/category 变化时把 offset 归零（回到第一页）；同筛选下保留分页。 */
+/** 规范化分区查询：query trim；category 白名单按 zone（primary=精选 5 ∪ slug、community=slug）；
+ *  offset ≥ 0；limit clamp 1..96 默认 24；sort 仅 community 区合法化（非法形状归 null）。 */
+export function normalizeMarketQuery(input, zone = 'community') {
+  const z = zone === 'primary' ? 'primary' : 'community'
+  const raw = input && typeof input === 'object' ? input : {}
+  const query = typeof raw.query === 'string' ? raw.query.trim() : ''
+  const catOk =
+    typeof raw.category === 'string' &&
+    raw.category !== '' &&
+    (z === 'primary' ? CURATED_IDS.has(raw.category) || SLUG_RE.test(raw.category) : SLUG_RE.test(raw.category))
+  const category = catOk ? raw.category : null
+  const offset = toSafeInt(raw.offset, 0, 0)
+  const limit = toSafeInt(raw.limit, DEFAULT_PAGE_SIZE, 1, 96)
+  let sort = null
+  if (z === 'community' && raw.sort && typeof raw.sort === 'object' && !Array.isArray(raw.sort)) {
+    const field = raw.sort.field
+    const dir = raw.sort.dir
+    if (SORT_FIELDS.has(field) && (dir === 'asc' || dir === 'desc')) sort = { field, dir }
+  }
+  return { zone: z, source: z, query, category, sort, offset, limit }
+}
+
+const sameSort = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/** query/category/sort 变化时把 offset 归零（回到第一页）；同筛选下保留分页。 */
 export function resetPageOnFilterChange(previous, next) {
   const prev = previous && typeof previous === 'object' ? previous : {}
   const merged = { ...next }
-  if (prev.query !== next.query || prev.category !== next.category) {
+  if (prev.query !== next.query || prev.category !== next.category || !sameSort(prev.sort, next.sort)) {
     merged.offset = 0
   }
   return merged
+}
+
+/** 页码窗口化：`1 … n-1 n n+1 … last`；总页数 ≤ 7 全显；首末页恒在（'...' 为省略占位）。 */
+export function pageItems(current, totalPages) {
+  const last = Math.max(1, Math.floor(totalPages))
+  const cur = Math.min(Math.max(1, Math.floor(current)), last)
+  if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1)
+  const out = [1]
+  const from = Math.max(2, cur - 1)
+  const to = Math.min(last - 1, cur + 1)
+  if (from > 2) out.push('...')
+  for (let p = from; p <= to; p++) out.push(p)
+  if (to < last - 1) out.push('...')
+  out.push(last)
+  return out
 }
 
 const FALLBACK_REGISTRY_STATE = {
@@ -57,7 +104,7 @@ export function normalizeMarketResponse(raw) {
   const items = Array.isArray(body.items) ? body.items.filter((it) => it && typeof it === 'object') : []
   const total = toSafeInt(body.total, items.length, 0)
   const offset = toSafeInt(body.offset, 0, 0)
-  const limit = toSafeInt(body.limit, MARKET_PAGE_SIZE, 1)
+  const limit = toSafeInt(body.limit, DEFAULT_PAGE_SIZE, 1)
   let categoryCounts = {}
   if (body.categoryCounts && typeof body.categoryCounts === 'object' && !Array.isArray(body.categoryCounts)) {
     for (const [key, value] of Object.entries(body.categoryCounts)) {
@@ -87,6 +134,7 @@ export function normalizeMarketResponse(raw) {
     skippedSubpathNoNpm: typeof c.skippedSubpathNoNpm === 'number' && Number.isFinite(c.skippedSubpathNoNpm) ? c.skippedSubpathNoNpm : 0,
     errors: Array.isArray(c.errors) ? c.errors.map(String) : [],
     warnings: Array.isArray(c.warnings) ? c.warnings.map(String) : [],
+    categoryLabels: narrowCategoryLabels(c.categoryLabels),
   }
   return {
     items,
@@ -102,6 +150,20 @@ export function normalizeMarketResponse(raw) {
   }
 }
 
+/** 社区分类标签（服务端单一事实源，0.7.0 Task 4/8）：仅收敛 string 值条目；缺失 → undefined。 */
+function narrowCategoryLabels(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out = {}
+  let n = 0
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && value !== '') {
+      out[key] = value
+      n += 1
+    }
+  }
+  return n > 0 ? out : undefined
+}
+
 /**
  * 短 registry notice：只消费 summary 的 isDefault/status/stale 布尔语义，
  * 输出 i18n key 与条数，绝不包含 configured/active 地址等本地路径。
@@ -113,43 +175,6 @@ export function registryNotice(summary, total) {
   else if (s.stale || s.status === 'stale') key = 'notice.stale'
   else if (!s.isDefault) key = 'notice.custom'
   return { key, count: typeof total === 'number' && Number.isFinite(total) ? total : 0 }
-}
-
-// ---------- M1 Task 8：合并市场客户端 pure state ----------
-
-const COMMUNITY_SLUG_RE = /^[a-z0-9-]{1,32}$/
-const CURATED_CATEGORIES = [
-  { id: 'market', label: '市场' },
-  { id: 'tools', label: '工具' },
-  { id: 'ui', label: '界面' },
-  { id: 'search', label: '搜索' },
-  { id: 'other', label: '其他' },
-]
-const CURATED_IDS = new Set(CURATED_CATEGORIES.map((c) => c.id))
-/** 与精选同名共享过滤桶的三 id：不进筛选栏社区组（DESIGN §2.5 / Q40） */
-const SHARED_BUCKETS = new Set(['ui', 'tools', 'market'])
-/** 已知 20 个社区分类中文标签（与 src/core/community.ts COMMUNITY_KNOWN_CATEGORIES 同表；客户端内嵌副本） */
-const COMMUNITY_KNOWN_LABELS = {
-  agi: 'AGI 架构探索',
-  usage: '用量与计费',
-  theme: '主题与外观',
-  model: '模型与账号接入',
-  identity: '身份与通信',
-  session: '会话与消息',
-  memory: '记忆',
-  wsl: 'WSL 与 Windows 互操作',
-  browser: '浏览器与网页',
-  vision: '视觉与多模态',
-  voice: '语音与音频',
-  docs: '文档与渲染',
-  skill: '技能包',
-  workflow: '工作流与自动化',
-  git: 'Git 与代码评审',
-  notify: '通知与集成',
-  dev: '开发与运行时',
-  security: '安全与权限',
-  remote: '远程与移动端',
-  fun: '娱乐',
 }
 
 const FALLBACK_COMMUNITY = {
@@ -168,19 +193,42 @@ const FALLBACK_COMMUNITY = {
   warnings: [],
 }
 
-/** 筛选栏分组（Q45）：精选（5）→ 社区（已知 20 带计数）→ 新分类临时组；共享桶不重复。 */
-export function splitCategories(categoryCounts) {
-  const counts = categoryCounts && typeof categoryCounts === 'object' && !Array.isArray(categoryCounts) ? categoryCounts : {}
-  const curated = CURATED_CATEGORIES.map(({ id, label }) => ({ id, label, count: typeof counts[id] === 'number' ? counts[id] : 0 }))
-  const community = []
+/**
+ * 分区 chips（0.7.0 Task 8，Q40 共享过滤桶退役——各区分类彻底解耦）：
+ * - primary：精选 5 类固定序（0 计数也展示——策展区固定分类法）；
+ * - community：消费服务端 categoryLabels（单一事实源）已知标签在前（含 ui/tools/market 等真实计数键），
+ *   未知 slug 尾组原样渲染；精选种子键 0 计数（search/other）与 0 计数未知分类不进社区区。
+ */
+export function zoneChips(categoryCounts, categoryLabels, zone) {
+  const counts =
+    categoryCounts && typeof categoryCounts === 'object' && !Array.isArray(categoryCounts) ? categoryCounts : {}
+  if (zone === 'primary') {
+    return CURATED_ORDER.map((id) => ({
+      id,
+      label: CURATED_LABELS[id],
+      count: typeof counts[id] === 'number' && Number.isFinite(counts[id]) ? counts[id] : 0,
+    }))
+  }
+  const labels =
+    categoryLabels && typeof categoryLabels === 'object' && !Array.isArray(categoryLabels) ? categoryLabels : {}
+  const countOf = (id) => (typeof counts[id] === 'number' && Number.isFinite(counts[id]) ? counts[id] : 0)
+  const known = []
+  const seen = new Set()
+  for (const [id, label] of Object.entries(labels)) {
+    if (typeof label !== 'string' || label === '') continue
+    const count = countOf(id)
+    if (count === 0) continue
+    known.push({ id, label, count })
+    seen.add(id)
+  }
   const unknown = []
   for (const [id, raw] of Object.entries(counts)) {
+    if (seen.has(id) || CURATED_IDS.has(id)) continue
     const count = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
-    if (CURATED_IDS.has(id)) continue
-    if (COMMUNITY_KNOWN_LABELS[id]) community.push({ id, label: COMMUNITY_KNOWN_LABELS[id], count })
-    else if (!SHARED_BUCKETS.has(id)) unknown.push({ id, label: id, count })
+    if (count === 0) continue
+    unknown.push({ id, label: id, count })
   }
-  return { curated, community, unknown }
+  return [...known, ...unknown]
 }
 
 /** 双源 notice（Q42）：主 down+社区 up → 错误横幅 + communityFallback；社区 stale → communityStale 显式；社区失败静默。 */
@@ -192,20 +240,4 @@ export function marketNotice(registryState, community) {
     base.communityFallback = true
   }
   return base
-}
-
-/** 合并条目排序（Q45）：主清单置顶（保持服务端序）+ 社区按 downloads 降序、无数据按名称。 */
-export function sortMergedItems(items) {
-  const list = Array.isArray(items) ? items.filter((it) => it && typeof it === 'object') : []
-  const primary = list.filter((it) => it.community !== true)
-  const community = list
-    .filter((it) => it.community === true)
-    .slice()
-    .sort((a, b) => {
-      const da = typeof a.downloads === 'number' && Number.isFinite(a.downloads) ? a.downloads : -1
-      const db = typeof b.downloads === 'number' && Number.isFinite(b.downloads) ? b.downloads : -1
-      if (da !== db) return db - da
-      return String(a.name).localeCompare(String(b.name))
-    })
-  return [...primary, ...community]
 }

@@ -10,8 +10,8 @@ const { useState, useEffect, useCallback, useMemo, useRef } = React;
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
-// 市场面板 pure state（Node tests 直接覆盖）
-const { MARKET_PAGE_SIZE, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, splitCategories, marketNotice, sortMergedItems } = require("./market-state.js");
+// 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips）
+const { DEFAULT_PAGE_SIZE, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice } = require("./market-state.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -67,9 +67,7 @@ const ZH = {
   "notice.default": "官方默认收录清单 · 共 {count} 条", "notice.custom": "自定义收录清单 · 共 {count} 条",
   "notice.stale": "来源为本地缓存（共 {count} 条），可用「强制刷新」更新", "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
   "market.page.prev": "上一页", "market.page.next": "下一页", "market.page.info": "第 {page} / {pages} 页 · 共 {total} 条",
-  "market.perf": "收录超过 200 条：仅查询当前页的最新版本（每页 50 条），如需全部请用搜索/分类过滤",
   "notice.toolview.err": "收录清单暂不可用",
-  "cat.primaryonly": "只看主清单", "community.group": "社区", "community.newgroup": "社区 · 新分类",
   "badge.community": "社区收录",
   "community.stale": "社区目录为缓存快照（显示的不是最新数据）", "community.fallback": "收录清单不可用，当前展示社区清单条目",
   "detail.capabilities": "能力披露", "detail.capabilities.unscanned": "未扫描 ≠ 未检出", "detail.redlines": "能力红线",
@@ -159,9 +157,7 @@ const EN = {
   "notice.default": "Official default registry · {count} listings", "notice.custom": "Custom registry · {count} listings",
   "notice.stale": "Served from local cache ({count} listings) — force refresh to update", "notice.unavailable": "Registry unavailable · check the address in Settings",
   "market.page.prev": "Previous", "market.page.next": "Next", "market.page.info": "Page {page} / {pages} · {total} listings",
-  "market.perf": "200+ listings: latest versions are queried for the current page only (50 per page); use search/category filters",
   "notice.toolview.err": "Registry temporarily unavailable",
-  "cat.primaryonly": "Primary only", "community.group": "Community", "community.newgroup": "Community · New",
   "badge.community": "Community",
   "community.stale": "Community catalog served from cache (not the latest data)", "community.fallback": "Registry unavailable — showing community listings",
   "detail.capabilities": "Capabilities", "detail.capabilities.unscanned": "Not scanned ≠ not detected", "detail.redlines": "Capability red lines",
@@ -220,7 +216,7 @@ function lookup(key, params) {
   return interpolate(dict[key] ?? ZH[key] ?? key, params);
 }
 
-const CATEGORIES = ["market", "tools", "ui", "search", "other"];
+// （0.7.0 Task 8：客户端 CATEGORIES 表已由 market-state.js zoneChips 取代）
 
 // ---------- 样式（跟随 DSH Web 主题变量，深浅色自适应） ----------
 const CSS = `
@@ -402,8 +398,8 @@ function useAsync(fn, deps) {
 }
 
 // ---------- 市场数据唯一 owner（服务端分页 + generation/abort） ----------
-function useMarketData() {
-  const [query, setQuery] = useState(() => normalizeMarketQuery({}));
+function useMarketData(zone = "community") {
+  const [query, setQuery] = useState(() => normalizeMarketQuery(createZoneState(zone), zone));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -421,7 +417,8 @@ function useMarketData() {
     const params = {
       query: nextQuery.query || undefined,
       category: nextQuery.category || undefined,
-      primaryOnly: nextQuery.primaryOnly === true ? true : undefined,
+      source: nextQuery.source || "community",
+      ...(nextQuery.sort ? { sort: nextQuery.sort } : {}),
       offset: nextQuery.offset,
       limit: nextQuery.limit,
       ...(force ? { force: true } : {}),
@@ -440,7 +437,7 @@ function useMarketData() {
   }, []);
 
   const updateQuery = useCallback((patch, opts = {}) => {
-    const next = resetPageOnFilterChange(queryRef.current, normalizeMarketQuery({ ...queryRef.current, ...patch }));
+    const next = resetPageOnFilterChange(queryRef.current, normalizeMarketQuery({ ...queryRef.current, ...patch }, zone));
     queryRef.current = next;
     setQuery(next);
     if (opts.fetch !== false) fetchPage(next, opts.force);
@@ -635,10 +632,10 @@ function MarketTab({ notify, market, onMutation }) {
   const [qInput, setQInput] = useState(query.query);
   const debounceRef = useRef(null);
 
-  // 服务端分页数据（展示序：主置顶 + 社区 downloads 降序）
-  const items = sortMergedItems((data && data.items) || []);
+  // 服务端分页数据（0.7.0 Task 8：服务端单一排序源，客户端不再重排）
+  const items = (data && data.items) || [];
   const total = (data && data.total) || 0;
-  const limit = (data && data.limit) || MARKET_PAGE_SIZE;
+  const limit = (data && data.limit) || DEFAULT_PAGE_SIZE;
   const offset = (data && data.offset) || 0;
   const page = total > 0 ? Math.floor(offset / limit) + 1 : 1;
   const pages = total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
@@ -744,7 +741,6 @@ function MarketTab({ notify, market, onMutation }) {
       : null,
     notice && notice.communityFallback ? h("div", { className: "dshm-hint" }, lookup("community.fallback")) : null,
     notice && notice.communityStale ? h("div", { className: "dshm-hint" }, lookup("community.stale")) : null,
-    total > 200 ? h("div", { className: "dshm-hint" }, lookup("market.perf")) : null,
     h(
       "div",
       { className: "dshm-row" },
@@ -759,40 +755,15 @@ function MarketTab({ notify, market, onMutation }) {
     h(
       "div",
       { className: "dshm-chips" },
-      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, primaryOnly: false, offset: 0 }) }, lookup("cat.all")),
-      h("button", { className: `dshm-chip${query.primaryOnly === true ? " on" : ""}`, onClick: () => updateQuery({ primaryOnly: query.primaryOnly !== true, offset: 0 }) }, lookup("cat.primaryonly")),
-      CATEGORIES.map((key) => {
-        const n = typeof counts[key] === "number" ? counts[key] : 0;
-        return h(
+      h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, offset: 0 }) }, lookup("cat.all")),
+      ...zoneChips(counts, (data && data.community && data.community.categoryLabels) || {}, "community").map((c) =>
+        h(
           "button",
-          { key, className: `dshm-chip${query.category === key ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === key ? null : key, offset: 0 }) },
-          `${lookup("cat." + key)}${n ? ` ${n}` : ""}`,
-        );
-      }),
+          { key: c.id, className: `dshm-chip${query.category === c.id ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === c.id ? null : c.id, offset: 0 }) },
+          `${c.label}${c.count ? ` ${c.count}` : ""}`,
+        ),
+      ),
     ),
-    (() => {
-      const groups = splitCategories(counts);
-      if (!groups.community.length && !groups.unknown.length) return null;
-      const chip = (c) => h(
-        "button",
-        { key: c.id, className: `dshm-chip${query.category === c.id ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === c.id ? null : c.id, offset: 0 }) },
-        `${c.label}${c.count ? ` ${c.count}` : ""}`,
-      );
-      return h(
-        React.Fragment,
-        null,
-        groups.community.length
-          ? h("div", { className: "dshm-chips" },
-              h("span", { className: "dshm-hint" }, lookup("community.group")),
-              ...groups.community.map(chip))
-          : null,
-        groups.unknown.length
-          ? h("div", { className: "dshm-chips" },
-              h("span", { className: "dshm-hint" }, lookup("community.newgroup")),
-              ...groups.unknown.map(chip))
-          : null,
-      );
-    })(),
     busyId ? h(ProgressLine, { key: "prog" }) : null,
     loading && !data
       ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())

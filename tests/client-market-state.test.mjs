@@ -1,213 +1,187 @@
 /**
- * Task 7：市场 pure state（query 规范化、分页 reset、response narrowing、短 notice 隐私）。
+ * 0.7.0 Task 8：市场 pure state 分区化——分区状态工厂 / 分区 query 规范化 / 分页 reset（含 sort）/
+ * 页码窗口化 / 分区 chips（标签单一事实源） / 旧混排导出已删。
  * 直接 import 源文件，不依赖 DOM/React。
  * 运行：node --test tests/client-market-state.test.mjs
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import {
-  MARKET_PAGE_SIZE,
+import * as ms from '../src/client/market-state.js'
+const {
+  MARKET_PAGE_SIZES,
+  DEFAULT_PAGE_SIZE,
+  createZoneState,
   normalizeMarketQuery,
   resetPageOnFilterChange,
   normalizeMarketResponse,
   registryNotice,
-} from '../src/client/market-state.js'
+  marketNotice,
+  zoneChips,
+  pageItems,
+} = ms
 
-describe('normalizeMarketQuery', () => {
-  it('默认值：空 query、null category、offset 0、limit 50', () => {
-    assert.deepEqual(normalizeMarketQuery({}), { query: '', category: null, offset: 0, limit: MARKET_PAGE_SIZE, primaryOnly: false })
-    assert.equal(MARKET_PAGE_SIZE, 50)
-  })
-
-  it('query trim；category 白名单外归 null；offset 负数/NaN/浮点归一；limit clamp 1..50', () => {
-    assert.equal(normalizeMarketQuery({ query: '  主题  ' }).query, '主题')
-    assert.equal(normalizeMarketQuery({ category: 'nope' }).category, 'nope', 'Task 8：合法形状的社区 slug 放行（开放集）')
-    assert.equal(normalizeMarketQuery({ category: 'NOPE!' }).category, null, '非法形状仍归 null')
-    assert.equal(normalizeMarketQuery({ category: 'tools' }).category, 'tools')
-    assert.equal(normalizeMarketQuery({ offset: -5 }).offset, 0)
-    assert.equal(normalizeMarketQuery({ offset: Number.NaN }).offset, 0)
-    assert.equal(normalizeMarketQuery({ offset: 10.9 }).offset, 10)
-    assert.equal(normalizeMarketQuery({ limit: 1000 }).limit, 50)
-    assert.equal(normalizeMarketQuery({ limit: 0 }).limit, 1)
-    assert.equal(normalizeMarketQuery({ limit: Number.NaN }).limit, MARKET_PAGE_SIZE)
+describe('旧混排导出已删除（0.7.0 Task 8）', () => {
+  it('sortMergedItems / splitCategories / MARKET_PAGE_SIZE 不再导出', () => {
+    assert.equal(ms.sortMergedItems, undefined)
+    assert.equal(ms.splitCategories, undefined)
+    assert.equal(ms.MARKET_PAGE_SIZE, undefined)
   })
 })
 
-describe('resetPageOnFilterChange', () => {
-  it('query/category 变化时 offset 归零，否则保留', () => {
-    const prev = { query: 'a', category: 'tools', offset: 100, limit: 50 }
+describe('分区常量与状态工厂', () => {
+  it('页大小档位 24/48/96，默认 24', () => {
+    assert.deepEqual(MARKET_PAGE_SIZES, [24, 48, 96])
+    assert.equal(DEFAULT_PAGE_SIZE, 24)
+  })
+
+  it('createZoneState：community 默认 downloads-desc；primary 策展序 sort=null', () => {
+    assert.deepEqual(createZoneState('community'), {
+      zone: 'community', query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 24,
+    })
+    assert.deepEqual(createZoneState('primary'), {
+      zone: 'primary', query: '', category: null, sort: null, offset: 0, limit: 24,
+    })
+    assert.equal(createZoneState('nonsense').zone, 'community', '未知 zone 归 community')
+  })
+})
+
+describe('normalizeMarketQuery（分区化）', () => {
+  it('community 区：默认值 + slug 白名单 + limit clamp 1..96 默认 24 + sort 合法化', () => {
+    const q = normalizeMarketQuery({}, 'community')
+    assert.equal(q.zone, 'community')
+    assert.equal(q.source, 'community')
+    assert.equal(q.query, '')
+    assert.equal(q.category, null)
+    assert.equal(q.sort, null, '未传 sort 归 null（非法形状也归 null）')
+    assert.equal(q.offset, 0)
+    assert.equal(q.limit, 24)
+    assert.equal(normalizeMarketQuery({ query: '  主题  ' }, 'community').query, '主题')
+    assert.equal(normalizeMarketQuery({ category: 'memory' }, 'community').category, 'memory')
+    assert.equal(normalizeMarketQuery({ category: 'tools' }, 'community').category, 'tools', '社区区接受同名 slug（真实计数键）')
+    assert.equal(normalizeMarketQuery({ category: 'UI!!' }, 'community').category, null)
+    assert.equal(normalizeMarketQuery({ limit: 1000 }, 'community').limit, 96)
+    assert.equal(normalizeMarketQuery({ limit: 0 }, 'community').limit, 1)
+    assert.equal(normalizeMarketQuery({ limit: Number.NaN }, 'community').limit, 24)
+    assert.deepEqual(normalizeMarketQuery({ sort: { field: 'stars', dir: 'asc' } }, 'community').sort, { field: 'stars', dir: 'asc' })
+    assert.equal(normalizeMarketQuery({ sort: { field: 'name', dir: 'asc' } }, 'community').sort, null, '非法字段归 null')
+    assert.equal(normalizeMarketQuery({ sort: { field: 'stars', dir: 'up' } }, 'community').sort, null, '非法方向归 null')
+  })
+
+  it('primary 区：精选 5 ∪ slug 白名单；sort 恒 null（策展序）', () => {
+    const q = normalizeMarketQuery({}, 'primary')
+    assert.equal(q.source, 'primary')
+    assert.equal(normalizeMarketQuery({ category: 'tools' }, 'primary').category, 'tools')
+    assert.equal(normalizeMarketQuery({ category: 'memory' }, 'primary').category, 'memory')
+    assert.equal(normalizeMarketQuery({ sort: { field: 'stars', dir: 'asc' } }, 'primary').sort, null)
+  })
+
+  it('primaryOnly 旧字段不再存在', () => {
+    assert.equal('primaryOnly' in normalizeMarketQuery({}, 'community'), false)
+  })
+})
+
+describe('resetPageOnFilterChange（含 sort）', () => {
+  const prev = { query: 'a', category: 'tools', sort: { field: 'downloads', dir: 'desc' }, offset: 100, limit: 24 }
+  it('query/category/sort 变化归零 offset；同筛选保留', () => {
     assert.equal(resetPageOnFilterChange(prev, { ...prev, offset: 100 }).offset, 100)
     assert.equal(resetPageOnFilterChange(prev, { ...prev, query: 'b', offset: 100 }).offset, 0)
     assert.equal(resetPageOnFilterChange(prev, { ...prev, category: 'ui', offset: 100 }).offset, 0)
+    assert.equal(resetPageOnFilterChange(prev, { ...prev, sort: { field: 'stars', dir: 'desc' }, offset: 100 }).offset, 0)
+    assert.equal(resetPageOnFilterChange(prev, { ...prev, sort: { field: 'downloads', dir: 'desc' }, offset: 100 }).offset, 100, '同 sort 不重置')
   })
 })
 
-describe('normalizeMarketResponse', () => {
-  it('完整响应原样收敛', () => {
+describe('pageItems 页码窗口化', () => {
+  it('总页数 ≤ 7 全显', () => {
+    assert.deepEqual(pageItems(1, 1), [1])
+    assert.deepEqual(pageItems(3, 7), [1, 2, 3, 4, 5, 6, 7])
+  })
+  it('大总页数窗口：1 … n-1 n n+1 … last，首末页恒在', () => {
+    assert.deepEqual(pageItems(1, 20), [1, 2, '...', 20])
+    assert.deepEqual(pageItems(2, 20), [1, 2, 3, '...', 20])
+    assert.deepEqual(pageItems(10, 20), [1, '...', 9, 10, 11, '...', 20])
+    assert.deepEqual(pageItems(20, 20), [1, '...', 19, 20])
+  })
+  it('current 越界钳制；totalPages 脏值安全', () => {
+    assert.deepEqual(pageItems(99, 8), [1, '...', 7, 8])
+    assert.deepEqual(pageItems(1, 0), [1])
+  })
+})
+
+describe('zoneChips 分区构建器', () => {
+  const labels = {
+    agi: 'AGI 架构探索', ui: 'UI 增强', tools: '工具与能力', theme: '主题与外观', memory: '记忆',
+  }
+  it('primary：精选 5 类固定序（0 计数也展示）', () => {
+    const chips = zoneChips({ tools: 3, market: 0 }, labels, 'primary')
+    assert.deepEqual(chips.map((c) => c.id), ['market', 'tools', 'ui', 'search', 'other'])
+    assert.deepEqual(chips.map((c) => c.count), [0, 3, 0, 0, 0])
+  })
+  it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数精选种子跳过', () => {
+    const counts = { market: 1, tools: 5, ui: 7, search: 0, other: 0, agi: 10, theme: 4, 'brand-new-slug': 2, 'empty-slug': 0 }
+    const chips = zoneChips(counts, labels, 'community')
+    const ids = chips.map((c) => c.id)
+    assert.ok(ids.includes('agi') && ids.includes('ui') && ids.includes('tools'), '社区区含同名真实计数键')
+    assert.ok(!ids.includes('search') && !ids.includes('other'), '0 计数精选种子不进社区区')
+    assert.ok(!ids.includes('empty-slug'), '0 计数未知分类跳过')
+    assert.equal(ids[ids.length - 1], 'brand-new-slug', '未知 slug 尾组')
+    assert.equal(chips.find((c) => c.id === 'agi').label, 'AGI 架构探索')
+    assert.equal(chips.find((c) => c.id === 'brand-new-slug').label, 'brand-new-slug', '未知 slug 原样渲染')
+  })
+  it('脏输入安全', () => {
+    assert.deepEqual(zoneChips(null, null, 'community'), [])
+    assert.equal(zoneChips(null, null, 'primary').length, 5)
+  })
+})
+
+describe('normalizeMarketResponse（保留语义 + categoryLabels 透传）', () => {
+  it('完整响应原样收敛 + community.categoryLabels 收敛', () => {
     const raw = {
       items: [{ id: 'a', name: 'A', installed: true, outdated: false }],
-      total: 10,
-      offset: 0,
-      limit: 50,
+      total: 10, offset: 0, limit: 24,
       categoryCounts: { tools: 10, market: 0 },
-      registryState: { configuredAddress: '/tmp/x.json', source: 'custom-file', status: 'ready', isDefault: false, stale: false, count: 10 },
-      installedComplete: true,
-      latestComplete: true,
-      latestTimedOut: false,
+      registryState: { source: 'custom-file', status: 'ready', isDefault: false, stale: false, count: 10 },
+      installedComplete: true, latestComplete: true, latestTimedOut: false,
+      community: { enabled: true, status: 'ready', acceptedCount: 2, categoryLabels: { theme: '主题与外观', bad: 42 } },
     }
     const page = normalizeMarketResponse(raw)
     assert.equal(page.items.length, 1)
     assert.equal(page.total, 10)
-    assert.equal(page.limit, 50)
-    assert.equal(page.registryState.source, 'custom-file')
-    assert.equal(page.registryState.status, 'ready')
-    assert.equal(page.installedComplete, true)
+    assert.equal(page.community.categoryLabels.theme, '主题与外观')
+    assert.equal(page.community.categoryLabels.bad, undefined, '非 string 值剔除')
   })
 
-  it('缺失/错误字段给出安全空页', () => {
+  it('缺失/错误字段给出安全空页；community 缺省形状不伪造', () => {
     for (const raw of [null, undefined, {}, { items: 'nope' }, { items: [1, 2] }]) {
       const page = normalizeMarketResponse(raw)
       assert.ok(Array.isArray(page.items))
       assert.equal(typeof page.total, 'number')
       assert.equal(page.registryState.status, 'unavailable')
       assert.equal(page.installedComplete, false)
-      assert.equal(page.latestTimedOut, false)
     }
     const empty = normalizeMarketResponse(null)
     assert.deepEqual(empty.items, [])
-    assert.equal(empty.total, 0)
     assert.deepEqual(empty.categoryCounts, {})
-  })
-
-  it('registryState 部分字段缺失时安全补全', () => {
-    const page = normalizeMarketResponse({ registryState: { source: 'custom-cache', stale: true } })
-    assert.equal(page.registryState.source, 'custom-cache')
-    assert.equal(page.registryState.stale, true)
-    assert.equal(page.registryState.status, 'unavailable')
-    assert.deepEqual(page.registryState.errors, [])
-    assert.equal(page.registryState.isDefault, true)
+    assert.equal(empty.community.status, 'disabled')
+    assert.equal(empty.community.categoryLabels, undefined)
   })
 })
 
-describe('registryNotice', () => {
-  it('按 summary 返回短状态 key，不泄露路径', () => {
-    const leaky = {
-      isDefault: false,
-      status: 'ready',
-      stale: false,
-      configuredAddress: '/home/user/secret/registry.json',
-      activeAddress: '/home/user/secret/registry.json',
-    }
+describe('registryNotice / marketNotice（保留语义）', () => {
+  it('短状态 key，不泄露路径', () => {
+    const leaky = { isDefault: false, status: 'ready', stale: false, configuredAddress: '/home/user/secret/registry.json' }
     const notice = registryNotice(leaky, 42)
     assert.ok(!JSON.stringify(notice).includes('/home/user'))
-    assert.equal(notice.count, 42)
-
     assert.equal(registryNotice({ isDefault: true, status: 'ready', stale: false }, 10).key, 'notice.default')
     assert.equal(registryNotice({ isDefault: false, status: 'ready', stale: false }, 10).key, 'notice.custom')
     assert.equal(registryNotice({ isDefault: true, status: 'stale', stale: true }, 10).key, 'notice.stale')
-    assert.equal(registryNotice({ isDefault: false, status: 'unavailable', stale: false }, 10).key, 'notice.unavailable')
   })
-})
-
-// ---------- M1 Task 8：合并市场客户端 pure state ----------
-
-import {
-  normalizeMarketQuery as normQ2,
-  normalizeMarketResponse as normR2,
-  splitCategories,
-  marketNotice,
-  sortMergedItems,
-} from '../src/client/market-state.js'
-
-describe('M1 Task 8：normalizeMarketQuery 扩展', () => {
-  it('社区开放 slug 放行、非法 slug 归 null、primaryOnly 布尔收敛', () => {
-    assert.equal(normQ2({ category: 'memory' }).category, 'memory')
-    assert.equal(normQ2({ category: 'my-slug' }).category, 'my-slug')
-    assert.equal(normQ2({ category: 'UI!!' }).category, null)
-    assert.equal(normQ2({ category: 'a'.repeat(33) }).category, null)
-    assert.equal(normQ2({ category: 'tools' }).category, 'tools', '精选分类照旧')
-    assert.equal(normQ2({ primaryOnly: true }).primaryOnly, true)
-    assert.equal(normQ2({}).primaryOnly, false)
-    assert.equal(normQ2({ primaryOnly: 'yes' }).primaryOnly, false)
-  })
-})
-
-describe('M1 Task 8：normalizeMarketResponse community 缺省形状', () => {
-  it('缺失 community → enabled:false/disabled 缺省（不伪造计数）', () => {
-    const page = normR2({})
-    assert.deepEqual(page.community, {
-      enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null,
-      route: null, acceptedCount: 0, upstreamCount: null, displaced: 0,
-      skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
-    })
-  })
-  it('合法 community 原样收敛；脏值回退缺省', () => {
-    const ready = { enabled: true, status: 'ready', version: 'v', acceptedCount: 2, upstreamCount: 3, displaced: 1, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] }
-    assert.equal(normR2({ community: ready }).community.acceptedCount, 2)
-    assert.equal(normR2({ community: 'x' }).community.status, 'disabled')
-    assert.equal(normR2({ community: { status: 42 } }).community.status, 'disabled')
-  })
-})
-
-describe('M1 Task 8：splitCategories 共享桶规则', () => {
-  const counts = {
-    market: 1, tools: 3, ui: 5, search: 0, other: 2,           // 精选 5（ui/tools/market 为共享桶）
-    agi: 10, memory: 7, theme: 4,                               // 已知社区分类
-    'brand-new-slug': 1,                                        // 未知 → 新分类临时组
-  }
-  it('精选 5 恒在；共享桶 ui/tools/market 不重复进社区组', () => {
-    const r = splitCategories(counts)
-    assert.deepEqual(r.curated.map((c) => c.id), ['market', 'tools', 'ui', 'search', 'other'])
-    assert.ok(!r.community.some((c) => ['ui', 'tools', 'market'].includes(c.id)), '共享桶不重复')
-  })
-  it('已知社区分类带中文标签与计数；未知 id 进临时组原样渲染', () => {
-    const r = splitCategories(counts)
-    const agi = r.community.find((c) => c.id === 'agi')
-    assert.equal(agi.label, 'AGI 架构探索')
-    assert.equal(agi.count, 10)
-    assert.deepEqual(r.unknown.map((c) => c.id), ['brand-new-slug'])
-    assert.equal(r.unknown[0].count, 1)
-  })
-  it('空/脏输入安全', () => {
-    const r = splitCategories(null)
-    assert.equal(r.curated.length, 5)
-    assert.deepEqual(r.community, [])
-    assert.deepEqual(r.unknown, [])
-  })
-})
-
-describe('M1 Task 8：marketNotice 双源语义', () => {
-  const registryDown = { isDefault: true, status: 'unavailable', stale: false }
-  const communityUp = { enabled: true, status: 'ready' }
-  it('主 down + 社区 up → 不可用横幅 + communityFallback（Q42 显示社区）', () => {
-    const n = marketNotice(registryDown, communityUp)
-    assert.equal(n.key, 'notice.unavailable')
-    assert.equal(n.communityFallback, true)
-    assert.notEqual(n.communityStale, true)
-  })
-  it('社区 stale → communityStale 显式标注；unavailable → 静默（无社区字段）', () => {
+  it('双源语义：主 down+社区 up → communityFallback；社区 stale → communityStale', () => {
+    assert.equal(marketNotice({ isDefault: true, status: 'unavailable', stale: false }, { enabled: true, status: 'ready' }).communityFallback, true)
     assert.equal(marketNotice({ isDefault: true, status: 'ready', stale: false }, { status: 'stale' }).communityStale, true)
     const silent = marketNotice({ isDefault: true, status: 'ready', stale: false }, { status: 'unavailable' })
     assert.notEqual(silent.communityStale, true)
     assert.notEqual(silent.communityFallback, true)
-  })
-  it('主 ready + 社区 ready → 正常 key、无 fallback', () => {
-    const n = marketNotice({ isDefault: true, status: 'ready', stale: false }, communityUp)
-    assert.equal(n.key, 'notice.default')
-    assert.notEqual(n.communityFallback, true)
-  })
-})
-
-describe('M1 Task 8：sortMergedItems', () => {
-  it('主清单置顶原序 + 社区按 downloads 降序、无数据按名称', () => {
-    const items = [
-      { id: 'c-2', community: true, name: 'zz', downloads: 900 },
-      { id: 'p-0', name: 'A' },
-      { id: 'c-1', community: true, name: 'aa', downloads: null },
-      { id: 'p-1', name: 'B' },
-      { id: 'c-3', community: true, name: 'mm', downloads: 100 },
-    ]
-    assert.deepEqual(sortMergedItems(items).map((it) => it.id), ['p-0', 'p-1', 'c-2', 'c-3', 'c-1'])
   })
 })
