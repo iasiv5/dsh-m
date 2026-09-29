@@ -383,6 +383,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success, tell the user it needs a restart, and offer dshm_restart.',
     parameters: {
       pkg: { type: 'string', required: true, description: '包名 from dshm_list / dshm_outdated' },
+      force: { type: 'boolean', description: 'peer 兼容预检不通过且用户已确认风险后置 true（等价 forceIncompatible，跳过 @deepseek-ai/dsh(-*) peer 拦截）；守卫拦截（guard）无 force 通道，不受此参数影响。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -399,8 +400,9 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
+      const force = args.force === true
       try {
-        return cloneJson(await m.upgradePlugin(target, cfg, { namespace: 'host' }))
+        return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host' }))
       } catch (err) {
         if (err instanceof InstallGuardError) {
           return { ok: false, guard: true, kind: err.kind, message: err.message, violations: err.violations, compensation: err.compensation, needsRestart: err.needsRestart, restartSafe: err.restartSafe, ...(err.repairBasis ? { repairBasis: err.repairBasis } : {}) }

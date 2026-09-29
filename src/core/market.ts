@@ -996,7 +996,10 @@ function lockResolutionOf(lockText: string, pkg: string): { version?: string; in
   let body: string[] | null = null
   for (const line of lines) {
     if (body !== null && /^\S/.test(line)) break // 顶层新段 → 收集结束
-    const keyMatch = /^  '?(?:[^'\n]*node_modules\/)?([^\s':]+):\s*$/.exec(line)
+    // 0.5.1 修复：收尾引号必须可选消耗——pnpm lockfile 对 scoped 包键恒带引号
+    //（`'@scope/name@1.2.3':`），旧正则匹配不到任何带引号键，导致 scoped 已装插件
+    // 的 lockResolution 恒为 null → derivePrior 误判 restorable:false → 升级被守卫硬拒。
+    const keyMatch = /^  '?(?:[^'\n]*node_modules\/)?([^\s':]+)'?:\s*$/.exec(line)
     if (keyMatch) {
       if (body) break
       const key = keyMatch[1] ?? ''
@@ -1008,7 +1011,9 @@ function lockResolutionOf(lockText: string, pkg: string): { version?: string; in
   if (body === null) return null
   const text = body.join('\n')
   const version = /version:\s*'?([^'\n]+)/.exec(text)?.[1]?.trim()
-  const integrity = /integrity:\s*(\S+)/.exec(text)?.[1]?.trim()
+  // 0.5.1：integrity 捕获排除 flow 结尾（`,`/`}`/引号）——与 npm-integrity.ts parsePackagesSection
+  // 同口径；旧 `(\S+)` 会把 `{integrity: sha512-...}` 的收尾 `}` 一起带进 prior 证据。
+  const integrity = /integrity:\s*([^,}\s'"]+)/.exec(text)?.[1]?.trim()
   const commit = /commit:\s*'?([0-9a-f]{40})/.exec(text)?.[1]?.trim()
   if (!version && !integrity && !commit) return null
   return { ...(version ? { version } : {}), ...(integrity ? { integrity } : {}), ...(commit ? { commit } : {}) }
@@ -1257,7 +1262,8 @@ export async function installEntry(
   return withMutationSession(() => installEntryLocked(entry, cfg, opts, deps))
 }
 
-/** installEntry 主体（session 区间内；installEntry 是唯一外部入口——upgradePlugin 复用本 helper）。 */
+/** installEntry 主体（session 区间内）。入口约定：installFromRegistry 走 installEntry（获取 session）；
+ *  upgradePlugin 已持有 session，必须直调本函数——二次获取 session 会自死锁（session 非重入）。 */
 async function installEntryLocked(
   entry: InstallableEntry,
   cfg: RegistryConfig = {},
@@ -1284,7 +1290,7 @@ async function installEntryLocked(
     }
     if (prior.kind === 'dependency' && !prior.state.restorable) {
       throw guardManualRequired(
-        `「${pkg}」的原安装形态（${prior.state.sourceKind === 'other' ? 'link/file 等非 registry 来源' : '缺少 integrity 的 npm 依赖'}）无法自动回退，请先手动处理（卸载或修复后重试）`,
+        `「${pkg}」的原安装形态（${prior.state.sourceKind === 'other' ? 'link/file 等非 registry 来源' : 'pnpm-lock.yaml 未解析出该依赖的 integrity（键缺失或为别名/URL 等非 registry 写法）'}）无法自动回退，请先手动处理（卸载或修复后重试）`,
         [{ pkg, code: 'NO_DSH_MARKER', detail: `prior restorable:false（sourceKind=${prior.state.sourceKind}）` }],
       )
     }
@@ -1399,8 +1405,8 @@ async function installEntryLocked(
     }
     if (candidatePrior.kind === 'dependency' && !candidatePrior.state.restorable) {
       throw guardManualRequired(
-        `「${candidate}」的原安装形态（link/file 等非 registry 来源）无法自动回退，请先手动处理（卸载或修复后重试）`,
-        [{ pkg: candidate, code: 'NO_DSH_MARKER', detail: 'candidate 命中 restorable:false prior（link/file）' }],
+        `「${candidate}」的原安装形态（pnpm-lock.yaml 未解析出该依赖的可回退依据——integrity/commit 缺失，或 link/file/别名等非 registry 写法）无法自动回退，请先手动处理（卸载或修复后重试）`,
+        [{ pkg: candidate, code: 'NO_DSH_MARKER', detail: 'candidate 命中 restorable:false prior（lockfile 依据缺失）' }],
       )
     }
     const result = await runProfileTransaction(
@@ -1564,10 +1570,34 @@ async function upgradePluginLocked(
   const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)()
   const target = installed.find((it) => it.pkg === pkg)
   if (!target) throw new Error(`web profile 未安装该插件: ${pkg}`)
-  const entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
+  let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
+  // 0.5.1：合并市场安装的社区条目同样可升级——主清单 miss 时查社区目录
+  if (!entry) entry = await findCommunityUpgradeEntry(target, cfg, opts, deps)
   if (!entry) throw new Error(`「${pkg}」不是经 dsh-m 收录的插件；直接升级请用 dsh plugin update 或先在 registry 收录它`)
-  const result = await installEntry(entry, cfg, opts, deps)
+  // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
+  // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
+  const result = await installEntryLocked(entry, cfg, opts, deps)
   return { ...result, fromVersion: target.version }
+}
+
+/**
+ * 社区条目升级查找（0.5.1）：主清单 miss 时按同一 matchInstalledByEntry 语义查社区目录。
+ * 社区清单未启用/不可用/加载异常/未命中 → undefined，由调用方统一报「不是经 dsh-m 收录」。
+ */
+async function findCommunityUpgradeEntry(
+  target: InstalledPlugin,
+  cfg: RegistryConfig,
+  opts: RegistryRuntimeOptions,
+  deps?: InstallDeps,
+): Promise<InstallableEntry | undefined> {
+  try {
+    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal })
+    if (!loaded.catalog) return undefined
+    const adapted = adaptCommunityCatalog(loaded.catalog)
+    return adapted.entries.find((e) => matchInstalledByEntry(e, [target]))
+  } catch {
+    return undefined
+  }
 }
 
 /** 自升级（0.5.0 收编：host-api 直调事务的旁路封死）：npmLatest + integrity fail-closed + installEntryLocked（session/守卫经 installEntry）。 */

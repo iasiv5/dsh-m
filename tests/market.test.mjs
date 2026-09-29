@@ -9,7 +9,7 @@ import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome } from '../lib/core/market.js'
+import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome, capturePreMutationState, derivePrior } from '../lib/core/market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 
 const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
@@ -1521,5 +1521,159 @@ describe('M2 Task 3：守卫接线与 mutation session', () => {
     })
     assert.deepEqual(await Promise.all([p1, p2]), ['a', 'b'])
     assert.deepEqual(events, ['a-start', 'a-end', 'b-start', 'b-end'], 'b 在 a 完成后才开始')
+  })
+})
+
+// ---------- 0.5.1 回归：quoted scoped lockfile 键 + 社区条目升级 ----------
+
+describe('0.5.1 修复回归：scoped 包 quoted lockfile 键（升级硬拒根因）', () => {
+  it('derivePrior：quoted scoped 键解析出 integrity → restorable=true（旧正则恒 null → false）', async () => {
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { '@scope/pkg-a': '1.2.3' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+importers:
+  .:
+    dependencies:
+      '@scope/pkg-a':
+        specifier: 1.2.3
+        version: 1.2.3
+
+packages:
+  '@scope/pkg-a@1.2.3':
+    resolution: {integrity: ${sha512('good')}}
+`,
+    })
+    try {
+      const cap = await capturePreMutationState(dir)
+      assert.equal(cap.kind, 'snapshot')
+      const prior = derivePrior(cap.snapshot, '@scope/pkg-a')
+      assert.equal(prior.kind, 'dependency')
+      assert.equal(prior.state.restorable, true, 'quoted scoped 键必须解析出 integrity（旧正则匹配不到带引号键）')
+      assert.equal(prior.state.integrity, sha512('good'))
+      assert.equal(prior.state.sourceKind, 'npm')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('升级已装 scoped 插件：prior 门放行 → 事务提交（旧正则在此被 GUARD_MANUAL_REQUIRED 硬拒、add 零调用）', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { '@scope/pkg-a': '1.2.3' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-a@1.2.3':
+    resolution: {integrity: ${sha512('old')}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { '@scope/pkg-a': '2.0.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-a@2.0.0':
+    resolution: {integrity: ${sha512('good')}}
+`)
+          writeInstalledMarkerPkg(profileDir, '@scope/pkg-a')
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const deps = {
+        loadRegistry: async () => readyLoaded([{ id: 'sa', name: 'SA', description: 'd', category: 'tools', tags: [], source: 'npm', npm: '@scope/pkg-a' }]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: '@scope/pkg-a', name: '@scope/pkg-a', version: '1.2.3', source: 'npm', spec: '@scope/pkg-a@1.2.3' }], others: 0, complete: true, profileDir }),
+        npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: async () => ({ state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null }),
+        transaction: { runner: () => runner, profileDir },
+      }
+      const res = await upgradePlugin('@scope/pkg-a', cfg, {}, deps)
+      assert.equal(res.version, '2.0.0')
+      assert.equal(res.fromVersion, '1.2.3')
+      assert.equal(calls.add.length, 1, 'prior 门放行后 add 恰好执行一次')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('带 peer 后缀的 quoted scoped 键（如 \'@scope/pkg-a@2.0.0(@dep@1.0.0)\'）同样可解析', async () => {
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { '@scope/pkg-a': '2.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-a@2.0.0(@dep@1.0.0)':
+    resolution: {integrity: ${sha512('peer')}}
+`,
+    })
+    try {
+      const cap = await capturePreMutationState(dir)
+      const prior = derivePrior(cap.snapshot, '@scope/pkg-a')
+      assert.equal(prior.kind, 'dependency')
+      assert.equal(prior.state.restorable, true)
+      assert.equal(prior.state.integrity, sha512('peer'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('0.5.1 修复回归：社区条目升级（主清单 miss → 社区目录查找）', () => {
+  it('主清单 miss → 社区目录命中 → 正常升级', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { '@scope/pkg-b': '1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-b@1.0.0':
+    resolution: {integrity: ${sha512('old')}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { '@scope/pkg-b': '1.1.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-b@1.1.0':
+    resolution: {integrity: ${sha512('good')}}
+`)
+          writeInstalledMarkerPkg(profileDir, '@scope/pkg-b')
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const deps = {
+        loadRegistry: async () => readyLoaded([]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: '@scope/pkg-b', name: '@scope/pkg-b', version: '1.0.0', source: 'npm', spec: '@scope/pkg-b@1.0.0' }], others: 0, complete: true, profileDir }),
+        npmLatest: async () => ({ version: '1.1.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: async () => communityLoaded([communityRaw('pkg-b', 'o', { npm: '@scope/pkg-b' })]),
+        transaction: { runner: () => runner, profileDir },
+      }
+      const res = await upgradePlugin('@scope/pkg-b', cfg, {}, deps)
+      assert.equal(res.version, '1.1.0')
+      assert.equal(res.id, 'o--pkg-b', '命中社区合成条目 id')
+      assert.equal(res.fromVersion, '1.0.0')
+      assert.equal(calls.add.length, 1)
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('主清单与社区均未命中 → 维持「不是经 dsh-m 收录」报错', async () => {
+    const deps = {
+      loadRegistry: async () => readyLoaded([]),
+      listInstalledPlugins: async () => ({ items: [{ pkg: 'pkg-x', name: 'pkg-x', version: '1.0.0', source: 'npm', spec: 'pkg-x@1.0.0' }], others: 0, complete: true, profileDir: '/tmp/profile' }),
+      fetchCommunityCatalog: async () => communityLoaded([]),
+    }
+    await assert.rejects(
+      () => upgradePlugin('pkg-x', cfg, {}, deps),
+      (err) => err instanceof Error && /不是经 dsh-m 收录/.test(err.message),
+    )
   })
 })
