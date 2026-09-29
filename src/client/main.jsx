@@ -25,6 +25,9 @@ const ZH = {
   "market.title": "插件市场",
   "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
   "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.other": "其他",
+  "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
+  "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
+  "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
   "market.loading": "加载收录清单中… ", "market.empty": "没有匹配的收录条目",
@@ -115,6 +118,9 @@ const EN = {
   "market.title": "Plugin Marketplace",
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
   "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.other": "Other",
+  "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
+  "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
+  "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
   "market.loading": "Loading listings… ", "market.empty": "No matching listings",
@@ -624,13 +630,76 @@ function RestartBanner({ note, onDone }) {
   );
 }
 
-// ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props） ----------
-function MarketTab({ notify, market, onMutation }) {
-  const { data, loading, error, reload, query, updateQuery } = market;
+// ---------- 搜索框（0.7.0 Task 9：250ms debounce + IME composition 全程不提交 + draft/已提交分离 + 清除回焦） ----------
+function SearchBox({ placeholder, initial, onCommit }) {
+  const [draft, setDraft] = useState(initial || "");
+  const [composing, setComposing] = useState(false);
+  const timerRef = useRef(null);
+  const inputRef = useRef(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  const schedule = (v) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onCommit(v), 250);
+  };
+  const onChange = (v) => {
+    setDraft(v);
+    if (composing) return; // IME 组合期间不排定提交（组合结束再排）
+    schedule(v);
+  };
+  const submitNow = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    onCommit(draft);
+  };
+  return h(
+    "div",
+    { className: "dshm-search" },
+    h("input", {
+      ref: inputRef,
+      className: "dshm-input",
+      placeholder,
+      value: draft,
+      onChange: (e) => onChange(e.target.value),
+      onCompositionStart: () => setComposing(true),
+      onCompositionEnd: (e) => {
+        setComposing(false);
+        schedule(e && e.target ? e.target.value : draft);
+      },
+      onKeyDown: (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          submitNow();
+        }
+      },
+      onBlur: submitNow,
+    }),
+    draft
+      ? h("button", {
+          className: "dshm-btn sm",
+          title: lookup("common.clear"),
+          onClick: () => {
+            setDraft("");
+            if (timerRef.current) clearTimeout(timerRef.current);
+            onCommit("");
+            if (inputRef.current) inputRef.current.focus();
+          },
+        }, "×")
+      : null,
+  );
+}
+
+// ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props；0.7.0 Task 9 三分区 tab 壳） ----------
+const ZONE_TABS = [
+  { id: "community", labelKey: "zone.community" },
+  { id: "primary", labelKey: "zone.primary" },
+  { id: "favorites", labelKey: "zone.favorites" },
+];
+
+function MarketTab({ notify, markets, onMutation }) {
+  const [zone, setZone] = useState("community");
+  const market = zone === "favorites" ? null : markets[zone];
+  const { data, loading, error, reload, query, updateQuery } = market || {};
   const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [qInput, setQInput] = useState(query.query);
-  const debounceRef = useRef(null);
 
   // 服务端分页数据（0.7.0 Task 8：服务端单一排序源，客户端不再重排）
   const items = (data && data.items) || [];
@@ -641,12 +710,21 @@ function MarketTab({ notify, market, onMutation }) {
   const pages = total > 0 ? Math.max(1, Math.ceil(total / limit)) : 1;
   const counts = (data && data.categoryCounts) || {};
   const notice = data ? marketNotice(data.registryState, data.community) : null;
-
-  const onSearchInput = (value) => {
-    setQInput(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => updateQuery({ query: value }), 300);
-  };
+  const zoneBar = h(
+    "div",
+    { className: "dshm-chips" },
+    ...ZONE_TABS.map((z) =>
+      h("button", { key: z.id, className: `dshm-chip${zone === z.id ? " on" : ""}`, onClick: () => setZone(z.id) }, lookup(z.labelKey))),
+  );
+  // 收藏区（0.7.0 Task 9 占位空态；Task 14 落地本地收藏 + stale 清理）
+  if (zone === "favorites") {
+    return h(
+      React.Fragment,
+      null,
+      zoneBar,
+      h("div", { className: "dshm-empty" }, lookup("favorites.empty")),
+    );
+  }
 
   // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null
   const [compatConfirm, setCompatConfirm] = useState(null);
@@ -735,6 +813,7 @@ function MarketTab({ notify, market, onMutation }) {
     React.Fragment,
     null,
     CompatDialog,
+    zoneBar,
     notice
       ? h("div", { className: notice.key === "notice.unavailable" ? "dshm-err" : "dshm-hint" },
           lookup(notice.key, { count: notice.count }))
@@ -744,19 +823,14 @@ function MarketTab({ notify, market, onMutation }) {
     h(
       "div",
       { className: "dshm-row" },
-      h("input", {
-        className: "dshm-input",
-        placeholder: lookup("search.ph"),
-        value: qInput,
-        onChange: (e) => onSearchInput(e.target.value),
-      }),
+      h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery({ query: v }) }),
       h("button", { className: "dshm-btn", onClick: () => reload(true), title: lookup("settings.policy.v") }, loading ? Spin() : `↻ ${lookup("common.refresh")}`),
     ),
     h(
       "div",
       { className: "dshm-chips" },
       h("button", { className: `dshm-chip${query.category === null ? " on" : ""}`, onClick: () => updateQuery({ category: null, offset: 0 }) }, lookup("cat.all")),
-      ...zoneChips(counts, (data && data.community && data.community.categoryLabels) || {}, "community").map((c) =>
+      ...zoneChips(counts, (data && data.community && data.community.categoryLabels) || {}, zone).map((c) =>
         h(
           "button",
           { key: c.id, className: `dshm-chip${query.category === c.id ? " on" : ""}`, onClick: () => updateQuery({ category: query.category === c.id ? null : c.id, offset: 0 }) },
@@ -1430,8 +1504,11 @@ function DshVersionChip({ version }) {
 
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
-  // 市场数据唯一 owner：服务端分页 + query generation + AbortController（Task 7）
-  const market = useMarketData();
+  // 市场数据唯一 owner（0.7.0 Task 9：两分区独立状态实例，切 tab 互不重置；
+  // 收藏区数据在 Task 14 落地，本地 localStorage 不走 market 通道）
+  const marketCommunity = useMarketData("community");
+  const marketPrimary = useMarketData("primary");
+  const markets = { community: marketCommunity, primary: marketPrimary };
   const installed = useAsync(() => api("installed"), []);
   // DSH 运行版本：挂载时随 ping 一次性带回；失败/缺席 → chip 整个隐藏（不留占位）
   const [dshVersion, setDshVersion] = useState(null);
@@ -1446,14 +1523,21 @@ function MarketPanel({ onClose }) {
       live = false;
     };
   }, []);
-  // Registry 配置或任一 profile mutation 后，两个视图一起刷新，避免单页快照不同步。
+  // Registry 配置或任一 profile mutation 后，视图一起刷新，避免单页快照不同步（两分区同刷）。
+  const marketReloadAll = useCallback(
+    (force) => {
+      marketCommunity.reload(force)
+      marketPrimary.reload(force)
+    },
+    [marketCommunity.reload, marketPrimary.reload],
+  )
   const refreshViews = useCallback(
-    () => refreshAfterMutation({ marketReload: market.reload, installedReload: installed.reload }),
-    [market.reload, installed.reload],
+    () => refreshAfterMutation({ marketReload: marketReloadAll, installedReload: installed.reload }),
+    [marketReloadAll, installed.reload],
   );
   const onRegistryChanged = refreshViews;
   const counts = {
-    market: market.data ? market.data.total : null,
+    market: marketCommunity.data ? marketCommunity.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
   };
   const [banner, setBanner] = useState(null); // { text } | null
@@ -1510,7 +1594,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, market, onMutation: refreshViews }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
       ),
