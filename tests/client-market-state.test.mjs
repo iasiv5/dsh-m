@@ -40,8 +40,8 @@ describe('分区常量与状态工厂', () => {
       zone: 'community', query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 24,
     })
     assert.deepEqual(createZoneState('primary'), {
-      zone: 'primary', query: '', category: null, sort: null, offset: 0, limit: 24,
-    })
+      zone: 'primary', query: '', category: null, sort: null, offset: 0, limit: 96,
+    }, 'primary 单页直出上限 96（Task 11）')
     assert.equal(createZoneState('nonsense').zone, 'community', '未知 zone 归 community')
   })
 })

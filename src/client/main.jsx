@@ -27,7 +27,7 @@ const ZH = {
   "cat.all": "全部", "cat.market": "市场", "cat.tools": "工具", "cat.ui": "界面", "cat.search": "搜索", "cat.other": "其他",
   "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
   "sort.downloads.desc": "下载量 ↓", "sort.downloads.asc": "下载量 ↑", "sort.stars.desc": "Star ↓", "sort.stars.asc": "Star ↑", "sort.added.desc": "最新收录 ↓", "sort.added.asc": "最早收录 ↑",
-  "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "market.pagesize": "{n} 条/页",
+  "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "market.pagesize": "{n} 条/页", "badge.verified": "已实测",
   "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
   "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
@@ -122,7 +122,7 @@ const EN = {
   "cat.all": "All", "cat.market": "Market", "cat.tools": "Tools", "cat.ui": "UI", "cat.search": "Search", "cat.other": "Other",
   "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
   "sort.downloads.desc": "Downloads ↓", "sort.downloads.asc": "Downloads ↑", "sort.stars.desc": "Stars ↓", "sort.stars.asc": "Stars ↑", "sort.added.desc": "Recently added ↓", "sort.added.asc": "Oldest first ↑",
-  "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "market.pagesize": "{n} / page",
+  "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "market.pagesize": "{n} / page", "badge.verified": "Verified",
   "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
   "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
@@ -982,6 +982,7 @@ function MarketTab({ notify, markets, onMutation }) {
                   name: it.name,
                   badges: [
                     it.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
+                    it.community !== true && Array.isArray(it.verified) && it.verified.length ? h("span", { className: "dshm-badge", key: "v", title: it.verified.join("、") }, lookup("badge.verified")) : null,
                     it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
                     it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
                     it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
@@ -993,7 +994,7 @@ function MarketTab({ notify, markets, onMutation }) {
                         typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: String(it.downloads) } : null,
                         typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
                       ].filter(Boolean)
-                    : null,
+                    : (it.tags || []).map((t) => ({ text: `#${t}` })),
                   desc: browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description,
                   clampLines: it.community === true ? 5 : 2,
                   sub: [
