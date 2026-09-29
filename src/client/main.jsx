@@ -1584,13 +1584,12 @@ function mountPanel() {
 
 // 同系列线性图标（16×16 / stroke currentColor / 1.4，与 PlazaIcon 同约定）：宫格 + 放大镜
 function MarketIcon() {
-  return h("svg", { viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
-    h("rect", { x: "1.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
-    h("rect", { x: "8.75", y: "1.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
-    h("rect", { x: "1.75", y: "8.75", width: "5.5", height: "5.5", rx: "1.2", stroke: "currentColor", strokeWidth: "1.4" }),
-    // 右下：放大镜（收一点，光学尺寸与其他宫格图标一致）
-    h("circle", { cx: "10.5", cy: "10.5", r: "2.9", stroke: "currentColor", strokeWidth: "1.4" }),
-    h("path", { d: "M12.6 12.6 14.3 14.3", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round" }),
+  // 与 DSH 官方图标家族对齐：24 视箱 / strokeWidth 2 / 16px 渲染（Lucide layout-grid 构型）
+  return h("svg", { viewBox: "0 0 24 24", width: "16", height: "16", fill: "none", "aria-hidden": "true" },
+    h("rect", { x: "3", y: "3", width: "7", height: "7", rx: "1", stroke: "currentColor", strokeWidth: "2" }),
+    h("rect", { x: "14", y: "3", width: "7", height: "7", rx: "1", stroke: "currentColor", strokeWidth: "2" }),
+    h("rect", { x: "3", y: "14", width: "7", height: "7", rx: "1", stroke: "currentColor", strokeWidth: "2" }),
+    h("rect", { x: "14", y: "14", width: "7", height: "7", rx: "1", stroke: "currentColor", strokeWidth: "2" }),
   );
 }
 
