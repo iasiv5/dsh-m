@@ -144,8 +144,6 @@ export interface MarketQuery extends RegistryRuntimeOptions {
   limit?: number
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
-  /** @deprecated 0.7.0 Task 2 过渡 shim（Task 7 删除）：改用 source='primary'——只看主清单，跳过社区加载（loader 零调用） */
-  primaryOnly?: boolean
   force?: boolean
   /** default 60_000；测试注入短 deadline */
   deadlineMs?: number
@@ -205,7 +203,7 @@ export interface MarketResult {
   installedComplete: boolean
   latestComplete: boolean
   latestTimedOut: boolean
-  /** 社区清单状态 summary（M1 Task 5；source='primary'/primaryOnly → skipped，配置关闭 → disabled） */
+  /** 社区清单状态 summary（M1 Task 5；source='primary' → skipped，配置关闭 → disabled） */
   community: CommunityRegistrySummary
 }
 
@@ -236,7 +234,10 @@ export interface InstalledResult {
 // ---------- 通用工具 ----------
 
 const DEFAULT_DEADLINE_MS = 60_000
-const WITH_LATEST_MAX = 50
+/** withLatest 上限 = 96（0.7.0 Task 7：50→96，opt-in 页大小；默认页 24 的探测负载低于 0.6.x 默认 50——
+ * 96/页冷缓存最坏情况被 60s deadline 框死为 latestError 不阻塞列表，Q46「探测对象=页面条目」不动；
+ * 人工验收阈值：96/页冷缓存 latestError > 20% 即回退默认页大小并重议）。 */
+const WITH_LATEST_MAX = 96
 const METADATA_ONLY_MAX = 80
 const LATEST_WORKERS = 8
 
@@ -547,7 +548,7 @@ interface CommunityOutcome {
 /**
  * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
  * 本函数作为 waiter 用剩余 deadline race 自己的等待；到点只结束本 waiter（summary 标超时），
- * 共享 flight 照常继续。source='primary'/primaryOnly/未启用 → loader 零调用（task 传 null → skipped；
+ * 共享 flight 照常继续。source='primary'/未启用 → loader 零调用（task 传 null → skipped；
  * 配置关闭走真任务的 disabled 分支，与跳过语义分离）。
  * 导出供 community.ts getCommunitySummary 复用（summary 组装单一产地）。
  */
@@ -703,12 +704,10 @@ export async function listMarket(
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
   const installedTask: Promise<Awaited<ReturnType<MarketDeps['listInstalledPlugins']>> | null> =
     d.listInstalledPlugins().catch(() => null)
-  // 社区 flight 并发启动（source=primary/primaryOnly 零调用）；共享 loader 不接收调用者 deadline——
+  // 社区 flight 并发启动（source=primary 零调用；0.7.0 Task 7：primaryOnly 字段已删除）；共享 loader 不接收调用者 deadline——
   // listMarket 作为 waiter 在 communityOutcome 内 race 自己的剩余 deadline/signal（v10 契约）
   const communityTask =
-    source === 'primary' || opts.primaryOnly === true
-      ? null
-      : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
+    source === 'primary' ? null : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
 
   let loaded: LoadedRegistry | 'deadline'
   try {

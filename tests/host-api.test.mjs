@@ -241,28 +241,41 @@ describe('host-api：method 响应', () => {
     assert.ok(['ready', 'stale'].includes(res.body.registryState.status), `force 加载状态 ${res.body.registryState.status}`)
   })
 
-  it('market 转发 query/offset/limit，忽略客户端 withLatest，limit clamp 1..50', async () => {
+  it('market 转发 query/offset/limit/source/sort，忽略客户端 withLatest，limit clamp 1..96（0.7.0 Task 7）', async () => {
     const { dispatcher, calls } = setup()
     const res = await callApi(dispatcher, {
       headers: JSON_HEADERS,
-      body: { method: 'market', query: '主题', offset: 50, limit: 1000, withLatest: false },
+      body: {
+        method: 'market', query: '主题', offset: 50, limit: 1000, withLatest: false,
+        source: 'community', sort: { field: 'stars', dir: 'asc' },
+      },
     })
     assert.equal(res.status, 200)
     assert.equal(res.body.total, 2)
     const opts = calls.listMarket[0]
     assert.equal(opts.namespace, 'host')
     assert.equal(opts.withLatest, true, 'withLatest 固定 true')
-    assert.equal(opts.limit, 50)
+    assert.equal(opts.limit, 96, '超 96 clamp 到 96')
     assert.equal(opts.offset, 50)
     assert.equal(opts.query, '主题')
+    assert.equal(opts.source, 'community', 'source 透传')
+    assert.deepEqual(opts.sort, { field: 'stars', dir: 'asc' }, 'sort 透传')
+    // 非法 source/sort → 400
+    const badSource = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', source: 'zone' } })
+    assert.equal(badSource.status, 400)
+    assert.ok(badSource.body.error.includes('非法 source'))
+    const badSort = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', sort: { field: 'name' } } })
+    assert.equal(badSort.status, 400)
+    assert.ok(badSort.body.error.includes('非法 sort'))
   })
 
-  it('market limit 缺省为 50、负数归一', async () => {
+  it('market limit 缺省为 24、负数归一（0.7.0 Task 7）', async () => {
     const { dispatcher, calls } = setup()
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
-    assert.equal(calls.listMarket[0].limit, 50)
+    assert.equal(calls.listMarket[0].limit, 24)
+    assert.equal(calls.listMarket[0].source, 'all', 'source 缺省 all')
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', limit: -5 } })
-    assert.equal(calls.listMarket[1].limit, 50)
+    assert.equal(calls.listMarket[1].limit, 24)
   })
 
   it('installed 转发 host namespace', async () => {
@@ -601,7 +614,7 @@ function readySummary(overrides = {}) {
 }
 
 describe('M1 Task 6：host-api 社区契约', () => {
-  it('④ market 请求：精选分类与社区 slug 透传、非法 slug → 400、primaryOnly 透传', async () => {
+  it('④ market 请求：精选分类与社区 slug 透传、非法 slug → 400、primaryOnly 已由 source 取代（0.7.0 Task 7）', async () => {
     const { dispatcher, calls } = setup()
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'my-slug' } })
     assert.equal(calls.listMarket[0].category, 'my-slug', '社区开放 slug 透传')
@@ -612,10 +625,11 @@ describe('M1 Task 6：host-api 社区契约', () => {
     assert.ok(bad.body.error.includes('非法分类'))
     const long = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'a'.repeat(33) } })
     assert.equal(long.status, 400, '超 32 字符 slug 拒绝')
-    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', primaryOnly: true } })
-    assert.equal(calls.listMarket.at(-1).primaryOnly, true)
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', source: 'primary' } })
+    assert.equal(calls.listMarket.at(-1).source, 'primary')
+    assert.equal(calls.listMarket.at(-1).primaryOnly, undefined, 'primaryOnly 字段已删除，不再下传 core')
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
-    assert.equal(calls.listMarket.at(-1).primaryOnly, false, '缺省 false')
+    assert.equal(calls.listMarket.at(-1).source, 'all', '缺省 all')
   })
 
   it('⑤ registry-config 响应携带社区两键（回显数据源）', async () => {

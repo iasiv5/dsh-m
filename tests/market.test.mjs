@@ -127,11 +127,11 @@ describe('listMarket：服务端分页', () => {
     assert.equal(res.items.length, 80)
   })
 
-  it('core 硬 clamp：withLatest 最多 50，metadata-only 最多 80', async () => {
+  it('core 硬 clamp：withLatest 最多 96（0.7.0 Task 7），metadata-only 最多 80', async () => {
     const { deps } = fakeDeps()
     const a = await listMarket(cfg, { limit: 1000 }, deps)
-    assert.equal(a.limit, 50)
-    assert.equal(a.items.length, 50)
+    assert.equal(a.limit, 96)
+    assert.equal(a.items.length, 96)
     const b = await listMarket(cfg, { limit: 1000, withLatest: false }, deps)
     assert.equal(b.limit, 80)
     assert.equal(b.items.length, 80)
@@ -1022,14 +1022,9 @@ describe('M1 Task 5：合并市场', () => {
     ])
   })
 
-  it('③ primaryOnly（shim）：社区 loader 零调用，items 只主条目，community=skipped（0.7.0 Task 2 跳过语义）', async () => {
-    const base = fakeDeps()
-    const { deps, ccalls } = withCommunity(base, communityLoaded([communityRaw('x', 'o')]))
-    const res = await listMarket(cfg, { withLatest: false, primaryOnly: true }, deps)
-    assert.equal(ccalls.n, 0)
-    assert.ok(res.items.every((it) => it.community === undefined))
-    assert.equal(res.community.enabled, true)
-    assert.equal(res.community.status, 'skipped')
+  it('③（0.7.0 Task 7：primaryOnly 字段已删除，本用例归并入 ⑦ source=primary）', () => {
+    // 占位说明：原 primaryOnly shim 用例随 MarketQuery.primaryOnly 删除而退役；
+    // 「source=primary 零社区调用 + community=skipped」的等价断言见 ⑦。
   })
 
   it('⑦ source 分区（0.7.0 Task 2）：primary=只主清单零社区加载；community=只社区条目', async () => {

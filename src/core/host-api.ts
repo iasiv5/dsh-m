@@ -309,9 +309,11 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'market': {
           await ctx.controller.ensureReady()
-          // GUI policy：忽略客户端 withLatest，固定 true；limit clamp 1..50
+          // GUI policy：忽略客户端 withLatest，固定 true；limit clamp 1..96、缺省 24
+          // （0.7.0 Task 7 探测预算决策：96 为 opt-in 页大小，默认 24 低于 0.6.x 默认 50 的探测负载；
+          //  最坏情况被 core 60s deadline 框死为 latestError，不阻塞列表，Q46 不动）
           const limitRaw = Number(body.limit)
-          const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.max(1, Math.floor(limitRaw))) : 50
+          const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(96, Math.max(1, Math.floor(limitRaw))) : 24
           const offsetRaw = Number(body.offset)
           const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
           // category：精选 5 + 社区开放 slug（非法 slug → 400，不静默吞）
@@ -324,12 +326,31 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
               throw new ApiProtocolError(400, `非法分类: ${categoryRaw}（需精选分类或 [a-z0-9-]{1,32} slug）`)
             }
           }
+          // source 分区 + sort（0.7.0 Task 7）：非法值 400（不静默吞）；primaryOnly 契约已由 source 取代并删除
+          const sourceRaw = typeof body.source === 'string' ? body.source.trim() : ''
+          if (sourceRaw !== '' && sourceRaw !== 'primary' && sourceRaw !== 'community' && sourceRaw !== 'all') {
+            throw new ApiProtocolError(400, `非法 source: ${sourceRaw}（需 primary/community/all）`)
+          }
+          const source = sourceRaw === '' ? 'all' : sourceRaw
+          let sort: { field: 'downloads' | 'stars' | 'added'; dir: 'asc' | 'desc' } | undefined
+          if (body.sort !== undefined && body.sort !== null) {
+            const s = body.sort as { field?: unknown; dir?: unknown }
+            if (
+              (s.field === 'downloads' || s.field === 'stars' || s.field === 'added') &&
+              (s.dir === 'asc' || s.dir === 'desc')
+            ) {
+              sort = { field: s.field, dir: s.dir }
+            } else {
+              throw new ApiProtocolError(400, '非法 sort: 需 { field: downloads|stars|added, dir: asc|desc }')
+            }
+          }
           const result = await d.listMarket(cfg(), {
             query: strArg(body, 'query'),
             category,
+            source,
+            sort,
             offset,
             limit,
-            primaryOnly: boolArg(body.primaryOnly),
             force: boolArg(body.force),
             withLatest: true,
             namespace: 'host',
