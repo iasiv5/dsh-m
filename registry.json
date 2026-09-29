@@ -4,7 +4,7 @@
     {
       "id": "dsh-m",
       "name": "DSH Marketplace",
-      "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 0.1.2-rc.1、0.1.5-rc.1/rc.2 与 0.1.7-rc.1/rc.2，详见仓库。",
+      "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 0.1.5-rc.1 至 0.2.0-rc.1 各代，详见仓库。",
       "category": "market",
       "tags": [
         "市场",
@@ -15,7 +15,8 @@
         "0.1.5-rc.1",
         "0.1.5-rc.2",
         "0.1.7-rc.1",
-        "0.1.7-rc.2"
+        "0.1.7-rc.2",
+        "0.2.0-rc.1"
       ],
       "source": "npm",
       "npm": "dsh-m",
@@ -25,7 +26,7 @@
     {
       "id": "dsh-skins",
       "name": "DSH Skins",
-      "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。已适配 0.1.7-rc.2，详见仓库。",
+      "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。已适配 0.1.7-rc.2 与 0.2.0-rc.1，详见仓库。",
       "category": "ui",
       "tags": [
         "皮肤",
@@ -34,7 +35,8 @@
       ],
       "verified": [
         "0.1.2-rc.1",
-        "0.1.7-rc.2"
+        "0.1.7-rc.2",
+        "0.2.0-rc.1"
       ],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
@@ -44,7 +46,7 @@
     {
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
-      "description": "为内置 Copilot 提供方补登录/注销设置页与开箱路由；模型目录兜底不覆盖定制。适配 0.1.7-rc.2，旧版用 1.1.x。",
+      "description": "为内置 Copilot 提供方补登录/注销设置页与开箱路由；模型目录兜底不覆盖定制。适配 0.1.7-rc.2 与 0.2.0-rc.1，旧版用 1.1.x。",
       "category": "tools",
       "tags": [
         "Copilot",
@@ -52,7 +54,8 @@
         "模型接入"
       ],
       "verified": [
-        "0.1.7-rc.2"
+        "0.1.7-rc.2",
+        "0.2.0-rc.1"
       ],
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
