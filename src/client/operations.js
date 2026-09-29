@@ -95,19 +95,21 @@ export function createOperationsStore(storage) {
     get persistDegraded() {
       return persistDegraded
     },
-    /** upsert 按 id 覆盖；不带 id 视为新记录生成 id。@returns 更新后的全量列表（浅拷贝） */
+    /** upsert 按 id 覆盖；不带 id 视为新记录生成 id。@returns 存储后的记录（含 id/时间戳）。 */
     upsert(rec) {
       const now = Date.now()
       const id = typeof rec.id === 'string' && rec.id !== '' ? rec.id : `op-${now}-${Math.random().toString(36).slice(2, 8)}`
       const merged = { createdAt: now, ...rec, id, updatedAt: now }
       const idx = records.findIndex((r) => r.id === id)
+      let stored
       if (idx >= 0) {
-        records[idx] = { ...records[idx], ...merged, createdAt: records[idx].createdAt }
+        records[idx] = stored = { ...records[idx], ...merged, createdAt: records[idx].createdAt }
       } else {
         records = [...records, merged]
+        stored = merged
       }
       persist()
-      return this.list()
+      return { ...stored }
     },
     remove(id) {
       records = records.filter((r) => r.id !== id)

@@ -19,6 +19,7 @@ const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
+const { createOperationsStore, restoreRecords, drainRestored } = require("./operations.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -30,6 +31,9 @@ const ZH = {
   "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "market.pagesize": "{n} 条/页", "badge.verified": "已实测",
   "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
   "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
+  "op.clear": "清除已完成",
+  "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
+  "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
   "common.clear": "清空",
   "search.ph": "搜索名称 / 描述 / 标签…",
@@ -127,6 +131,9 @@ const EN = {
   "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "market.pagesize": "{n} / page", "badge.verified": "Verified",
   "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
   "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
+  "op.clear": "Clear finished",
+  "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
+  "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
   "common.clear": "Clear",
   "search.ph": "Search name, description, tags…",
@@ -290,6 +297,18 @@ const CSS = `
 .dsvm-lbdots{display:flex;gap:6px}
 .dsvm-lbdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
 .dsvm-lbdot.on{background:#fff}
+.dsvm-ops{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.dsvm-opgroup{display:flex;flex-direction:column;gap:3px}
+.dsvm-opgroup.done{opacity:.75}
+.dsvm-oprow{display:flex;align-items:center;gap:8px;min-height:22px}
+.dsvm-opstatus{min-width:44px;font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
+.dsvm-oprow.ok .dsvm-opstatus{color:#15803d}
+.dsvm-oprow.warn .dsvm-opstatus, .dsvm-oprow.run .dsvm-opstatus{color:#b45309}
+.dsvm-oprow.err .dsvm-opstatus{color:var(--dsw-alias-state-error-primary,#b91c1c)}
+.dsvm-oprow.sup .dsvm-opstatus{color:var(--dsw-alias-label-caption,#6b7280)}
+.dsvm-opkind{color:var(--dsw-alias-label-secondary,#4b5563)}
+.dsvm-optarget{font-weight:500;overflow-wrap:anywhere}
+.dsvm-opnote{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;overflow-wrap:anywhere}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
@@ -1001,12 +1020,13 @@ const SORT_OPTIONS = [
   ["added-asc", "sort.added.asc"],
 ];
 
-function MarketTab({ notify, markets, onMutation }) {
+function MarketTab({ notify, markets, onMutation, ops }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
   const [detailId, setDetailId] = useState(null);
-  const [busyId, setBusyId] = useState(null);
+  // busy 派生自操作记录（0.7.0 Task 13：状态不挂卡片）——首个进行中的 install
+  const busyId = (ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
 
   // 服务端分页数据（0.7.0 Task 8：服务端单一排序源，客户端不再重排）
   const items = (data && data.items) || [];
@@ -1058,9 +1078,13 @@ function MarketTab({ notify, markets, onMutation }) {
   };
 
   const doInstall = async (it, version, forceIncompatible) => {
-    setBusyId(it.id);
     try {
-      const res = await api("install", { id: it.id, ...(version ? { version } : {}), ...(forceIncompatible ? { forceIncompatible: true } : {}) });
+      const res = await ops.runOp(
+        "install",
+        it.id,
+        () => api("install", { id: it.id, ...(version ? { version } : {}), ...(forceIncompatible ? { forceIncompatible: true } : {}) }),
+        { version },
+      );
       installDone(res);
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
@@ -1082,8 +1106,6 @@ function MarketTab({ notify, markets, onMutation }) {
       } else {
         notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
       }
-    } finally {
-      setBusyId(null);
     }
   };
 
@@ -1305,23 +1327,23 @@ function ReadmeBlock({ pkg }) {
 }
 
 // ---------- 已装页 ----------
-function InstalledTab({ notify, installed, onMutation }) {
+function InstalledTab({ notify, installed, onMutation, ops }) {
   const { loading, data, error, reload } = installed;
   const [openPkg, setOpenPkg] = useState(null);
   const [readmePkg, setReadmePkg] = useState(null);
-  const [busyPkg, setBusyPkg] = useState(null);
+  // busy 派生自操作记录（0.7.0 Task 13）——首个进行中的非 install 操作
+  const busyPkg = (ops.records.find((r) => r.kind !== "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
 
   const doToggle = async (it, enabled) => {
-    setBusyPkg(it.pkg);
     const call = () => api("set-enabled", { pkg: it.pkg, enabled });
     try {
       let res;
       try {
-        res = await call();
+        res = await ops.runOp("toggle", it.pkg, call, { on: enabled });
       } catch (first) {
         // hmr 重组窗口可能瞬断传输（set-enabled 幂等，重试一次安全）
         await new Promise((r) => setTimeout(r, 1500));
-        res = await call();
+        res = await ops.runOp("toggle", it.pkg, call, { on: enabled });
       }
       const note = toggleNoticeKeys(res);
       const extra = (res.warnings && res.warnings.length ? `（${res.warnings.join("；")}）` : "");
@@ -1329,15 +1351,12 @@ function InstalledTab({ notify, installed, onMutation }) {
       await (onMutation ? onMutation() : reload());
     } catch (e) {
       notify({ kind: "err", text: lookup("toggle.failed", { err: (e && e.message) || e }) });
-    } finally {
-      setBusyPkg(null);
     }
   };
 
   const doUninstall = async (it) => {
-    setBusyPkg(it.pkg);
     try {
-      const res = await api("uninstall", { pkg: it.pkg });
+      const res = await ops.runOp("uninstall", it.pkg, () => api("uninstall", { pkg: it.pkg }));
       notify({
         kind: "ok",
         needsRestart: true,
@@ -1348,15 +1367,12 @@ function InstalledTab({ notify, installed, onMutation }) {
       await (onMutation ? onMutation() : reload());
     } catch (e) {
       notify({ kind: "err", text: lookup("failed.uninstall", { err: (e && e.message) || e }) });
-    } finally {
-      setBusyPkg(null);
     }
   };
 
   const doUpgrade = async (it) => {
-    setBusyPkg(it.pkg);
     try {
-      const res = await api("upgrade", { pkg: it.pkg });
+      const res = await ops.runOp("upgrade", it.pkg, () => api("upgrade", { pkg: it.pkg }));
       notify({
         kind: "ok",
         needsRestart: true,
@@ -1382,8 +1398,6 @@ function InstalledTab({ notify, installed, onMutation }) {
       } else {
         notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
       }
-    } finally {
-      setBusyPkg(null);
     }
   };
 
@@ -1796,6 +1810,51 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
   );
 }
 
+// ---------- 全局操作记录（0.7.0 Task 13：状态不挂卡片，翻页/搜索/切 tab 不丢；持久化 + 恢复执行器） ----------
+function useOperationsStore() {
+  const storeRef = useRef(null);
+  if (!storeRef.current) {
+    const ls = typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
+    storeRef.current = createOperationsStore(ls);
+  }
+  return storeRef.current;
+}
+
+const OP_STATUS_CLS = {
+  queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
+};
+
+function OperationsPanel({ records, onClearFinished }) {
+  const active = records.filter((r) => r.status === "queued" || r.status === "running" || r.status === "input");
+  const finished = records.filter((r) => active.indexOf(r) < 0).slice(-6);
+  if (!active.length && !finished.length) return null;
+  const row = (r) =>
+    h(
+      "div",
+      { key: r.id, className: `dsvm-oprow ${OP_STATUS_CLS[r.status] || ""}` },
+      h("span", { className: "dsvm-opstatus" }, lookup("op.status." + r.status)),
+      h("span", { className: "dsvm-opkind" }, lookup("op.kind." + r.kind)),
+      h("span", { className: "dsvm-optarget", title: r.error || r.warning || undefined }, r.target),
+      r.status === "running" ? Spin() : null,
+      r.error ? h("span", { className: "dsvm-opnote" }, r.error) : null,
+      r.warning ? h("span", { className: "dsvm-opnote" }, r.warning) : null,
+    );
+  return h(
+    "div",
+    { className: "dsvm-ops" },
+    active.length ? h("div", { className: "dsvm-opgroup" }, ...active.map(row)) : null,
+    finished.length
+      ? h(
+          "div",
+          { className: "dsvm-opgroup done" },
+          ...finished.map(row),
+          h("button", { className: "dshm-btn sm", onClick: onClearFinished }, lookup("op.clear")),
+        )
+      : null,
+  );
+}
+
+
 // ---------- 面板（3 视图容器） ----------
 const TABS = [
   ["market", "tab.market", "market"],
@@ -1837,6 +1896,32 @@ function MarketPanel({ onClose }) {
   const marketPrimary = useMarketData("primary");
   const markets = { community: marketCommunity, primary: marketPrimary };
   const installed = useAsync(() => api("installed"), []);
+  // 全局操作记录（0.7.0 Task 13）：状态不挂卡片，翻页/搜索/切 tab 不丢
+  const opsStore = useOperationsStore();
+  const [opRecords, setOpRecords] = useState(() => opsStore.list().map((r) => ({ ...r })));
+  const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), [opsStore]);
+  const runOp = useCallback(
+    async (kind, target, exec, meta = {}) => {
+      const stored = opsStore.upsert({ kind, target, status: "running", meta });
+      syncOps();
+      try {
+        const value = await exec();
+        opsStore.upsert({ id: stored.id, status: value && value.opWarning ? "warned" : "done", warning: value && value.opWarning });
+        syncOps();
+        return value;
+      } catch (e) {
+        opsStore.upsert({
+          id: stored.id,
+          status: e && e.issue ? "input" : "failed",
+          ...(e && e.issue ? { inputKind: "peer-incompatible" } : { error: String((e && e.message) || e) }),
+        });
+        syncOps();
+        throw e;
+      }
+    },
+    [opsStore, syncOps],
+  );
+  const ops = { records: opRecords, runOp };
   // DSH 运行版本：挂载时随 ping 一次性带回；失败/缺席 → chip 整个隐藏（不留占位）
   const [dshVersion, setDshVersion] = useState(null);
   useEffect(() => {
@@ -1863,6 +1948,51 @@ function MarketPanel({ onClose }) {
     [marketReloadAll, installed.reload],
   );
   const onRegistryChanged = refreshViews;
+  // 恢复时序（0.7.0 Task 13）：installed resolve → restoreRecords → drainRestored；
+  // stillApplies 一律执行时实读（api("installed")），禁止复用本 effect 捕获的 installed.data 快照
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || !installed.data) return;
+    restoredRef.current = true;
+    void (async () => {
+      const stillApplies = async (r) => {
+        let fresh = null;
+        try {
+          fresh = await api("installed");
+        } catch {
+          fresh = null;
+        }
+        const items = fresh && Array.isArray(fresh.items) ? fresh.items : null;
+        if (!items) return true; // 读不到已装数据：保守放行（drain 执行前还会再校验）
+        const has = items.some((x) => x && x.pkg === r.target);
+        return r.kind === "install" ? !has : has;
+      };
+      const dispatchRestored = async (r) => {
+        try {
+          if (r.kind === "install") {
+            await api("install", { id: r.target, ...(r.meta && r.meta.version ? { version: r.meta.version } : {}) });
+          } else if (r.kind === "upgrade") {
+            await api("upgrade", { pkg: r.target, ...(r.meta && r.meta.force ? { force: true } : {}) });
+          } else if (r.kind === "uninstall") {
+            await api("uninstall", { pkg: r.target });
+          } else {
+            await api("set-enabled", { pkg: r.target, enabled: r.meta && r.meta.on === true });
+          }
+          return { ok: true };
+        } catch (e) {
+          return { ok: false, error: String((e && e.message) || e) };
+        }
+      };
+      const restored = await restoreRecords(opsStore.list(), stillApplies);
+      opsStore.replaceAll(restored);
+      syncOps();
+      if (restored.some((r) => r.status === "queued")) {
+        await drainRestored(opsStore, dispatchRestored, stillApplies);
+        syncOps();
+        await refreshViews();
+      }
+    })();
+  }, [installed.data, opsStore, syncOps, refreshViews]);
   const counts = {
     market: marketCommunity.data ? marketCommunity.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
@@ -1921,9 +2051,16 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews }) : null,
-        tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops }) : null,
+        tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews, ops }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
+        h(OperationsPanel, {
+          records: opRecords,
+          onClearFinished: () => {
+            opsStore.clearFinished();
+            syncOps();
+          },
+        }),
       ),
       toast
         ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
