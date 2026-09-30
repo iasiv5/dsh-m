@@ -644,7 +644,18 @@ function renderOutdated(out: ListOut): string {
   return head.join('\n')
 }
 
-function renderUpgrade(out: InstallOut): string {
+function renderUpgrade(out: InstallOut & { fromVersion?: string }): string {
+  // 0.8.5 修复：升级工具会命中装后守卫拦截（复用 installEntry，link/file prior 不可回退等），
+  // execute 返回 guard 形态结果——旧 render 没有该分支，把拦截渲染成「✅ undefined 已升级」假成功。
+  if (out.guard === true) {
+    return [
+      `⛔ 升级被装后守卫拦截：${out.message ?? ''}`,
+      `终态：${out.compensation?.status ?? '—'}（${out.compensation?.note ?? ''}）`,
+      out.repairBasis ? `修复依据：${out.repairBasis}` : null,
+      out.restartSafe === true ? '可以重启 DSH Web。' : '修复后再重启（不要现在一键重启）。',
+      '对用户如实说明守卫拦截与终态，不得说「已升级成功」或「已恢复原版本」。',
+    ].filter(Boolean).join('\n')
+  }
   const from = out.fromVersion ? `v${out.fromVersion} → ` : ''
   const to = out.version ? `v${out.version}` : out.sha ? out.sha.slice(0, 7) : '最新'
   const extra = buildsNote(out)
