@@ -125,9 +125,19 @@ export function createOperationsStore(storage) {
       persist()
       return this.list()
     },
-    /** 供 restore 之后的批量覆写（drain 校验结果落库）。 */
+    /** 供 restore 之后的批量覆写（恢复校验结果落库）。
+     *  合并语义（0.7.0 评审 P1）：以**当前**记录为权威按 id 覆写——
+     *  - 快照外新增（恢复校验窗口内用户发起的操作）保留，不被旧快照抹掉；
+     *  - 快照内但窗口期被用户删除的记录不复活；
+     *  - 活会话记录（meta.session）不覆写——泵拥有它，防快照旧态回卷（如 done 被覆写回 queued）。 */
     replaceAll(next) {
-      records = next.map((r) => ({ ...r }))
+      const byId = new Map((Array.isArray(next) ? next : []).map((r) => [r.id, r]))
+      records = records.map((r) => {
+        const incoming = byId.get(r.id)
+        if (!incoming) return { ...r }
+        if (r.meta && r.meta.session === true) return { ...r }
+        return { ...incoming }
+      })
       persist()
       return this.list()
     },
@@ -175,8 +185,122 @@ export async function restoreRecords(records, stillApplies) {
 }
 
 /**
- * 恢复执行器：FIFO 逐条 dispatch。dispatch 前以**执行时实读**复核前提
- * （stillApplies 二次调用，禁止复用 restore 流程开头的快照）；不成立→superseded（良性，中性呈现）。
+ * 前提判定核心（0.7.0 评审 P2）：install 的 target 是收录 id，与 installed.pkg 不同名——
+ * 同时比对 meta.npm（npm 源安装后的包名）与 registryGithub === meta.github（github 源且已装条目
+ * 被合并市场匹配上）；未匹配 registry 的手装 github 条目无可比键，恢复重发幂等（可接受边界）。
+ * @param {OperationRecord} rec
+ * @param {Array<{pkg: string, registryGithub?: string | null}>} installedItems
+ */
+export function opAppliesTo(rec, installedItems) {
+  const items = Array.isArray(installedItems) ? installedItems : []
+  const has = items.some(
+    (x) =>
+      x &&
+      (x.pkg === rec.target ||
+        (rec.meta && typeof rec.meta.npm === 'string' && x.pkg === rec.meta.npm) ||
+        (rec.meta && typeof rec.meta.github === 'string' && x.registryGithub === rec.meta.github)),
+  )
+  return rec.kind === 'install' ? !has : has
+}
+
+/**
+ * 单一执行泵（0.7.0 评审 P4：生产实现迁入本模块，可测；main.jsx 只保留接线）。
+ * queued→running→终态 FIFO；恢复与前台共用（getCtx 提供恢复 dispatch 与实读校验）。
+ * - waiters 持有 dispatch 抛出的**原始 Error 引用**（附 opId）——调用方 catch 读
+ *   e.guard/e.issue 不受 record.error 字符串化影响；
+ * - 取队首同步 store.list()，判空到退出之间不插任何 await；
+ * - dispatch 前统一 stillApplies 实读校验；前提消失 → superseded（e.opSuperseded 拒绝 waiter）。
+ * @param {ReturnType<typeof createOperationsStore>} store
+ * @param {() => ({ stillApplies?: (rec) => Promise<boolean>, dispatchRestored?: (rec) => Promise<{ok: boolean, error?: string, issue?: unknown}>, syncOps?: () => void } | null)} getCtx
+ */
+export function createOpsPump(store, getCtx) {
+  const executors = new Map()
+  const waiters = new Map()
+  let pumping = false
+  async function pump() {
+    if (pumping) return
+    pumping = true
+    try {
+      for (;;) {
+        const queued = store.list().find((r) => r.status === 'queued') // 同步取队首
+        if (!queued) break
+        const waitersEntry = waiters.get(queued.id)
+        const executor = executors.get(queued.id)
+        waiters.delete(queued.id)
+        executors.delete(queued.id)
+        const ctx = getCtx()
+        const finalize = (patch) => {
+          store.upsert({ id: queued.id, ...patch })
+          const c = getCtx()
+          if (c && c.syncOps) c.syncOps()
+        }
+        if (ctx && ctx.stillApplies) {
+          let applies = true
+          try {
+            applies = await ctx.stillApplies(queued)
+          } catch {
+            applies = false
+          }
+          if (!applies) {
+            finalize({ status: 'superseded', error: '执行时前提消失（已手动处理？）' })
+            if (waitersEntry) {
+              waitersEntry.reject(Object.assign(new Error('op superseded'), { opSuperseded: true, opId: queued.id }))
+            }
+            continue
+          }
+        }
+        store.upsert({ id: queued.id, status: 'running' })
+        if (ctx && ctx.syncOps) ctx.syncOps()
+        let value
+        let err = null
+        try {
+          if (executor) {
+            value = await executor.exec()
+          } else if (ctx && ctx.dispatchRestored) {
+            const r = await ctx.dispatchRestored(queued)
+            if (!r || !r.ok) err = Object.assign(new Error((r && r.error) || 'unknown'), r && r.issue ? { issue: r.issue } : {})
+          } else {
+            err = new Error('无执行上下文（面板未挂载）')
+          }
+        } catch (e) {
+          err = e
+        }
+        if (!err) {
+          finalize({ status: value && value.opWarning ? 'warned' : 'done', warning: value && value.opWarning })
+          if (waitersEntry) waitersEntry.resolve(value)
+        } else {
+          const isInput = Boolean(err.issue)
+          finalize(isInput ? { status: 'input', inputKind: 'peer-incompatible' } : { status: 'failed', error: String(err.message || err) })
+          err.opId = queued.id
+          if (waitersEntry) waitersEntry.reject(err)
+        }
+      }
+    } finally {
+      pumping = false
+    }
+  }
+  return {
+    /** 入队并返回该记录终态的 Promise（waiters 持原始错误）。 */
+    enqueue(record, exec) {
+      const stored = store.upsert(record)
+      const ctx = getCtx()
+      if (ctx && ctx.syncOps) ctx.syncOps()
+      return new Promise((resolve, reject) => {
+        waiters.set(stored.id, { resolve, reject })
+        executors.set(stored.id, { exec })
+        void pump()
+      })
+    },
+    /** 启动泵（恢复流程改标后调用，处理 restored queued）。 */
+    kick() {
+      void pump()
+    },
+  }
+}
+
+/**
+ * 恢复执行器（**已退役**，0.7.0 评审 P4）：生产路径由 createOpsPump 承担（恢复并入同一泵）。
+ * 保留为纯函数参考实现与 Node 测试对象；生产变更请改 createOpsPump。
  * @param {ReturnType<typeof createOperationsStore>} store
  * @param {(rec: OperationRecord) => Promise<{ ok: boolean; error?: string; warning?: string }>} dispatch
  * @param {(rec: OperationRecord) => Promise<boolean>} stillApplies

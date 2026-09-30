@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createOperationsStore, restoreRecords, drainRestored, OP_STORAGE_KEY } from '../src/client/operations.js'
+import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, OP_STORAGE_KEY } from '../src/client/operations.js'
 
 /** localStorage mock（可注入故障）。 */
 function memStorage() {
@@ -125,7 +125,7 @@ describe('restoreRecords（恢复四分支）', () => {
 describe('drainRestored（恢复执行器）', () => {
   function storeWith(records) {
     const store = createOperationsStore(memStorage())
-    store.replaceAll(records)
+    for (const r of records) store.upsert(r) // 播种用 upsert（P1 后 replaceAll 是恢复写回合并语义，不新增）
     return store
   }
 
@@ -229,5 +229,121 @@ describe('session 活会话标记（0.7.0 终审·新伤1）', () => {
     assert.equal(b.list()[0].meta.session, undefined, '重载后内存态也无标记')
     const restored = await restoreRecords(b.list(), async () => true)
     assert.equal(restored[0].status, 'queued', '重载后的 queued 走正常恢复（不因残留标记被跳过）')
+  })
+})
+
+describe('replaceAll 合并语义（0.7.0 评审 P1：恢复快照不抹掉窗口内新增/删除）', () => {
+  it('窗口内新增的记录保留——不被旧快照整体覆盖', () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'old', status: 'queued' }))
+    const snapshot = store.list() // restoreRecords 拿到的快照
+    // 校验 await 窗口内用户发起新操作（模拟：restoreRecords 期间的 runOp）
+    store.upsert(rec({ id: 'new-in-window', status: 'queued', meta: { session: true } }))
+    store.replaceAll(snapshot.map((r) => ({ ...r, status: 'superseded' })))
+    const ids = store.list().map((r) => r.id)
+    assert.ok(ids.includes('new-in-window'), '窗口内新增不被抹掉')
+    assert.equal(store.list().find((r) => r.id === 'old').status, 'superseded', '快照内记录按校验结果覆写')
+  })
+
+  it('窗口内被用户删除的记录不复活', () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'doomed', status: 'queued' }))
+    const snapshot = store.list()
+    store.remove('doomed') // 窗口内 onRemove
+    store.replaceAll(snapshot)
+    assert.equal(store.list().find((r) => r.id === 'doomed'), undefined, '已删记录不被快照复活')
+  })
+
+  it('活会话记录不被快照旧态回卷（done 不被覆写回 queued）', () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'live', status: 'done', meta: { session: true } })) // 泵已完成（current 权威）
+    const staleSnapshot = [rec({ id: 'live', status: 'queued', meta: { session: true } })] // 恢复前拍的旧快照
+    store.replaceAll(staleSnapshot)
+    assert.equal(store.list()[0].status, 'done', 'session 记录保持 current 版本')
+  })
+})
+
+describe('opAppliesTo 前提判定（0.7.0 评审 P2）', () => {
+  const items = [
+    { pkg: 'plain-pkg' },
+    { pkg: '@scope/wrapper', registryGithub: 'owner/repo' },
+  ]
+  it('install：target ∪ meta.npm ∪ registryGithub=meta.github 三键任一命中即「已装」', () => {
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'plain-pkg' }), items), false, 'target 命中')
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'id-x', meta: { npm: '@scope/wrapper' } }), items), false, 'meta.npm 命中')
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'owner--repo', meta: { github: 'owner/repo' } }), items), false, 'meta.github 命中（github 源已装）')
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'not-there', meta: { npm: 'absent' } }), items), true, '未装 → 前提成立')
+  })
+  it('upgrade/uninstall/toggle：target 已装才成立', () => {
+    assert.equal(opAppliesTo(rec({ kind: 'uninstall', target: 'plain-pkg' }), items), true)
+    assert.equal(opAppliesTo(rec({ kind: 'toggle', target: 'missing' }), items), false)
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'x' }), null), true, '脏输入安全')
+  })
+})
+
+describe('createOpsPump（0.7.0 评审 P4：生产泵的直接测试）', () => {
+  function setup(ctx) {
+    const store = createOperationsStore(memStorage())
+    let current = ctx
+    const pump = createOpsPump(store, () => current)
+    return { store, pump, setCtx: (c) => { current = c } }
+  }
+
+  it('FIFO 逐条流转：queued→running→done，按入队顺序', async () => {
+    const { store, pump } = setup(null)
+    const order = []
+    const p1 = pump.enqueue(rec({ id: 'a', target: 't-a', status: 'queued' }), async () => { order.push('a'); return { okv: 1 } })
+    const p2 = pump.enqueue(rec({ id: 'b', target: 't-b', status: 'queued' }), async () => { order.push('b'); return { okv: 2 } })
+    assert.equal((await p1).okv, 1)
+    assert.equal((await p2).okv, 2)
+    assert.deepEqual(order, ['a', 'b'], 'FIFO')
+    const statuses = store.list().map((r) => r.status)
+    assert.deepEqual(statuses, ['done', 'done'])
+  })
+
+  it('stillApplies=false → superseded，waiter 收到 e.opSuperseded', async () => {
+    const { store, pump } = setup({ stillApplies: async (r) => r.target !== 'gone' })
+    const caught = pump.enqueue(rec({ id: 'g', target: 'gone', status: 'queued' }), async () => { throw new Error('should not run') })
+      .then(() => null, (e) => e)
+    const e = await caught
+    assert.ok(e && e.opSuperseded === true && e.opId === 'g')
+    assert.equal(store.list()[0].status, 'superseded')
+  })
+
+  it('错误保真：原始 Error（含 issue 结构）随 opId 拒绝 waiter；issue→input 态', async () => {
+    const { store, pump } = setup(null)
+    const peerErr = Object.assign(new Error('peer mismatch'), { issue: { pkg: 'p', peers: {} } })
+    const e = await pump.enqueue(rec({ id: 'p1', target: 't', status: 'queued' }), async () => { throw peerErr })
+      .then(() => null, (err) => err)
+    assert.equal(e, peerErr, '同一 Error 引用（结构保真）')
+    assert.equal(e.opId, 'p1')
+    const stored = store.list()[0]
+    assert.equal(stored.status, 'input')
+    assert.equal(stored.inputKind, 'peer-incompatible')
+  })
+
+  it('opWarning → warned 态；恢复记录（无执行器）走 dispatchRestored，issue 透传 → input', async () => {
+    const store = createOperationsStore(memStorage())
+    const dispatches = []
+    const pump = createOpsPump(store, () => ({
+      dispatchRestored: async (r) => {
+        dispatches.push(r.id)
+        return r.id === 'ok-one' ? { ok: true } : { ok: false, error: 'peer', issue: { pkg: 'x' } }
+      },
+    }))
+    store.upsert(rec({ id: 'ok-one', target: 't1', status: 'queued' }))
+    store.upsert(rec({ id: 'bad-one', target: 't2', status: 'queued' }))
+    pump.kick()
+    await new Promise((r) => setTimeout(r, 20))
+    assert.deepEqual(dispatches, ['ok-one', 'bad-one'])
+    const by = Object.fromEntries(store.list().map((r) => [r.id, r.status]))
+    assert.equal(by['ok-one'], 'done')
+    assert.equal(by['bad-one'], 'input', '恢复遇 peer 冲突 → input（待决）')
+    // opWarning → warned（前台执行器路径）
+    const p2 = createOpsPump(store, () => null)
+    await p2.enqueue(rec({ id: 'w', target: 't-w', status: 'queued' }), async () => ({ opWarning: 'builds approved' }))
+    const w = store.list().find((r) => r.id === 'w')
+    assert.equal(w.status, 'warned')
+    assert.equal(w.warning, 'builds approved')
   })
 })
