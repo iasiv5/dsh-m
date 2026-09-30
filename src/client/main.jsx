@@ -119,6 +119,8 @@ const ZH = {
   "restart.now": "⚡ 一键重启", "restart.failed": "重启失败：{err}",
   "restart.timeout": "重启超时，请手动检查 dsh web 服务状态",
   "restart.hint.done": "已请求重启 DSH web（via {via}）。服务恢复后 DSH Web 会在后台自动重连。",
+  "profile.restartHint": "变更完成。Desktop 插件由官方应用管理：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏）以加载新状态。",
+  "profile.chipTitle": "当前 DSH profile：{name}（Desktop 首发仅支持只读市场、安装新包与开关）",
   "phase.resolving": "解析依赖", "phase.downloading": "下载", "phase.linking": "链接安装", "phase.building": "构建脚本", "phase.ready": "准备中",
   "readme.show": "📖 README", "readme.hide": "收起 README", "readme.loading": "加载 README… ", "readme.none": "（该插件没有 README）",
   "readme.truncated": "…（超过 64KB 已截断，完整内容见插件目录）",
@@ -222,6 +224,8 @@ const EN = {
   "restart.now": "⚡ Restart", "restart.failed": "Restart failed: {err}",
   "restart.timeout": "Restart timed out — check the dsh web service manually",
   "restart.hint.done": "Restart requested (via {via}). DSH Web will reconnect in the background after the service returns.",
+  "profile.restartHint": "Changes applied. Desktop plugins are managed by the official app: quit and reopen the Desktop app (closing the window may only hide it) to load the new state.",
+  "profile.chipTitle": "Current DSH profile: {name} (Desktop first release supports read-only market, installing new packages, and toggles)",
   "phase.resolving": "Resolving", "phase.downloading": "Downloading", "phase.linking": "Linking", "phase.building": "Building", "phase.ready": "Preparing",
   "readme.show": "📖 README", "readme.hide": "Hide README", "readme.loading": "Loading README… ", "readme.none": "(No README)",
   "readme.truncated": "…(truncated at 64KB — see the plugin directory for full content)",
@@ -701,7 +705,7 @@ function TwoStepButton({ label, confirmLabel, className, onConfirm, disabled }) 
 }
 
 // ---------- 重启横幅 ----------
-function RestartBanner({ note, onDone }) {
+function RestartBanner({ note, onDone, desktop }) {
   const [phase, setPhase] = useState("idle"); // idle | restarting | waiting
   const [err, setErr] = useState(null);
   const restart = useCallback(async () => {
@@ -751,7 +755,7 @@ function RestartBanner({ note, onDone }) {
       phase === "waiting" ? lookup("restart.waiting") :
       err ? lookup("restart.failed", { err }) :
       note || lookup("banner.done")),
-    phase === "idle" && !err ? h("button", { className: "dshm-btn primary sm", onClick: restart }, lookup("restart.now")) : null,
+    phase === "idle" && !err && !desktop ? h("button", { className: "dshm-btn primary sm", onClick: restart }, lookup("restart.now")) : null,
     phase === "restarting" || phase === "waiting" ? Spin() : null,
     phase === "idle" && err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, lookup("common.ok")) : null,
     phase === "idle" && !err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, lookup("common.later")) : null,
@@ -2322,11 +2326,15 @@ function MarketPanel({ onClose }) {
   };
   // dsh-m 自身版本：挂载时随 ping 一次性带回（0.7.5 起头部 chip 改显 dsh-m 版本，DSH 运行版本看设置页）；失败/缺席 → chip 整个隐藏（不留占位）
   const [pluginVersion, setPluginVersion] = useState(null);
+  // 0.9.0 双 profile：ping.profile { name, kind, source }——chip 与重启引导的数据源；缺席 = 旧宿主，按 web 处理
+  const [profile, setProfile] = useState(null);
   useEffect(() => {
     let live = true;
     api("ping")
       .then((r) => {
-        if (live) setPluginVersion(typeof r?.version === "string" && r.version ? r.version : null);
+        if (!live) return;
+        setPluginVersion(typeof r?.version === "string" && r.version ? r.version : null);
+        setProfile(r?.profile && typeof r.profile === "object" ? r.profile : null);
       })
       .catch(() => {});
     return () => {
@@ -2421,8 +2429,15 @@ function MarketPanel({ onClose }) {
   // needsRestart 为 true 才出重启横幅（安装/卸载/升级/自更新）；registry 配置只 toast
   const notify = useCallback(({ kind, text, needsRestart }) => {
     setToast({ kind, text });
-    if (kind === "ok" && needsRestart) setBanner({ text: lookup("banner.done") });
-  }, []);
+    if (kind === "ok" && needsRestart) {
+      // 0.9.0：Desktop 不由 dsh-m 重启——横幅改为官方生命周期指引（无一键重启按钮）
+      setBanner(
+        profile && profile.kind === "desktop"
+          ? { desktop: true, text: lookup("profile.restartHint") }
+          : { text: lookup("banner.done") },
+      );
+    }
+  }, [profile]);
   return h(
     "div",
     { className: full ? "dshm-overlay full" : "dshm-overlay", onClick: onClose },
@@ -2454,6 +2469,9 @@ function MarketPanel({ onClose }) {
         ),
         h("span", { className: "dshm-spacer" }),
         pluginVersion ? h(DshmVersionChip, { version: pluginVersion }) : null,
+        profile && profile.kind !== "web"
+          ? h("span", { className: "dshm-dshchip", title: lookup("profile.chipTitle", { name: profile.name }) }, profile.name)
+          : null,
         // 窗口控制组（0.7.7）：最大化/还原 + 关闭，连体设计（系统化窗口按钮）
         h(
           "div",
@@ -2495,7 +2513,7 @@ function MarketPanel({ onClose }) {
         ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
             h("span", { className: "dshm-banner-text" }, toast.text))
         : null,
-      banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null) }) : null,
+      banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true }) : null,
     ),
   );
 }

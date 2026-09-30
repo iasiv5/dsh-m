@@ -656,6 +656,39 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
     return runCli(argv, deps, io)
   }
 
+  it('0.9.0：--profile desktop 显式拒绝（exit 1、零 core 调用、指引官方入口）', async () => {
+    const calls = []
+    const errs = []
+    const code = await run(
+      ['search', '--profile', 'desktop'],
+      { listMarket: async () => { calls.push('listMarket'); return { items: [], total: 0, offset: 0, limit: 10, categoryCounts: {}, registryState: unavailableLoaded(), installedComplete: true, latestComplete: true, latestTimedOut: false, community: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] } } } },
+      { out: () => {}, err: (l) => errs.push(l) },
+    )
+    assert.equal(code, 1)
+    assert.equal(calls.length, 0, 'core 不得被触达')
+    const joined = errs.join('\n')
+    assert.ok(joined.includes('--profile desktop'), '拒绝文案点名收到的值')
+    assert.ok(joined.includes('Settings → Plugins') || joined.includes('官方 Desktop'), '指引官方入口')
+  })
+
+  it('0.9.0：--profile web 显式声明照常放行', async () => {
+    const calls = []
+    const lines = []
+    const { deps } = fakeDeps()
+    const code = await run(
+      ['search', '--profile', 'web'],
+      {
+        listMarket: async (c, opts) => {
+          calls.push(opts)
+          return listMarket(cfg, { withLatest: false }, deps)
+        },
+      },
+      { out: (l) => lines.push(l) },
+    )
+    assert.equal(code, 0)
+    assert.equal(calls.length, 1)
+  })
+
   it('search 固定 withLatest:false + namespace:cli，直接传 query/limit', async () => {
     const calls = []
     const lines = []

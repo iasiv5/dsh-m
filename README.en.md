@@ -43,6 +43,15 @@ The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeC
 
 After any mutation, the already-open Market and Installed views refresh the profile state together, keeping badges and cards in sync without closing and reopening the marketplace; a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The restart chain has been live-verified on the current DSH Web `0.2.0-rc.2` (2026-10-01): dsh-m probes the unit's `Restart=` policy, hands the stop back via `appExit`, the `status=75/TEMPFAIL` exit is caught by the Restart policy and auto-started, and after recovery the page reconnects in the background with the panel fully functional. Historical scope: the `0.1.5-rc.1` era covered live `/dshm` ping and authenticated `303 → 200` checks; `0.1.2-rc.1` is covered by contract checks plus runtime shape-detection fallback (see the verified array) — with the deployment moved on, no live E2E is chased on retired generations; the transient `systemd-run` fallback only applies to hosts without `appExit` (all supported generations provide it) and stays a documented fallback rather than a release gate; repeated install/uninstall is covered by the profile-transaction test surface (compensation, post-install guard, 763 cases) plus the 0.4.0→0.4.2 consecutive-release evidence. Installs stream live pnpm progress (resolve → download → link → build).
 
+### New in 0.9.0 — Official Desktop (dual profile) support
+
+- **One package, two profiles**: dsh-m now installs into the official Desktop's `desktop` profile (`~/.dsh/profiles/desktop`) alongside the Web `web` profile; the catalog, panel, and agent tools are shared, and everything manages the host's current profile (official `profileContext` as the single source of truth).
+- **Entrust admission to the host**: every `/dshm` method (including ping and unknown methods) delegates to the official `connection.requestRejection()` before any body is read (trustedHosts / loopback / cross-site / `Origin: null` semantics come from the host); rejected requests consume no body and call no business logic; hosts without the capability fail closed. **Behavior change**: the old home-grown "missing Origin → 403" guard is gone — Origin-less requests from the Desktop bridge are admitted per official semantics, and unauthenticated health probes now follow host trust instead of a blanket 403.
+- **Desktop first-release capability table**: read-only market + **installing new packages** (delegated to the official `pluginManager.installBundle`; integrity, locking, and application phases stay with the official manager) + **toggles** (delegated; structured refusal when the service is absent, never a file-level fallback); **upgrade / uninstall / self-update / one-click restart** return structured 409 refusals with official-entry guidance (no official upgrade API exists; restarts belong to the Electron lifecycle); build scripts retry with the exact official `pendingBuilds` list — never an allow-all.
+- **Per-profile read model and cache**: market installed-badges, the installed list, and README previews only read the current profile; registry / community / accepted-source caches are segmented per profile (web keeps its legacy paths — zero migration, zero clearing); favorites and operation logs stay per browser origin and do not sync between Web and Desktop.
+- **CLI always targets the web profile**: `--profile web` is explicit; `--profile desktop` is rejected with a pointer to the official Desktop plugin management page.
+- **Honest limitations**: Desktop on-device (Win/macOS) E2E has not been run; the `registry.json` verified arrays gain **no** Desktop generation (to be recorded after real testing); dsh-m's file-level post-install guard is skipped on Desktop (app.asar probing blind spot) and replaced by official result checks plus a `listBundles` re-read.
+
 ### Fixed in 0.8.5
 
 - **dshm_upgrade fake success on guard blocks**: when an upgrade hit the post-install guard (e.g. link/file-sourced plugins cannot be auto-rolled-back), the text output was mis-rendered as "✅ undefined 已升级（最新）"; it now reports the block reason, compensation status and repair basis honestly, consistent with the card title (Guard block).
@@ -156,6 +165,8 @@ dshm restart --yes
 
 When the registry is unavailable, `registry` / `search` / `outdated` print the configured vs active address and exit 1; `list` still shows installed plugins. The CLI uses its own cache namespace and never touches the Web side's.
 
+**Profile target (0.9.0)**: the CLI always acts on the web profile — `--profile web` makes it explicit; `--profile desktop` is rejected outright (Desktop plugin management belongs to the official Desktop plugin management page).
+
 ## Registry
 
 `registry.json` is hand-curated and fetched at runtime in order: **GitHub raw (`@main`) → GitHub mirror (jsDelivr CDN, backup line) → local 60-min TTL cache → bundled snapshot** — listing updates are decoupled from plugin releases. To add or amend a listing, edit `registry.json` and open a PR; CI validates the strict schema, npm/GitHub existence, duplicate ids and URL reachability.
@@ -201,6 +212,9 @@ Release: `npm version patch|minor|major && git push --tags` → OIDC trusted pub
 
 **1. Why don't GitHub-sourced update hints follow main?**
 Intermediate commits on main can be unstable. dsh-m tracks **releases / tags** only (`releases/latest` first, tags list as fallback) and pins the commit SHA the tag points to.
+
+**1.5 What works on the official Desktop?**
+Desktop (the `desktop` profile) first release supports: browsing the market, **installing new packages**, and plugin toggles; upgrade/uninstall/self-update/one-click restart return structured refusals with official-entry guidance (official plugin management page / Desktop app restart). Installed badges and the installed list reflect only what Desktop itself has installed; favorites and operation logs do not sync with the Web side.
 
 **2. Does uninstalling dsh-m delete my data?**
 No. Only the package reference in the profile is removed (live UI disabled first), and suspected leftover paths are reported to you.

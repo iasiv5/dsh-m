@@ -182,6 +182,9 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   dshm restart --yes
   注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
+profile 目标（0.9.0）：CLI 恒作用于 web profile；--profile web 为显式声明，
+  --profile desktop 会被拒绝——Desktop profile 的插件管理走官方 Desktop 插件管理页。
+
 环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR、
   DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）
 `
@@ -211,6 +214,16 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
   }
   const { cmd, flags } = parseArgs(argv)
   const cfg = cliConfig()
+
+  // 0.9.0 双 profile（ADR-0005）：CLI 是 Web-only 入口（独立进程拿不到宿主 profileContext，
+  // 目标恒为 web profile）；--profile desktop / 其他非 web 值显式拒绝并指引官方入口，
+  // 绝不隐式回落 web（报告 §5.3「不能从不存在的 Desktop 模式推断」）。
+  const profileFlag = typeof flags.profile === 'string' ? flags.profile.trim() : ''
+  if (profileFlag !== '' && profileFlag !== 'web') {
+    err(`错误：dshm CLI 仅作用于 web profile，不支持 --profile ${profileFlag}。`)
+    err('Desktop profile 的插件管理请使用官方 Desktop 的插件管理页（Settings → Plugins），或回到 DSH Web 端使用 dsh-m。')
+    return 1
+  }
 
   switch (cmd) {
     case 'help':

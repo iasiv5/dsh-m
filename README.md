@@ -43,6 +43,15 @@
 
 安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 763 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.0 新增：官方 Desktop（双 profile）支持
+
+- **同一包、两个 profile**：dsh-m 现在可装入官方 Desktop 的 `desktop` profile（`~/.dsh/profiles/desktop`），与 Web 的 `web` profile 并列；市场目录、面板与 agent 工具同一套，管理对象始终是宿主当前 profile（官方 `profileContext` 单一事实源）。
+- **入口信任检查改委派官方**：`/dshm` 全部 method（含 ping 与未知 method）在读取请求体之前委派官方 `connection.requestRejection()` 判定（trustedHosts / loopback / 跨站 / `Origin: null` 语义随宿主），被拒请求零 body 消耗、零业务调用；宿主缺该能力时 fail-closed 全拒。**行为变化**：旧版自制守卫「缺 Origin 一律 403」不再存在——Desktop 桥合法剥除 Origin 的请求按官方语义放行，无凭据的健康检查探针从「一律 403」变为「按宿主信任判定」。
+- **Desktop 首发能力表**：只读市场 + **安装新包**（委派官方 `pluginManager.installBundle`，完整性/锁/生效相位归官方）+ **开关**（委派官方管理器，服务缺席结构化拒绝、绝不文件级 fallback）；**升级 / 卸载 / dsh-m 自更新 / 一键重启**在 Desktop 结构化拒绝（409，带官方入口指引——官方暂无 upgrade API，重启归 Electron 生命周期）；构建脚本按官方 `pendingBuilds` 名单精确重试，绝不全量放行。
+- **读模型与缓存按 profile 隔离**：市场安装标注、已装列表、README 预览只读当前 profile；registry / 社区清单 / accepted-source 缓存按 profile 分段（web 沿用旧路径，零迁移零清空）；收藏与操作记录按浏览器 origin 各自独立，Web 与 Desktop 不自动同步。
+- **CLI 恒作用于 web profile**：`--profile web` 显式声明；`--profile desktop` 明确拒绝并指引官方 Desktop 插件管理页。
+- **如实声明**：Desktop 实机（Win/macOS）E2E 未跑，`registry.json` verified 数组**不新增** Desktop 代际（实测后按收录纪律补录）；Desktop 下不做 dsh-m 文件级装后守卫（app.asar 打包布局探测盲区），以官方结果判定 + `listBundles` 复读替代。
+
 ### 0.8.5 修复
 
 - **dshm_upgrade 守卫拦截假成功**：升级命中装后守卫拦截时（如 link/file 来源插件无法自动回退），文本输出误渲染为「✅ undefined 已升级（最新）」；现如实输出拦截原因、补偿终态与修复依据，与卡片标题（守卫拦截）一致。
@@ -156,6 +165,8 @@ dshm restart --yes
 
 清单不可用时 `registry` / `search` / `outdated` 打印配置与实际生效地址并退出码 1；`list` 仍列出已装插件。CLI 固定独立缓存命名空间，不影响 Web 端。
 
+**profile 目标（0.9.0）**：CLI 恒作用于 web profile——`--profile web` 为显式声明；`--profile desktop` 直接拒绝（Desktop profile 的插件管理走官方 Desktop 插件管理页）。
+
 ## 收录清单（registry）
 
 `registry.json` 手工 curated，运行时按 **GitHub 原始文件（raw @main）→ GitHub 镜像（jsDelivr CDN，备用线路）→ 本地 60 分钟 TTL 缓存 → 包内快照** 的顺序获取——收录更新与插件发版**解耦**，push 后最多等一个缓存周期（可在设置页强制刷新）。收录 / 修订直接改 `registry.json` 发 PR，CI 自动校验：严格 schema、npm 包与 GitHub 仓库存在性、重复 id、URL 可达性。
@@ -201,6 +212,9 @@ node scripts/validate-registry.mjs
 
 **1. 为什么 GitHub 来源的更新提示不走 main HEAD？**
 main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优先 `releases/latest`，无 release 回退 tags 列表），安装时锁定 tag 指向的 commit SHA。
+
+**1.5 官方 Desktop 上能用哪些功能？**
+Desktop（desktop profile）首发支持：浏览市场、**安装新包**、插件开关；升级/卸载/自更新/一键重启会返回结构化拒绝并指引官方入口（官方插件管理页 / Desktop 应用重启）。市场安装标注、已装列表只反映 Desktop 自己装了什么；与 Web 端的收藏、操作记录互不同步。
 
 **2. 卸载 dsh-m 会删我的数据吗？**
 不会。只移除 profile 中的包引用（卸载前先下线运行中的界面），并把疑似残留路径报告给你。
