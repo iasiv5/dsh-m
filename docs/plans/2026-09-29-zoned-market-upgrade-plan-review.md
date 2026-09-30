@@ -66,3 +66,14 @@
 - **恢复执行器死路径（MAJOR 3+6+12 一并重构）**：runOp 改 `queued→running→终态` 泵化生命周期（「全部更新 N 条」真实逐条流转、重载恢复 queued 从不可达变为真实行为）；stillApplies 对 install 同时比对 `meta.npm`；确认/重试经 `reuseId` 复用同一记录（消双重记录）；CompatDialog 取消 → superseded「用户放弃」。
 - **其余修复**：Esc 弹层深度互斥（`dsvmModalDepth`）；Modal 补 LinksRow（恢复超集）；Enter `isComposing/keyCode 229` 守卫；host-api 对 `primaryOnly` 显式 400（计划钉过、实施曾缩水为静默忽略）；分区计数各取自身 total；卡片「进行中」徽章 + cursor/hover 可点击暗示；收藏 stale 校验 800ms debounce；ToolCardRow 顺手写操作记录；死键/陈旧注释/lookup 遮蔽改名清理。
 - **显式偏离（碰撞接受）**：卡片描述展开钮由 Modal 取代（渐进披露唯一出口=卡片点击，行内展开与其竞争）；组件层 debounce 时序不进 Node 测试（纯函数 partitionStale 已覆盖、渲染路径归冒烟门）。
+
+### 终审（碰撞会话出具，基线 5cbb0ca，本机复跑 741/741）
+
+四洞修法逐条 ✓、21+1 条落地无漏 ✓、渲染冒烟门测法认可（局限=不跑 effect，属「渲染冒烟」合理边界）。新伤 2 条，均已修（`bf1a433`，744/744）：
+
+1. **（必修）restore 按「挂载次数」误判会话**：`restoredRef` 是 per-mount——面板关开（非重载）会重跑 restoreRecords，把同会话 running 中操作误标「进程重启中断」，且与泵 finalize 交错时 done 可被抹成 failed。修法：runOp/ToolCardRow 的 meta 带 `session: true` 活会话标记；restoreRecords 跳过带标记记录；**persist 时剥离标记**（比处方多一步——否则标记随 localStorage 持久化，真重载后 queued 记录会被永久跳过、恢复特性失效）；3 例测试钉死（跳过/剥离/重载后恢复）。
+2. **（轻微）对话区来源 input 记录永挂**：OperationsPanel 给 input/failed/superseded 行加单条移除出口（`ops.remove`）。
+
+极轻残留（记录不修）：restoreRecords 改标 superseded 时 opsExecutors/opsWaiters 闭包不清理——仅同会话窄路径微量残留，重载后 Map 全新。
+
+**执行审计轮结论**：放行。剩余验证 gap 仅人工检查单（GUI 实机项，含 96/页冷缓存 latestError ≤20% 阈值观察），属发布前 owner 实机步骤。
