@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.1.7--rc.2%20dual--API-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.2.0--rc.2%20dual--API-2563eb)](#faq)
 
 [English](./README.en.md) · 中文
 
@@ -39,9 +39,15 @@
 | **市场** | **分区制**（0.7.0）：**社区**（默认落地页，4,000+ 条全量目录）与**精选**（手工策展主清单，单页直出）两个独立分区，各有自己的分类/搜索/排序/分页状态（切 tab 互不重置）；另有**收藏**分区（浏览器本地书签，自动检测下架条目并一键清理）。社区区：分类 chips 两行折叠 + 吸顶收缩、排序（下载量/Star/收录日期 × 升降）、页码窗口化分页（24/48/96 每页）、卡片 byline（作者/下载量/Star）；卡片点开**详情 Modal**（卡片信息超集：下载量窗口三要素、截图灯箱、能力披露默认收起、安装命令）；npm 源锁定最新精确版本，GitHub 源锁定 release/tag 指向的 commit |
 | **操作记录** | 安装/升级/卸载/开关全部走全局操作记录（0.7.0）：状态不挂卡片，翻页/搜索/切 tab 不丢；localStorage 持久化，宿主重载后自动恢复未完成操作（逐条校验「此刻仍成立才执行」）；良性前提消失以中性「已跳过」呈现；已装页支持「全部更新 (N)」批量入队 |
 | **已装** | web profile 实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断）；**运行相位徽标**（●active / ●failed / ○pending）与**一键开关**（0.4.0：委派官方 pluginManager 服务活体生效，服务缺席时文件级编辑 + 重启提示；dsh-m 自身与官方宿主命脉锁定不可开关） |
-| **设置** | registry 地址草稿 +「校验并应用 / 恢复默认 / 下载默认 registry.json / 检查条目可达性」；配置地址、生效来源与状态一目了然；强制刷新；dsh-m 自更新 |
+| **设置** | registry 地址草稿 +「强制刷新 / 校验并应用 / 恢复默认 / 下载默认 registry.json」；配置地址、生效来源与状态一目了然（仅异常时提示）；社区目录开关；dsh-m 自更新 |
 
 安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。已完成当前 DSH Web `0.1.5-rc.1` 运行时的 live 核验：web profile 已加载 dsh-m `0.2.11`，重启后 `/dshm` ping 返回 `version: 0.2.11`，携带当前认证 token 的页面请求流程为 `303 → 200`；无认证请求会被拒绝。此次白屏截图对应的 404 在服务稳定后未复现；journal 显示截图时段发生多次 `status=75/TEMPFAIL` 重启，当前暂判定为重启/认证过渡窗口现象，未发现 dsh-m Host 路由崩溃。DSH `0.1.2-rc.1` live E2E、transient fallback live E2E，以及连续安装/卸载实验仍是正式发布前的验证 gap。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
+
+### 0.8.4 变更：分类标签随界面语言双语化
+
+- **社区分类**：已知 23 个分类的英文名直接取上游目录 `categories.en`，英文界面下分类 chips 与详情/收藏 Modal 的分类行显示英文；缺英文名的上游新分类回退中文，仍按原样渲染进临时组，等发版收录。中文界面不变。
+- **精选分类**：五个分类 chip 改走双语字典（市场/工具/界面/搜索/其他 ⇄ Market/Tools/UI/Search/Other），与详情 Modal 口径一致。
+- **实现**：summary 新增 `categoryLabelsEn`（`communityOutcome` 从上游目录派生，缺 en 的 id 不进映射，不手养第二张表），客户端按界面语言合并取值。0.8.1–0.8.3 为本地迭代号，无独立变更面，不单列。
 
 ### 0.8.0 变更：设置页重做（对齐双清单分区定位）
 
@@ -168,7 +174,7 @@ dshm restart --yes
 
 - **数据获取**：dist-tags 探测最新版本 → jsDelivr 按精确版本直取 → npmmirror → unpkg 三线路兜底；版本未变不重拉正文，TTL 内跳过探测。失败回落 `<缓存目录>/awesome/` 运行时缓存并**显式标注「缓存快照」**——过期数据绝不冒充最新。
 - **开关与锁定**：设置页 `communityCatalog` 开关（默认开，live 生效）、`communityCatalogPin` 可锁定目录版本（精确 semver）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出、`DSHM_COMMUNITY_CATALOG_PIN` 锁版本。
-- **分类与搜索**：社区分类是开放集（已知 20+ 个带中文标签，由服务端单一事实源下发）；搜索走相关性加权管线（中英文双匹配）；社区区排序可切（下载量/Star/收录日期 × 升降，默认下载量降序，无下载量 ≠ 0 下载）。
+- **分类与搜索**：社区分类是开放集（已知 23 个分类带中英双语标签：中文由包内单一事实源维护、英文取上游目录，按界面语言下发）；搜索走相关性加权管线（中英文双匹配）；社区区排序可切（下载量/Star/收录日期 × 升降，默认下载量降序，无下载量 ≠ 0 下载）。
 - **安装语义**：社区条目与主清单走同一 `installEntry`（npm 锁精确版本 / GitHub 锁 commit SHA）；市场浏览页只对 npm 条目做更新探测，GitHub 条目不做页面级探测（匿名配额 60 次/小时不可控）。
 - **已装页预算（best-effort）**：已装页对 GitHub 来源插件做更新检查，单次请求 ≤25 个、宿主进程滚动 1 小时 ≤50 个（仅被动检查；主动安装/升级不受限）；超限条目如实标注「检查未完成」而不冒充「全部最新」。独立 CLI 进程不共享宿主内预算，并发场景不承诺 60 次/小时绝不耗尽。
 - **能力披露**：社区条目的 capabilities/红线只出现在详情折叠区（**缺省 = 未扫描 ≠ 未检出**），卡片不打标；截图仅在详情层加载并经客户端白名单校验。
@@ -196,13 +202,13 @@ main 上的中间提交可能不稳定。dsh-m 只跟踪 **release / tag**（优
 不会。只移除 profile 中的包引用（卸载前先下线运行中的界面），并把疑似残留路径报告给你。
 
 **3. 自定义清单会让市场变慢吗？**
-收录超过 200 条时会提示性能边界。市场列表是服务端分页（每页 50 条），1,000 条清单第一页也只查询当前页的最新版本，浏览仍然流畅。
+收录超过 200 条时会提示性能边界。市场列表是服务端分页（每页 24/48/96 可选），1,000 条清单第一页也只查询当前页的最新版本，浏览仍然流畅。
 
 **4. 自定义源挂了怎么办？**
 优先使用该源最近一次成功的缓存并标记「缓存来源」；完全没有缓存时市场显示「收录清单不可用」，已安装插件仍可正常管理。修正地址或恢复默认即可。
 
 **5. 支持哪些 DSH Web 版本？**
-与 dsh-skip-browser-auth 同一口径：`0.1.2-rc.1`、`0.1.5-rc.1/rc.2`、`0.1.7-rc.1`、`0.1.7-rc.2` 的公开包契约均已核对。其中 0.1.7 把 settings 服务重塑为 `SettingsForms`（旧的 `settings.register` 消失），dsh-m 以运行时形态探测双代兼容：≤0.1.5 全代际走 `register()` scope 通路（0.1.5-rc.2 的 dsh-settings 仍为旧 API，已并入核对），0.1.7-rc.1 / rc.2 走 Config `.volatile()` 字段 + `settings.update` + `loader/volatile-update` 通路（经 tarball 逐字节比对，两个 rc 的 dsh-settings 完全相同、loader 同版，一套实现通吃）；形态不识别时自动降级 cordis 配置文件通路，市场主功能不受影响。重启方面各版本都提供 dsh-m 使用的 `appExit` launcher hook；0.1.5-rc.1 运行时已实际加载并完成 `/dshm` ping 与带认证页面 `303 → 200` 核验。0.1.7 适配的 live E2E 结论（2026-09-28 回写）：装机与 `/dshm` 工具链活性已在 0.1.7-rc.2 实证——0.4.0 → 0.4.2 连续三个版本发布收编，跨两次服务重启后 `dshm list/upgrade` 全链路可用，registry 21 条（自研七件套齐）下发正常；设置页写值持久化未单独核验（0.1.7 已迁移用户层设置存储，旧 `~/.dsh/settings.yaml` 不复存在，核验需 GUI 会话写值后重启对照，留待首次实际使用设置面板时顺手完成）。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
+与 dsh-skip-browser-auth 同一口径：`0.1.2-rc.1`、`0.1.5-rc.1/rc.2`、`0.1.7-rc.1/rc.2`、`0.2.0-rc.1/rc.2` 的公开包契约均已核对（0.2.0-rc.2 为当前实机运行代际）。其中 0.1.7 把 settings 服务重塑为 `SettingsForms`（旧的 `settings.register` 消失），dsh-m 以运行时形态探测双代兼容：≤0.1.5 全代际走 `register()` scope 通路（0.1.5-rc.2 的 dsh-settings 仍为旧 API，已并入核对），0.1.7-rc.1 / rc.2 走 Config `.volatile()` 字段 + `settings.update` + `loader/volatile-update` 通路（经 tarball 逐字节比对，两个 rc 的 dsh-settings 完全相同、loader 同版，一套实现通吃）；形态不识别时自动降级 cordis 配置文件通路，市场主功能不受影响。重启方面各版本都提供 dsh-m 使用的 `appExit` launcher hook；0.1.5-rc.1 运行时已实际加载并完成 `/dshm` ping 与带认证页面 `303 → 200` 核验。0.1.7 适配的 live E2E 结论（2026-09-28 回写）：装机与 `/dshm` 工具链活性已在 0.1.7-rc.2 实证——0.4.0 → 0.4.2 连续三个版本发布收编，跨两次服务重启后 `dshm list/upgrade` 全链路可用，registry 21 条（自研七件套齐）下发正常；设置页写值持久化未单独核验（0.1.7 已迁移用户层设置存储，旧 `~/.dsh/settings.yaml` 不复存在，核验需 GUI 会话写值后重启对照，留待首次实际使用设置面板时顺手完成）。systemd 部署需要 unit 配置 `Restart=on-failure` 或 `Restart=always`，否则请使用部署方的手动重启方式。
 
 ## License
 
