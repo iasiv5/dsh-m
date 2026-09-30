@@ -126,18 +126,19 @@ export function createOperationsStore(storage) {
       return this.list()
     },
     /** 供 restore 之后的批量覆写（恢复校验结果落库）。
-     *  合并语义（0.7.0 评审 P1/R2·N1）：以**当前**记录为权威按 id 覆写——
+     *  合并语义（0.7.0 评审 P1/R2·N1/R3 修正）：以**当前**记录为权威按 id 覆写——
      *  - 快照外新增（恢复校验窗口内用户发起的操作）保留，不被旧快照抹掉；
      *  - 快照内但窗口期被用户删除的记录不复活；
-     *  - 活会话记录（meta.session）与**当前 running 中**的记录不覆写——泵拥有它们，
-     *    防快照旧态回卷（如 done 被覆写回 queued、running 被回卷成 failed「进程重启中断」）。 */
+     *  - 活会话记录（meta.session）不覆写——泵在拾取（queued→running）时打标，覆盖其任意
+     *    后续状态（含 done），防恢复快照旧态回卷；**无标记的 crashed running 照常被改标为
+     *    failed「进程重启中断」**（恢复语义核心，R3：不得用 status 短路——泵拥有与崩溃残留
+     *    在此处不可区分，session 标记才是唯一可信的所有权凭证）。 */
     replaceAll(next) {
       const byId = new Map((Array.isArray(next) ? next : []).map((r) => [r.id, r]))
       records = records.map((r) => {
         const incoming = byId.get(r.id)
         if (!incoming) return { ...r }
         if (r.meta && r.meta.session === true) return { ...r }
-        if (r.status === 'running') return { ...r }
         return { ...incoming }
       })
       persist()
@@ -251,7 +252,10 @@ export function createOpsPump(store, getCtx) {
             continue
           }
         }
-        store.upsert({ id: queued.id, status: 'running' })
+        // 拾取即打 session 标记（R3·N1 修正）：泵从此拥有该记录（任意后续状态含 done 均受
+        // replaceAll 的 session 短路保护）；persist 剥离标记——崩溃残留的 running 重载后无标记，
+        // 照常走「进程重启中断」改标。
+        store.upsert({ id: queued.id, status: 'running', meta: { ...(queued.meta || {}), session: true } })
         if (ctx && ctx.syncOps) ctx.syncOps()
         let value
         let err = null

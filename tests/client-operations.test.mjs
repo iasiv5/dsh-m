@@ -348,19 +348,34 @@ describe('createOpsPump（0.7.0 评审 P4：生产泵的直接测试）', () => 
   })
 })
 
-describe('replaceAll 运行中短路（R2·N1：泵拥有的 running 不被恢复快照回卷）', () => {
-  it('当前 running 记录不被快照覆写为 failed「进程重启中断」', () => {
-    const store = createOperationsStore(memStorage())
-    store.upsert(rec({ id: 'pumping', target: 't', status: 'running' })) // 泵 dispatch 中（current 权威）
-    const staleSnapshot = [rec({ id: 'pumping', target: 't', status: 'running' }), rec({ id: 'ghost', target: 'g', status: 'running' })]
-    // 模拟：快照拍摄后泵已把 pumping 推进、恢复校验把 ghost 判为 running 残留
-    const restored = [
-      { ...staleSnapshot[0], status: 'done' },        // 快照视角已完成（另一路径）
-      { ...staleSnapshot[1], status: 'failed', error: '进程重启中断' },
-    ]
+describe('恢复所有权语义（R3·N1 修正：session 标记区分泵拥有 vs 崩溃残留）', () => {
+  it('端到端：crashed running（无标记）经 restoreRecords→replaceAll 落库为 failed「进程重启中断」', async () => {
+    const storage = memStorage()
+    // 模拟崩溃现场：上一会话的 running 持久化时被剥离 session 标记
+    const prev = createOperationsStore(storage)
+    prev.upsert(rec({ id: 'crashed', target: 't', status: 'running', meta: { session: true } }))
+    // 重载：新 store 读到无标记 running
+    const store = createOperationsStore(storage)
+    assert.equal(store.list()[0].meta.session, undefined)
+    const restored = await restoreRecords(store.list(), async () => true)
+    assert.equal(restored[0].status, 'failed', 'restoreRecords 判「进程重启中断」')
     store.replaceAll(restored)
-    const pumping = store.list().find((r) => r.id === 'pumping')
-    assert.equal(pumping.status, 'running', 'current running 短路，不被任何快照版本覆写')
-    assert.equal(store.list().find((r) => r.id === 'ghost'), undefined, '快照内已删（窗口外）不复活')
+    const after = store.list()[0]
+    assert.equal(after.status, 'failed', '改标经 replaceAll 落库（不被任何短路挡回）')
+    assert.ok((after.error || '').includes('重启中断'))
+  })
+
+  it('泵拾取即打 session：恢复 queued 被泵执行到 done 后，陈旧恢复快照不回卷', async () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'picked', target: 't-p', status: 'queued' })) // 恢复的 queued（无标记）
+    const staleSnapshot = store.list() // 恢复校验开始前拍的快照
+    // 前台泵先捞到它并执行完（拾取时打 session 标记）
+    const pump = createOpsPump(store, () => null)
+    await pump.enqueue(staleSnapshot[0], async () => ({ okv: 1 }))
+    assert.equal(store.list().find((r) => r.id === 'picked').status, 'done')
+    assert.equal(store.list().find((r) => r.id === 'picked').meta.session, true, '泵拾取打了标记')
+    // 恢复校验此时才落库（陈旧快照视角还是 queued）——不得回卷
+    store.replaceAll(await restoreRecords(staleSnapshot, async () => true))
+    assert.equal(store.list().find((r) => r.id === 'picked').status, 'done', '泵拥有的 done 不被回卷')
   })
 })
