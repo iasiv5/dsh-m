@@ -4,7 +4,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, existsSync, readdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -791,6 +791,55 @@ describe('M2 Task 4：registry 全失败三要素文案', () => {
     } finally {
       delete process.env.DSHM_CACHE_DIR
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+// ---------- 0.9.0 双 profile：缓存隔离（plan Task 2） ----------
+
+describe('0.9.0 双 profile：cacheRoot 与缓存段隔离', () => {
+  it('cacheRoot：web 恒等旧 cacheDir；非 web 加 <root>/<profile> 段（DSHM_CACHE_DIR 在位）', async () => {
+    const { cacheRoot: cacheRootOf, cacheDir } = await import('../lib/core/env.js')
+    process.env.DSHM_CACHE_DIR = '/tmp/dshm-cache-isolation'
+    try {
+      assert.equal(cacheRootOf('web'), '/tmp/dshm-cache-isolation')
+      assert.equal(cacheDir(), '/tmp/dshm-cache-isolation')
+      assert.equal(cacheRootOf('desktop'), '/tmp/dshm-cache-isolation/desktop')
+      assert.equal(cacheRootOf(), '/tmp/dshm-cache-isolation')
+    } finally {
+      delete process.env.DSHM_CACHE_DIR
+    }
+  })
+
+  it('cacheRoot：DSHM_CACHE_DIR 缺席时 web=旧推导路径、desktop 加段（纯计算，不触 fs）', async () => {
+    const { cacheRoot: cacheRootOf, cacheDir, dshHome } = await import('../lib/core/env.js')
+    delete process.env.DSHM_CACHE_DIR
+    const base = join(dshHome(), 'dshm', 'cache')
+    assert.equal(cacheDir(), base)
+    assert.equal(cacheRootOf('desktop'), join(base, 'desktop'))
+  })
+
+  it('commitActiveSource(addr, host, desktop)：metadata 落 desktop 段，web 路径零写入', async () => {
+    const address = parseRegistryAddress('https://example.test/registry.json')
+    const res = await commitActiveSource(address, 'host', 'desktop')
+    assert.equal(res.metadataCommitted, true)
+    const meta = JSON.parse(readFileSync(join(cacheRoot, 'desktop', 'host', 'active-source.json'), 'utf8'))
+    assert.equal(meta.configuredAddress, address.normalized)
+    assert.equal(meta.namespace, 'host')
+    assert.equal(existsSync(join(cacheRoot, 'host')), false, 'web 段不得被 desktop 写入触碰')
+  })
+
+  it('loadRegistry(profile=desktop)：cache 读写走 desktop 段，web/host 目录零创建', async () => {
+    const file = writeLocalRegistry(join(tmpdir(), `dshm-prof-${Date.now()}.json`), [entry()])
+    try {
+      const loaded = await loadRegistry({ registryUrl: file, cacheTtlMin: 60 }, { namespace: 'host', profile: 'desktop', prune: false })
+      assert.equal(loaded.status, 'ready')
+      const desktopNs = join(cacheRoot, 'desktop', 'host')
+      const entries = existsSync(desktopNs) ? readdirSync(desktopNs) : []
+      assert.ok(entries.some((n) => n.endsWith('.json')), 'desktop 段应有 cache 文件')
+      assert.equal(existsSync(join(cacheRoot, 'host')), false, 'web 段不得被 desktop 读路径创建')
+    } finally {
+      rmSync(file, { force: true })
     }
   })
 })

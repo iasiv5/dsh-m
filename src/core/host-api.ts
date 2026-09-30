@@ -2,9 +2,10 @@
  * /dshm Host API dispatcher（DESIGN.md §4/§5）：可注入的 method 分发 + 请求防护 +
  * HTTP 状态映射，供 host.ts 与契约测试共用。
  *
- * 解析顺序固定：只接受 POST → JSON Content-Type → 有上限读取并 drain body →
- * 顶层必须是非 null/非数组对象且有 method → `ping` 跳过 guard，否则
- * trustedRestartRequest host-equivalence guard → typed method/业务错误映射 → 其他 500。
+ * 解析顺序固定：宿主信任检查（0.9.0 起委派官方 `connection.requestRejection`，
+ * 全 method 含 ping 与未知 method，任何 body/side effect 之前，fail-closed）→
+ * 只接受 POST → JSON Content-Type → 有上限读取并 drain body →
+ * 顶层必须是非 null/非数组对象且有 method → typed method/业务错误映射 → 其他 500。
  */
 import { BOOT_ID, publicInstallStatus } from './dsh-cli.js'
 import { resolveDshVersion } from './dsh-version.js'
@@ -25,10 +26,15 @@ import type { RegistryController, RegistryControllerSnapshot } from './registry-
 import { RegistryConfigError } from './registry-controller.js'
 import { checkRegistryEntries } from './registry-check.js'
 import { CATEGORIES } from './registry.js'
-import { servingPort, scheduleRestart, trustedRestartRequest } from './restart.js'
+import { servingPort, scheduleRestart } from './restart.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
+import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
+import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, type DesktopManagerLike } from './profile-ops.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+
+/** 宿主信任检查的统一签名（生产 = 官方 requestRejection 委派；测试可注入）。 */
+export type RequestTrustCheck = (req: Pick<IncomingMessage, 'headers'>) => 401 | 403 | undefined
 
 export class BadJsonError extends Error {}
 export class BodyTooLargeError extends Error {}
@@ -63,11 +69,18 @@ export interface HostApiOverrides {
   getService?: () => PluginManagerLike | undefined
   /** Task 14：开关执行器；测试可替换。 */
   togglePlugin?: typeof togglePlugin
+  /** 0.9.0：宿主信任检查（官方 connection.requestRejection 委派）；缺省 = fail-closed 全拒。 */
+  rejectRequest?: RequestTrustCheck
+  /** 0.9.0：Desktop adapter 注入（测试可替换；生产 = profile-ops 实现）。 */
+  desktopInstall?: typeof desktopInstallFromRegistry
+  desktopToggle?: typeof desktopToggle
 }
 
 export interface HostApiContext {
   controller: RegistryController
   pkg: { name: string; version: string }
+  /** 宿主当前 profile（host.ts apply 期解析一次，生命周期内不可变） */
+  profile: ActiveProfile
   deps?: HostApiOverrides
 }
 
@@ -111,7 +124,19 @@ function readBody(req: IncomingMessage, maxBytes = BODY_MAX_BYTES): Promise<Buff
   })
 }
 
-async function parseRequest(req: IncomingMessage): Promise<ParsedRequest> {
+async function parseRequest(req: IncomingMessage, rejectRequest: RequestTrustCheck): Promise<ParsedRequest> {
+  // 宿主信任检查第一位（0.9.0 委派官方 requestRejection）：先于 POST/Content-Type/body——
+  // 被拒请求零 body 消耗、零业务调用（报告 §3.2/§8）。返回 401/403 原样投影。
+  let rejection: 401 | 403 | undefined
+  try {
+    rejection = rejectRequest(req)
+  } catch {
+    // 宿主检查异常一律 fail-closed，异常细节不外泄（报告 §3.2）
+    rejection = 403
+  }
+  if (rejection !== undefined) {
+    throw new ApiProtocolError(rejection, rejection === 401 ? '请求未通过宿主认证（未登录或凭据无效）' : '请求未通过宿主信任检查（不可信 Host/Origin 或跨站）')
+  }
   if ((req.method || 'GET').toUpperCase() !== 'POST') {
     throw new ApiProtocolError(405, '只接受 POST')
   }
@@ -133,9 +158,6 @@ async function parseRequest(req: IncomingMessage): Promise<ParsedRequest> {
   const body = parsed as Record<string, unknown>
   const method = typeof body.method === 'string' ? body.method.trim() : ''
   if (!method) throw new BadJsonError('缺少 method')
-  if (method !== 'ping' && !trustedRestartRequest(req)) {
-    throw new ApiProtocolError(403, '拒绝跨源请求')
-  }
   return { method, body }
 }
 
@@ -182,6 +204,14 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     return { status: 422, payload: { ok: false, error: err.message, errors: err.errors } }
   }
   if (err instanceof ApiProtocolError) return { status: err.status, payload: { ok: false, error: err.message } }
+  if (err instanceof ProfileUnsupportedError) {
+    // 0.9.0：Desktop/未知 profile 的能力表拒绝——结构化 code + 官方入口指引
+    return { status: 409, payload: { ok: false, error: err.message, code: err.code, action: err.action, profile: err.profile, guidance: err.guidance } }
+  }
+  if (err instanceof DesktopOpsError) {
+    // 0.9.0：Desktop adapter 失败（no-manager/install-refused/enable-failed/verify-failed）
+    return { status: 409, payload: { ok: false, error: err.message, code: err.code } }
+  }
   if (err instanceof ToggleError) {
     const status = err.code === 'protected' ? 403 : err.code === 'not-installed' ? 404 : 409
     return { status, payload: { ok: false, error: err.message, code: err.code } }
@@ -244,8 +274,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     resolveDshVersion: ctx.deps?.resolveDshVersion ?? resolveDshVersion,
     getService: ctx.deps?.getService,
     toggle: ctx.deps?.togglePlugin ?? togglePlugin,
+    desktopInstall: ctx.deps?.desktopInstall ?? desktopInstallFromRegistry,
+    desktopToggle: ctx.deps?.desktopToggle ?? desktopToggle,
   }
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
+  // 0.9.0：宿主信任检查委派（含 ping 与未知 method，fail-closed）；
+  // profile 为 host 生命周期内不可变对象（host.ts apply 期解析一次）
+  const rejectRequest: RequestTrustCheck = ctx.deps?.rejectRequest ?? (() => 403)
+  const profile = ctx.profile
   // DSH 版本一次性解析，dispatcher 创建即预热（首个 ping 不吃 spawn 回退的延迟）
   const dshVersionP: Promise<string | null> = Promise.resolve()
     .then(() => d.resolveDshVersion())
@@ -255,7 +291,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     const abort = new AbortController()
     res.once('close', () => abort.abort())
     try {
-      const { method, body } = await parseRequest(req)
+      const { method, body } = await parseRequest(req, rejectRequest)
       const signal = abort.signal
       let payload: Record<string, unknown>
       switch (method) {
@@ -267,6 +303,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             boot: BOOT_ID,
             // DSH 运行版本（头部 chip 数据源）；解析失败 → undefined → JSON 序列化时字段缺席
             dshVersion: (await dshVersionP) ?? undefined,
+            // 0.9.0 双 profile：GUI/工具展示当前 profile 与能力边界
+            profile: { name: profile.name, kind: profile.kind, source: profile.source },
           }
           break
 
@@ -284,6 +322,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'self-upgrade': {
+          // 0.9.0：Desktop 结构化拒绝（能力表），Web 走既有路径
+          assertWriteAllowed(profile, 'self-upgrade')
           // M2 Task 3：self-upgrade 收编 market.selfUpgrade（统一 mutation session + 守卫，直调事务旁路封死）
           const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal })
           payload = {
@@ -376,7 +416,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'readme': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          const result = await readInstalledPluginReadme(target)
+          // 0.9.0 双 profile：README 只读当前 profile 的 node_modules
+          const result = await readInstalledPluginReadme(target, profile.dir)
           payload = { ...result }
           break
         }
@@ -388,6 +429,18 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'install': {
           const id = strArg(body, 'id')
           if (!id) throw new ApiProtocolError(400, '缺少 id')
+          // 0.9.0：desktop → 官方 pluginManager 委派（新包）；web → 既有事务
+          if (profile.kind !== 'web') {
+            assertWriteAllowed(profile, 'install')
+            payload = { ...(await d.desktopInstall(id, cfg(), {
+              version: typeof body.version === 'string' ? body.version : undefined,
+              forceIncompatible: boolArg(body.forceIncompatible),
+              namespace: 'host',
+              profile: profile.name,
+              signal,
+            })) }
+            break
+          }
           const version = typeof body.version === 'string' ? body.version : undefined
           const result = await d.installFromRegistry(id, cfg(), {
             version,
@@ -402,6 +455,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'uninstall': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
+          // 0.9.0：Desktop 结构化拒绝（官方入口指引）
+          assertWriteAllowed(profile, 'uninstall')
           const result = await d.uninstallPlugin(target, cfg(), { namespace: 'host', signal })
           payload = { ...result }
           break
@@ -411,6 +466,12 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
           if (typeof body.enabled !== 'boolean') throw new ApiProtocolError(400, '缺少 enabled（必须为 boolean）')
+          // 0.9.0：desktop → 官方管理器委派（服务缺席结构化拒绝，禁 fallback 文件写）
+          if (profile.kind !== 'web') {
+            assertWriteAllowed(profile, 'set-enabled')
+            payload = { ...(await d.desktopToggle(target, body.enabled, { getService: d.getService as never, profileDir: profile.dir })) }
+            break
+          }
           const result = await d.toggle(target, body.enabled, { getService: d.getService })
           payload = { ...result }
           break
@@ -419,6 +480,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'upgrade': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
+          // 0.9.0：Desktop 结构化拒绝（无官方 upgrade API，指引 Settings → Plugins）
+          assertWriteAllowed(profile, 'upgrade')
           const result = await d.upgradePlugin(target, cfg(), {
             forceIncompatible: boolArg(body.forceIncompatible),
             namespace: 'host',
@@ -429,6 +492,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'restart': {
+          // 0.9.0：Desktop 不触发旧 helper（Electron 生命周期归官方；杀子进程=红线）
+          assertWriteAllowed(profile, 'restart')
           const result = d.scheduleRestart(servingPort(req))
           payload = { ...result }
           break

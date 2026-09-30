@@ -34,15 +34,6 @@ function isLoopbackHost(host: string): boolean {
   return parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1'
 }
 
-function hostsMatch(originHost: string, candidate: string): boolean {
-  const a = parseHost(originHost)
-  const b = parseHost(candidate)
-  if (a === null || b === null) return false
-  if (a.hostname !== b.hostname) return false
-  if (a.port !== '' && b.port !== '' && a.port !== b.port) return false
-  return true
-}
-
 export function servingPort(request: Pick<IncomingMessage, 'headers'>): number | null {
   const host = headerString(request.headers.host)
   if (host === undefined || !isLoopbackHost(host)) return null
@@ -52,22 +43,9 @@ export function servingPort(request: Pick<IncomingMessage, 'headers'>): number |
   return Number.isInteger(port) && port > 0 && port < 65536 ? port : null
 }
 
-export function trustedRestartRequest(request: Pick<IncomingMessage, 'headers'>): boolean {
-  const origin = headerString(request.headers.origin)
-  if (origin === undefined) return false
-  let from: string
-  try {
-    const parsed = new URL(origin)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
-    from = parsed.host
-  } catch {
-    return false
-  }
-  const host = headerString(request.headers.host)
-  const forwardedHost = headerString(request.headers['x-forwarded-host'])
-  const candidates = [host, forwardedHost].filter((value): value is string => value !== undefined)
-  return candidates.some((candidate) => hostsMatch(from, candidate))
-}
+// 0.9.0 起trustedRestartRequest 已删除：/dshm 入口信任检查改委派官方
+// `connection.requestRejection()`（ADR-0005，语义含 trustedHosts/cross-site/Origin:null），
+// 本模块只剩 servingPort / 重启实现。
 
 export function readProcCgroup(
   readFile: (path: string, encoding: 'utf8') => string = (path, encoding) => readFileSync(path, encoding),

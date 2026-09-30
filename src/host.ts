@@ -2,10 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { createApiDispatcher } from './core/host-api.js'
+import { createApiDispatcher, type RequestTrustCheck } from './core/host-api.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
 import { wireRegistrySettings, unwrapConfig } from './core/settings-compat.js'
+import { resolveActiveProfile } from './core/active-profile.js'
 import { registerTools } from './tools.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import type { PluginManagerLike } from './core/toggle.js'
@@ -48,10 +49,15 @@ export function apply(ctx: Context, config: Config): void {
   // 卸载前的 live-disable 依赖 loader（skillhub 同款）
   bindLoaderHost(ctx as unknown as LoaderHost)
 
+  // 0.9.0 双 profile（ADR-0005）：宿主当前 profile 单一事实源——apply 期解析一次，
+  // host 生命周期内不可变；GUI/工具/HTTP/缓存分段全部消费同一对象。
+  const profile = resolveActiveProfile(ctx)
+  ctx.logger?.info?.('dsh-m: active profile %s (dir=%s, source=%s)', profile.name, profile.dir, profile.source)
+
   // registry controller：active config / configured / pending / rejected 分离 + generation fence；
   // tools 与 Host API 共用同一 active config object（apply 原地更新字段，live 生效）。
   // unwrapConfig：0.1.7 上 volatile 字段是 cosmokit Volatile 引用，先解包成 plain 值再进 controller。
-  const controller = createRegistryController(unwrapConfig(config))
+  const controller = createRegistryController(unwrapConfig(config), { profile: profile.name })
   // DSH 0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.7-rc.1 / 0.1.7-rc.2 都经 dsh-cmdline 暴露 appExit；
   // using it avoids guessing the service unit from release-specific cgroups.
   const appExit = appExitFromContext(ctx)
@@ -60,7 +66,7 @@ export function apply(ctx: Context, config: Config): void {
   // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号
   const getService = (): PluginManagerLike | undefined =>
     (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager') as PluginManagerLike | undefined
-  registerTools(ctx, controller.config, { restart })
+  registerTools(ctx, controller.config, { restart }, profile)
 
   // 设置页接线（双代兼容，详见 core/settings-compat.ts）：
   // - ≤0.1.5：settings.register('dshm', …) scope（get/update/watch）；
@@ -90,7 +96,10 @@ export function apply(ctx: Context, config: Config): void {
     }
   })
 
-  // 本地 API：单路由 + method 分发（防护与状态映射在 core/host-api.ts）
+  // 本地 API：单路由 + method 分发（信任检查与状态映射在 core/host-api.ts）。
+  // 0.9.0（ADR-0005）：入口信任检查全量委派官方 connection.requestRejection——
+  // Desktop 桥剥 Origin 的请求按官方语义（trustedHosts/loopback/cross-site/Origin:null）判定，
+  // 服务缺席或抛错一律 fail-closed 403（warn 一次）。
   ctx.inject(['webServer'], (c) => {
     const server = (
       c as unknown as {
@@ -103,12 +112,15 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
+    const rejectRequest = createRequestRejection(ctx)
     const handleApi = createApiDispatcher({
       controller,
       pkg,
+      profile,
       deps: {
         scheduleRestart: restart,
         getService,
+        rejectRequest,
       },
     })
     server.register({
@@ -119,4 +131,31 @@ export function apply(ctx: Context, config: Config): void {
       },
     })
   })
+}
+
+/** 守卫式官方 requestRejection 委派：缺席/抛错 fail-closed 403（warn 一次，不刷日志）。 */
+function createRequestRejection(ctx: Context): RequestTrustCheck {
+  let warned = false
+  const warnOnce = (err: unknown) => {
+    if (warned) return
+    warned = true
+    ctx.logger?.warn?.('dsh-m: 官方 connection.requestRejection 不可用，/dshm 全入口 fail-closed 403（ADR-0005）')
+    if (err) ctx.logger?.warn?.(err)
+  }
+  return (req) => {
+    try {
+      const connection = (ctx as unknown as { get?: (name: string) => unknown }).get?.('connection') as
+        | { requestRejection?: (r: { headers: IncomingMessage['headers'] }) => 401 | 403 | undefined }
+        | undefined
+      const reject = connection?.requestRejection
+      if (typeof reject !== 'function') {
+        warnOnce(undefined)
+        return 403
+      }
+      return reject.call(connection, { headers: req.headers }) ?? undefined
+    } catch (err) {
+      warnOnce(err)
+      return 403
+    }
+  }
 }

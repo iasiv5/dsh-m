@@ -8,7 +8,7 @@
  */
 import { mkdir, readFile, rm, rename, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
-import { cacheDir } from './env.js'
+import { cacheRoot } from './env.js'
 import { decodeUtf8Fatal, fetchBytesLimited, describeFetchFailure } from './httpx.js'
 import { isExactVersion, npmLatest } from './versions.js'
 import { communityOutcome, type CommunityRegistrySummary } from './market.js'
@@ -182,6 +182,8 @@ export interface LoadedCommunity {
 
 export interface CommunityFetchOptions {
   namespace?: 'host' | 'cli'
+  /** 缓存 profile 段（0.9.0 双 profile；默认 web=旧路径） */
+  profile?: string
   force?: boolean
   /** 只取消本调用者的等待（waiter-scoped）；不影响共享 flight。 */
   signal?: AbortSignal
@@ -202,8 +204,9 @@ const META_LATEST = 'meta.json'
 const metaPinName = (v: string) => `meta-pin-${v}.json`
 const bodyName = (v: string) => `catalog-${v}.json`
 
-function awesomeDir(namespace: 'host' | 'cli'): string {
-  return join(cacheDir(), namespace, 'awesome')
+/** 社区缓存目录（0.9.0 双 profile：web=旧路径，非 web 加 `<root>/<profile>` 段）。 */
+function awesomeDir(namespace: 'host' | 'cli', profile: string = 'web'): string {
+  return join(cacheRoot(profile), namespace, 'awesome')
 }
 
 /** 路径 containment：目标必须仍在 dir 内（防御拼接穿越）。 */
@@ -316,7 +319,7 @@ async function runChain(
   ctrl: AbortController,
 ): Promise<LoadedCommunity> {
   const namespace = opts.namespace ?? 'host'
-  const dir = awesomeDir(namespace)
+  const dir = awesomeDir(namespace, opts.profile)
   const pin = trimPin(cfg)
   const budgetMs = opts.flightBudgetMs ?? COMMUNITY_CHAIN_BUDGET_MS
   const startedAt = Date.now()
@@ -472,7 +475,7 @@ function flightKey(opts: CommunityFetchOptions, pin: string | null): string {
   const routesSig = opts.routes
     ? `${opts.routes.registryBase ?? ''}|${(opts.routes.fileBases ?? []).join(',')}`
     : 'default'
-  return [ns, pin ?? '', opts.force ? 'force' : 'normal', routesSig].join('§')
+  return [ns, opts.profile ?? 'web', pin ?? '', opts.force ? 'force' : 'normal', routesSig].join('§')
 }
 
 function abortError(): Error {

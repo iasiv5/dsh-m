@@ -20,6 +20,8 @@ import type { RegistryConfig, RegistryEntry, RegistryState } from './core/regist
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
+import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
+import { desktopInstallFromRegistry, desktopToggle } from './core/profile-ops.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   market: '市场',
@@ -86,6 +88,9 @@ export interface ToolMarketDeps {
   upgradePlugin?: typeof upgradePlugin
   restart?: typeof scheduleRestart
   togglePlugin?: typeof coreTogglePlugin
+  /** 0.9.0：Desktop adapter 注入（测试可替换；生产 = profile-ops 实现） */
+  desktopInstall?: typeof desktopInstallFromRegistry
+  desktopToggle?: typeof desktopToggle
 }
 
 function cloneJson(value: unknown) {
@@ -96,7 +101,12 @@ function summaryOf(state: RegistryState): { isDefault: boolean; status: string; 
   return { isDefault: state.isDefault, status: state.status, stale: state.stale }
 }
 
-export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarketDeps = {}): void {
+export function registerTools(
+  ctx: Context,
+  cfg: RegistryConfig,
+  deps: ToolMarketDeps = {},
+  profile: ActiveProfile = resolveActiveProfile(ctx),
+): void {
   const timeoutMs = cfg.timeoutMs ?? 20_000
   const m = {
     listMarket: deps.listMarket ?? listMarket,
@@ -104,6 +114,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     installFromRegistry: deps.installFromRegistry ?? installFromRegistry,
     uninstallPlugin: deps.uninstallPlugin ?? uninstallPlugin,
     upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
+    desktopInstall: deps.desktopInstall ?? desktopInstallFromRegistry,
+    desktopToggle: deps.desktopToggle ?? desktopToggle,
   }
   const restart = deps.restart ?? ((port: number | null = null) =>
     scheduleRestart(port, { appExit: appExitFromContext(ctx) }))
@@ -175,6 +187,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         namespace: 'host',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
         signal: exec?.signal,
+        profileDir: profile.dir,
+        profile: profile.name,
       })
       // 安装标注唯一来源：listMarket 的单次 profile 快照。
       // 状态不完整且存在可被误标的条目时 fail-closed——不把未知安装状态呈现成未安装；
@@ -218,7 +232,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   ctx.tools.register(defineTool({
     name: 'dshm_list',
     description:
-      'List plugins installed in the DSH web profile, annotated with 市场安装/非市场安装, sources, and outdated flags. Use when the user asks what plugins are installed or wants to manage local plugins.',
+      'List plugins installed in the current DSH profile (web or desktop), annotated with 市场安装/非市场安装, sources, and outdated flags. Use when the user asks what plugins are installed or wants to manage local plugins.',
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -237,6 +251,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         namespace: 'host',
         deadlineMs: INSTALLED_CORE_DEADLINE_MS,
         signal: exec?.signal,
+        profileDir: profile.dir,
+        profile: profile.name,
       })
       return cloneJson({
         registry: summaryOf(result.registryState),
@@ -284,6 +300,11 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       if (!id) throw new Error('缺少收录 id')
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
       const force = args.force === true
+      // 0.9.0：desktop → 官方 pluginManager 委派（新包）；未知 profile → 结构化拒绝
+      if (profile.kind !== 'web') {
+        assertWriteAllowed(profile, 'install')
+        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name }))
+      }
       try {
         return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
       } catch (err) {
@@ -324,6 +345,11 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
       if (typeof args.enabled !== 'boolean') throw new Error('缺少 enabled（boolean）')
+      // 0.9.0：desktop → 官方管理器委派（服务缺席结构化拒绝）；web → 既有委派/降级
+      if (profile.kind !== 'web') {
+        assertWriteAllowed(profile, 'set-enabled')
+        return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, profileDir: profile.dir }))
+      }
       return cloneJson(await toggle(target, args.enabled, { getService: getService as never }))
     },
   }))
@@ -331,7 +357,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
   ctx.tools.register(defineTool({
     name: 'dshm_uninstall',
     description:
-      'Uninstall a DSH plugin from the web profile by package name (pkg from dshm_list). Confirm with the user BEFORE calling. Does not delete plugin data; reports leftover paths instead.',
+      'Uninstall a DSH plugin from the current DSH profile by package name (pkg from dshm_list). Confirm with the user BEFORE calling. Does not delete plugin data; reports leftover paths instead.',
     parameters: {
       pkg: { type: 'string', required: true, description: '包名 from dshm_list, e.g. dsh-web-search' },
     },
@@ -350,6 +376,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     async execute(args) {
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
+      assertWriteAllowed(profile, 'uninstall')
       return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host' }))
     },
   }))
@@ -385,6 +412,8 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         namespace: 'host',
         deadlineMs: INSTALLED_CORE_DEADLINE_MS,
         signal: exec?.signal,
+        profileDir: profile.dir,
+        profile: profile.name,
       })
       const items = result.items.map((it) => ({
         pkg: it.pkg,
@@ -432,6 +461,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
       const force = args.force === true
+      assertWriteAllowed(profile, 'upgrade')
       try {
         return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host' }))
       } catch (err) {
@@ -464,6 +494,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
     }),
     timeoutMs: 15_000,
     async execute() {
+      assertWriteAllowed(profile, 'restart')
       return cloneJson(restart(null))
     },
   }))
@@ -484,6 +515,7 @@ export function registerTools(ctx: Context, cfg: RegistryConfig, deps: ToolMarke
         'For installed plugins, call dshm_list / dshm_outdated. Upgrade only after the user confirms which one: dshm_upgrade. Uninstall only after confirmation: dshm_uninstall.',
         'dshm_toggle switches a plugin on/off: confirm first unless the user already said it in the same message (把 skins 关掉 → execute directly); report live vs restart-required accordingly. ',
         'dshm_restart only after the user agrees to restart; afterwards tell them to refresh once the page recovers.',
+        'dsh-m operates on the current host profile (web or desktop, per ping.profile): on desktop only read-only market + install-new-package + toggle work; upgrade/uninstall/self-upgrade/restart return structured refusals with guidance — relay them instead of retrying.',
       ].join(' '),
     })
   })

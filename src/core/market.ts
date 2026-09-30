@@ -61,6 +61,8 @@ import {
 export type RegistryRuntimeOptions = {
   /** Host API / Agent tools 固定 host；独立 CLI 固定 cli */
   namespace?: RegistryCacheNamespace
+  /** 缓存 profile 段（0.9.0 双 profile；默认 web=旧路径，行为零漂移） */
+  profile?: string
   signal?: AbortSignal
 }
 
@@ -134,6 +136,8 @@ export interface CommunityRegistrySummary {
 
 export interface MarketQuery extends RegistryRuntimeOptions {
   query?: string
+  /** 已装态枚举目标 profile 目录（0.9.0 双 profile；缺省 = webProfileDir()） */
+  profileDir?: string
   /** 精选 5 分类或社区开放分类 slug（host-api 层校验安全 slug；core 侧原样匹配） */
   category?: string | null
   /** 分区过滤（0.7.0 Task 2 / ADR-0004）：'primary'=只主清单（社区 loader 零调用，summary=skipped）、
@@ -723,13 +727,13 @@ export async function listMarket(
   const signal = opts.signal
   const remaining = () => deadlineAt - Date.now()
 
-  const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
+  const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs, profile: opts.profile })
   const installedTask: Promise<Awaited<ReturnType<MarketDeps['listInstalledPlugins']>> | null> =
-    d.listInstalledPlugins().catch(() => null)
+    d.listInstalledPlugins(opts.profileDir).catch(() => null)
   // 社区 flight 并发启动（source=primary 零调用；0.7.0 Task 7：primaryOnly 字段已删除）；共享 loader 不接收调用者 deadline——
   // listMarket 作为 waiter 在 communityOutcome 内 race 自己的剩余 deadline/signal（v10 契约）
   const communityTask =
-    source === 'primary' ? null : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
+    source === 'primary' ? null : d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force, profile: opts.profile })
 
   let loaded: LoadedRegistry | 'deadline'
   try {
@@ -878,7 +882,7 @@ export async function listMarket(
 
 export async function listInstalledWithMeta(
   cfg: RegistryConfig = {},
-  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean } = {},
+  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean; profileDir?: string } = {},
   deps: Partial<MarketDeps> = {},
 ): Promise<InstalledResult> {
   const d: MarketDeps = { ...marketDeps(), ...deps }
@@ -891,10 +895,10 @@ export async function listInstalledWithMeta(
   const signal = opts.signal
   const remaining = () => deadlineAt - Date.now()
 
-  const installedPromise = d.listInstalledPlugins()
-  const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs })
+  const installedPromise = d.listInstalledPlugins(opts.profileDir)
+  const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs, profile: opts.profile })
   // 社区 flight 并发启动 + request-scoped GitHub 预算（本次检查 ≤25 个 wire 请求、宿主滚动 50/h）
-  const communityTask = d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force })
+  const communityTask = d.fetchCommunityCatalog(cfg, { namespace, signal, force: opts.force, profile: opts.profile })
   const githubBudget = createGithubRequestBudget()
   const installed = await installedPromise
   // enablement join（Task 13，ADR-0001 读路径自读）：loader ⋈ bundles ⋈ profile 覆盖行
@@ -1014,6 +1018,8 @@ export interface InstallDeps extends Partial<MarketDeps> {
   precheck?: typeof precheckNpmCompat
   /** 事务依赖注入（runner/预热/退避/tmpdir 等）；B3 预热统一走 transaction.warmPackument */
   transaction?: TransactionDeps
+  /** 目标 profile 目录（0.9.0 双 profile；缺省 webProfileDir()；transaction.profileDir 优先） */
+  profileDir?: string
 }
 
 export interface InstallResult {
@@ -1045,13 +1051,17 @@ export interface InstallResult {
  *  0.7.1 修复：合并市场展示的社区条目 id 不在主清单（loadRegistry 只装载主清单，
  *  社区层只合入 listMarket 展示）——主清单 miss 时按收录 id 查社区目录再装，
  *  与 0.5.1 升级路径（findCommunityUpgradeEntry）同构。 */
-export async function installFromRegistry(
+/**
+ * 按收录 id 解析可安装条目（0.9.0 Task 5 抽出）：主清单优先，社区目录兜底。
+ * installFromRegistry 与 Desktop adapter（profile-ops）共用同一解析与错误文案。
+ */
+export async function resolveRegistryEntry(
   id: string,
   cfg: RegistryConfig = {},
   opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<InstallResult> {
-  const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })
+): Promise<InstallableEntry> {
+  const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
   if (loaded.status === 'unavailable') {
     throw new Error(`收录清单不可用，无法安装 ${id}；请检查 registry 配置或网络后重试`)
   }
@@ -1059,6 +1069,16 @@ export async function installFromRegistry(
     loaded.registry.plugins.find((e) => e.id === id) ??
     (await findCommunityInstallEntry(id, cfg, opts, deps))
   if (!entry) throw new Error(`registry 中没有该条目: ${id}`)
+  return entry
+}
+
+export async function installFromRegistry(
+  id: string,
+  cfg: RegistryConfig = {},
+  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  deps?: InstallDeps,
+): Promise<InstallResult> {
+  const entry = await resolveRegistryEntry(id, cfg, opts, deps)
   return installEntry(entry, cfg, opts, deps)
 }
 
@@ -1409,7 +1429,7 @@ async function installEntryLocked(
   deps?: InstallDeps,
 ): Promise<InstallResult> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
-  const profileDir = deps?.transaction?.profileDir ?? webProfileDir()
+  const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
@@ -1689,7 +1709,7 @@ export interface UpgradeResult extends InstallResult {
 export function upgradePlugin(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean; profileDir?: string } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   return withMutationSession(() => upgradePluginLocked(pkg, cfg, opts, deps))
@@ -1698,14 +1718,14 @@ export function upgradePlugin(
 async function upgradePluginLocked(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean; profileDir?: string } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
-  const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host' })
+  const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
   if (loaded.status === 'unavailable') {
     throw new Error(`收录清单不可用，无法升级 ${pkg}；请检查 registry 配置或网络后重试`)
   }
-  const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)()
+  const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)(opts.profileDir)
   const target = installed.find((it) => it.pkg === pkg)
   if (!target) throw new Error(`web profile 未安装该插件: ${pkg}`)
   let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
@@ -1730,7 +1750,7 @@ async function findCommunityInstallEntry(
   deps?: InstallDeps,
 ): Promise<InstallableEntry | undefined> {
   try {
-    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal })
+    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
     if (!loaded.catalog) return undefined
     return adaptCommunityCatalog(loaded.catalog).entries.find((e) => e.id === id)
   } catch {
@@ -1749,7 +1769,7 @@ async function findCommunityUpgradeEntry(
   deps?: InstallDeps,
 ): Promise<InstallableEntry | undefined> {
   try {
-    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal })
+    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
     if (!loaded.catalog) return undefined
     const adapted = adaptCommunityCatalog(loaded.catalog)
     return adapted.entries.find((e) => matchInstalledByEntry(e, [target]))

@@ -8,7 +8,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { cacheDir } from './env.js'
+import { WEB_PROFILE, cacheRoot } from './env.js'
 import {
   commitActiveSource,
   loadDefaultRegistry,
@@ -71,10 +71,10 @@ export interface AcceptedSourceMetadata {
 
 const ACCEPTED_SOURCE_FILE = 'active-source.json'
 
-/** 读取 host accepted-source metadata（损坏/缺失返回 null）。 */
-export async function readAcceptedSourceMetadata(): Promise<AcceptedSourceMetadata | null> {
+/** 读取 host accepted-source metadata（损坏/缺失返回 null；profile 决定缓存段，0.9.0 双 profile）。 */
+export async function readAcceptedSourceMetadata(profile: string = WEB_PROFILE): Promise<AcceptedSourceMetadata | null> {
   try {
-    const raw = JSON.parse(await readFile(join(cacheDir(), 'host', ACCEPTED_SOURCE_FILE), 'utf8')) as AcceptedSourceMetadata | null
+    const raw = JSON.parse(await readFile(join(cacheRoot(profile), 'host', ACCEPTED_SOURCE_FILE), 'utf8')) as AcceptedSourceMetadata | null
     if (!raw || typeof raw !== 'object') return null
     if (raw.version !== 1 || raw.namespace !== 'host') return null
     if (typeof raw.configuredAddress !== 'string' || typeof raw.cacheKey !== 'string') return null
@@ -108,9 +108,14 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-export function createRegistryController(initial: RegistryConfig = {}): RegistryController {
+export function createRegistryController(
+  initial: RegistryConfig = {},
+  opts: { profile?: string } = {},
+): RegistryController {
   // config 是共享对象：host.ts 把它传给 tools/API，controller 原地更新字段实现 live 生效
   const config: RegistryConfig = { ...initial }
+  // profile 缓存段（0.9.0 双 profile）：默认 web=旧路径，行为零漂移；desktop 落 `<root>/desktop` 段
+  const profile = opts.profile ?? WEB_PROFILE
   let activeConfigAddress = trimAddress(initial.registryUrl)
   let loaded: LoadedRegistry = placeholderLoaded(activeConfigAddress)
   let pendingAddress: string | null = null
@@ -172,7 +177,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
   }
 
   function candidateFor(rawAddress: string, signal?: AbortSignal): Promise<LoadedRegistry> {
-    return loadRegistryCandidate({ ...config, registryUrl: rawAddress }, { namespace: 'host', signal })
+    return loadRegistryCandidate({ ...config, registryUrl: rawAddress }, { namespace: 'host', profile, signal })
   }
 
   const bootstrap = async (): Promise<void> => {
@@ -183,7 +188,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
       // 社区字段初始值（两代 store 同型：legacy/forms 的 get() 都经 unwrapConfig 透传）
       syncCommunityFields(source)
       const raw = trimAddress(source.registryUrl)
-      const attempt = await loadRegistry({ ...config, registryUrl: raw }, { namespace: 'host' })
+      const attempt = await loadRegistry({ ...config, registryUrl: raw }, { namespace: 'host', profile })
       if (disposed || gen !== generation) return
       if (attempt.status !== 'unavailable') {
         adopt(gen, raw, attempt)
@@ -191,9 +196,9 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
       }
       // 持久化 custom 不可达：先试 accepted address（含其 cache），无 accepted 则默认
       configErrors = [...attempt.errors]
-      const accepted = await readAcceptedSourceMetadata()
+      const accepted = await readAcceptedSourceMetadata(profile)
       const recoverAddress = accepted && accepted.configuredAddress !== raw ? accepted.configuredAddress : ''
-      const recovered = await loadRegistry({ ...config, registryUrl: recoverAddress }, { namespace: 'host', force: true })
+      const recovered = await loadRegistry({ ...config, registryUrl: recoverAddress }, { namespace: 'host', force: true, profile })
       if (disposed || gen !== generation) return
       if (recovered.status !== 'unavailable') {
         adopt(gen, recoverAddress, recovered)
@@ -253,7 +258,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
         config.timeoutMs = nextConfig.timeoutMs
         config.cacheTtlMin = nextConfig.cacheTtlMin
         try {
-          const commit = await commitActiveSource(parseRegistryAddress(raw), 'host')
+          const commit = await commitActiveSource(parseRegistryAddress(raw), 'host', profile)
           if (commit.warning) warnings.push(commit.warning)
         } catch {
           /* commit 失败不改变已采纳的 active */
@@ -288,7 +293,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
     await startBootstrap()
     if (opts.force) {
       await enqueue(async (gen) => {
-        const attempt = await loadRegistry(config, { namespace: 'host', force: true, signal: opts.signal })
+        const attempt = await loadRegistry(config, { namespace: 'host', force: true, signal: opts.signal, profile })
         if (disposed || gen !== generation) return
         loaded = attempt
         activeConfigAddress = attempt.configuredAddress
@@ -298,7 +303,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
   }
 
   function loadDefault(opts: { force?: boolean; signal?: AbortSignal } = {}): Promise<LoadedRegistry> {
-    return loadDefaultRegistry(config, { namespace: 'host', force: opts?.force, signal: opts?.signal })
+    return loadDefaultRegistry(config, { namespace: 'host', force: opts?.force, signal: opts?.signal, profile })
   }
 
   function apply(rawAddress: string, opts: { signal?: AbortSignal } = {}): Promise<RegistryControllerSnapshot> {
@@ -344,7 +349,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
       }
       adopt(gen, trimmed, candidate)
       try {
-        const commit = await commitActiveSource(address, 'host')
+        const commit = await commitActiveSource(address, 'host', profile)
         if (commit.warning) warnings.push(commit.warning)
       } catch (err) {
         warnings.push(`accepted-source 提交异常：${errorMessage(err)}`)

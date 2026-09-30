@@ -12,9 +12,21 @@ export function webProfileDir(): string {
   return join(dshHome(), 'profiles', WEB_PROFILE)
 }
 
-/** registry 缓存目录（可被 DSHM_CACHE_DIR 覆盖，便于测试） */
+/**
+ * 缓存根（0.9.0 双 profile，ADR-0005）：web 恒走旧路径（DSHM_CACHE_DIR 或
+ * `$DSH_HOME/dshm/cache`）——不迁移不清空；非 web profile 加同名段
+ * （`<root>/<profile>`），实现 profile 专属缓存互不污染。
+ * 测试经 DSHM_CACHE_DIR 指到临时目录（红线路径与既有用例一致）。
+ */
+export function cacheRoot(profile: string = WEB_PROFILE): string {
+  const base = process.env.DSHM_CACHE_DIR || join(dshHome(), 'dshm', 'cache')
+  if (profile === WEB_PROFILE) return base
+  return join(base, profile)
+}
+
+/** registry 缓存目录（可被 DSHM_CACHE_DIR 覆盖，便于测试）。web 语义的历史别名 = cacheRoot('web')。 */
 export function cacheDir(): string {
-  return process.env.DSHM_CACHE_DIR || join(dshHome(), 'dshm', 'cache')
+  return cacheRoot(WEB_PROFILE)
 }
 
 /** 安装类操作的超时（毫秒） */

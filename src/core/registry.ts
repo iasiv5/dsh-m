@@ -8,7 +8,7 @@ import { createRequire } from 'node:module'
 import { isAbsolute, join, normalize } from 'node:path'
 import { constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
-import { cacheDir } from './env.js'
+import { WEB_PROFILE, cacheRoot } from './env.js'
 import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure, type HttpError } from './httpx.js'
 
 export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other'] as const
@@ -48,7 +48,7 @@ export interface RegistryEntry {
   github?: string
   homepage?: string
   icon?: string
-  /** 实测版本清单（0.4.0 / CONTEXT.md 术语）：实测声明而非预测声明——只展示与收录
+  /** 实测版本清单（0.4.0 / GLOSSARY.md 术语）：实测声明而非预测声明——只展示与收录
    *  质量提示，不做安装拦截依据。每项必须精确 semver（禁 range/前缀）。 */
   verified?: string[]
 }
@@ -452,16 +452,16 @@ const CACHE_FILE_VERSION = 2
 const DEFAULT_CACHE_KEY = 'default'
 const ACTIVE_SOURCE_FILE = 'active-source.json'
 
-function nsDir(namespace: RegistryCacheNamespace): string {
-  return join(cacheDir(), namespace)
+function nsDir(namespace: RegistryCacheNamespace, profile: string = WEB_PROFILE): string {
+  return join(cacheRoot(profile), namespace)
 }
 
-function cacheFilePath(namespace: RegistryCacheNamespace, cacheKey: string): string {
-  return join(nsDir(namespace), `${cacheKey}.json`)
+function cacheFilePath(namespace: RegistryCacheNamespace, cacheKey: string, profile: string = WEB_PROFILE): string {
+  return join(nsDir(namespace, profile), `${cacheKey}.json`)
 }
 
-function cacheDirSyncMode(): void {
-  mkdirSync(cacheDir(), { recursive: true, mode: 0o700 })
+function cacheDirSyncMode(profile: string = WEB_PROFILE): void {
+  mkdirSync(cacheRoot(profile), { recursive: true, mode: 0o700 })
 }
 
 /** 同 key 写锁：进程内串行化同一 cache 文件的写入。 */
@@ -479,11 +479,11 @@ function withKeyLock<T>(key: string, task: () => Promise<T>): Promise<T> {
 }
 
 /** 原子写：0600 临时文件（O_CREAT|O_EXCL）→ fsync → rename。目标为 symlink 时拒绝。 */
-async function atomicWriteJson(target: string, dir: string, value: unknown): Promise<boolean> {
+async function atomicWriteJson(target: string, dir: string, value: unknown, profile: string = WEB_PROFILE): Promise<boolean> {
   return withKeyLock(target, async () => {
     try {
       await mkdir(dir, { recursive: true, mode: 0o700 })
-      cacheDirSyncMode()
+      cacheDirSyncMode(profile)
       let existing: Awaited<ReturnType<typeof lstat>> | null = null
       try {
         existing = await lstat(target)
@@ -507,13 +507,13 @@ async function atomicWriteJson(target: string, dir: string, value: unknown): Pro
   })
 }
 
-async function writeCacheFile(file: CacheFile): Promise<boolean> {
-  return atomicWriteJson(cacheFilePath(file.namespace, file.cacheKey), nsDir(file.namespace), file)
+async function writeCacheFile(file: CacheFile, profile: string = WEB_PROFILE): Promise<boolean> {
+  return atomicWriteJson(cacheFilePath(file.namespace, file.cacheKey, profile), nsDir(file.namespace, profile), file, profile)
 }
 
-async function readCacheFile(namespace: RegistryCacheNamespace, cacheKey: string): Promise<CacheFile | null> {
+async function readCacheFile(namespace: RegistryCacheNamespace, cacheKey: string, profile: string = WEB_PROFILE): Promise<CacheFile | null> {
   try {
-    const raw = JSON.parse(await readFile(cacheFilePath(namespace, cacheKey), 'utf8')) as CacheFile | null
+    const raw = JSON.parse(await readFile(cacheFilePath(namespace, cacheKey, profile), 'utf8')) as CacheFile | null
     if (!raw || typeof raw !== 'object') return null
     if (raw.version !== CACHE_FILE_VERSION || raw.namespace !== namespace || raw.cacheKey !== cacheKey) return null
     if (typeof raw.fetchedAt !== 'string' || !raw.registry || !Array.isArray(raw.registry.plugins)) return null
@@ -532,9 +532,9 @@ function cacheFresh(file: CacheFile, ttlMin: number): boolean {
 }
 
 /** 清理 namespace 内非 default、非当前 custom 的 cache 文件（不动 metadata）。 */
-async function pruneCaches(namespace: RegistryCacheNamespace, keepCustomKey: string | null): Promise<boolean> {
+async function pruneCaches(namespace: RegistryCacheNamespace, keepCustomKey: string | null, profile: string = WEB_PROFILE): Promise<boolean> {
   try {
-    const dir = nsDir(namespace)
+    const dir = nsDir(namespace, profile)
     const entries = await readdir(dir).catch(() => [] as string[])
     const keep = new Set([`${DEFAULT_CACHE_KEY}.json`, ACTIVE_SOURCE_FILE])
     if (keepCustomKey) keep.add(`${keepCustomKey}.json`)
@@ -564,6 +564,7 @@ export interface ActiveSourceCommitResult {
 export async function commitActiveSource(
   address: RegistryAddress,
   namespace: RegistryCacheNamespace,
+  profile: string = WEB_PROFILE,
 ): Promise<ActiveSourceCommitResult> {
   let metadataCommitted = true
   if (namespace === 'host') {
@@ -574,12 +575,12 @@ export async function commitActiveSource(
       cacheKey: address.cacheKey,
       savedAt: new Date().toISOString(),
     }
-    metadataCommitted = await atomicWriteJson(join(nsDir('host'), ACTIVE_SOURCE_FILE), nsDir('host'), meta)
+    metadataCommitted = await atomicWriteJson(join(nsDir('host', profile), ACTIVE_SOURCE_FILE), nsDir('host', profile), meta, profile)
   }
   if (!metadataCommitted) {
     return { metadataCommitted: false, pruned: false, warning: 'accepted-source 元数据写入失败，已跳过旧 cache 清理（新配置仍生效）' }
   }
-  const pruned = await pruneCaches(namespace, address.kind === 'default' ? null : address.cacheKey)
+  const pruned = await pruneCaches(namespace, address.kind === 'default' ? null : address.cacheKey, profile)
   if (!pruned) {
     return { metadataCommitted: true, pruned: false, warning: '旧来源 cache 清理失败（不影响新配置生效）' }
   }
@@ -625,6 +626,8 @@ export interface RegistryLoadOptions {
   force?: boolean
   signal?: AbortSignal
   namespace?: RegistryCacheNamespace
+  /** 缓存 profile 段（0.9.0 双 profile；默认 web=旧路径，行为零漂移） */
+  profile?: string
   prune?: boolean
   deadlineMs?: number
 }
@@ -689,6 +692,7 @@ function loadedFromCacheFile(file: CacheFile, configuredAddress: string, errors:
 
 interface DefaultChainOptions {
   namespace: RegistryCacheNamespace
+  profile: string
   includeBundled: boolean
 }
 
@@ -713,7 +717,7 @@ async function loadDefaultChain(
         source: candidate.source,
         fetchedAt,
         registry,
-      })
+      }, chain.profile)
       return {
         ...buildState({
           configuredAddress: '',
@@ -730,7 +734,7 @@ async function loadDefaultChain(
       errors.push(describeFetchFailure({ label: candidate.source, url: candidate.url, err, elapsedMs: Date.now() - startedAt }))
     }
   }
-  const cached = await readCacheFile(chain.namespace, DEFAULT_CACHE_KEY)
+  const cached = await readCacheFile(chain.namespace, DEFAULT_CACHE_KEY, chain.profile)
   if (cached) return loadedFromCacheFile(cached, '', errors)
   if (chain.includeBundled) {
     const bundled = bundledSnapshot()
@@ -765,6 +769,7 @@ interface CustomChainOptions {
   namespace: RegistryCacheNamespace
   /** 失败时是否回退当前 source 的 cache（candidate 与 active 都允许，只是 stale 语义） */
   allowCacheFallback: boolean
+  profile: string
 }
 
 /** custom 链：只尝试该 source 自身，失败只读同 sourceKey cache；没有数据 → unavailable。 */
@@ -792,7 +797,7 @@ async function loadCustomChain(
       source,
       fetchedAt,
       registry: result.registry,
-    })
+    }, chain.profile)
     return {
       ...buildState({
         configuredAddress: address.normalized,
@@ -809,7 +814,7 @@ async function loadCustomChain(
     errors.push(describeFetchFailure({ label: source, url: address.normalized, err, elapsedMs: Date.now() - startedAt }))
   }
   if (chain.allowCacheFallback) {
-    const cached = await readCacheFile(chain.namespace, address.cacheKey)
+    const cached = await readCacheFile(chain.namespace, address.cacheKey, chain.profile)
     if (cached) return loadedFromCacheFile(cached, address.normalized, errors)
   }
   return {
@@ -829,20 +834,21 @@ async function loadCustomChain(
 /** active 读取：default/custom 各自 fallback；网络成功后可在本 namespace 内 prune。 */
 export async function loadRegistry(cfg: RegistryConfig = {}, opts: RegistryLoadOptions = {}): Promise<LoadedRegistry> {
   const namespace = opts.namespace ?? 'host'
+  const profile = opts.profile ?? WEB_PROFILE
   const address = parseRegistryAddress(cfg.registryUrl)
   const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
   if (!opts.force) {
     const cacheKey = address.kind === 'default' ? DEFAULT_CACHE_KEY : address.cacheKey
-    const cached = await readCacheFile(namespace, cacheKey)
+    const cached = await readCacheFile(namespace, cacheKey, profile)
     if (cached && cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, address.normalized, [])
   }
   if (address.kind === 'default') {
-    const loaded = await loadDefaultChain(cfg, opts, { namespace, includeBundled: true })
-    if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, null)
+    const loaded = await loadDefaultChain(cfg, opts, { namespace, profile, includeBundled: true })
+    if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, null, profile)
     return loaded
   }
-  const loaded = await loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true })
-  if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, address.cacheKey)
+  const loaded = await loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true, profile })
+  if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, address.cacheKey, profile)
   return loaded
 }
 
@@ -852,20 +858,22 @@ export async function loadRegistryCandidate(
   opts: Omit<RegistryLoadOptions, 'prune'> = {},
 ): Promise<LoadedRegistry> {
   const namespace = opts.namespace ?? 'host'
+  const profile = opts.profile ?? WEB_PROFILE
   const address = parseRegistryAddress(cfg.registryUrl)
   if (address.kind === 'default') {
-    return loadDefaultChain(cfg, opts, { namespace, includeBundled: false })
+    return loadDefaultChain(cfg, opts, { namespace, profile, includeBundled: false })
   }
-  return loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true })
+  return loadCustomChain(address, cfg, opts, { namespace, allowCacheFallback: true, profile })
 }
 
 /** default 显式加载（下载/主动刷新）。写 default cache，从不 prune。 */
 export async function loadDefaultRegistry(cfg: RegistryConfig = {}, opts: RegistryLoadOptions = {}): Promise<LoadedRegistry> {
   const namespace = opts.namespace ?? 'host'
+  const profile = opts.profile ?? WEB_PROFILE
   const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
   if (!opts.force) {
-    const cached = await readCacheFile(namespace, DEFAULT_CACHE_KEY)
+    const cached = await readCacheFile(namespace, DEFAULT_CACHE_KEY, profile)
     if (cached && cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, '', [])
   }
-  return loadDefaultChain(cfg, opts, { namespace, includeBundled: true })
+  return loadDefaultChain(cfg, opts, { namespace, profile, includeBundled: true })
 }

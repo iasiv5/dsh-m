@@ -1879,3 +1879,71 @@ packages:
     }
   })
 })
+
+// ---------- 0.9.0 双 profile：读模型贯穿（plan Task 4） ----------
+
+describe('0.9.0 双 profile：读模型贯穿', () => {
+  const disabledCommunity = async () => ({
+    state: {
+      enabled: false, status: 'disabled', version: null, checkedAt: null,
+      fetchedAt: null, route: null, count: 0, errors: [], warnings: [],
+    },
+    catalog: null,
+  })
+
+  it('listInstalledWithMeta 透传 profileDir（已装枚举）与 profile（缓存段）', async () => {
+    const seen = { listInstalled: [], loadRegistry: [], community: [] }
+    const deps = {
+      loadRegistry: async (cfg, opts) => {
+        seen.loadRegistry.push(opts)
+        return unavailableLoaded()
+      },
+      listInstalledPlugins: async (dir) => {
+        seen.listInstalled.push(dir ?? null)
+        return { items: [], others: 0, complete: true, profileDir: dir ?? '/web-default' }
+      },
+      fetchCommunityCatalog: async (cfg, opts) => {
+        seen.community.push(opts)
+        return disabledCommunity()
+      },
+    }
+    const res = await listInstalledWithMeta({}, { profileDir: '/d/profiles/desktop', profile: 'desktop' }, deps)
+    assert.deepEqual(seen.listInstalled, ['/d/profiles/desktop'])
+    assert.equal(seen.loadRegistry[0].profile, 'desktop')
+    assert.equal(seen.community[0].profile, 'desktop')
+    assert.equal(res.profileDir, '/d/profiles/desktop')
+  })
+
+  it('缺省（web）行为零漂移：listInstalledPlugins 收到 undefined', async () => {
+    const seen = { listInstalled: [] }
+    const deps = {
+      loadRegistry: async () => unavailableLoaded(),
+      listInstalledPlugins: async (dir) => {
+        seen.listInstalled.push(dir ?? null)
+        return { items: [], others: 0, complete: true, profileDir: '/web-default' }
+      },
+      fetchCommunityCatalog: disabledCommunity,
+    }
+    await listInstalledWithMeta({}, {}, deps)
+    // dir ?? null 归一化后记录；undefined 透传给 listInstalledPlugins → 触发其 webProfileDir() 缺省
+    assert.deepEqual(seen.listInstalled, [null])
+  })
+
+  it('listMarket 透传 profile 缓存段（loadRegistry/fetchCommunityCatalog）', async () => {
+    const seen = { loadRegistry: [], community: [] }
+    const deps = {
+      loadRegistry: async (cfg, opts) => {
+        seen.loadRegistry.push(opts)
+        return unavailableLoaded()
+      },
+      listInstalledPlugins: async () => ({ items: [], others: 0, complete: true, profileDir: '/w' }),
+      fetchCommunityCatalog: async (cfg, opts) => {
+        seen.community.push(opts)
+        return disabledCommunity()
+      },
+    }
+    await listMarket({}, { profile: 'desktop' }, deps)
+    assert.equal(seen.loadRegistry[0].profile, 'desktop')
+    assert.equal(seen.community[0].profile, 'desktop')
+  })
+})

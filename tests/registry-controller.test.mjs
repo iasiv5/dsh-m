@@ -4,7 +4,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync, mkdirSync, rmSync, mkdtempSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync, rmSync, mkdtempSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
@@ -368,5 +368,49 @@ describe('M1 Task 6：社区配置接线', () => {
     assert.equal(controller.config.communityCatalogPin, '9.9.9')
     assert.equal(controller.config.communityCatalog, undefined, '未设置 → undefined（host Config 缺省 true 由 schema default 承载）')
     controller.dispose()
+  })
+})
+
+// ---------- 0.9.0 双 profile：controller profile 贯穿（plan Task 3） ----------
+
+describe('registry-controller：0.9.0 双 profile', () => {
+  it('profile=desktop：apply 的 accepted-source 落 desktop 段，web 段零创建；读侧按 profile 各回各的', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-ctrl-prof-'))
+    const fileA = localRegistryFile(dir, 'a.json', [1])
+    const fileB = localRegistryFile(dir, 'b.json', [2])
+    const fs = fakeStore({ registryUrl: fileA })
+    const controller = createRegistryController({ registryUrl: fileA }, { profile: 'desktop' })
+    controller.attachStore(fs.store)
+    try {
+      const snap = await controller.apply(fileB)
+      assert.equal(snap.configStatus, 'ready')
+      const desktopMeta = JSON.parse(readFileSync(join(cacheRoot, 'desktop', 'host', 'active-source.json'), 'utf8'))
+      assert.equal(desktopMeta.configuredAddress, fileB)
+      assert.equal(existsSync(join(cacheRoot, 'host')), false, 'web 段不得被 desktop controller 创建')
+      assert.ok(await readAcceptedSourceMetadata('desktop'), 'desktop 读侧可见')
+      assert.equal(await readAcceptedSourceMetadata('web'), null, 'web 读侧不得读到 desktop 的 accepted-source')
+    } finally {
+      controller.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('默认（无 opts）走 web 旧路径——行为零漂移', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-ctrl-prof-web-'))
+    const fileA = localRegistryFile(dir, 'a.json', [1])
+    const fileB = localRegistryFile(dir, 'b.json', [2])
+    const fs = fakeStore({ registryUrl: fileA })
+    const controller = createRegistryController({ registryUrl: fileA })
+    controller.attachStore(fs.store)
+    try {
+      await controller.apply(fileB)
+      const webMeta = JSON.parse(readFileSync(join(cacheRoot, 'host', 'active-source.json'), 'utf8'))
+      assert.equal(webMeta.configuredAddress, fileB)
+      assert.equal(existsSync(join(cacheRoot, 'desktop')), false)
+      assert.ok(await readAcceptedSourceMetadata())
+    } finally {
+      controller.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

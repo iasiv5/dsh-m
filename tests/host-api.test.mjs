@@ -79,6 +79,8 @@ function setup(overrides = {}, controllerInitial = {}) {
   const dispatcher = createApiDispatcher({
     controller,
     pkg: { name: 'dsh-m', version: '0.0.0-test' },
+    // 0.9.0：契约测试默认注入 pass-through 信任检查（守卫委派语义在 host-api-profile.test.mjs 单独覆盖）
+    profile: { name: 'web', kind: 'web', dir: '/tmp/profile', source: 'fallback' },
     deps: {
       listMarket: async (cfg, opts) => {
         calls.listMarket.push(opts)
@@ -126,6 +128,8 @@ function setup(overrides = {}, controllerInitial = {}) {
       },
       // 缺省注入，避免 dispatcher 预热时真实 spawn `dsh --version`（ping 契约测试单独覆盖）
       resolveDshVersion: async () => '0.0.0-dsh-test',
+      // 0.9.0：信任检查委派的 pass-through（Desktop 路由/守卫用例经 overrides 覆盖）
+      rejectRequest: () => undefined,
       // 缺省 disabled 社区 summary：registry 契约测试不触真实社区网络；社区用例经 overrides 覆盖
       getCommunitySummary: async () => ({
         enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null,
@@ -179,28 +183,20 @@ describe('host-api：协议防护', () => {
     assert.equal(res.status, 413)
   })
 
-  it('ping 无 Origin 可用；其余 method 缺 Origin / Origin 不等价 → 403', async () => {
+  it('trust 委派 pass-through：无 Origin 请求按注入语义放行（Desktop 桥剥 Origin 后可达）', async () => {
     const { dispatcher } = setup()
     assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json' }, body: { method: 'ping' } })).status, 200)
-    assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', host: '127.0.0.1:3080' }, body: { method: 'registry' } })).status, 403)
-    assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', origin: 'http://evil.example', host: '127.0.0.1:3080' }, body: { method: 'market' } })).status, 403)
-    // guard 语义 = host 等价（hostname+port），不承诺 scheme 敏感（DESIGN/计划明示）
-    assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', origin: 'https://127.0.0.1:3080', host: '127.0.0.1:3080' }, body: { method: 'installed' } })).status, 200, '同 host:port 不同 scheme 仍按 host 等价放行')
+    assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', host: '127.0.0.1:3080' }, body: { method: 'registry' } })).status, 200)
     assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed' } })).status, 200)
   })
 
-  it('x-forwarded-host 等价时放行', async () => {
-    const { dispatcher } = setup()
-    const res = await callApi(dispatcher, {
-      headers: {
-        'content-type': 'application/json',
-        origin: 'https://proxy.example.com',
-        host: '127.0.0.1:8080',
-        'x-forwarded-host': 'proxy.example.com',
-      },
-      body: { method: 'registry' },
+  it('trust 委派 403：不可信 Origin 由宿主检查拒绝，业务零调用', async () => {
+    const { dispatcher, calls } = setup({
+      rejectRequest: (req) => (String(req.headers.origin || '') === 'http://evil.example' ? 403 : undefined),
     })
-    assert.equal(res.status, 200)
+    assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', origin: 'http://evil.example', host: '127.0.0.1:3080' }, body: { method: 'market' } })).status, 403)
+    assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })).status, 200)
+    assert.equal(calls.listMarket.length, 1, '被拒请求零业务调用')
   })
 
   it('未知 method → 404', async () => {
@@ -552,7 +548,10 @@ describe('host-api：0.4.0 set-enabled / forceIncompatible（Task 14）', () => 
     const dispatcher = createApiDispatcher({
       controller,
       pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      // 0.9.0：pass-through 信任检查 + web profile（能力表委派语义在 host-api-profile.test.mjs）
+      profile: { name: 'web', kind: 'web', dir: '/tmp/profile', source: 'fallback' },
       deps: {
+        rejectRequest: () => undefined,
         togglePlugin: async (pkg, enabled, deps) => {
           seen.toggle.push({ pkg, enabled, hasService: typeof deps?.getService === 'function' })
           return toggleImpl(pkg, enabled)
