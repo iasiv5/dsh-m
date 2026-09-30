@@ -56,3 +56,13 @@
   2. （中）browserLang 映射描述与被复用的实现相反（计划误写 `zh*→zh、其余→en`，实现是 `en*→en、其余→zh`）——全局约束与 Task 10 措辞改为与实现逐字一致，代码零改动；本记录第一节 MINOR 表同步勘误。
   3. （中）`skipped` 语义引入（Task 2）与 `community=disabled` 断言改造（原排 Task 7）时点错位，Task 2 收口必红——断言改写前移进 Task 2 Step 3，Task 7 清单保留其余三条。
 - 轻微提示（已采纳入计划执行纪律）：实现开始前先 commit 本批输入工件（DESIGN.md / CONTEXT.md / ADR-0004 / 两份 plan 文档），避免分支操作丢失 grilling 产出。
+
+## 五、执行审计与碰撞（2026-09-30，实施完成后）
+
+实施 16 任务收口（`3fe5c89`）后，独立审计会话对执行结果出具 21 条发现（2 BLOCKER / 7 MAJOR / 8 MINOR / 4 NIT），并 SSR 实证 GUI 根组件打开即崩——「构建 ✓ 测试 ✓ GUI 可运行」三态纪律在最关键一环失实。碰撞（与考古会话）后全部处置落地（`5cbb0ca`，741/741 全绿）：
+
+- **两 BLOCKER（均实证）**：①`useLayoutEffect` 未解构（esbuild CJS 自由变量炸弹——正是第三节预警的那类）；②favorites 早退跳过 `useState(compatConfirm)`（hooks 规则）。修复并落地 **SSR 渲染冒烟回归门**（`tests/client-render-smoke.test.mjs`：main.jsx 副本+测试导出 → esbuild → renderToString 五组件，4 用例进 npm test）。
+- **碰撞新发现（21 条之外的地基洞，共 4 个）**：①操作记录 store 为 per-hook 实例，关面板后新旧实例全量 persist 互相覆盖丢记录——提为模块级单例；②waiters 需持原始 Error 引用（`e.guard/e.issue` 结构保真，`err.opId` 附回）；③恢复执行器与前台泵必须合一（独立 drainRestored 循环会双 dispatch 同一条 queued）——恢复只做改标后启动同一泵，dispatch 前统一 stillApplies 实读校验；④取队首同步纪律（判空到退出零 await）。
+- **恢复执行器死路径（MAJOR 3+6+12 一并重构）**：runOp 改 `queued→running→终态` 泵化生命周期（「全部更新 N 条」真实逐条流转、重载恢复 queued 从不可达变为真实行为）；stillApplies 对 install 同时比对 `meta.npm`；确认/重试经 `reuseId` 复用同一记录（消双重记录）；CompatDialog 取消 → superseded「用户放弃」。
+- **其余修复**：Esc 弹层深度互斥（`dsvmModalDepth`）；Modal 补 LinksRow（恢复超集）；Enter `isComposing/keyCode 229` 守卫；host-api 对 `primaryOnly` 显式 400（计划钉过、实施曾缩水为静默忽略）；分区计数各取自身 total；卡片「进行中」徽章 + cursor/hover 可点击暗示；收藏 stale 校验 800ms debounce；ToolCardRow 顺手写操作记录；死键/陈旧注释/lookup 遮蔽改名清理。
+- **显式偏离（碰撞接受）**：卡片描述展开钮由 Modal 取代（渐进披露唯一出口=卡片点击，行内展开与其竞争）；组件层 debounce 时序不进 Node 测试（纯函数 partitionStale 已覆盖、渲染路径归冒烟门）。
