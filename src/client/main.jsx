@@ -5,7 +5,7 @@
 const React = require("react");
 const rd = require("react-dom");
 const h = React.createElement;
-const { useState, useEffect, useCallback, useMemo, useRef } = React;
+const { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } = React;
 
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
@@ -19,7 +19,7 @@ const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
-const { createOperationsStore, restoreRecords, drainRestored } = require("./operations.js");
+const { createOperationsStore, restoreRecords } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
@@ -33,9 +33,9 @@ const ZH = {
   "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
   "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
   "op.clear": "清除已完成",
+  "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认",
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
-  "favorites.empty": "收藏功能即将上线——届时可在插件卡片上点书签收藏",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
   "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
   "fav.add": "收藏", "fav.remove": "取消收藏",
@@ -137,9 +137,9 @@ const EN = {
   "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
   "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
   "op.clear": "Clear finished",
+  "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled",
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
-  "favorites.empty": "Favorites are coming soon — you'll be able to bookmark plugins from their cards",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
   "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
   "fav.add": "Bookmark", "fav.remove": "Remove bookmark",
@@ -306,6 +306,10 @@ const CSS = `
 .dsvm-lbdots{display:flex;gap:6px}
 .dsvm-lbdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
 .dsvm-lbdot.on{background:#fff}
+.dsvm-card-clickable, .dshm-card{cursor:pointer}
+.dshm-card:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
+.dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
+.dsvm-btn:hover{background:rgba(255,255,255,.24)}
 .dsvm-ops{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .dsvm-opgroup{display:flex;flex-direction:column;gap:3px}
 .dsvm-opgroup.done{opacity:.75}
@@ -734,7 +738,7 @@ function SearchBox({ placeholder, initial, onCommit }) {
         schedule(e && e.target ? e.target.value : draft);
       },
       onKeyDown: (e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !e.isComposing && e.keyCode !== 229) {
           e.preventDefault();
           submitNow();
         }
@@ -890,7 +894,21 @@ function Lightbox({ shots, index, onNav, onClose }) {
 }
 
 // ---------- 详情 Modal = 卡片超集（0.7.0 Task 12：「detail 显示少于摘要就是倒退」） ----------
+/** Modal/Dialog 打开深度（审计修复 #4）：>0 时面板级 Esc 不关面板——Esc 只关最上层弹层。 */
+let dsvmModalDepth = 0;
+
+function useModalDepth(active) {
+  useEffect(() => {
+    if (!active) return;
+    dsvmModalDepth += 1;
+    return () => {
+      dsvmModalDepth -= 1;
+    };
+  }, [active]);
+}
+
 function DetailModal({ it, labels, busy, onClose, onInstall }) {
+  useModalDepth(true);
   const shots = it.community === true ? safeScreenshots(it) : [];
   const [lb, setLb] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -955,11 +973,12 @@ function DetailModal({ it, labels, busy, onClose, onInstall }) {
             typeof it.stars === "number" ? h("span", { title: String(it.stars) }, `${compactCount(it.stars)} ★`) : null,
           )
         : null,
+      h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
       h(
         "dl",
         { className: "dsvm-kv" },
         kv(lookup("modal.category"), catLabel),
-        kv(lookup("modal.added"), it.added || "—"),
+        it.added ? kv(lookup("modal.added"), it.added) : null,
         it.community === true
           ? kv(
               lookup("modal.dlwindow"),
@@ -1038,6 +1057,10 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
   const [detailId, setDetailId] = useState(null);
+  // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null——必须在 favorites 早退之前（hooks 规则）
+  const [compatConfirm, setCompatConfirm] = useState(null);
+  // CompatDialog 也是弹层：打开期间面板级 Esc 不关面板（审计 #4 同族）
+  useModalDepth(compatConfirm != null);
   // busy 派生自操作记录（0.7.0 Task 13：状态不挂卡片）——首个进行中的 install
   const busyId = (ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
 
@@ -1064,8 +1087,15 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
   const zoneBar = h(
     "div",
     { className: "dshm-chips" },
-    ...ZONE_TABS.map((z) =>
-      h(
+    ...ZONE_TABS.map((z) => {
+      // 计数固定取各自分区自身的数据（修复：不再用当前激活 zone 的 total 冒充）
+      const zCount =
+        z.id === "community"
+          ? (markets.community.data && markets.community.data.total) || 0
+          : z.id === "primary"
+            ? (markets.primary.data && markets.primary.data.total) || 0
+            : favorites && favorites.list.length;
+      return h(
         "button",
         {
           key: z.id,
@@ -1073,10 +1103,9 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
           onClick: () => setZone(z.id),
         },
         lookup(z.labelKey),
-        z.id === "community" && zone !== "favorites" && total > 0 ? ` ${total}` : "",
-        z.id === "primary" && zone === "primary" && total > 0 ? ` ${total}` : "",
-        z.id === "favorites" && favorites && favorites.list.length ? ` ${favorites.list.length}` : "",
-      )),
+        zCount ? ` ${zCount}` : "",
+      );
+    }),
   );
   // 收藏区（0.7.0 Task 14：本地 localStorage 收藏 + stale 校验清理）
   if (zone === "favorites") {
@@ -1088,9 +1117,6 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
     );
   }
 
-  // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null
-  const [compatConfirm, setCompatConfirm] = useState(null);
-
   const installDone = (res) => {
     notify({
       kind: "ok",
@@ -1101,18 +1127,21 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
     });
   };
 
-  const doInstall = async (it, version, forceIncompatible) => {
+  const doInstall = async (it, version, forceIncompatible, reuseOpId) => {
     try {
       const res = await ops.runOp(
         "install",
         it.id,
         () => api("install", { id: it.id, ...(version ? { version } : {}), ...(forceIncompatible ? { forceIncompatible: true } : {}) }),
-        { version },
+        { version, npm: it.npm, github: it.github }, // 审计 #6：meta 携带 npm 供 stillApplies 比对
+        reuseOpId, // 审计 #12：确认/重试复用同一记录，不再新开
       );
       installDone(res);
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
-      if (e && e.guard) {
+      if (e && e.opSuperseded) {
+        notify({ kind: "ok", text: lookup("op.superseded.note", { target: it.name }) });
+      } else if (e && e.guard) {
         // 装后守卫拦截（M2 Task 3）：无 force 通道；一键重启只读 restartSafe
         notify({
           kind: "err",
@@ -1125,8 +1154,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
           ].filter(Boolean).join(" | "),
         });
       } else if (e && e.issue) {
-        // peer 预检拦截 → 弹「仍要安装」确认（用户确认后带 force 重发）
-        setCompatConfirm({ it, version, issue: e.issue });
+        // peer 预检拦截 → 弹「仍要安装」确认（确认后带 force 重发；复用原记录 id——审计 #12）
+        setCompatConfirm({ it, version, issue: e.issue, opId: e.opId });
       } else {
         notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
       }
@@ -1158,14 +1187,18 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
             { className: "dshm-actions" },
             h("button", {
               className: "dshm-btn sm",
-              onClick: () => setCompatConfirm(null),
+              onClick: () => {
+                // 审计碰撞建议 a：取消确认 → 记录处置为 superseded「用户放弃」，不再永挂 input
+                if (compatConfirm.opId && ops.dispose) ops.dispose(compatConfirm.opId, lookup("op.cancelled"));
+                setCompatConfirm(null);
+              },
             }, lookup("common.cancel")),
             h("button", {
               className: "dshm-btn primary sm",
               onClick: () => {
                 const pending = compatConfirm;
                 setCompatConfirm(null);
-                doInstall(pending.it, pending.version, true);
+                doInstall(pending.it, pending.version, true, pending.opId); // 复用原记录（审计 #12）
               },
             }, lookup("compat.force")),
           ),
@@ -1233,6 +1266,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
                   icon: h(Icon, { entry: it }),
                   name: it.name,
                   badges: [
+                    busyId === it.id ? h("span", { className: "dshm-badge warn", key: "busy" }, lookup("op.status.running")) : null,
                     it.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
                     it.community !== true && Array.isArray(it.verified) && it.verified.length ? h("span", { className: "dshm-badge", key: "v", title: it.verified.join("、") }, lookup("badge.verified")) : null,
                     it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
@@ -1376,16 +1410,21 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
       try {
         res = await ops.runOp("toggle", it.pkg, call, { on: enabled });
       } catch (first) {
-        // hmr 重组窗口可能瞬断传输（set-enabled 幂等，重试一次安全）
+        if (first && first.opSuperseded) throw first;
+        // hmr 重组窗口可能瞬断传输（set-enabled 幂等，重试一次安全）；复用原记录（审计 #12）
         await new Promise((r) => setTimeout(r, 1500));
-        res = await ops.runOp("toggle", it.pkg, call, { on: enabled });
+        res = await ops.runOp("toggle", it.pkg, call, { on: enabled }, first && first.opId);
       }
       const note = toggleNoticeKeys(res);
       const extra = (res.warnings && res.warnings.length ? `（${res.warnings.join("；")}）` : "");
       notify({ kind: "ok", needsRestart: note.needsRestart, text: lookup(note.textKey, note.params) + extra });
       await (onMutation ? onMutation() : reload());
     } catch (e) {
-      notify({ kind: "err", text: lookup("toggle.failed", { err: (e && e.message) || e }) });
+      if (e && e.opSuperseded) {
+        notify({ kind: "ok", text: lookup("op.superseded.note", { target: it.pkg }) });
+      } else {
+        notify({ kind: "err", text: lookup("toggle.failed", { err: (e && e.message) || e }) });
+      }
     }
   };
 
@@ -1401,7 +1440,11 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
       });
       await (onMutation ? onMutation() : reload());
     } catch (e) {
-      notify({ kind: "err", text: lookup("failed.uninstall", { err: (e && e.message) || e }) });
+      if (e && e.opSuperseded) {
+        notify({ kind: "ok", text: lookup("op.superseded.note", { target: it.pkg }) });
+      } else {
+        notify({ kind: "err", text: lookup("failed.uninstall", { err: (e && e.message) || e }) });
+      }
     }
   };
 
@@ -1430,6 +1473,8 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
             e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
           ].filter(Boolean).join(" | "),
         });
+      } else if (e && e.opSuperseded) {
+        notify({ kind: "ok", text: lookup("op.superseded.note", { target: it.pkg }) });
       } else {
         notify({ kind: "err", text: lookup("failed.upgrade", { err: (e && e.message) || e }) });
       }
@@ -1886,22 +1931,27 @@ function FavoriteZone({ favorites }) {
     let live = true;
     setCheck(null);
     if (!list.length) return;
-    void (async () => {
-      // stale 判定 = listMarket id 精确查询的结果集成员判定（Task 3 保证 id 整串精确命中）
-      const lookup = async (fav) => {
-        try {
-          const res = await api("market", { query: fav.id, source: "all", limit: 8 });
-          const items = res && Array.isArray(res.items) ? res.items : [];
-          return items.some((x) => x && x.id === fav.id);
-        } catch {
-          return false;
-        }
-      };
-      const { stale } = await partitionStale(list, lookup);
-      if (live) setCheck({ staleIds: stale.map((f) => f.id) });
-    })();
+    // 审计 #15：800ms debounce 合并突变（快速 toggle 不逐次全量重查）；
+    // toggle 引发的重查保留——顺带校验新收藏是否刚收录就已下架
+    const timer = setTimeout(() => {
+      void (async () => {
+        // stale 判定 = listMarket id 精确查询的结果集成员判定（Task 3 保证 id 整串精确命中）
+        const lookupLive = async (fav) => {
+          try {
+            const res = await api("market", { query: fav.id, source: "all", limit: 8 });
+            const items = res && Array.isArray(res.items) ? res.items : [];
+            return items.some((x) => x && x.id === fav.id);
+          } catch {
+            return false;
+          }
+        };
+        const { stale } = await partitionStale(list, lookupLive);
+        if (live) setCheck({ staleIds: stale.map((f) => f.id) });
+      })();
+    }, 800);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [list]);
   if (!list.length) {
@@ -1961,14 +2011,86 @@ function FavoriteZone({ favorites }) {
   );
 }
 
-// ---------- 全局操作记录（0.7.0 Task 13：状态不挂卡片，翻页/搜索/切 tab 不丢；持久化 + 恢复执行器） ----------
-function useOperationsStore() {
-  const storeRef = useRef(null);
-  if (!storeRef.current) {
-    const ls = typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
-    storeRef.current = createOperationsStore(ls);
+// ---------- 全局操作记录（0.7.0 Task 13 + 审计碰撞修正） ----------
+/** 模块级单例（审计碰撞·洞1）：per-hook 实例会让关面板后的旧 runOp 闭包与新面板各自
+ *  全量 persist 互相覆盖丢记录——排队窗口越长越恶性。 */
+const opsStore = createOperationsStore(typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
+
+/** 会话内执行器与 waiters（按记录 id；恢复记录无执行器，走 ctx.dispatchRestored）。 */
+const opsExecutors = new Map();
+const opsWaiters = new Map();
+let opsPumpRunning = false;
+/** 泵上下文（MarketPanel 渲染时注册；卸载置空——记录本体持久在 localStorage）。 */
+let opsPumpCtx = null;
+
+/**
+ * 单一执行泵（审计碰撞·洞2/3/4）：queued→running→终态 FIFO；恢复与前台共用同一条执行路径
+ * （独立的 drainRestored 循环退役，杜绝两个循环双 dispatch 同一条 queued）。
+ * - 洞2：waiters 持有 dispatch 抛出的**原始 Error 引用**（附 opId）——调用方 catch 读
+ *   e.guard/e.issue 不受 record.error 字符串化影响；
+ * - 洞4：取队首用同步 store.list()，判空到退出之间不插任何 await；
+ * - dispatch 前统一 stillApplies 实读校验（恢复与前台无差别）；前提消失 → superseded
+ *   （良性，中性呈现），前台调用方经 e.opSuperseded 分支消化。
+ */
+async function runOpsPump() {
+  if (opsPumpRunning) return;
+  opsPumpRunning = true;
+  try {
+    for (;;) {
+      const queued = opsStore.list().find((r) => r.status === "queued"); // 同步取队首（洞4）
+      if (!queued) break;
+      const waiters = opsWaiters.get(queued.id);
+      const executor = opsExecutors.get(queued.id);
+      opsWaiters.delete(queued.id);
+      opsExecutors.delete(queued.id);
+      const finalize = (patch) => {
+        opsStore.upsert({ id: queued.id, ...patch });
+        if (opsPumpCtx) opsPumpCtx.syncOps();
+      };
+      if (opsPumpCtx && opsPumpCtx.stillApplies) {
+        let applies = true;
+        try {
+          applies = await opsPumpCtx.stillApplies(queued);
+        } catch {
+          applies = false;
+        }
+        if (!applies) {
+          finalize({ status: "superseded", error: "执行时前提消失（已手动处理？）" });
+          if (waiters) {
+            waiters.reject(Object.assign(new Error("op superseded"), { opSuperseded: true, opId: queued.id }))
+          }
+          continue;
+        }
+      }
+      opsStore.upsert({ id: queued.id, status: "running" });
+      if (opsPumpCtx) opsPumpCtx.syncOps();
+      let value
+      let err = null
+      try {
+        if (executor) {
+          value = await executor.exec()
+        } else if (opsPumpCtx) {
+          const r = await opsPumpCtx.dispatchRestored(queued)
+          if (!r || !r.ok) err = Object.assign(new Error((r && r.error) || "unknown"), r && r.issue ? { issue: r.issue } : {})
+        } else {
+          err = new Error("无执行上下文（面板未挂载）")
+        }
+      } catch (e) {
+        err = e
+      }
+      if (!err) {
+        finalize({ status: value && value.opWarning ? "warned" : "done", warning: value && value.opWarning })
+        if (waiters) waiters.resolve(value)
+      } else {
+        const isInput = Boolean(err.issue) // 恢复遇 peer 冲突 → input（待决，面板可见后手动重发）
+        finalize(isInput ? { status: "input", inputKind: "peer-incompatible" } : { status: "failed", error: String(err.message || err) })
+        err.opId = queued.id // 洞2：原始错误保真传递
+        if (waiters) waiters.reject(err)
+      }
+    }
+  } finally {
+    opsPumpRunning = false
   }
-  return storeRef.current;
 }
 
 const OP_STATUS_CLS = {
@@ -2047,32 +2169,27 @@ function MarketPanel({ onClose }) {
   const marketPrimary = useMarketData("primary");
   const markets = { community: marketCommunity, primary: marketPrimary };
   const installed = useAsync(() => api("installed"), []);
-  // 全局操作记录（0.7.0 Task 13）：状态不挂卡片，翻页/搜索/切 tab 不丢
-  const opsStore = useOperationsStore();
+  // 全局操作记录（0.7.0 Task 13 + 审计碰撞修正）：单例 store + 泵执行（queued 真实生命周期）
   const [opRecords, setOpRecords] = useState(() => opsStore.list().map((r) => ({ ...r })));
-  const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), [opsStore]);
+  const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), []);
   const runOp = useCallback(
-    async (kind, target, exec, meta = {}) => {
-      const stored = opsStore.upsert({ kind, target, status: "running", meta });
+    (kind, target, exec, meta = {}, reuseId) => {
+      const stored = opsStore.upsert({ ...(reuseId ? { id: reuseId } : {}), kind, target, status: "queued", meta });
       syncOps();
-      try {
-        const value = await exec();
-        opsStore.upsert({ id: stored.id, status: value && value.opWarning ? "warned" : "done", warning: value && value.opWarning });
-        syncOps();
-        return value;
-      } catch (e) {
-        opsStore.upsert({
-          id: stored.id,
-          status: e && e.issue ? "input" : "failed",
-          ...(e && e.issue ? { inputKind: "peer-incompatible" } : { error: String((e && e.message) || e) }),
-        });
-        syncOps();
-        throw e;
-      }
+      return new Promise((resolve, reject) => {
+        opsWaiters.set(stored.id, { resolve, reject });
+        opsExecutors.set(stored.id, { exec });
+        void runOpsPump(); // 同步入队后立即泵（单线程无漏队）
+      });
     },
-    [opsStore, syncOps],
+    [syncOps],
   );
-  const ops = { records: opRecords, runOp };
+  /** 处置待决记录（CompatDialog 取消 → superseded「用户放弃」）。 */
+  const disposeOp = useCallback((id, note) => {
+    opsStore.upsert({ id, status: "superseded", error: note });
+    syncOps();
+  }, [syncOps]);
+  const ops = { records: opRecords, runOp, dispose: disposeOp };
   // 收藏（0.7.0 Task 14）：本地 localStorage，不进 profile 不进服务端
   const favStoreRef = useRef(null);
   if (!favStoreRef.current) {
@@ -2111,51 +2228,56 @@ function MarketPanel({ onClose }) {
     [marketReloadAll, installed.reload],
   );
   const onRegistryChanged = refreshViews;
-  // 恢复时序（0.7.0 Task 13）：installed resolve → restoreRecords → drainRestored；
-  // stillApplies 一律执行时实读（api("installed")），禁止复用本 effect 捕获的 installed.data 快照
+  // 恢复/泵共用上下文（审计碰撞·洞3：单一执行路径）。stillApplies 一律执行时实读（禁止复用快照）。
+  const stillApplies = useCallback(async (r) => {
+    let fresh = null;
+    try {
+      fresh = await api("installed");
+    } catch {
+      fresh = null;
+    }
+    const items = fresh && Array.isArray(fresh.items) ? fresh.items : null;
+    if (!items) return true; // 读不到已装数据：保守放行（泵 dispatch 前还会再校验）
+    // 审计 #6：install 的 target 是收录 id，与 installed.pkg 不同名——同时比对 meta.npm
+    const has = items.some((x) => x && (x.pkg === r.target || (r.meta && typeof r.meta.npm === "string" && x.pkg === r.meta.npm)));
+    return r.kind === "install" ? !has : has;
+  }, []);
+  const dispatchRestored = useCallback(async (r) => {
+    try {
+      if (r.kind === "install") {
+        await api("install", { id: r.target, ...(r.meta && r.meta.version ? { version: r.meta.version } : {}) });
+      } else if (r.kind === "upgrade") {
+        await api("upgrade", { pkg: r.target, ...(r.meta && r.meta.force ? { force: true } : {}) });
+      } else if (r.kind === "uninstall") {
+        await api("uninstall", { pkg: r.target });
+      } else {
+        await api("set-enabled", { pkg: r.target, enabled: r.meta && r.meta.on === true });
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e), ...(e && e.issue ? { issue: e.issue } : {}) };
+    }
+  }, []);
+  useEffect(() => {
+    opsPumpCtx = { stillApplies, dispatchRestored, syncOps, refreshViews };
+    return () => {
+      if (opsPumpCtx && opsPumpCtx.syncOps === syncOps) opsPumpCtx = null;
+    };
+  }, [stillApplies, dispatchRestored, syncOps, refreshViews]);
+  // 恢复时序（0.7.0 Task 13）：installed resolve → restoreRecords（校验改标）→ 启动**同一个**前台泵
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current || !installed.data) return;
     restoredRef.current = true;
     void (async () => {
-      const stillApplies = async (r) => {
-        let fresh = null;
-        try {
-          fresh = await api("installed");
-        } catch {
-          fresh = null;
-        }
-        const items = fresh && Array.isArray(fresh.items) ? fresh.items : null;
-        if (!items) return true; // 读不到已装数据：保守放行（drain 执行前还会再校验）
-        const has = items.some((x) => x && x.pkg === r.target);
-        return r.kind === "install" ? !has : has;
-      };
-      const dispatchRestored = async (r) => {
-        try {
-          if (r.kind === "install") {
-            await api("install", { id: r.target, ...(r.meta && r.meta.version ? { version: r.meta.version } : {}) });
-          } else if (r.kind === "upgrade") {
-            await api("upgrade", { pkg: r.target, ...(r.meta && r.meta.force ? { force: true } : {}) });
-          } else if (r.kind === "uninstall") {
-            await api("uninstall", { pkg: r.target });
-          } else {
-            await api("set-enabled", { pkg: r.target, enabled: r.meta && r.meta.on === true });
-          }
-          return { ok: true };
-        } catch (e) {
-          return { ok: false, error: String((e && e.message) || e) };
-        }
-      };
       const restored = await restoreRecords(opsStore.list(), stillApplies);
       opsStore.replaceAll(restored);
       syncOps();
       if (restored.some((r) => r.status === "queued")) {
-        await drainRestored(opsStore, dispatchRestored, stillApplies);
-        syncOps();
-        await refreshViews();
+        void runOpsPump(); // 洞3：恢复并入前台泵（单一执行路径；drainRestored 循环退役）
       }
     })();
-  }, [installed.data, opsStore, syncOps, refreshViews]);
+  }, [installed.data, stillApplies, syncOps]);
   const counts = {
     market: marketCommunity.data ? marketCommunity.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
@@ -2168,7 +2290,7 @@ function MarketPanel({ onClose }) {
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape" && onClose) onClose();
+      if (e.key === "Escape" && dsvmModalDepth === 0 && onClose) onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -2317,13 +2439,18 @@ function ToolCardRow({ it, onInstalled }) {
   const install = async (e) => {
     e.stopPropagation();
     setBusy(true);
+    // 审计 #13 处置（碰撞建议）：对话区卡片直连 api 保留本地反馈，但顺手 upsert 一条记录——
+    // 事后打开面板可见（纯写不读，单例 store 不依赖面板挂载）
+    const rec = opsStore.upsert({ kind: "install", target: it.id, status: "running", meta: { npm: it.npm, github: it.github } });
     try {
       const res = await api("install", { id: it.id });
+      opsStore.upsert({ id: rec.id, status: "done" });
       onInstalled({ ...it, installed: true, installedPkg: res.pkg, installedVersion: res.version });
-    } catch (e) {
+    } catch (err) {
       // M2 Task 3：静默分支不再吞守卫拦截——工具卡片就地标注（对话区文本仍为主通道）
-      if (e && e.guard) {
-        setGuardNote(`${lookup("guard.blocked")} · ${e.guard.compensation?.status || "—"} · ${lookup("guard.noforce")}`);
+      opsStore.upsert({ id: rec.id, status: err && err.issue ? "input" : "failed", error: String((err && err.message) || err) });
+      if (err && err.guard) {
+        setGuardNote(`${lookup("guard.blocked")} · ${err.guard.compensation?.status || "—"} · ${lookup("guard.noforce")}`);
       }
     } finally {
       setBusy(false);

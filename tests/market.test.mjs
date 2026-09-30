@@ -1113,6 +1113,18 @@ describe('M1 Task 5：合并市场', () => {
     assert.equal(rp.community.categoryLabels, undefined)
   })
 
+  it('⑬ sort × query 组合（审计 #20）：相关性优先于用户排序', async () => {
+    const base = fakeDeps()
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('exact', 'o1', { downloads: 10 }),
+      communityRaw('vague-exact-thing', 'o2', { downloads: 999 }),
+    ]))
+    // query 'exact'：o1 name 精确（700+300）> o2 name 包含（700+200）；
+    // sort downloads-desc 想把 o2 放前——相关性胜出
+    const res = await listMarket(cfg, { withLatest: false, source: 'community', query: 'exact', sort: { field: 'downloads', dir: 'desc' } }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), ['o1--exact', 'o2--vague-exact-thing'])
+  })
+
   it('④ 主 unavailable + 社区 ready 有条目 → 出页不返空（Q42）', async () => {
     const base = fakeDeps({ loadRegistry: async () => unavailableLoaded() })
     const { deps } = withCommunity(base, communityLoaded([communityRaw('a', 'o1'), communityRaw('b', 'o2')]))

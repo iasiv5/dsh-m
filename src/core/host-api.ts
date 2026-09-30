@@ -326,7 +326,10 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
               throw new ApiProtocolError(400, `非法分类: ${categoryRaw}（需精选分类或 [a-z0-9-]{1,32} slug）`)
             }
           }
-          // source 分区 + sort（0.7.0 Task 7）：非法值 400（不静默吞）；primaryOnly 契约已由 source 取代并删除
+          // source 分区 + sort（0.7.0 Task 7）：非法值 400（不静默吞）；primaryOnly 已删除——显式拒绝而非静默忽略（审计 #8）
+          if (body.primaryOnly !== undefined) {
+            throw new ApiProtocolError(400, '参数 primaryOnly 已删除：改用 source（primary/community/all）')
+          }
           const sourceRaw = typeof body.source === 'string' ? body.source.trim() : ''
           if (sourceRaw !== '' && sourceRaw !== 'primary' && sourceRaw !== 'community' && sourceRaw !== 'all') {
             throw new ApiProtocolError(400, `非法 source: ${sourceRaw}（需 primary/community/all）`)

@@ -140,7 +140,7 @@ export interface MarketQuery extends RegistryRuntimeOptions {
    *  downloads 排序下无计数 ≠ 0（无数据恒排有数据之后，组内 stars 降序）；stars 缺失视为 -1；added 缺失视为最旧。 */
   sort?: { field: 'downloads' | 'stars' | 'added'; dir: 'asc' | 'desc' }
   offset?: number
-  /** core 按 withLatest hard clamp：true 最大 50，false 最大 80 */
+  /** core 按 withLatest hard clamp：true 最大 96（0.7.0 Task 7），false 最大 80 */
   limit?: number
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
