@@ -347,3 +347,20 @@ describe('createOpsPump（0.7.0 评审 P4：生产泵的直接测试）', () => 
     assert.equal(w.warning, 'builds approved')
   })
 })
+
+describe('replaceAll 运行中短路（R2·N1：泵拥有的 running 不被恢复快照回卷）', () => {
+  it('当前 running 记录不被快照覆写为 failed「进程重启中断」', () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'pumping', target: 't', status: 'running' })) // 泵 dispatch 中（current 权威）
+    const staleSnapshot = [rec({ id: 'pumping', target: 't', status: 'running' }), rec({ id: 'ghost', target: 'g', status: 'running' })]
+    // 模拟：快照拍摄后泵已把 pumping 推进、恢复校验把 ghost 判为 running 残留
+    const restored = [
+      { ...staleSnapshot[0], status: 'done' },        // 快照视角已完成（另一路径）
+      { ...staleSnapshot[1], status: 'failed', error: '进程重启中断' },
+    ]
+    store.replaceAll(restored)
+    const pumping = store.list().find((r) => r.id === 'pumping')
+    assert.equal(pumping.status, 'running', 'current running 短路，不被任何快照版本覆写')
+    assert.equal(store.list().find((r) => r.id === 'ghost'), undefined, '快照内已删（窗口外）不复活')
+  })
+})
