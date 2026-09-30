@@ -369,6 +369,22 @@
       "npm": "dsh-chat-manager",
       "github": "WSL043/dsh-chat-manager",
       "homepage": "https://github.com/WSL043/dsh-chat-manager"
+    },
+    {
+      "id": "dsh-context",
+      "name": "DSH Context",
+      "description": "上下文透视：Context 仪表盘、侧栏面板与 /context 命令，查看上下文组成、演进趋势与压缩剪枝等事件，支持跨会话用量统计。",
+      "category": "ui",
+      "tags": [
+        "上下文",
+        "Token 统计",
+        "可视化",
+        "仪表盘"
+      ],
+      "source": "npm",
+      "npm": "dsh-context",
+      "github": "bowenliang123/dsh-context",
+      "homepage": "https://github.com/bowenliang123/dsh-context"
     }
   ]
 }
