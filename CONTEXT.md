@@ -58,8 +58,8 @@ _Avoid_: 兼容层（与 settings 兼容层混淆）、版本分支
 _Avoid_: 兼容范围（semver range 才是范围声明）、compat
 
 **主清单（Primary Registry）**:
-dsh-m 手工策展的收录清单层：包内 registry.json（默认清单）或 registryUrl 自定义覆盖源，二选一整体替换；verified 实测与收录文案标准的载体。
-_Avoid_: 官方清单（「官方」留给 DeepSeek）、第一 registry
+dsh-m 手工策展的收录清单层：包内 registry.json（默认清单）或 registryUrl 自定义覆盖源，二选一整体替换；verified 实测与收录文案标准的载体。UI 可见名「精选清单」（设置页卡片题与市场「精选」分区同名；0.7 前旧称「收录清单」）。
+_Avoid_: 官方清单（「官方」留给 DeepSeek）、第一 registry、收录清单（旧称）
 
 **社区清单（Community Catalog）**:
 awesome-dsh-plugin 维护的全量社区目录，经 npm 包 dsh-plugin-catalog 版本化分发；只读叠加层，不可被用户替换，也不做包内快照兜底。
@@ -78,7 +78,7 @@ _Avoid_: schema 转换器、normalize 层
 _Avoid_: 原生分类、旧分类
 
 **社区分类（Community Categories）**:
-社区清单的原生分类，开放集，仅作用于社区区：已知条目带中文标签，上游新增的未知分类原样渲染进临时组，等发版收录标签。
+社区清单的原生分类，开放集，仅作用于社区区：已知条目带中英双语标签（英文取上游目录 categories.en，中文仍由包内单一事实源维护），上游新增的未知分类原样渲染进临时组，等发版收录标签。
 _Avoid_: 扩展分类、子分类
 
 **能力披露（Capability Disclosure）**:

@@ -1,7 +1,7 @@
 /**
  * 市场面板 pure state（DESIGN.md §2.6 分区制 / 0.7.0 Task 8，修订 M1 Task 8 的混排形态）：
  * 分区状态工厂、分区 query 规范化、分页 reset（query/category/sort 变化归零）、页码窗口化、
- * 分区 chips 构建器（社区标签消费服务端 categoryLabels 单一事实源，客户端内嵌副本已删除）、
+ * 分区 chips 构建器（社区标签消费服务端 categoryLabels/categoryLabelsEn 双语单一事实源，客户端内嵌副本已删除）、
  * API response narrowing、短 registry notice。不依赖 DOM/React，Node tests 直接 import。
  * 客户端不自行推断来源状态，只消费 Host 返回的 registryState/RegistrySummary；
  * 排序单一事实源在服务端（客户端不再重排，sortMergedItems 已删除）。
@@ -136,6 +136,7 @@ export function normalizeMarketResponse(raw) {
     errors: Array.isArray(c.errors) ? c.errors.map(String) : [],
     warnings: Array.isArray(c.warnings) ? c.warnings.map(String) : [],
     categoryLabels: narrowCategoryLabels(c.categoryLabels),
+    categoryLabelsEn: narrowCategoryLabels(c.categoryLabelsEn),
   }
   return {
     items,
@@ -166,16 +167,15 @@ function narrowCategoryLabels(raw) {
 }
 
 /**
- * 短 registry notice：只消费 summary 的 isDefault/status/stale 布尔语义，
- * 输出 i18n key 与条数，绝不包含 configured/active 地址等本地路径。
+ * 短 registry notice（0.7.1 修订）：信息性来源横幅（默认/自定义/缓存 stale）全部退役——
+ * 「共 {count} 条」计数从未接线（恒显 0）、本机网络受限时 stale 横幅常驻，均属噪音；
+ * 来源状态去设置页看。只保留错误态 unavailable（收录清单不可用）。
+ * 输出绝不包含 configured/active 地址等本地路径。
  */
 export function registryNotice(summary, total) {
   const s = summary && typeof summary === 'object' ? summary : {}
-  let key = 'notice.default'
-  if (s.status === 'unavailable') key = 'notice.unavailable'
-  else if (s.stale || s.status === 'stale') key = 'notice.stale'
-  else if (!s.isDefault) key = 'notice.custom'
-  return { key, count: typeof total === 'number' && Number.isFinite(total) ? total : 0 }
+  if (s.status === 'unavailable') return { key: 'notice.unavailable' }
+  return null
 }
 
 const FALLBACK_COMMUNITY = {
@@ -207,6 +207,7 @@ export function zoneChips(categoryCounts, categoryLabels, zone) {
     return CURATED_ORDER.map((id) => ({
       id,
       label: CURATED_LABELS[id],
+      labelKey: `cat.${id}`,
       count: typeof counts[id] === 'number' && Number.isFinite(counts[id]) ? counts[id] : 0,
     }))
   }
@@ -232,13 +233,20 @@ export function zoneChips(categoryCounts, categoryLabels, zone) {
   return [...known, ...unknown]
 }
 
-/** 双源 notice（Q42）：主 down+社区 up → 错误横幅 + communityFallback；社区 stale → communityStale 显式；社区失败静默。 */
+/**
+ * 双源 notice（0.7.1 修订）：恒返回旗标对象（可全空），调用方按旗标渲染——
+ * - notice: { key: 'notice.unavailable' } 错误态（主清单不可用）；
+ * - communityFallback：主 down+社区 up；communityStale：社区目录为缓存快照。
+ * 旗标独立于 notice 键存在（社区提示不再被信息性来源横幅的退役连坐）。
+ */
 export function marketNotice(registryState, community) {
-  const base = registryNotice(registryState, undefined)
+  const out = {}
   const c = community && typeof community === 'object' ? community : {}
-  if (c.status === 'stale') base.communityStale = true
+  if (c.status === 'stale') out.communityStale = true
   if (registryState && registryState.status === 'unavailable' && (c.status === 'ready' || c.status === 'stale')) {
-    base.communityFallback = true
+    out.communityFallback = true
   }
-  return base
+  const notice = registryNotice(registryState)
+  if (notice) out.notice = notice
+  return out
 }

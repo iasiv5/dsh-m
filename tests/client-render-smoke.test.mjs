@@ -62,6 +62,16 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     const html = renderToString(h(components.__MarketPanel, { onClose: () => {} }))
     assert.ok(typeof html === 'string' && html.length > 0)
     assert.ok(html.includes('社区') || html.includes('Community'), '默认落地社区分区')
+    // 0.7.2/0.7.3 复刻 dsh-market 首页：整宽搜索行 + 分类行尾「筛选」触发器（任务/刷新按钮按主人要求移除）
+    assert.ok(html.includes('dsvm-searchrow'), '整宽搜索行在')
+    assert.ok(html.includes('dsvm-filterwrap'), '筛选触发器在')
+    assert.ok(!html.includes('dsvm-opsbtn'), '任务按钮已移除')
+    assert.ok(!html.includes('申请收录'), '发现行已移除（dsh-m 不支持收录功能）')
+    // 0.7.7 窗口控制组：最大化/关闭连体按钮 + 全屏态 SSR 安全降级（无 localStorage 即 false）
+    assert.ok(html.includes('dshm-winctl'), '窗口控制组在')
+    assert.ok(!html.includes('dshm-panel full'), 'SSR 无 localStorage 时默认非全屏')
+    // 0.7.1 信息性来源横幅退役：缓存 stale 文案不得再出现
+    assert.ok(!html.includes('来源为本地缓存'), '「来源为本地缓存」横幅已退役')
   })
 
   it('InstalledTab 空数据渲染不抛', () => {
@@ -79,8 +89,8 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
 
   it('SearchBox / ZoneChips / FavoriteZone 独立渲染不抛', () => {
     renderToString(h(components.__SearchBox, { placeholder: 'p', initial: '', onCommit: () => {} }))
-    renderToString(h(components.__ZoneChips, { zone: 'community', counts: { theme: 2 }, labels: { theme: '主题与外观' }, active: null, onPick: () => {} }))
-    renderToString(h(components.__FavoriteZone, { favorites: { list: [], toggle: () => {}, removeIds: () => {} } }))
+    renderToString(h(components.__ZoneChips, { zone: 'community', counts: { theme: 2 }, labels: { theme: '主题与外观' }, active: null, onPick: () => {}, trailing: null }))
+    renderToString(h(components.__FavoriteZone, { favorites: { list: [], toggle: () => {}, removeIds: () => {} }, onOpen: () => {} }))
   })
 
   it('FavoriteZone 带一条收藏快照渲染不抛（卡片路径）', () => {
@@ -89,7 +99,9 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
       savedAt: 1,
       snapshot: { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg', owner: 'o1', downloads: 5, stars: 2 },
     }
-    const html = renderToString(h(components.__FavoriteZone, { favorites: { list: [fav], toggle: () => {}, removeIds: () => {} } }))
+    const html = renderToString(h(components.__FavoriteZone, { favorites: { list: [fav], toggle: () => {}, removeIds: () => {} }, onOpen: () => {} }))
     assert.ok(html.includes('demo'))
+    // 0.7.2 修复回归门：收藏卡可点击（Card role=button；onToggle→onOpen 接线为客户端事件，SSR 验语义结构）
+    assert.ok(html.includes('role="button"'), '收藏卡是可点按钮语义')
   })
 })

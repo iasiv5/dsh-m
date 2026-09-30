@@ -117,6 +117,7 @@ describe('zoneChips 分区构建器', () => {
     const chips = zoneChips({ tools: 3, market: 0 }, labels, 'primary')
     assert.deepEqual(chips.map((c) => c.id), ['market', 'tools', 'ui', 'search', 'other'])
     assert.deepEqual(chips.map((c) => c.count), [0, 3, 0, 0, 0])
+    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.market', 'cat.tools', 'cat.ui', 'cat.search', 'cat.other'])
   })
   it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数精选种子跳过', () => {
     const counts = { market: 1, tools: 5, ui: 7, search: 0, other: 0, agi: 10, theme: 4, 'brand-new-slug': 2, 'empty-slug': 0 }
@@ -135,7 +136,7 @@ describe('zoneChips 分区构建器', () => {
   })
 })
 
-describe('normalizeMarketResponse（保留语义 + categoryLabels 透传）', () => {
+describe('normalizeMarketResponse（保留语义 + categoryLabels/categoryLabelsEn 透传）', () => {
   it('完整响应原样收敛 + community.categoryLabels 收敛', () => {
     const raw = {
       items: [{ id: 'a', name: 'A', installed: true, outdated: false }],
@@ -143,13 +144,19 @@ describe('normalizeMarketResponse（保留语义 + categoryLabels 透传）', ()
       categoryCounts: { tools: 10, market: 0 },
       registryState: { source: 'custom-file', status: 'ready', isDefault: false, stale: false, count: 10 },
       installedComplete: true, latestComplete: true, latestTimedOut: false,
-      community: { enabled: true, status: 'ready', acceptedCount: 2, categoryLabels: { theme: '主题与外观', bad: 42 } },
+      community: {
+        enabled: true, status: 'ready', acceptedCount: 2,
+        categoryLabels: { theme: '主题与外观', bad: 42 },
+        categoryLabelsEn: { theme: 'Themes & Appearance', bad: 42 },
+      },
     }
     const page = normalizeMarketResponse(raw)
     assert.equal(page.items.length, 1)
     assert.equal(page.total, 10)
     assert.equal(page.community.categoryLabels.theme, '主题与外观')
     assert.equal(page.community.categoryLabels.bad, undefined, '非 string 值剔除')
+    assert.equal(page.community.categoryLabelsEn.theme, 'Themes & Appearance')
+    assert.equal(page.community.categoryLabelsEn.bad, undefined, '非 string 值剔除')
   })
 
   it('缺失/错误字段给出安全空页；community 缺省形状不伪造', () => {
@@ -165,23 +172,30 @@ describe('normalizeMarketResponse（保留语义 + categoryLabels 透传）', ()
     assert.deepEqual(empty.categoryCounts, {})
     assert.equal(empty.community.status, 'disabled')
     assert.equal(empty.community.categoryLabels, undefined)
+    assert.equal(empty.community.categoryLabelsEn, undefined)
   })
 })
 
-describe('registryNotice / marketNotice（保留语义）', () => {
-  it('短状态 key，不泄露路径', () => {
+describe('registryNotice / marketNotice（0.7.1：信息性来源横幅退役）', () => {
+  it('短状态只保留错误态 unavailable；默认/自定义/缓存 stale 一律 null（不泄露路径）', () => {
     const leaky = { isDefault: false, status: 'ready', stale: false, configuredAddress: '/home/user/secret/registry.json' }
-    const notice = registryNotice(leaky, 42)
-    assert.ok(!JSON.stringify(notice).includes('/home/user'))
-    assert.equal(registryNotice({ isDefault: true, status: 'ready', stale: false }, 10).key, 'notice.default')
-    assert.equal(registryNotice({ isDefault: false, status: 'ready', stale: false }, 10).key, 'notice.custom')
-    assert.equal(registryNotice({ isDefault: true, status: 'stale', stale: true }, 10).key, 'notice.stale')
+    assert.equal(registryNotice(leaky, 42), null)
+    assert.ok(!JSON.stringify(registryNotice(leaky, 42)).includes('/home/user'))
+    assert.equal(registryNotice({ isDefault: true, status: 'ready', stale: false }, 10), null, '默认清单 ready → 无横幅')
+    assert.equal(registryNotice({ isDefault: false, status: 'ready', stale: false }, 10), null, '自定义清单 ready → 无横幅')
+    assert.equal(registryNotice({ isDefault: true, status: 'stale', stale: true }, 10), null, '缓存 stale → 无横幅（0.7.0 前恒挂的噪音）')
+    assert.deepEqual(registryNotice({ status: 'unavailable' }), { key: 'notice.unavailable' }, '错误态保留')
   })
-  it('双源语义：主 down+社区 up → communityFallback；社区 stale → communityStale', () => {
-    assert.equal(marketNotice({ isDefault: true, status: 'unavailable', stale: false }, { enabled: true, status: 'ready' }).communityFallback, true)
-    assert.equal(marketNotice({ isDefault: true, status: 'ready', stale: false }, { status: 'stale' }).communityStale, true)
+  it('双源语义：主 down+社区 up → communityFallback；社区 stale → communityStale；旗标独立于 notice 键', () => {
+    const fallback = marketNotice({ isDefault: true, status: 'unavailable', stale: false }, { enabled: true, status: 'ready' })
+    assert.equal(fallback.communityFallback, true)
+    assert.deepEqual(fallback.notice, { key: 'notice.unavailable' }, 'unavailable 仍在场')
+    const staleOnly = marketNotice({ isDefault: true, status: 'stale', stale: true }, { status: 'stale' })
+    assert.equal(staleOnly.communityStale, true, '社区 stale 提示不被来源横幅退役连坐')
+    assert.equal(staleOnly.notice, undefined, '主清单仅 stale（可用）→ 无错误横幅')
     const silent = marketNotice({ isDefault: true, status: 'ready', stale: false }, { status: 'unavailable' })
     assert.notEqual(silent.communityStale, true)
     assert.notEqual(silent.communityFallback, true)
+    assert.equal(silent.notice, undefined)
   })
 })

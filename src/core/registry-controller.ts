@@ -32,7 +32,8 @@ export class RegistryConfigError extends Error {
 
 export interface RegistrySettingsStore {
   get(): RegistryConfig
-  update(patch: { registryUrl: string }): Promise<void>
+  /** 部分补丁写入（0.8.0 起支持 communityCatalog 开关键；registryUrl 沿用 apply 路径） */
+  update(patch: { registryUrl?: string; communityCatalog?: boolean }): Promise<void>
   watch(callback: (next: RegistryConfig, prev: RegistryConfig) => void): () => void
 }
 
@@ -55,6 +56,8 @@ export interface RegistryController {
   snapshot(opts?: { force?: boolean; signal?: AbortSignal }): Promise<RegistryControllerSnapshot>
   loadDefault(opts?: { force?: boolean; signal?: AbortSignal }): Promise<LoadedRegistry>
   apply(rawAddress: string, opts?: { signal?: AbortSignal }): Promise<RegistryControllerSnapshot>
+  /** 社区目录开关（0.8.0 设置页）：内存即时生效 + store 持久化；写入失败回滚内存值并抛错 */
+  setCommunity(enabled: boolean): Promise<RegistryControllerSnapshot>
   dispose(): void
 }
 
@@ -350,6 +353,30 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
     })
   }
 
+  function setCommunity(enabled: boolean): Promise<RegistryControllerSnapshot> {
+    // 同步先启动 bootstrap（只创建不等待）：它先于本任务入队，任务内再 await 即安全——
+    // 若在任务内 await startBootstrap() 会自我死锁（bootstrap 排在本任务之后永远轮不到）
+    if (!bootstrapPromise) startBootstrap()
+    return enqueue(async (gen) => {
+      // 等初始同步完成：bootstrap 的 syncCommunityFields 会按 source 重写社区字段，
+      // 开关若抢在它前面写入会被覆盖（时序隐患，0.7.9 测试暴露于 0.8.0）
+      await bootstrapPromise
+      const prev = config.communityCatalog
+      // 内存先行（live 生效：listMarket 立即跳过社区层）；持久化失败回滚内存值
+      config.communityCatalog = enabled
+      if (store) {
+        try {
+          await store.update({ communityCatalog: enabled })
+        } catch (err) {
+          if (disposed || gen !== generation) return snapshotInternal()
+          config.communityCatalog = prev
+          throw new RegistryConfigError(`写入设置失败：${errorMessage(err)}`, [errorMessage(err)])
+        }
+      }
+      return snapshotInternal()
+    })
+  }
+
   function dispose(): void {
     disposed = true
     unwatch?.()
@@ -364,6 +391,7 @@ export function createRegistryController(initial: RegistryConfig = {}): Registry
     snapshot,
     loadDefault,
     apply,
+    setCommunity,
     dispose,
   }
   return controller

@@ -100,6 +100,7 @@ function setup(overrides = {}, controllerInitial = {}) {
             route: 'jsdelivr', acceptedCount: 2, upstreamCount: 2, displaced: 0,
             skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
             categoryLabels: { theme: '主题与外观' },
+            categoryLabelsEn: { theme: 'Themes & Appearance' },
           },
         }
       },
@@ -335,6 +336,41 @@ describe('host-api：method 响应', () => {
     assert.equal(res.body.ok, true)
     assert.ok(res.body.registry.plugins.length >= 0)
     assert.equal(res.body.registryState.isDefault, true)
+  })
+
+  it('set-community 切换 communityCatalog 并在 registry-config 回显（0.8.0 设置页开关）', async () => {
+    const { dispatcher } = setup()
+    const off = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-community', enabled: false } })
+    assert.equal(off.status, 200)
+    assert.equal(off.body.applied, true)
+    assert.equal(off.body.communityCatalog, false)
+    const cfg = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry-config' } })
+    assert.equal(cfg.body.communityCatalog, false)
+    const on = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-community', enabled: true } })
+    assert.equal(on.status, 200)
+    assert.equal(on.body.communityCatalog, true)
+  })
+
+  it('set-community 缺 enabled → 400', async () => {
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-community' } })
+    assert.equal(res.status, 400)
+  })
+
+  it('set-community 非布尔 enabled → 400', async () => {
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-community', enabled: 'yes' } })
+    assert.equal(res.status, 400)
+  })
+
+  it('self-check 本地版本领先 npm → ahead=true 且 outdated=false（0.8.0 dev 版显示）', async () => {
+    const { dispatcher } = setup({
+      npmLatest: async () => ({ version: '0.0.0-alpha', integrity: 'sha512-x' }),
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-check' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.outdated, false)
+    assert.equal(res.body.ahead, true)
   })
 
   it('registry-diagnose 传递 signal 并返回 check', async () => {
@@ -649,6 +685,7 @@ describe('M1 Task 6：host-api 社区契约', () => {
     assert.equal(market.status, 200)
     assert.equal(market.body.community.status, 'ready')
     assert.equal(market.body.community.categoryLabels?.theme, '主题与外观')
+    assert.equal(market.body.community.categoryLabelsEn?.theme, 'Themes & Appearance')
     assert.equal(market.body.community.acceptedCount, 2)
 
     const primaryLens = []

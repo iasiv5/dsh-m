@@ -127,6 +127,9 @@ export interface CommunityRegistrySummary {
   /** 社区分类中文标签单一事实源（0.7.0 Task 4）：status 非 disabled/skipped 时携带；
    *  客户端 market-state.js 的内嵌副本随 Task 8 删除。 */
   categoryLabels?: Record<string, string>
+  /** 社区分类英文标签（i18n）：取上游目录 categories.en（双语目录自带；缺 en 的 id 不进映射，
+   *  客户端按界面语言取用并回退中文标签）；仅 ready 且上游携带 categories 时与 categoryLabels 同行携带。 */
+  categoryLabelsEn?: Record<string, string>
 }
 
 export interface MarketQuery extends RegistryRuntimeOptions {
@@ -491,7 +494,12 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   return { items: [...primary, ...sorted], displaced: displaced.length, warnings }
 }
 
-function communitySummary(state: CommunityCatalogState, counts: Partial<CommunityRegistrySummary>, extraWarnings: string[]): CommunityRegistrySummary {
+function communitySummary(
+  state: CommunityCatalogState,
+  counts: Partial<CommunityRegistrySummary>,
+  extraWarnings: string[],
+  categoryLabelsEn?: Record<string, string>,
+): CommunityRegistrySummary {
   const unavailableLike = state.status === 'disabled' || state.status === 'unavailable'
   return {
     enabled: state.enabled,
@@ -507,9 +515,15 @@ function communitySummary(state: CommunityCatalogState, counts: Partial<Communit
     skippedSubpathNoNpm: unavailableLike ? 0 : (counts.skippedSubpathNoNpm ?? 0),
     errors: [...state.errors],
     warnings: [...state.warnings, ...extraWarnings],
-    // 标签单一事实源（0.7.0 Task 4）：disabled/skipped 下无社区数据语义，不携带
+    // 标签单一事实源（0.7.0 Task 4）：disabled/skipped 下无社区数据语义，不携带；
+    // EN 标签（i18n）随行携带，仅在调用方传入非空映射时出现（缺省 = 上游无 categories 数据）
     ...(state.status !== 'disabled' && state.status !== 'skipped'
-      ? { categoryLabels: { ...COMMUNITY_CATEGORY_LABELS } }
+      ? {
+          categoryLabels: { ...COMMUNITY_CATEGORY_LABELS },
+          ...(categoryLabelsEn && Object.keys(categoryLabelsEn).length > 0
+            ? { categoryLabelsEn: { ...categoryLabelsEn } }
+            : {}),
+        }
       : {}),
   }
 }
@@ -576,6 +590,13 @@ export async function communityOutcome(
   }
   const adapted = adaptCommunityCatalog(loaded.catalog)
   const merge = mergeRegistries(primary, adapted.entries)
+  // EN 分类标签（i18n）：直接取上游目录 categories.en——上游新增分类自动跟进，
+  // 缺 en 的 id 不进映射（客户端按语言取用并回退中文标签，不在此处手养第二张表）
+  const categoryLabelsEn = Object.fromEntries(
+    Object.entries(loaded.catalog.categories)
+      .map(([id, c]) => [id, typeof c?.en === 'string' && c.en !== '' ? c.en : ''])
+      .filter(([, en]) => en !== ''),
+  )
   const summary = communitySummary(
     state,
     {
@@ -586,6 +607,7 @@ export async function communityOutcome(
       skippedSubpathNoNpm: adapted.skippedSubpathNoNpm,
     },
     [...adapted.warnings, ...merge.warnings],
+    categoryLabelsEn,
   )
   return { summary, merged: merge.items }
 }
@@ -1019,7 +1041,10 @@ export interface InstallResult {
   healActions?: HealAction[]
 }
 
-/** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。 */
+/** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。
+ *  0.7.1 修复：合并市场展示的社区条目 id 不在主清单（loadRegistry 只装载主清单，
+ *  社区层只合入 listMarket 展示）——主清单 miss 时按收录 id 查社区目录再装，
+ *  与 0.5.1 升级路径（findCommunityUpgradeEntry）同构。 */
 export async function installFromRegistry(
   id: string,
   cfg: RegistryConfig = {},
@@ -1030,7 +1055,9 @@ export async function installFromRegistry(
   if (loaded.status === 'unavailable') {
     throw new Error(`收录清单不可用，无法安装 ${id}；请检查 registry 配置或网络后重试`)
   }
-  const entry = loaded.registry.plugins.find((e) => e.id === id)
+  const entry =
+    loaded.registry.plugins.find((e) => e.id === id) ??
+    (await findCommunityInstallEntry(id, cfg, opts, deps))
   if (!entry) throw new Error(`registry 中没有该条目: ${id}`)
   return installEntry(entry, cfg, opts, deps)
 }
@@ -1689,6 +1716,26 @@ async function upgradePluginLocked(
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
   const result = await installEntryLocked(entry, cfg, opts, deps)
   return { ...result, fromVersion: target.version }
+}
+
+/**
+ * 社区条目按收录 id 查找（0.7.1 安装修复）：合并市场展示的社区条目 id = 社区目录合成 id
+ * （owner--name 等），主清单 miss 时按同一 id 查社区目录。社区清单未启用/不可用/加载
+ * 异常/未命中 → undefined，由调用方统一报「registry 中没有该条目」。
+ */
+async function findCommunityInstallEntry(
+  id: string,
+  cfg: RegistryConfig,
+  opts: RegistryRuntimeOptions,
+  deps?: InstallDeps,
+): Promise<InstallableEntry | undefined> {
+  try {
+    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal })
+    if (!loaded.catalog) return undefined
+    return adaptCommunityCatalog(loaded.catalog).entries.find((e) => e.id === id)
+  } catch {
+    return undefined
+  }
 }
 
 /**

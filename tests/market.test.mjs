@@ -931,7 +931,7 @@ function communityRaw(name, owner, props = {}) {
   }
 }
 
-function communityLoaded(plugins, stateOverrides = {}) {
+function communityLoaded(plugins, stateOverrides = {}, categories = {}) {
   const count = plugins.length
   return {
     state: {
@@ -952,7 +952,7 @@ function communityLoaded(plugins, stateOverrides = {}) {
       source: 'https://github.com/x/y',
       updated: '2026-09-28',
       count,
-      categories: {},
+      categories,
       plugins,
     },
   }
@@ -1101,16 +1101,26 @@ describe('M1 Task 5：合并市场', () => {
     assert.deepEqual(asc.items.map((it) => it.id), ['o2--noadded', 'o1--jan', 'o3--jun'])
   })
 
-  it('⑫ community.categoryLabels 单一事实源（0.7.0 Task 4）：ready 携带、skipped 不携带', async () => {
+  it('⑫ community.categoryLabels 单一事实源（0.7.0 Task 4）：ready 携带、skipped 不携带；categoryLabelsEn 取上游 categories.en 随行（i18n）', async () => {
     const base = fakeDeps()
-    const { deps } = withCommunity(base, communityLoaded([communityRaw('a', 'o1', { category: 'theme' })]))
+    const { deps } = withCommunity(
+      base,
+      communityLoaded(
+        [communityRaw('a', 'o1', { category: 'theme' })],
+        {},
+        { theme: { en: 'Themes & Appearance', zh: '主题与外观' }, memory: { zh: '记忆' } },
+      ),
+    )
     const res = await listMarket(cfg, { withLatest: false }, deps)
     assert.equal(res.community.status, 'ready')
     assert.equal(res.community.categoryLabels?.theme, '主题与外观')
     assert.equal(res.community.categoryLabels?.memory, '记忆')
+    assert.equal(res.community.categoryLabelsEn?.theme, 'Themes & Appearance')
+    assert.equal(res.community.categoryLabelsEn?.memory, undefined, '缺 en 的 id 不进映射（客户端回退中文）')
     const rp = await listMarket(cfg, { withLatest: false, source: 'primary' }, deps)
     assert.equal(rp.community.status, 'skipped')
     assert.equal(rp.community.categoryLabels, undefined)
+    assert.equal(rp.community.categoryLabelsEn, undefined)
   })
 
   it('⑬ sort × query 组合（审计 #20）：相关性优先于用户排序', async () => {
@@ -1770,5 +1780,102 @@ packages:
       () => upgradePlugin('pkg-x', cfg, {}, deps),
       (err) => err instanceof Error && /不是经 dsh-m 收录/.test(err.message),
     )
+  })
+})
+
+// ---------- 0.7.1 安装修复：社区条目按收录 id 可装（合并市场展示 id = 社区合成 id） ----------
+
+describe('installFromRegistry 社区条目（0.7.1：主清单 miss 查社区目录）', () => {
+  it('主清单 miss + 社区命中 → 按合成 id 安装（修复 0.7.0「registry 中没有该条目」回归）', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', '@scope/pkg-b': '1.1.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  '@scope/pkg-b@1.1.0':
+    resolution: {integrity: ${sha512('good')}}
+`)
+          writeInstalledMarkerPkg(profileDir, '@scope/pkg-b')
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const deps = {
+        loadRegistry: async () => readyLoaded([]),
+        npmLatest: async () => ({ version: '1.1.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: async () => communityLoaded([communityRaw('pkg-b', 'o', { npm: '@scope/pkg-b' })]),
+        transaction: { runner: () => runner, profileDir },
+      }
+      const res = await installFromRegistry('o--pkg-b', {}, {}, deps)
+      assert.equal(res.id, 'o--pkg-b', '安装结果携带社区合成 id')
+      assert.equal(res.pkg, '@scope/pkg-b')
+      assert.equal(res.version, '1.1.0')
+      assert.deepEqual(calls.add, [{ arg: '@scope/pkg-b@1.1.0', signal: undefined }], 'add 落在注入 runner')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('主清单与社区均未命中 → 维持「registry 中没有该条目」报错', async () => {
+    const deps = {
+      loadRegistry: async () => readyLoaded([]),
+      fetchCommunityCatalog: async () => communityLoaded([]),
+    }
+    await assert.rejects(
+      () => installFromRegistry('o--nope', {}, {}, deps),
+      (err) => err instanceof Error && /registry 中没有该条目/.test(err.message),
+    )
+  })
+
+  it('社区清单加载异常 → 同样维持「registry 中没有该条目」（不误报清单不可用）', async () => {
+    const deps = {
+      loadRegistry: async () => readyLoaded([]),
+      fetchCommunityCatalog: async () => { throw new Error('network down') },
+    }
+    await assert.rejects(
+      () => installFromRegistry('o--nope', {}, {}, deps),
+      (err) => err instanceof Error && /registry 中没有该条目/.test(err.message),
+    )
+  })
+
+  it('主清单命中优先：社区查询异常不阻断主清单条目安装', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  'pkg-a@1.2.3':
+    resolution: {integrity: ${sha512('good')}}
+`)
+          writeInstalledMarkerPkg(profileDir, 'pkg-a')
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const deps = {
+        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+        fetchCommunityCatalog: async () => { throw new Error('network down') },
+        transaction: { runner: () => runner, profileDir },
+      }
+      const res = await installFromRegistry('p', {}, {}, deps)
+      assert.equal(res.pkg, 'pkg-a')
+      assert.equal(res.version, '1.2.3')
+      assert.deepEqual(calls.add, [{ arg: 'pkg-a@1.2.3', signal: undefined }])
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
   })
 })

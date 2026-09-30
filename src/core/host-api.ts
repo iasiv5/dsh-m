@@ -273,9 +273,12 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'self-check': {
           try {
             const latest = await d.npmLatest(ctx.pkg.name, cfg().timeoutMs ?? 20_000)
-            payload = { current: ctx.pkg.version, latest: latest.version, outdated: isNewerVersion(latest.version, ctx.pkg.version) }
+            const outdated = isNewerVersion(latest.version, ctx.pkg.version)
+            // ahead（0.8.0）：本地 dev 版领先 npm 发布——设置页改显「本地开发版」而非误导性的旧「npm 最新」
+            const ahead = !outdated && latest.version !== ctx.pkg.version
+            payload = { current: ctx.pkg.version, latest: latest.version, outdated, ahead }
           } catch (err) {
-            payload = { current: ctx.pkg.version, latest: null, outdated: false, error: err instanceof Error ? err.message : String(err) }
+            payload = { current: ctx.pkg.version, latest: null, outdated: false, ahead: false, error: err instanceof Error ? err.message : String(err) }
           }
           break
         }
@@ -440,6 +443,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'registry-config-apply': {
           if (typeof body.registryUrl !== 'string') throw new ApiProtocolError(400, '缺少 registryUrl')
           const snap = await ctx.controller.apply(body.registryUrl, { signal })
+          payload = { applied: true, ...snapshotPayload(snap, cfg()) }
+          break
+        }
+
+        case 'set-community': {
+          // 0.8.0 设置页社区开关：live 生效（内存）+ store 持久化；无需主清单重载
+          if (typeof body.enabled !== 'boolean') throw new ApiProtocolError(400, '缺少 enabled（必须为 boolean）')
+          const snap = await ctx.controller.setCommunity(body.enabled)
           payload = { applied: true, ...snapshotPayload(snap, cfg()) }
           break
         }

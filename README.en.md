@@ -43,6 +43,62 @@ The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeC
 
 After any mutation, the already-open Market and Installed views refresh the profile state together, keeping badges and cards in sync without closing and reopening the marketplace; a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The current DSH Web `0.1.5-rc.1` runtime has now live-loaded dsh-m `0.2.11`; `/dshm` ping returned version `0.2.11`, and an authenticated page request completed `303 → 200`. The reported 404 was not reproducible once the service stabilized; journal evidence showed repeated `status=75/TEMPFAIL` restarts during the incident. Live DSH `0.1.2-rc.1`, transient-fallback, and repeated install/uninstall E2E experiments remain pre-release gaps. Installs stream live pnpm progress (resolve → download → link → build).
 
+### Changed in 0.8.0 — Settings page redo (aligned with the zoned dual-catalog positioning)
+
+- **Information architecture**: Community catalog (from awesome-dsh-plugin) → Curated registry (registry.json) → dsh-m itself → About; the primary registry's user-facing name is now unified as "Curated registry".
+- **Community catalog toggle**: a new GUI switch (live effect, instant, no confirm; when off the whole card collapses to one line); new `set-community` API.
+- **Curated registry slimmed**: status fields consolidated from 7 rows to 4 (merged address, removed the hard-coded "caching" row); config status only appears when abnormal; buttons reduced to "Force refresh / Validate & apply / Restore default / Download default registry"; "Check entries reachability" removed from the GUI (`registry-diagnose` API kept).
+- **Copy fixes**: the custom-source note now says it replaces the whole primary registry and only affects the Curated zone; removed the hard-coded TTL description that didn't match reality (`timeoutMs`/`cacheTtlMin` remain config-file settings).
+- **dsh-m itself**: when the local dev build is ahead of npm, show "local dev build" instead of the misleading old "npm latest" (new `ahead` field).
+- **About**: copy aligned with the current positioning, plus GitHub repo and issue-tracker links.
+
+### Polished in 0.7.10
+
+- **Head split into three groups**: a hairline divider between the title and tab navigation — "title | nav | status + window controls" reads clearly.
+- **Version badge unified color**: the v-number no longer uses the bright primary text color; it matches the dsh-m name in secondary gray.
+- **Vertical rhythm consolidated**: window-control cells 26→28px to match tab height; version badge adjusted to 24px; maximize/restore icons unified at 12px; title weight 700→600.
+
+### Fixed in 0.7.9
+
+- **Category chips keep a stable order**: retired the "promote active to front" reordering (every click on a clipped category used to jump it to first place). Instead, when the active category falls inside the collapsed clip region, the row auto-expands so the active filter stays visible — same goal, stable order; a manual collapse under the same active category is respected, and picking another clipped category or "All" resets it.
+
+### Changed in 0.7.8
+
+- **Root cause fix for "maximize does nothing" — CSS hot-update self-healing**: the panel stylesheet was only injected once (`#dshm-css` present → skip), so after a hot update the stale stylesheet lacked rules for new classes (fullscreen/window controls) — new features appeared dead and buttons rendered as unstyled natives. The injected stylesheet now carries a content hash (djb2); reopening the panel after a bundle update swaps in the fresh styles automatically, no page refresh needed.
+- **Window-control group recolored**: dropped the raised surface for a transparent background + hairline outline (same language as the search clear button); cells widened 34→44px against mis-clicks; close keeps its red hover.
+
+### Changed in 0.7.7
+
+- **Fullscreen ported from dsh-market**: a maximize/restore control joins the panel head as a unified window-control group (equal-width maximize + close cells, hairline divider, shared SVG line icons; close tints red on hover). Fullscreen fills the viewport without rounded corners, the state is remembered in localStorage, and Esc still closes the panel.
+- 0.7.6 catch-up: version badge de-bolded and made static (no copy-on-click); sticky category row's top gap fixed (sticky anchor shifted to offset container padding); close/clear buttons moved to the outlined flat style.
+
+### Changed in 0.7.5
+
+- **Header version chip now shows dsh-m's own version** (`dsh-m v0.7.5`, click to copy; the DSH runtime version lives in Settings and `dshm ping`).
+- **× close/clear buttons redrawn**: search clear, detail-modal close, and operation-row remove now use an SVG line icon on a dedicated hover-tinted button; the search clear button floats inside the pill's right edge.
+- **Fixed the dsh-market peer warning**: `@deepseek-ai/dsh-tools` peer changed from `*` (strict semver never matches rc prereleases) to the explicit range `^0.1.7-rc.2 || ^0.2.0-rc.1 || >=0.2.0`; newer rc lines (e.g. 0.3.0-rc.x) need another entry.
+
+### Changed in 0.7.4
+
+- **Panel tabs reverted to the classic segmented style** (0.7.2 mistakenly introduced underline tabs; the rounded button group with a highlighted active tab is back).
+- **Full-width search**: fixed the search wrapper missing `display:flex`, which kept the input from stretching to the row.
+- **Filter button and page-jump control recolored**: the filter button now uses an elevated surface with squared corners to stand apart from the pill category chips (accent outline when open); the page input is a slim pill with a hairline border and an accent-colored "Go" text button.
+- **Sticky category row fully opaque**: the background now uses the opaque base token directly (the previous color-mix translucency still let card text bleed through on the dark theme); the bottom divider stays.
+
+### Changed in 0.7.3 (includes 0.7.2)
+
+- **Home layout modeled after dsh-market**: the market view becomes "zone chips → full-width search row → category chips with a trailing Filter popover"; the popover gets its own look (rounded rectangle + leading chevron) and holds sort field (npm downloads/stars/date added), direction, and page size (the old sort dropdown and pager page-size select are retired).
+- **Favorites cards open the detail modal**: fixed favorites-zone cards not responding to clicks — favorite snapshots lack full fields, so opening resolves the complete entry by id (in-memory zones → market API → snapshot fallback), reusing the detail modal and the full install path (peer confirm included).
+- **Page-number jump**: the pager gains a page input — type a valid page and hit Enter or "Go" to jump.
+- **Frosted sticky category row**: the sticky row now blurs content beneath it (backdrop blur + divider), so card text no longer bleeds through.
+- **Removed by request**: the "discover/request listing" line (dsh-m does not accept listings), the "Tasks" button (operations panel is always visible again), and the "Refresh" button (force refresh lives in Settings).
+- Note: registry entries carry no host-version requirement field, so dsh-market's "host version" filter has no data source here and was not replicated.
+
+### Fixed in 0.7.1
+
+- **Community entries are installable again**: fixes a 0.7.0 regression where installing a community listing failed with "registry 中没有该条目" (install-by-id only consulted the primary registry, never the community catalog); the path now mirrors upgrades — on a primary miss the catalog is searched by id.
+- **Compact market header**: search, refresh, and sort (community zone) move into the zone chips row; informational source banners ("official default registry / custom registry / served from local cache") are retired — their "{count} listings" figure was never wired up (always 0); the "registry unavailable" error and community fallback/stale hints remain.
+
 ### New in 0.7.0
 
 - **Zoned market** ([ADR-0004](./docs/adr/0004-zoned-market-display.md)): the dual-catalog data merge stays, but the display splits into Community (default) / Curated / Favorites zones; `dshm_search` and `dshm search` switch to `--source community|primary|all` + `--offset` real pagination (default 10 cards) — `primary_only` is retired.
