@@ -195,4 +195,39 @@ describe('drainRestored（恢复执行器）', () => {
     const next = store.clearFinished()
     assert.deepEqual(next.map((r) => r.id).sort(), ['f', 's'])
   })
+
+  it('单条 remove（终审·新伤2 的面板出口）', () => {
+    const store = storeWith([rec({ id: 'i', status: 'input', inputKind: 'peer-incompatible' }), rec({ id: 'd', status: 'done' })])
+    assert.deepEqual(store.remove('i').map((r) => r.id), ['d'])
+  })
+})
+
+describe('session 活会话标记（0.7.0 终审·新伤1）', () => {
+  it('restoreRecords 跳过带 session 标记的记录（running 不被误标「重启中断」）', async () => {
+    const out = await restoreRecords(
+      [
+        rec({ id: 's-run', status: 'running', meta: { session: true } }),
+        rec({ id: 's-q', status: 'queued', meta: { session: true } }),
+        rec({ id: 'p-run', status: 'running' }),
+      ],
+      async () => true,
+    )
+    const by = Object.fromEntries(out.map((r) => [r.id, r.status]))
+    assert.equal(by['s-run'], 'running', '活会话 running 不改标（面板重挂载 ≠ 进程重启）')
+    assert.equal(by['s-q'], 'queued', '活会话 queued 保持待泵执行')
+    assert.equal(by['p-run'], 'failed', '无标记 running 照常标「重启中断」')
+  })
+
+  it('persist 剥离 session 标记：重载后（新 store）读到无标记记录，走正常恢复分支', async () => {
+    const storage = memStorage()
+    const a = createOperationsStore(storage)
+    a.upsert(rec({ id: 'q-1', status: 'queued', meta: { session: true, npm: 'x' } }))
+    const persisted = JSON.parse(storage.getItem(OP_STORAGE_KEY))
+    assert.equal(persisted[0].meta.session, undefined, '持久层无 session 标记')
+    assert.equal(persisted[0].meta.npm, 'x', '其余 meta 字段保留')
+    const b = createOperationsStore(storage)
+    assert.equal(b.list()[0].meta.session, undefined, '重载后内存态也无标记')
+    const restored = await restoreRecords(b.list(), async () => true)
+    assert.equal(restored[0].status, 'queued', '重载后的 queued 走正常恢复（不因残留标记被跳过）')
+  })
 })

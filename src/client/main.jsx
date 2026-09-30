@@ -33,7 +33,7 @@ const ZH = {
   "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
   "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
   "op.clear": "清除已完成",
-  "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认",
+  "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认", "op.remove": "移除记录",
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
@@ -137,7 +137,7 @@ const EN = {
   "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
   "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
   "op.clear": "Clear finished",
-  "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled",
+  "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled", "op.remove": "Dismiss",
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
@@ -2097,7 +2097,7 @@ const OP_STATUS_CLS = {
   queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
 };
 
-function OperationsPanel({ records, onClearFinished }) {
+function OperationsPanel({ records, onClearFinished, onRemove }) {
   const active = records.filter((r) => r.status === "queued" || r.status === "running" || r.status === "input");
   const finished = records.filter((r) => active.indexOf(r) < 0).slice(-6);
   if (!active.length && !finished.length) return null;
@@ -2111,6 +2111,10 @@ function OperationsPanel({ records, onClearFinished }) {
       r.status === "running" ? Spin() : null,
       r.error ? h("span", { className: "dsvm-opnote" }, r.error) : null,
       r.warning ? h("span", { className: "dsvm-opnote" }, r.warning) : null,
+      // 单条移除（终审·新伤2）：input/failed/superseded 行给出口（对话区来源的 input 不再永挂）
+      (r.status === "input" || r.status === "failed" || r.status === "superseded") && onRemove
+        ? h("button", { className: "dsvm-btn", title: lookup("op.remove"), onClick: () => onRemove(r.id) }, "×")
+        : null,
     );
   return h(
     "div",
@@ -2174,7 +2178,8 @@ function MarketPanel({ onClose }) {
   const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), []);
   const runOp = useCallback(
     (kind, target, exec, meta = {}, reuseId) => {
-      const stored = opsStore.upsert({ ...(reuseId ? { id: reuseId } : {}), kind, target, status: "queued", meta });
+      // session:true = 活会话标记（终审·新伤1）：重挂载的 restore 跳过（泵仍拥有）；persist 时剥离
+      const stored = opsStore.upsert({ ...(reuseId ? { id: reuseId } : {}), kind, target, status: "queued", meta: { ...meta, session: true } });
       syncOps();
       return new Promise((resolve, reject) => {
         opsWaiters.set(stored.id, { resolve, reject });
@@ -2350,6 +2355,10 @@ function MarketPanel({ onClose }) {
             opsStore.clearFinished();
             syncOps();
           },
+          onRemove: (id) => {
+            opsStore.remove(id);
+            syncOps();
+          },
         }),
       ),
       toast
@@ -2441,7 +2450,7 @@ function ToolCardRow({ it, onInstalled }) {
     setBusy(true);
     // 审计 #13 处置（碰撞建议）：对话区卡片直连 api 保留本地反馈，但顺手 upsert 一条记录——
     // 事后打开面板可见（纯写不读，单例 store 不依赖面板挂载）
-    const rec = opsStore.upsert({ kind: "install", target: it.id, status: "running", meta: { npm: it.npm, github: it.github } });
+    const rec = opsStore.upsert({ kind: "install", target: it.id, status: "running", meta: { npm: it.npm, github: it.github, session: true } });
     try {
       const res = await api("install", { id: it.id });
       opsStore.upsert({ id: rec.id, status: "done" });

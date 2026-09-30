@@ -81,7 +81,10 @@ export function createOperationsStore(storage) {
   const persist = () => {
     if (persistDegraded) return
     try {
-      s.write(JSON.stringify(records))
+      // session 标记只活在本页内存（0.7.0 终审·新伤1）：持久化时剥离——
+      // 重挂载的 restoreRecords 靠它跳过活会话记录（泵仍拥有它们），
+      // 真正的页面重载后持久层无标记，queued 恢复 / running→「重启中断」语义照常成立。
+      s.write(JSON.stringify(records.map((r) => (r.meta && r.meta.session === true ? { ...r, meta: { ...r.meta, session: undefined } } : r))))
     } catch {
       persistDegraded = true // 配额/序列化失败：静默降级内存态
     }
@@ -142,6 +145,12 @@ export async function restoreRecords(records, stillApplies) {
   const out = []
   for (const rec of list) {
     if (!rec || typeof rec !== 'object') continue
+    if (rec.meta && rec.meta.session === true) {
+      // 活会话记录（0.7.0 终审·新伤1）：泵仍拥有它——面板重挂载不是进程重启，
+      // 不得误标「重启中断」；重载后持久层已剥离标记，自然走正常恢复分支。
+      out.push({ ...rec })
+      continue
+    }
     if (rec.status === 'queued') {
       let applies = false
       try {
