@@ -8,11 +8,11 @@
 
 [English](./README.en.md) · 中文
 
-可自定义收录清单（Registry）的 DeepSeek Harness (DSH) 插件市场：**收录 · 安装 · 卸载 · 升级**，全部本机完成。以 DSH web 插件形态运行——侧栏「插件市场」打开三视图面板，同时提供 `dshm_*` agent 工具与 `dshm` CLI。
+可自定义收录清单（Registry）的 DeepSeek Harness (DSH) 插件市场：**收录 · 安装 · 卸载 · 升级**，全部本机完成。以 DSH web 插件形态运行——侧栏「插件市场」打开三视图面板，同时提供 `dshm_*` agent 工具与 `dshm` CLI；同一包装入 **Web（`web`）与官方 Desktop（`desktop`）两个 profile**（0.9.0 起，能力表见变更节）。
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp" alt="侧栏「插件市场」面板——市场视图：收录卡片流、关键词搜索与分类筛选" width="100%">
-  <p><sub>侧栏「插件市场」· 市场视图：收录卡片流 · 搜索 · 分类筛选 · 展开即装</sub></p>
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp" alt="侧栏「插件市场」面板——市场视图：社区 / 精选 / 收藏三分区、分类 chips 与插件卡片（已实测 / 已安装徽标、npm 与 GitHub 详情链接）" width="100%">
+  <p><sub>侧栏「插件市场」· 市场视图：社区 4,200+ · 精选 23 · 收藏，卡片即点即装</sub></p>
 </div>
 
 ## 30 秒上手
@@ -38,10 +38,15 @@
 |---|---|
 | **市场** | **分区制**（0.7.0）：**社区**（默认落地页，4,000+ 条全量目录）与**精选**（手工策展主清单，单页直出）两个独立分区，各有自己的分类/搜索/排序/分页状态（切 tab 互不重置）；另有**收藏**分区（浏览器本地书签，自动检测下架条目并一键清理）。社区区：分类 chips 两行折叠 + 吸顶收缩、排序（下载量/Star/收录日期 × 升降）、页码窗口化分页（24/48/96 每页）、卡片 byline（作者/下载量/Star）；卡片点开**详情 Modal**（卡片信息超集：下载量窗口三要素、截图灯箱、能力披露默认收起、安装命令）；npm 源锁定最新精确版本，GitHub 源锁定 release/tag 指向的 commit |
 | **操作记录** | 安装/升级/卸载/开关全部走全局操作记录（0.7.0）：状态不挂卡片，翻页/搜索/切 tab 不丢；localStorage 持久化，宿主重载后自动恢复未完成操作（逐条校验「此刻仍成立才执行」）；良性前提消失以中性「已跳过」呈现；已装页支持「全部更新 (N)」批量入队 |
-| **已装** | web profile 实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断）；**运行相位徽标**（●active / ●failed / ○pending）与**一键开关**（0.4.0：委派官方 pluginManager 服务活体生效，服务缺席时文件级编辑 + 重启提示；dsh-m 自身与官方宿主命脉锁定不可开关） |
+| **已装** | 当前 profile（web / desktop，0.9.0 起）实装列表，标注「市场安装 / 非市场安装」；可升级徽标、升级、两段式确认卸载；📖 README 预览（64KB 截断）；**运行相位徽标**（●active / ●failed / ○pending）与**一键开关**（0.4.0：委派官方 pluginManager 服务活体生效，服务缺席时文件级编辑 + 重启提示；dsh-m 自身与官方宿主命脉锁定不可开关） |
 | **设置** | registry 地址草稿 +「强制刷新 / 校验并应用 / 恢复默认 / 下载默认 registry.json」；配置地址、生效来源与状态一目了然（仅异常时提示）；社区目录开关；dsh-m 自更新 |
 
-安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 763 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
+<div align="center">
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/settings.webp" alt="设置视图——社区清单状态卡（目录版本 / 获取线路 / 收录条目）、精选清单配置卡（地址草稿与强制刷新 / 校验并应用 / 恢复默认 / 下载默认清单）与关于卡" width="86%">
+  <p><sub>设置视图 · 社区清单状态、精选清单配置与 dsh-m 自更新</sub></p>
+</div>
+
+以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
 ### 0.9.0 新增：官方 Desktop（双 profile）支持
 
