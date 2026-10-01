@@ -148,16 +148,17 @@
     {
       "id": "dsh-quota-watch",
       "name": "DSH Quota Watch",
-      "description": "侧栏额度监控卡片：显示 GLM Coding Plan 窗口与 Copilot 额度快照，凭据宿主解析，不留存历史；已适配 0.1.7-rc.2，详见仓库。",
+      "description": "GLM 与 Copilot 额度悬浮球：胶囊、详情面板与侧栏卡片，宿主解析凭据，适配 web 与 desktop。",
       "category": "tools",
       "tags": [
         "配额",
-        "监控",
+        "悬浮球",
         "GLM",
         "Copilot"
       ],
       "verified": [
-        "0.1.7-rc.2"
+        "0.1.7-rc.2",
+        "0.1.0"
       ],
       "source": "npm",
       "npm": "@iasiv5/dsh-quota-watch",
