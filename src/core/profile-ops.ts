@@ -39,7 +39,34 @@ export interface DesktopManagerLike {
   listBundles?(): Promise<Array<{ name: string; installed?: boolean; enabled?: boolean }>>
 }
 
-export type DesktopOpsErrorCode = 'no-manager' | 'install-refused' | 'enable-failed' | 'remove-failed' | 'verify-failed'
+export type DesktopOpsErrorCode = 'no-manager' | 'install-refused' | 'enable-failed' | 'remove-failed' | 'verify-failed' | 'release-age-wait'
+
+function humanDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '不到 1 分钟'
+  const minutes = Math.round(ms / 60_000)
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`
+}
+
+/**
+ * 0.9.10：desktop profile 的 pnpm 供应链策略（minimumReleaseAge）拒绝「太新鲜」的版本——
+ * 这是策略在正确工作（防供应链攻击的发布等待期），不是环境故障。解析出条目/发布时刻/
+ * 策略截止，翻译成「何时可重试」的诚实指引，而不是甩一屏 pnpm 原文（dsh-market #732 同态度）。
+ */
+function releaseAgeWaitMessage(diagnostic: string): string {
+  const m = /(\S+@\S+) was published at ([^,]+), within the minimumReleaseAge cutoff \(([^)]+)\)/.exec(diagnostic)
+  if (!m) {
+    return '官方管理器的供应链策略（minimumReleaseAge）未满足：新发布的版本需满等待期才能装入 desktop profile。稍后再点升级即可；等待期内也可改用 DSH Web 安装'
+  }
+  const entry = m[1]!
+  const publishedAt = Date.parse(m[2]!)
+  const cutoff = Date.parse(m[3]!)
+  const deadline = Number.isFinite(publishedAt) && Number.isFinite(cutoff) ? publishedAt + (Date.now() - cutoff) : NaN
+  const when = Number.isFinite(deadline) ? `约 ${humanDuration(deadline - Date.now())}后（${new Date(deadline).toLocaleString('zh-CN', { hour12: false })}）` : '稍后'
+  return `官方管理器的供应链策略（minimumReleaseAge）要求新发布版本满等待期才能安装：${entry} 尚在等待期内，预计 ${when}可重试。等待期内也可改用 DSH Web 安装同版本`
+}
 
 export class DesktopOpsError extends Error {
   readonly code: DesktopOpsErrorCode
@@ -266,6 +293,11 @@ async function runManagedInstall(
     const pending = Array.isArray(change.pendingBuilds) ? change.pendingBuilds.filter((n) => typeof n === 'string') : []
     if (change.packageResult?.kind === 'build-blocked' && pending.length > 0) {
       throw new DesktopBuildApprovalNeeded(pending)
+    }
+    // 0.9.10：供应链等待期（minimumReleaseAge）——策略正确工作，翻译成「何时可重试」
+    const diagnosticText = `${change.error?.diagnostic ?? ''}\n${change.error?.code ?? ''}`
+    if (/ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION|minimumReleaseAge/i.test(diagnosticText)) {
+      throw new DesktopOpsError('release-age-wait', releaseAgeWaitMessage(diagnosticText))
     }
     if (change.stage === 'enable') {
       throw new DesktopOpsError('enable-failed', `安装后启用阶段失败（${pkg}；application=failed、stage=enable${change.error?.code ? `、error=${change.error.code}` : ''}）：包已写入但未能启用，请在官方 Desktop 插件页查看状态或重试`)

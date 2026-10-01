@@ -306,7 +306,9 @@ describe('fetchCommunityCatalog（获取链）', () => {
     const elapsed = Date.now() - t0
     assert.equal(state.status, 'unavailable')
     assert.ok(state.errors.some((e) => e.includes('预算耗尽')))
-    assert.ok(elapsed < 2000, `elapsed=${elapsed}`)
+    // 契约是「不永久挂起」（预算 400ms 收口）；上限给足裕量——全量套件并行时定时器饥饿
+    // 曾把 2s 断言顶爆（2026-10-01 两次闪断），10s 依旧能抓住 hang-forever 回归
+    assert.ok(elapsed < 10_000, `elapsed=${elapsed}`)
   })
 
   it('⑩ meta 篡改（version=../../etc）：视为无缓存且损坏文件被清理', async () => {

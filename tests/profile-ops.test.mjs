@@ -156,6 +156,27 @@ describe('desktopInstallFromRegistry：守门与委派', () => {
     )
   })
 
+  it('0.9.10：ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION → release-age-wait + 诚实等待指引（策略正确工作，非故障）', async () => {
+    const diagnostic = [
+      '? Verifying lockfile against supply-chain policies (8 entries)...',
+      '✗ Lockfile failed supply-chain policy check (8 entries in 350ms)',
+      '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:',
+      '  dsh-m@0.9.8 was published at 2026-10-01T14:26:10.989Z, within the minimumReleaseAge cutoff (2026-09-30T15:08:06.630Z)',
+    ].join('\n')
+    const { service } = managerStub({ change: { application: 'failed', error: { code: 'operation-error', diagnostic } } })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service)),
+      (err) => {
+        assert.ok(err instanceof DesktopOpsError && err.code === 'release-age-wait', `应归类 release-age-wait：${err.message.slice(0, 80)}`)
+        assert.ok(err.message.includes('dsh-m@0.9.8'), '应点名等待期内的条目')
+        assert.ok(err.message.includes('minimumReleaseAge'), '应说明是供应链等待期策略')
+        assert.ok(err.message.includes('DSH Web'), '应给出等待期内的替代路径')
+        assert.ok(!err.message.includes('ERR_PNPM'), '不应向用户甩 pnpm 原始码')
+        return true
+      },
+    )
+  })
+
   it('复读校验：listBundles 未见目标在装 → verify-failed（不冒充成功）', async () => {
     const { service } = managerStub({ bundles: [{ name: 'other-pkg', installed: true, enabled: true }] })
     await assert.rejects(

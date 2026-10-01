@@ -48,6 +48,12 @@
 
 以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.10 修复：Desktop 自升级撞上官方供应链等待期（minimumReleaseAge）→ 诚实指引发成可读
+
+- **场景**：点升级角标走官方管理器时，desktop profile 的 pnpm 供应链策略（`minimumReleaseAge`，发布满 24h 才可安装）拒绝了刚发布的版本——`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`。**这是策略在正确工作**（防供应链攻击的发布等待期），不是故障；但 dsh-m 此前把它当普通失败甩一屏 pnpm 原文。
+- **修复**：管理器结果判定识别该策略码，翻译成诚实指引——点名等待期内的条目与发布时刻、按策略推算「预计何时可重试」，并给出等待期内的替代路径（DSH Web 安装同版本）。绝不做策略绕过（等待期是防供应链攻击的红线，dsh-market #732 同态度）。
+- 附带：community 获取链 ⑨ 的挂起上限断言 2s→10s（全量套件并行定时器饥饿下两次闪断；契约「不永久挂起」不变）。
+
 ### 0.9.9 修复：备用线路接住后不再弹红色「主线路失败」提示（提示收敛）
 
 - **场景**：默认精选清单双线路（raw → jsDelivr）里主线路 `default-raw` 失败、备用线路成功接管时，设置页仍弹红色「远端提示：default-raw 失败：fetch failed…可稍后重试或检查网络后重试」——对着已经自愈的数据报警，还带着不成立的建议（大陆网络下 raw 间歇不可达是常态，这正是备用线路存在的原因）。
