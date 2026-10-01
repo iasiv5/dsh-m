@@ -266,9 +266,15 @@ function communityLabels(data) {
 
 // ---------- 样式（跟随 DSH Web 主题变量，深浅色自适应） ----------
 const CSS = `
-.dshm-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.48));display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box}
+.dshm-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.48));display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-windows-titlebar-height,0px)) 16px 24px;box-sizing:border-box}
 .dshm-panel{width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff));background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
-.dshm-overlay.full{padding:0}
+/* 0.9.4 Windows Desktop 全屏修复：壳在 html 上设 --dsh-windows-titlebar-height（40px，
+   titleBarStyle:hidden + titleBarOverlay:42 系统绘制 — □ ✕），其上还有全宽
+   -webkit-app-region:drag 拖拽带——该带按布局参与拖拽判定、无视 z-index/绘制顺序，
+   面板头部落进去点击会被窗口拖拽吞掉，还原/关闭键更被系统键悬浮遮挡。
+   与壳自家 overlay 同款对策（padding/inset-top: var(--dsh-windows-titlebar-height)）让出该带；
+   DSH Web / 浏览器无此变量 → 回落 0px，行为与旧版逐字节一致。 */
+.dshm-overlay.full{padding:0;top:var(--dsh-windows-titlebar-height,0px)}
 .dshm-panel.full{width:100%;height:100%;border-radius:0}
 /* 窗口控制组（0.7.7）：最大化/关闭连体按钮组——等宽两格 + 发丝分隔线，统一线条图标 */
 /* 窗口控制组（0.7.7/0.7.8）：最大化/关闭连体按钮组——透明底 + 发丝外框，与搜索清除钮同一配色语言；宽格防误触 */
