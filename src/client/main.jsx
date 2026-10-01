@@ -21,6 +21,7 @@ const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestar
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
+const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -112,6 +113,7 @@ const ZH = {
   "notify.uninstalled": "已卸载 {pkg}", "notify.livedisabled": "（已先下线运行中的界面）",
   "notify.leftovers": "；检测到疑似残留数据：{paths}",
   "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
+  "notify.selfupgraded": "dsh-m 已升级（v{from} → v{to}）", "notify.selfupgraded.failed": "dsh-m 升级失败：{err}",
   "failed.install": "安装失败：{err}", "failed.uninstall": "卸载失败：{err}", "failed.upgrade": "升级失败：{err}",
   "failed.load": "加载失败：{err}", "failed.read": "读取失败：{err}", "failed.open": "打开市场面板失败:",
   "banner.done": "变更完成，需要重启 DSH Web 后生效。",
@@ -121,6 +123,7 @@ const ZH = {
   "restart.hint.done": "已请求重启 DSH web（via {via}）。服务恢复后 DSH Web 会在后台自动重连。",
   "profile.restartHint": "变更完成。Desktop 插件由官方应用管理：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏）以加载新状态。",
   "profile.chipTitle": "当前 DSH profile：{name}（Desktop 首发仅支持只读市场、安装新包与开关）",
+  "selfupdate.available": "发现新版本 v{v}，点击升级", "selfupdate.ahead": "本地开发版（领先 npm：v{v}）", "selfupdate.checking": "检查更新中…",
   "phase.resolving": "解析依赖", "phase.downloading": "下载", "phase.linking": "链接安装", "phase.building": "构建脚本", "phase.ready": "准备中",
   "readme.show": "📖 README", "readme.hide": "收起 README", "readme.loading": "加载 README… ", "readme.none": "（该插件没有 README）",
   "readme.truncated": "…（超过 64KB 已截断，完整内容见插件目录）",
@@ -217,6 +220,7 @@ const EN = {
   "notify.uninstalled": "Uninstalled {pkg}", "notify.livedisabled": " (live UI disabled first)",
   "notify.leftovers": "; possible leftover data: {paths}",
   "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgradehint": " (note: this plugin ran build scripts)",
+  "notify.selfupgraded": "dsh-m upgraded (v{from} → v{to})", "notify.selfupgraded.failed": "dsh-m upgrade failed: {err}",
   "failed.install": "Install failed: {err}", "failed.uninstall": "Uninstall failed: {err}", "failed.upgrade": "Upgrade failed: {err}",
   "failed.load": "Load failed: {err}", "failed.read": "Read failed: {err}", "failed.open": "Failed to open the marketplace panel:",
   "banner.done": "Changes applied. Restart DSH Web to take effect.",
@@ -226,6 +230,7 @@ const EN = {
   "restart.hint.done": "Restart requested (via {via}). DSH Web will reconnect in the background after the service returns.",
   "profile.restartHint": "Changes applied. Desktop plugins are managed by the official app: quit and reopen the Desktop app (closing the window may only hide it) to load the new state.",
   "profile.chipTitle": "Current DSH profile: {name} (Desktop first release supports read-only market, installing new packages, and toggles)",
+  "selfupdate.available": "New version v{v} available — click to upgrade", "selfupdate.ahead": "Local dev build (ahead of npm: v{v})", "selfupdate.checking": "Checking for updates…",
   "phase.resolving": "Resolving", "phase.downloading": "Downloading", "phase.linking": "Linking", "phase.building": "Building", "phase.ready": "Preparing",
   "readme.show": "📖 README", "readme.hide": "Hide README", "readme.loading": "Loading README… ", "readme.none": "(No README)",
   "readme.truncated": "…(truncated at 64KB — see the plugin directory for full content)",
@@ -449,6 +454,12 @@ button.dshm-badge:hover{filter:brightness(.95)}
 /* 头部 dsh-m 版本角标：等宽小字圆角，静态展示不加粗不可点（0.7.5 起改显 dsh-m 版本） */
 .dshm-dshchip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:5px 10px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;flex:none}
 .dshm-dshchip-v{font-weight:400;color:inherit}
+/* 0.9.1：仅 self-check 判 outdated 才点亮——warn 态为可点按钮（点击即自升级）；其余静默复用静态样式 */
+button.dshm-dshchip{cursor:pointer}
+button.dshm-dshchip:disabled{cursor:default;opacity:.75}
+.dshm-dshchip.warn{border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary,#b45309) 45%,transparent);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309)}
+.dshm-dshchip.warn:hover:not(:disabled){filter:brightness(.96)}
+.dshm-dshchip .dshm-up{font-weight:600}
 
 /* 0.4.0：开关 / 相位点 / 兼容确认弹窗 */
 .dshm-dot{font-size:9px;line-height:1;vertical-align:middle;margin-right:2px}
@@ -2241,11 +2252,77 @@ const TABS = [
   ["settings", "tab.settings", null],
 ];
 
-// ---------- 头部 dsh-m 版本角标（静态展示：数据源 ping.version；不加粗、不可点——名字足够短无需复制） ----------
-function DshmVersionChip({ version }) {
+// ---------- 头部 dsh-m 版本角标（0.9.1：常态静默只显版本；self-check 判 outdated 才点亮为可点升级角标） ----------
+// 数据源：host self-check（npm latest vs 装机版本）；localStorage TTL 缓存防每次开面板都打 npm。
+// 静默口径（主人 2026-10-01）：已最新 / 检查失败 / 本地 dev 领先 npm 一律维持 0.7.5 静态样式。
+function DshmVersionChip({ version, notify, initialCheck }) {
+  const [check, setCheck] = useState(() =>
+    initialCheck !== undefined
+      ? initialCheck
+      : (typeof window !== "undefined" && window.localStorage
+          ? readSelfCheckCache(window.localStorage, { version })
+          : null),
+  );
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (initialCheck !== undefined) return; // 测试注入态不联网
+    let live = true;
+    api("self-check")
+      .then((data) => {
+        if (!live) return;
+        if (data && typeof data === "object" && typeof data.current === "string") {
+          writeSelfCheckCache(typeof window !== "undefined" && window.localStorage ? window.localStorage : null, data);
+          setCheck(data);
+        }
+      })
+      .catch(() => {}); // 检查失败静默——「没有新版本」不打扰
+    return () => { live = false; };
+  }, [initialCheck]);
+  const doUpgrade = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await api("self-upgrade");
+      clearSelfCheckCache(typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
+      // 升级成功：缓存已清、本地判回最新态；重启横幅由 notify 的 needsRestart 通道给出
+      setCheck({ current: version, latest: null, outdated: false, ahead: false });
+      notify({
+        kind: "ok",
+        needsRestart: true,
+        text: lookup("notify.selfupgraded", { from: version, to: res.version || "latest" }) +
+          (res.buildApprovals && res.buildApprovals.length
+            ? lookup("notify.builds", { names: res.buildApprovals.join(", ") })
+            : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
+      });
+    } catch (e) {
+      // Desktop 能力表拒绝（结构化 409）也走这里：错误原文即官方生命周期指引
+      notify({ kind: "err", text: lookup("notify.selfupgraded.failed", { err: (e && e.message) || e }) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const state = deriveChipState(check, version);
+  if (state.kind === "outdated") {
+    return h(
+      "button",
+      {
+        type: "button",
+        className: "dshm-dshchip warn",
+        title: lookup("selfupdate.available", { v: state.latest }),
+        onClick: doUpgrade,
+        disabled: busy,
+      },
+      "dsh-m ",
+      h("span", { className: "dshm-dshchip-v" }, `v${version}`),
+      busy ? h(Spin) : h("span", { className: "dshm-up" }, `⬆ v${state.latest}`),
+    );
+  }
+  const title = state.kind === "ahead" && state.latest
+    ? lookup("selfupdate.ahead", { v: state.latest })
+    : `dsh-m v${version}`;
   return h(
     "span",
-    { className: "dshm-dshchip", title: `dsh-m v${version}` },
+    { className: "dshm-dshchip", title },
     "dsh-m ",
     h("span", { className: "dshm-dshchip-v" }, `v${version}`),
   );
@@ -2468,7 +2545,7 @@ function MarketPanel({ onClose }) {
           ),
         ),
         h("span", { className: "dshm-spacer" }),
-        pluginVersion ? h(DshmVersionChip, { version: pluginVersion }) : null,
+        pluginVersion ? h(DshmVersionChip, { version: pluginVersion, notify }) : null,
         profile && profile.kind !== "web"
           ? h("span", { className: "dshm-dshchip", title: lookup("profile.chipTitle", { name: profile.name }) }, profile.name)
           : null,

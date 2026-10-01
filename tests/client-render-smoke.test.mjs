@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip };\n',
   )
   await build({
     entryPoints: [entry],
@@ -103,5 +103,40 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(html.includes('demo'))
     // 0.7.2 修复回归门：收藏卡可点击（Card role=button；onToggle→onOpen 接线为客户端事件，SSR 验语义结构）
     assert.ok(html.includes('role="button"'), '收藏卡是可点按钮语义')
+  })
+
+  // 0.9.1 头部版本角标三态（initialCheck 注入，SSR 不跑 effect 不联网）：
+  // 静默口径——无更新/ahead 必须是静态 span，只有 outdated 点亮为 warn 可点按钮
+  it('DshmVersionChip 静默态（无缓存/已最新）渲染为静态 span，无升级入口', () => {
+    for (const initialCheck of [null, { current: '0.9.1', latest: '0.9.1', outdated: false, ahead: false }]) {
+      const html = renderToString(h(components.__DshmVersionChip, { version: '0.9.1', notify: () => {}, initialCheck }))
+      assert.ok(html.includes('dshm-dshchip'), '角标在')
+      assert.ok(!html.includes('<button'), '静默态不可点（无 button）')
+      assert.ok(!html.includes('⬆'), '静默态无升级箭头')
+    }
+  })
+
+  it('DshmVersionChip outdated 点亮 warn 可点按钮并带最新版本号', () => {
+    const html = renderToString(h(components.__DshmVersionChip, {
+      version: '0.9.0',
+      notify: () => {},
+      initialCheck: { current: '0.9.0', latest: '0.9.1', outdated: true, ahead: false },
+    }))
+    assert.ok(html.includes('<button'), 'outdated 是可点按钮')
+    assert.ok(html.includes('dshm-dshchip warn'), 'warn 样式在')
+    assert.ok(html.includes('⬆ v0.9.1'), '箭头 + 最新版本号在')
+    // Node 21+ 有全局 navigator.language → browserLang 可能落 en；两语言都合法
+    assert.ok(html.includes('发现新版本 v0.9.1') || html.includes('New version v0.9.1'), 'title 提示在')
+  })
+
+  it('DshmVersionChip ahead（本地 dev 领先 npm）静默，仅 title 提示', () => {
+    const html = renderToString(h(components.__DshmVersionChip, {
+      version: '0.9.1',
+      notify: () => {},
+      initialCheck: { current: '0.9.1', latest: '0.9.0', outdated: false, ahead: true },
+    }))
+    assert.ok(!html.includes('<button'), 'ahead 态不可点')
+    assert.ok(!html.includes('⬆'), 'ahead 态无升级箭头')
+    assert.ok(html.includes('本地开发版') || html.includes('Local dev build'), 'title 提示本地开发版')
   })
 })
