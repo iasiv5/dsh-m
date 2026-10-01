@@ -35,7 +35,7 @@
 
 - 设计定稿：`docs/DESIGN.md` §2.6（0.7.0 grilling 定稿 2026-09-29）+ §2.5 修订标注
 - 决策记录：`docs/adr/0004-zoned-market-display.md`
-- 术语表：`CONTEXT.md`（社区区/精选区/收藏/操作记录）
+- 术语表：`GLOSSARY.md`（社区区/精选区/收藏/操作记录）
 - 评审与碰撞共识：`docs/plans/2026-09-29-zoned-market-upgrade-plan-review.md`
 - 现状证据：`/home/ubuntu/workspace/dshm-community-catalog-report.md`（行号可能随重构漂移，以符号定位为准）
 
@@ -341,7 +341,7 @@
 - 每完成一个任务，运行该任务定义的验证；人工检查单项目由 owner 在 live DSH Web（127.0.0.1:3080）执行，涉及插件重装遵循 workspace 既有流程。
 - 遇到阻塞、重复失败或计划与仓库现实不符（行号漂移按符号定位），立即停下说明，不要猜。
 - 当前分支若在 `main`/`master` 且未获明确同意，开始实现前先向 owner 确认分支策略。
-- **实现开始前先把本批输入工件 commit 入库**（DESIGN.md / CONTEXT.md / ADR-0004 / 两份 plan 文档），避免分支操作丢失 grilling 产出。
+- **实现开始前先把本批输入工件 commit 入库**（DESIGN.md / GLOSSARY.md / ADR-0004 / 两份 plan 文档），避免分支操作丢失 grilling 产出。
 - 全部任务完成后，运行最终验证并输出修改摘要。
 
 ## 最终验证

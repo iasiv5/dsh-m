@@ -250,7 +250,7 @@ export async function runProfileTransaction(
 - grilling 共识（17 项决定，2026-09-07 定稿）。
 - design-it-twice 定稿接口（v3 按两轮评审修订）。
 - 评审报告第一轮（🔴×6、🟡×7、准确性 ×2）与第二轮（🔴×6、🟡×8、裁决接受 ×3）——处置见「评审处置记录」。
-- `CONTEXT.md`（v3 同步修订）。
+- `GLOSSARY.md`（v3 同步修订）。
 - `docs/DESIGN.md` §3（阶段③重写）。
 
 ## 文件结构与职责
@@ -270,7 +270,7 @@ export async function runProfileTransaction(
 - Modify: `tests/npm-integrity.test.mjs`（③ 旧注入迁移 + 加固原语的新测试承载于本文件或 profile-transaction 测试）
 - Modify: `tests/uninstall-patch.test.mjs`（② market 级迁移；直测保留）
 - Modify: `tests/host-api.test.mjs`（② self-upgrade 委派用例；③ detail 投影用例）
-- Modify: `docs/DESIGN.md` §3（③）；`CONTEXT.md`（v3 已同步）
+- Modify: `docs/DESIGN.md` §3（③）；`GLOSSARY.md`（v3 已同步）
 - 边界保持稳定：`installed.ts`、`versions.ts`、`live-plugin.ts`、`registry*.ts`、`src/client/**`。
 
 ## 任务清单
@@ -278,8 +278,8 @@ export async function runProfileTransaction(
 ### Task 0: 固定实现基线（git ref）
 
 - 目标：为最终零 diff 门禁固定基线；**不依赖跨任务 shell 变量**。
-- [ ] Step 1: 提交在案文档（当前工作区有未提交的 `CONTEXT.md` 与本计划文件）
-- Run: `git add CONTEXT.md docs/plans/2026-09-07-profile-transaction-implementation-plan.md && git commit -m "docs(tx): Profile 变更事务实施计划（终稿）+ 领域术语" && git status --porcelain`
+- [ ] Step 1: 提交在案文档（当前工作区有未提交的 `GLOSSARY.md` 与本计划文件）
+- Run: `git add GLOSSARY.md docs/plans/2026-09-07-profile-transaction-implementation-plan.md && git commit -m "docs(tx): Profile 变更事务实施计划（终稿）+ 领域术语" && git status --porcelain`
 - Expected: 提交成功且 `git status --porcelain` 无输出（工作区干净；若仍有其他未跟踪/修改文件，先与用户确认处理方式）。
 - [ ] Step 2: 创建基线 ref
 - Run: `git update-ref refs/dsh-plan/profile-transaction-base HEAD && git rev-parse refs/dsh-plan/profile-transaction-base`
@@ -542,7 +542,7 @@ export async function runProfileTransaction(
 | 🟡6 npmPackument 孤儿 | 采纳：删除顶层字段，统一 `transaction.warmPackument` |
 | 🟡7 fixture 非原始文本 | 采纳：`UNUSED_PATCH_TEXT` 用 rewrite 前原始文本；另两个标注「事故同形摘要」 |
 | 🟡8 阶段范围描述 | 采纳：①npm+B1+原语 / ②三门+github 收紧+锁 / ③删桥+贯通 |
-| 终审三裁决（B2 语义/fsync/排队取消） | 均已按接受意见落实；字段更名同步 CONTEXT.md |
+| 终审三裁决（B2 语义/fsync/排队取消） | 均已按接受意见落实；字段更名同步 GLOSSARY.md |
 
 ### 第三轮终审（v4 处置）
 | 评审项 | 处置 |

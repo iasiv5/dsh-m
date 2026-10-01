@@ -1,6 +1,6 @@
 # 开关写路径委派官方 pluginManager 服务，服务缺席时降级自实现
 
-dsh-m 的开关（见 CONTEXT.md）需要对 `cordis.patch.yml` / `dsh.profile.bundles` 做与官方插件管理完全同语义的写入。我们决定：写路径先 `ctx.get('pluginManager')` 运行时探测并委派官方服务（白拿保护名单判定、unaddressable 识别、hmr 活体重组、与官方 UI 的锁与事件一致性），服务缺席时降级为 loader `entry.update()` 直操作 + 自带文件锁的保注释 YAML 编辑；读路径（enabled / 运行相位）始终自读 loader entries，不随写路径切换，避免委派/降级双模式读源漂移。探测按服务存在性、不判 DSH 版本号，与 settings 兼容层同一决策传统。
+dsh-m 的开关（见 GLOSSARY.md）需要对 `cordis.patch.yml` / `dsh.profile.bundles` 做与官方插件管理完全同语义的写入。我们决定：写路径先 `ctx.get('pluginManager')` 运行时探测并委派官方服务（白拿保护名单判定、unaddressable 识别、hmr 活体重组、与官方 UI 的锁与事件一致性），服务缺席时降级为 loader `entry.update()` 直操作 + 自带文件锁的保注释 YAML 编辑；读路径（enabled / 运行相位）始终自读 loader entries，不随写路径切换，避免委派/降级双模式读源漂移。探测按服务存在性、不判 DSH 版本号，与 settings 兼容层同一决策传统。
 
 ## Considered Options
 

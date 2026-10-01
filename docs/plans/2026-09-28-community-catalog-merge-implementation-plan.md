@@ -13,7 +13,7 @@
 ## 目标
 
 - 为 dsh-m 叠加只读的社区清单（awesome-dsh-plugin 目录，锚定 npm 包 `dsh-plugin-catalog`），与主清单合并为合并市场（主清单恒优先），GUI / agent 工具 / CLI 三端一致。
-- 全部语义以 `docs/DESIGN.md` §2.5 与 §9.3（Q38–Q46）为准；术语以 `CONTEXT.md` 为准。
+- 全部语义以 `docs/DESIGN.md` §2.5 与 §9.3（Q38–Q46）为准；术语以 `GLOSSARY.md` 为准。
 
 ## 架构快照
 
@@ -34,7 +34,7 @@
 
 ## 输入工件
 
-- `docs/DESIGN.md` §2.5、§9.3、§4/§5；`docs/adr/0003-community-catalog-merge.md`；`CONTEXT.md`
+- `docs/DESIGN.md` §2.5、§9.3、§4/§5；`docs/adr/0003-community-catalog-merge.md`；`GLOSSARY.md`
 - fixture：`tests/fixtures/community-catalog-sample.json`（入库的人工裁剪工件；字段对照上游 schema 核对，不依赖工作站临时文件）
 
 ## 文件结构与职责

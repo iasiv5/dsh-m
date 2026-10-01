@@ -55,7 +55,7 @@
   1. （高）`owner` 字段三处消费（Task 10 byline / Task 12 Modal / Task 14 收藏快照）零处生产——Task 1 透传清单补第 9 字段 `owner?: string`（truthy 缺失不渲染；不得从合成 id 前缀解析，id 折叠会失真）。
   2. （中）browserLang 映射描述与被复用的实现相反（计划误写 `zh*→zh、其余→en`，实现是 `en*→en、其余→zh`）——全局约束与 Task 10 措辞改为与实现逐字一致，代码零改动；本记录第一节 MINOR 表同步勘误。
   3. （中）`skipped` 语义引入（Task 2）与 `community=disabled` 断言改造（原排 Task 7）时点错位，Task 2 收口必红——断言改写前移进 Task 2 Step 3，Task 7 清单保留其余三条。
-- 轻微提示（已采纳入计划执行纪律）：实现开始前先 commit 本批输入工件（DESIGN.md / CONTEXT.md / ADR-0004 / 两份 plan 文档），避免分支操作丢失 grilling 产出。
+- 轻微提示（已采纳入计划执行纪律）：实现开始前先 commit 本批输入工件（DESIGN.md / GLOSSARY.md / ADR-0004 / 两份 plan 文档），避免分支操作丢失 grilling 产出。
 
 ## 五、执行审计与碰撞（2026-09-30，实施完成后）
 

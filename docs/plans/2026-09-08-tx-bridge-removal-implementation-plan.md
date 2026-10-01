@@ -20,7 +20,7 @@
 
 - **只删不加**：不新增任何接口、行为、文案（grilling Q1 共识——邻接清理如 `tools.ts` 重复合并、`versions.ts` 内部复制，各自独立成 commit，不进本计划）。
 - `rewritePnpmError` 的三段中文指引文案随函数消亡，**不在本次**搬移到分类 seam 后侧做 note 富化（Q2 共识；富化作为独立后续任务排期）。
-- 不修改 `DESIGN.md` / `CONTEXT.md`，不写 ADR（Q3 + domain-modeling 结论：不满足 ADR 三条件）。
+- 不修改 `DESIGN.md` / `GLOSSARY.md`，不写 ADR（Q3 + domain-modeling 结论：不满足 ADR 三条件）。
 - `docs/plans/` 历史计划文档（含 2026-09-07 事务计划）对已删符号的历史提及**保留不动**——它们是时间点记录。
 - `lib/` 为 gitignored 构建产物：不提交构建产物，但最终验证必须含 `npm run build` 证明可构建。
 - 验证命令沿用仓库 npm scripts；环境 Node ≥ 22、bash。

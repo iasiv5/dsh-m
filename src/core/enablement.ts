@@ -1,5 +1,5 @@
 /**
- * 开关读路径合成（0.4.0，plan Task 4；CONTEXT.md：开关/运行相位/委派降级）。
+ * 开关读路径合成（0.4.0，plan Task 4；GLOSSARY.md：开关/运行相位/委派降级）。
  *
  * 读路径始终自读（ADR-0001）：loader entries（经 live-plugin.ts 绑定的宿主引用）
  * ⋈ 已装清单（installed.ts，含包内补丁层行枚举）⋈ profile bundles 数组 ⋈ profile

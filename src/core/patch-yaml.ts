@@ -2,7 +2,7 @@
  * cordis 补丁层 YAML 的三个纯函数（0.4.0 开关功能，DESIGN/plan Task 2）：
  *
  * 1) readBundlePatchRows —— 包内 `cordis.patch.yml`（dsh.bundle.patch 层）行枚举，
- *    供「单行/多行插件」粒度判定（CONTEXT.md：行覆盖 vs Bundle 选择）；
+ *    供「单行/多行插件」粒度判定（GLOSSARY.md：行覆盖 vs Bundle 选择）；
  * 2) planRowOverride —— 官方 `writePluginEnabled`（dsh-plugin-manager L881-916）的纯函数版：
  *    在 profile `cordis.patch.yml` 文本上做保注释的 `disabled` 覆盖编辑（findLast 按 id 匹配、
  *    跳过含 insert 的行、name 可选限定、已是目标态 changed:false、无匹配 append `{id, disabled}`；
