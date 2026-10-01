@@ -854,16 +854,56 @@ async function loadCustomChain(
   }
 }
 
-/** active 读取：default/custom 各自 fallback；网络成功后可在本 namespace 内 prune。 */
+// 0.9.14 SWR：过期 cache 同步先回 stale，网络刷新转入后台单飞（key = namespace§profile§cacheKey；
+// 单飞闭包捕获本次调用的 cfg/opts——含 defaultRoutes 测试缝，signal 除外；.finally 自清）。
+const backgroundFlights = new Map<string, Promise<void>>()
+/** 测试钩子：等待当前全部后台刷新单飞 settle（allSettled，不抛）。 */
+export function _waitForRegistryBackgroundForTests(): Promise<unknown> {
+  return Promise.allSettled([...backgroundFlights.values()])
+}
+
+/** 后台刷新体：与同步链同款两分支 + ready 后 prune；失败静默（调用方已拿到 stale）。 */
+async function backgroundChain(
+  cfg: RegistryConfig,
+  opts: RegistryLoadOptions,
+  address: ReturnType<typeof parseRegistryAddress>,
+  namespace: RegistryCacheNamespace,
+  profile: string,
+): Promise<void> {
+  const bgOpts: RegistryLoadOptions = { ...opts, signal: undefined }
+  if (address.kind === 'default') {
+    const loaded = await loadDefaultChain(cfg, bgOpts, { namespace, profile, includeBundled: true })
+    if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, null, profile)
+    return
+  }
+  const loaded = await loadCustomChain(address, cfg, bgOpts, { namespace, allowCacheFallback: true, profile })
+  if (opts.prune !== false && loaded.status === 'ready') await pruneCaches(namespace, address.cacheKey, profile)
+  void loaded
+}
+
+/** active 读取：default/custom 各自 fallback；TTL 内直读；过期先回 stale（SWR）+ 后台单飞自愈；force 始终同步强刷；网络成功后可在本 namespace 内 prune。 */
 export async function loadRegistry(cfg: RegistryConfig = {}, opts: RegistryLoadOptions = {}): Promise<LoadedRegistry> {
   const namespace = opts.namespace ?? 'host'
   const profile = opts.profile ?? WEB_PROFILE
   const address = parseRegistryAddress(cfg.registryUrl)
   const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
+  const cacheKey = address.kind === 'default' ? DEFAULT_CACHE_KEY : address.cacheKey
   if (!opts.force) {
-    const cacheKey = address.kind === 'default' ? DEFAULT_CACHE_KEY : address.cacheKey
     const cached = await readCacheFile(namespace, cacheKey, profile)
-    if (cached && cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, address.normalized, [])
+    if (cached) {
+      if (cacheFresh(cached, ttlMin)) return loadedFromCacheFile(cached, address.normalized, [])
+      // 0.9.14 SWR：过期 → 同步回 stale；无同 key 单飞才后台起链（不接调用者 signal，失败静默）
+      const flightKey = `${namespace}§${profile}§${cacheKey}`
+      if (!backgroundFlights.has(flightKey)) {
+        const flight: Promise<void> = backgroundChain(cfg, opts, address, namespace, profile)
+          .catch(() => undefined)
+          .finally(() => {
+            if (backgroundFlights.get(flightKey) === flight) backgroundFlights.delete(flightKey)
+          })
+        backgroundFlights.set(flightKey, flight)
+      }
+      return loadedFromCacheFile(cached, address.normalized, [])
+    }
   }
   if (address.kind === 'default') {
     const loaded = await loadDefaultChain(cfg, opts, { namespace, profile, includeBundled: true })

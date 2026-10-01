@@ -23,6 +23,7 @@ import {
   readRegistryFile,
   registrySummary,
   validateRegistry,
+  _waitForRegistryBackgroundForTests,
 } from '../lib/core/registry.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -936,6 +937,63 @@ describe('default 链线路粘性', () => {
         { source: 'default-jsdelivr', url: `${srv.base}/b.json` },
       ] })
       assert.equal(paths[0], '/a.json', '无粘性记忆时保持既有线路顺序')
+    } finally { await srv.close() }
+  })
+})
+
+// ---------- 0.9.14 Task 2：loadRegistry SWR（过期先回 stale + 后台单飞） ----------
+
+describe('loadRegistry SWR（过期先回 stale）', () => {
+  function startSlowRegistryServer(delayMs) {
+    const hits = { count: 0 }
+    const server = createServer((req, res) => {
+      hits.count += 1
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(reg([localEntry(1)])))
+      }, delayMs)
+    })
+    return new Promise((resolve) => {
+      server.listen(0, '127.0.0.1', () => {
+        const port = (server.address() || { port: 0 }).port
+        resolve({
+          hits,
+          url: (p) => `http://127.0.0.1:${port}${p}`,
+          close: () => new Promise((r) => { server.closeAllConnections(); server.close(() => r()) }),
+        })
+      })
+    })
+  }
+
+  it('SWR：过期 cache 先回 stale（零同步网络），后台刷新后二次读取零网络拿新数据', async () => {
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(1)]), { source: 'default-cache' })
+    const srv = await startSlowRegistryServer(800)   // /a.json 延迟 800ms 返回合法 registry（reg([localEntry(1)]) 同构 1 条）
+    try {
+      const t0 = Date.now()
+      const stale = await loadRegistry({ cacheTtlMin: 0 }, { defaultRoutes: [{ source: 'default-raw', url: srv.url('/a.json') }] })
+      assert.ok(Date.now() - t0 < 500, '过期 cache 应同步返回，不等网络')
+      assert.equal(stale.status, 'stale')
+      assert.equal(stale.source, 'default-cache')
+      assert.equal(srv.hits.count, 0, '同步路径零网络')
+      await _waitForRegistryBackgroundForTests()
+      assert.equal(srv.hits.count, 1, '后台恰好刷新一次')
+      const fresh = await loadRegistry({ cacheTtlMin: 60 }, {})
+      assert.equal(fresh.count, 1)
+      assert.equal(srv.hits.count, 1, '二次读取零网络')
+    } finally { await srv.close() }
+  })
+
+  it('force 不进 SWR：过期 cache + force 同步等网络并强刷', async () => {
+    const defAddr = parseRegistryAddress(undefined)
+    writeCacheFixture('host', defAddr.cacheKey, reg([localEntry(1)]), { source: 'default-cache' })
+    const srv = await startSlowRegistryServer(600)
+    try {
+      const t0 = Date.now()
+      const loaded = await loadRegistry({ cacheTtlMin: 0 }, { force: true, defaultRoutes: [{ source: 'default-raw', url: srv.url('/a.json') }] })
+      assert.ok(Date.now() - t0 >= 550, 'force 同步等网络')
+      assert.equal(loaded.status, 'ready')
+      assert.equal(srv.hits.count, 1)
     } finally { await srv.close() }
   })
 })
