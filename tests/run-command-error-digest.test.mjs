@@ -125,10 +125,14 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
   })
 
   // T5/F1（复审补充）：settle 必须等子进程真正退出；忽略 SIGTERM 的子进程由 SIGKILL 升级兜底
+  // ⚠️ 平台边界：本组契约（SIGTERM 宽限 + 组存活轮询 + SIGKILL 升级）依赖 POSIX 进程组语义。
+  // Windows 无进程组（detached 不生效、kill 即 TerminateProcess 直接终止 direct child），
+  // 「settle 必须等 grace」的前提到处不成立——这些时序断言仅 POSIX 执行。
+  const POSIX_ONLY = process.platform === 'win32' ? '依赖 POSIX 进程组/SIGTERM 语义，Windows 不适用' : false
   const IGNORING_CHILD = (marker, delayMs) =>
     `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, ${delayMs})`
 
-  it('F1/T5：abort 后子进程忽略 SIGTERM → grace 升级 SIGKILL，reject 晚于 child 退出，marker 永不写出', async () => {
+  it('F1/T5：abort 后子进程忽略 SIGTERM → grace 升级 SIGKILL，reject 晚于 child 退出，marker 永不写出', { skip: POSIX_ONLY }, async () => {
     const marker = join(tmpdir(), `dshm-kill-abort-${process.pid}-${Date.now()}.marker`)
     const ac = new AbortController()
     const startedAt = Date.now()
@@ -145,7 +149,7 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     assert.equal(existsSync(marker), false, 'SIGKILL 必须先于 marker 写出——子进程不得在 reject 后继续写文件')
   })
 
-  it('F1/T5：超时同样升级 SIGKILL 并等待退出', async () => {
+  it('F1/T5：超时同样升级 SIGKILL 并等待退出', { skip: POSIX_ONLY }, async () => {
     const marker = join(tmpdir(), `dshm-kill-timeout-${process.pid}-${Date.now()}.marker`)
     const startedAt = Date.now()
     const pending = runCommand(process.execPath, ['-e', IGNORING_CHILD(marker, 1500)], {
@@ -168,7 +172,7 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     + `process.on('SIGTERM', () => process.exit(0)); `
     + `setInterval(() => {}, 1000); void g;`
 
-  it('F1-R/A：detached leader 先退、grandchild 忽略 SIGTERM → settle 等组消失，marker 不写出', async () => {
+  it('F1-R/A：detached leader 先退、grandchild 忽略 SIGTERM → settle 等组消失，marker 不写出', { skip: POSIX_ONLY }, async () => {
     const marker = join(tmpdir(), `dshm-tree-abort-${process.pid}-${Date.now()}.marker`)
     const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
     const ac = new AbortController()
@@ -187,7 +191,7 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
     assert.equal(existsSync(marker), false, '同组 grandchild 必须被组 SIGKILL，不得在 settle 后写文件')
   })
 
-  it('F1-R/C：timeout 同款进程树终止——leader 退出后组内幸存者由 SIGKILL 收口', async () => {
+  it('F1-R/C：timeout 同款进程树终止——leader 退出后组内幸存者由 SIGKILL 收口', { skip: POSIX_ONLY }, async () => {
     const marker = join(tmpdir(), `dshm-tree-timeout-${process.pid}-${Date.now()}.marker`)
     const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
     const startedAt = Date.now()

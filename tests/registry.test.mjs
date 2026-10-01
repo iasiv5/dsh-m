@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSyn
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, normalize } from 'node:path'
 import { createServer } from 'node:http'
 
 import {
@@ -306,8 +306,15 @@ describe('parseRegistryAddress', () => {
   })
 
   it('非 HTTPS/HTTP 协议拒绝', () => {
-    for (const bad of ['ftp://example.com/r.json', 'javascript:alert(1)', 'data:text/plain,x', 'C:\\Users\\r.json']) {
+    for (const bad of ['ftp://example.com/r.json', 'javascript:alert(1)', 'data:text/plain,x']) {
       assert.throws(() => parseRegistryAddress(bad), `协议 ${bad} 应拒绝`)
+    }
+    if (process.platform === 'win32') {
+      // Windows 上 'C:\...' 是合法的本地文件路径（盘符），不归属「协议」判定
+      assert.equal(parseRegistryAddress('C:\\Users\\r.json').kind, 'file')
+    } else {
+      // POSIX 上没有盘符概念，'C:' 只能按未知协议拒绝
+      assert.throws(() => parseRegistryAddress('C:\\Users\\r.json'), 'POSIX 上 C: 应视为未知协议拒绝')
     }
   })
 
@@ -333,16 +340,17 @@ describe('parseRegistryAddress', () => {
   })
 
   it('本地绝对路径与 file:// 都解析为 file', () => {
+    // normalized 是平台原生 normalize 结果（Windows 为 \），断言用同一输入的 normalize 对齐
     const a = parseRegistryAddress('/home/user/r.json')
     assert.equal(a.kind, 'file')
-    assert.equal(a.normalized, '/home/user/r.json')
+    assert.equal(a.normalized, normalize('/home/user/r.json'))
     const b = parseRegistryAddress('file:///home/user/r.json')
     assert.equal(b.kind, 'file')
-    assert.equal(b.normalized, '/home/user/r.json')
+    assert.equal(b.normalized, normalize('/home/user/r.json'))
     const c = parseRegistryAddress('/home/user/../user/./r.json')
-    assert.equal(c.normalized, '/home/user/r.json')
+    assert.equal(c.normalized, normalize('/home/user/r.json'))
     const d = parseRegistryAddress('file:///home/u%20ser/r.json')
-    assert.equal(d.normalized, '/home/u ser/r.json')
+    assert.equal(d.normalized, normalize('/home/u ser/r.json'))
   })
 
   it('file URL 携带 host、相对路径、目录路径、空路径拒绝', () => {
@@ -364,7 +372,7 @@ describe('parseRegistryAddress', () => {
   it('file://localhost 按 WHATWG 归一化为空 host，等同 file:///', () => {
     const addr = parseRegistryAddress('file://localhost/home/r.json')
     assert.equal(addr.kind, 'file')
-    assert.equal(addr.normalized, '/home/r.json')
+    assert.equal(addr.normalized, normalize('/home/r.json'))
   })
 })
 
@@ -672,13 +680,18 @@ describe('Task 2：远程加载与 cache 回退', () => {
     assert.equal(loaded.status, 'unavailable')
   })
 
-  it('cache 目标为 symlink 时拒绝写入，加载本身成功', async () => {
+  it('cache 目标为 symlink 时拒绝写入，加载本身成功', async (t) => {
     server = await startRegistryServer()
     const addr = parseRegistryAddress(server.url('/a.json'))
     mkdirSync(nsDir('host'), { recursive: true })
     const target = join(cacheRoot, 'symlink-target.json')
     writeFileSync(target, 'KEEP')
-    symlinkSync(target, cacheFile('host', addr.cacheKey))
+    try {
+      symlinkSync(target, cacheFile('host', addr.cacheKey))
+    } catch (err) {
+      if (err?.code === 'EPERM') return t.skip('当前环境无符号链接权限（Windows 未开开发者模式/非管理员）')
+      throw err
+    }
     const loaded = await loadRegistry({ registryUrl: server.url('/a.json') }, { force: true })
     assert.equal(loaded.status, 'ready')
     assert.ok(existsSync(target))
@@ -800,12 +813,14 @@ describe('M2 Task 4：registry 全失败三要素文案', () => {
 describe('0.9.0 双 profile：cacheRoot 与缓存段隔离', () => {
   it('cacheRoot：web 恒等旧 cacheDir；非 web 加 <root>/<profile> 段（DSHM_CACHE_DIR 在位）', async () => {
     const { cacheRoot: cacheRootOf, cacheDir } = await import('../lib/core/env.js')
-    process.env.DSHM_CACHE_DIR = '/tmp/dshm-cache-isolation'
+    // base 是原样透传值（POSIX 风格字符串在 Windows 上也原样返回）；desktop 段用 join 对齐平台分隔符
+    const base = '/tmp/dshm-cache-isolation'
+    process.env.DSHM_CACHE_DIR = base
     try {
-      assert.equal(cacheRootOf('web'), '/tmp/dshm-cache-isolation')
-      assert.equal(cacheDir(), '/tmp/dshm-cache-isolation')
-      assert.equal(cacheRootOf('desktop'), '/tmp/dshm-cache-isolation/desktop')
-      assert.equal(cacheRootOf(), '/tmp/dshm-cache-isolation')
+      assert.equal(cacheRootOf('web'), base)
+      assert.equal(cacheDir(), base)
+      assert.equal(cacheRootOf('desktop'), join(base, 'desktop'))
+      assert.equal(cacheRootOf(), base)
     } finally {
       delete process.env.DSHM_CACHE_DIR
     }

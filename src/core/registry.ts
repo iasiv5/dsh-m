@@ -5,7 +5,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { isAbsolute, join, normalize } from 'node:path'
+import { basename, isAbsolute, join, normalize } from 'node:path'
 import { constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { WEB_PROFILE, cacheRoot } from './env.js'
@@ -137,7 +137,8 @@ function stableKey(value: string): string {
 function normalizeLocalPath(raw: string): string {
   const p = normalize(raw)
   if (!isAbsolute(p)) throw new Error('本地 registry 必须是绝对路径或 file:// URL')
-  if (p.endsWith('/')) throw new Error('本地 registry 不能指向目录')
+  // Windows 原生分隔符是 \：只查 '/' 会把盘根 '\'、'C:\dir\' 误当文件放行
+  if (p.endsWith('/') || p.endsWith('\\')) throw new Error('本地 registry 不能指向目录')
   return p
 }
 
@@ -156,6 +157,9 @@ function parseFileUrl(input: string): RegistryAddress {
   } catch {
     throw new Error('file:// registry 路径百分号编码无效')
   }
+  // Windows：WHATWG 把盘符路径统一表成 /C:/...（file://C:/x 同样归一到此前缀），
+  // 原生路径须剥掉这个前导斜杠，否则 normalize 出 '\C:\x' 悬空路径（无盘符）必 ENOENT
+  if (/^\/[a-zA-Z]:[/\\]/.test(pathname)) pathname = pathname.slice(1)
   if (CONTROL_RE.test(pathname)) throw new Error('registry 路径包含控制字符')
   const normalized = normalizeLocalPath(pathname)
   return { kind: 'file', input, normalized, cacheKey: stableKey(`file:${normalized}`) }
@@ -191,7 +195,10 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
   if (input === '') return { kind: 'default', input: '', normalized: '', cacheKey: 'default' }
   if (CONTROL_RE.test(input)) throw new Error('registry 地址包含控制字符')
   if (/^file:/i.test(input)) return parseFileUrl(input)
-  if (input.startsWith('/')) {
+  // 本地路径三形态：POSIX 绝对（/…）、Windows 盘符（C:\… 或 C:/…）、Windows UNC（\\server\share…）。
+  // 盘符/UNC 判定必须先于 scheme 正则——'C:' 会被 /^[a-z][a-z0-9+.-]*:/i 误认成 URL scheme，
+  // 落进 parseHttpUrl 后抛误导性的「只允许 HTTPS」（Windows 下自定义文件清单的常规形态）。
+  if (input.startsWith('/') || input.startsWith('\\') || /^[a-zA-Z]:[/\\]/.test(input)) {
     const normalized = normalizeLocalPath(input)
     return { kind: 'file', input, normalized, cacheKey: stableKey(`file:${normalized}`) }
   }
@@ -491,7 +498,10 @@ async function atomicWriteJson(target: string, dir: string, value: unknown, prof
         /* not exists */
       }
       if (existing && existing.isSymbolicLink()) return false
-      const tmp = join(dir, `.${target.split('/').pop() ?? 'cache'}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`)
+      // 临时文件名必须取 basename：Windows 分隔符是 \，用 split('/') 解析绝对路径会得到
+      // 整条路径（内嵌 \ 即目录分隔符），open 必败且被下方 catch 吞掉——全部 cache/metadata
+      // 写入静默失败（Windows 实测 2026-10-01：cache 恒缺失、metadataCommitted 恒 false）。
+      const tmp = join(dir, `.${basename(target)}.tmp-${process.pid}-${randomUUID().slice(0, 8)}`)
       const fh = await open(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600)
       try {
         await fh.write(Buffer.from(JSON.stringify(value, null, 2), 'utf8'))

@@ -257,8 +257,14 @@ describe('registry-controller：外部 settings 写入', () => {
     controller.attachStore(fs.store)
     await controller.snapshot()
     fs.externalWrite({ registryUrl: fileB })
-    await sleep(30)
-    const snap = await controller.snapshot()
+    // 采纳链路是异步的（watch → 队列 → loader）：固定 30ms 在 Windows 上偶发不足
+    // （2026-10-01 实测 flake），改轮询等待契约达成，测「会采纳」而非「30ms 内采纳」。
+    let snap
+    for (let i = 0; i < 200; i++) {
+      snap = await controller.snapshot()
+      if (snap.activeConfigAddress === fileB && snap.configStatus === 'ready') break
+      await sleep(10)
+    }
     assert.equal(snap.activeConfigAddress, fileB)
     assert.equal(snap.configStatus, 'ready')
     controller.dispose()
@@ -272,8 +278,13 @@ describe('registry-controller：外部 settings 写入', () => {
     controller.attachStore(fs.store)
     await controller.snapshot()
     fs.externalWrite({ registryUrl: dead })
-    await sleep(30)
-    const snap = await controller.snapshot()
+    // 拒绝判定同样异步（连接失败探测），Windows 上固定 30ms 偶发不足，改轮询
+    let snap
+    for (let i = 0; i < 200; i++) {
+      snap = await controller.snapshot()
+      if (snap.configStatus === 'rejected') break
+      await sleep(10)
+    }
     assert.equal(snap.configStatus, 'rejected')
     assert.ok(snap.configErrors.length > 0)
     assert.equal(snap.pendingAddress, null, '回滚后无 pending')

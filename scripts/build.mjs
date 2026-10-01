@@ -17,8 +17,10 @@ rmSync(lib, { recursive: true, force: true })
 mkdirSync(lib, { recursive: true })
 
 // 1) host + core + cli: tsc
+// Windows 兼容：node_modules/.bin/tsc 是 POSIX sh shim，spawnSync 直接执行会 ENOENT；
+// 改用当前 Node 直跑 typescript 的 JS 入口，三平台一致。
 step('tsc (host/core/cli)')
-execFileSync(join(root, 'node_modules/.bin/tsc'), ['-p', 'tsconfig.json'], {
+execFileSync(process.execPath, [join(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.json'], {
   cwd: root,
   stdio: 'inherit',
 })

@@ -74,7 +74,8 @@ nodeLinker: hoisted
     const res = removePatchedDependencyEntries(dir, 'dsh-web-search')
     assert.equal(res.changed, true)
     assert.equal(res.orphanedPatchFiles.length, 1)
-    assert.ok(res.orphanedPatchFiles[0].endsWith('patches/dsh-web-search.patch'))
+    // 平台无关：resolve() 返回原生分隔符路径（Windows 为 \），断言用 join 拼
+    assert.ok(res.orphanedPatchFiles[0].endsWith(join('patches', 'dsh-web-search.patch')))
     assert.ok(existsSync(res.orphanedPatchFiles[0]), '补丁文件本体应保留在磁盘')
   })
 

@@ -294,7 +294,12 @@ describe('install-npm：两阶段不变量', () => {
     assert.notEqual(r.status, 'rolled-back')
   })
 
-  it('快照恢复失败 + 补移除成功 → 只作补偿记录，manual-repair 且事实字段如实（R1）', async () => {
+  it('快照恢复失败 + 补移除成功 → 只作补偿记录，manual-repair 且事实字段如实（R1）', {
+    // ⚠️ 平台边界：注入手法（package.json 变目录让 rename 失败）是 POSIX 语义——
+    // Windows 上 npm-integrity 原子写的 EPERM 备份协议会合法地把目录挪走再落盘，
+    // 恢复成功、终态为 rolled-back（产品预期行为），manual-repair 路径无法用此注入复现。
+    skip: process.platform === 'win32' ? '注入手法为 POSIX 语义，Windows 的 EPERM 备份协议会合法救回该失败' : false,
+  }, async () => {
     dir = makeProfile({
       'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
       'pnpm-lock.yaml': lockFile(),

@@ -130,11 +130,16 @@ describe('② ENTRY_UNRESOLVABLE', () => {
     assert.equal(r.violations[0].code, 'ENTRY_UNRESOLVABLE')
   })
 
-  it('symlink 逃逸（入口指向包目录外）→ ENTRY_UNRESOLVABLE（containment）', async () => {
+  it('symlink 逃逸（入口指向包目录外）→ ENTRY_UNRESOLVABLE（containment）', async (t) => {
     const outside = mkdtempSync(join(tmpdir(), 'dshm-guard-outside-'))
     writeFileSync(join(outside, 'evil.js'), 'pwn\n')
     const dir = makePkg('pkg-symlink', { pkgJson: { name: 'pkg-symlink', main: 'index.js', dsh: {} } })
-    symlinkSync(join(outside, 'evil.js'), join(dir, 'index.js'))
+    try {
+      symlinkSync(join(outside, 'evil.js'), join(dir, 'index.js'))
+    } catch (err) {
+      if (err?.code === 'EPERM') return t.skip('当前环境无符号链接权限（Windows 未开开发者模式/非管理员）')
+      throw err
+    }
     const r = await verifyInstalledAdditions({ profileDir, addedPkgs: ['pkg-symlink'] })
     assert.equal(r.violations[0].code, 'ENTRY_UNRESOLVABLE')
     assert.ok(r.violations[0].detail.includes('越出包目录'))

@@ -330,8 +330,15 @@ describe('wireRegistrySettings × createRegistryController 集成', () => {
     assert.equal((await controller.snapshot()).loaded.count, 1)
 
     legacy.set({ registryUrl: fileB })
-    await new Promise((r) => setTimeout(r, 10))
-    const snap = await controller.snapshot()
+    // 采纳链路是异步的（store watch → 队列 → loader 校验落盘 → adopt），固定 10ms 在
+    // Windows 上不够（实测 2026-10-01：fs 延迟下 10ms 时 count 仍为 1）；改轮询等待，
+    // 契约不变：外部 set 最终必须被采纳（2s 内），测的是「会采纳」而非「10ms 内采纳」。
+    let snap
+    for (let i = 0; i < 200; i++) {
+      snap = await controller.snapshot()
+      if (snap.loaded.count === 4) break
+      await new Promise((r) => setTimeout(r, 10))
+    }
     assert.equal(snap.loaded.count, 4)
   })
 

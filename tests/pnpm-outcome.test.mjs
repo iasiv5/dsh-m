@@ -242,7 +242,11 @@ describe('PluginRunner seam 形状', () => {
 // ---------- F1-R/B（第三轮复审）：生产 frozenInstall 的进程树终止 ----------
 
 describe('makeDshRunner.frozenInstall：生产进程树终止（F1-R/B）', () => {
-  it('abort 后 pnpm 的后代（同组、忽略 SIGTERM）必须被组 SIGKILL，marker 不写出', async () => {
+  // ⚠️ 平台边界：假 pnpm 是 #!/bin/sh 脚本，且断言依赖 POSIX 进程组 + SIGTERM 语义
+  // （Windows 无进程组、无法执行 shebang 脚本），仅 POSIX 执行。
+  const POSIX_ONLY = process.platform === 'win32' ? '假 pnpm 为 shebang 脚本且依赖 POSIX 进程组语义，Windows 不适用' : false
+
+  it('abort 后 pnpm 的后代（同组、忽略 SIGTERM）必须被组 SIGKILL，marker 不写出', { skip: POSIX_ONLY }, async () => {
     const binDir = mkdtempSync(join(tmpdir(), 'dshm-bin-'))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshm-frozen-'))
     const marker = join(tmpdir(), `dshm-pnpm-tree-${process.pid}-${Date.now()}.marker`)
