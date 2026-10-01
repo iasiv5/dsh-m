@@ -387,6 +387,25 @@
       "npm": "dsh-context",
       "github": "bowenliang123/dsh-context",
       "homepage": "https://github.com/bowenliang123/dsh-context"
+    },
+    {
+      "id": "dsh-inimerse",
+      "name": "Inimerse Bridge",
+      "description": "DSH 里的 Inimerse 引擎接口：构建、测试、运行 .im 脚本、驱动 Verse 层。已适配 0.2.0-rc.2，详见仓库。",
+      "category": "tools",
+      "tags": [
+        "引擎",
+        "构建",
+        "测试",
+        "Verse"
+      ],
+      "verified": [
+        "0.2.0-rc.2"
+      ],
+      "source": "npm",
+      "npm": "dsh-inimerse",
+      "github": "infileap/Inimerse",
+      "homepage": "https://github.com/infileap/Inimerse/tree/main/tools/dsh-inimerse"
     }
   ]
 }
