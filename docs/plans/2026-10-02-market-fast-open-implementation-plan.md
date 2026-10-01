@@ -31,6 +31,7 @@ main.jsx useMarketData ──(1)客户端快照：默认首页先渲染上次响
 - push / tag / npm publish 均须用户确认；本计划只产本地提交。发版纪律见附录（know-how 018/020）。
 - 环境：node ≥22，Windows + pwsh；全部验证命令为 npm scripts / `node --test`，无 bash-only 依赖。命令均在 `dsh-m/` 目录下执行。
 - 无额外全局约束（版本/依赖/平台规则无新变化）。
+- **执行偏离备案（0.9.14 实现后，实现评审 R1-#1/#2 认领）**：① 提交序列 9 个 = 8 任务提交 + 1 计划文档入仓提交（Task 6 预期已同步修订）。② `writeLatestCache(key, value, profile = WEB_PROFILE)` 增加可选第三参（计划契约原文双参）——desktop profile 探测必须写入自己的缓存段，缺省 web 会错位；Task 4b 两处调用点显式传参。③ probeLatest 的 npm-only cacheKey 归一为 `latestCacheKey(ns, 'npm-only', …)`（原 `npm-only|ns|…` 首段非 host/cli 会被落盘层守卫静默跳过持久化，重启后「不在收录清单的已装包」探测重放）。
 
 ## 输入工件
 
@@ -425,7 +426,7 @@ const dataRef = useRef(data)
   - Expected: typecheck 0 error；测试全绿（总量 = 各任务基线 + 本计划新增 registry×5 / community×3 / latest-cache×4 / market-snapshot×8± 用例）；registry 校验全绿（registry.json 未改，例行跑——know-how 008 纪律）。
 - [ ] Step 3: 整理与报告
   - Run: `git log --oneline 569f8f6..HEAD` 与 `git diff 569f8f6..HEAD --stat`
-  - Expected: 恰 8 个新语义化提交（Task 1/2/3/4a/4b/5a/5b/6），diff 只触及「文件结构与职责」清单内的文件；输出修改摘要交主人审。
+  - Expected: 恰 9 个新语义化提交（Task 1/2/3/4a/4b/5a/5b/6 共 8 个 + 实施计划文档 docs 提交 1 个——计划文档随实现入仓），diff 只触及「文件结构与职责」清单内的文件 + 本计划文档；输出修改摘要交主人审。
 - [ ] Step 4: checkpoint commit
   - Run: `git add README.md README.en.md docs/DESIGN.md` → `git commit -m "chore(0.9.14): 缓存语义文档（并入既有 0.9.14 变更节）"`
   - Expected: commit 成功。
@@ -454,7 +455,7 @@ const dataRef = useRef(data)
 - `npm run typecheck`（预期 0 error）
 - `npm test`（预期全绿，pretest 自动 build；含本计划新增 registry×5 / community×3 / latest-cache×4 / market-snapshot×8± 用例族）
 - `node scripts/validate-registry.mjs`（预期全绿）
-- `git log --oneline 569f8f6..HEAD`（预期恰 8 个语义化提交，工作树干净）
+- `git log --oneline 569f8f6..HEAD`（预期恰 9 个语义化提交：8 任务 + 1 计划文档，工作树干净）
 
 ## 附录：发版与装机（计划外动作，每步须主人确认后执行）
 
