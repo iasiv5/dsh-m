@@ -44,10 +44,10 @@ describe('createOperationsStore', () => {
     store.upsert(rec({ id: 'op-3', status: 'superseded' }))
     store.upsert(rec({ id: 'op-4', status: 'warned', warning: 'w' }))
     let next = store.clearFinished()
-    // done/warned 清除；failed/superseded 保留
-    assert.deepEqual(next.map((r) => r.id).sort(), ['op-1', 'op-3'])
+    // 0.9.6 主人裁决：done/warned/failed/superseded 全部终态可清（推翻 0.7.0「失败保留」共识）
+    assert.deepEqual(next, [])
     next = store.remove('op-1')
-    assert.deepEqual(next.map((r) => r.id), ['op-3'])
+    assert.deepEqual(next, [])
   })
 
   it('localStorage 持久化往返：新 store 读到旧记录', () => {
@@ -190,10 +190,15 @@ describe('drainRestored（恢复执行器）', () => {
     assert.equal(by.w, 'warned')
   })
 
-  it('clearFinished 不清除 superseded/failed', async () => {
-    const store = storeWith([rec({ id: 's', status: 'superseded' }), rec({ id: 'f', status: 'failed', error: 'x' }), rec({ id: 'd', status: 'done' })])
+  it('clearFinished 清除全部终态（含 failed/superseded，0.9.6 主人裁决），保留在途态', async () => {
+    const store = storeWith([
+      rec({ id: 's', status: 'superseded' }),
+      rec({ id: 'f', status: 'failed', error: 'x' }),
+      rec({ id: 'd', status: 'done' }),
+      rec({ id: 'q', status: 'queued' }),
+    ])
     const next = store.clearFinished()
-    assert.deepEqual(next.map((r) => r.id).sort(), ['f', 's'])
+    assert.deepEqual(next.map((r) => r.id), ['q'], '只有非终态（queued/running/input）保留')
   })
 
   it('单条 remove（终审·新伤2 的面板出口）', () => {

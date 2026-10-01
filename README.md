@@ -48,6 +48,12 @@
 
 以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.6 修复：「清除已完成」对失败记录无声 no-op
+
+- **根因**：0.7.0 评审共识把「失败/已跳过」排除在清除范围外（保留供回看），于是按钮对着一条失败记录点击毫无反应、也无任何反馈——Windows 实机被当成 bug 上报（2026-10-01）。显式点击清除不是「静默抹掉」，旧共识被推翻。
+- **修复**：「清除已结束」（原「清除已完成」）现在清除**全部终态**（done/warned/failed/superseded），在途态（queued/running/input）不受影响；没有可清终态时按钮置灰并带说明 tooltip，不再无声 no-op。单条 ✕ 照旧逐条删除。
+- **英文文案**同步改为 "Clear ended"。
+
 ### 0.9.5 修复：Desktop 下 GUI 读路径漏接 active profile（已装页恒显 web）
 
 - **根因**：0.9.0 双 profile 接线时，Host API 的 `installed` / `market` 两个读路径漏传 active profile——`listInstalledWithMeta` / `listMarket` 内部落回 `webProfileDir()`：Desktop 下已装页恒显「web profile 尚未安装任何插件」、市场「已安装」徽标恒空（agent 工具面 `dshm_list` 同链路已接线，故只有 GUI 错）。

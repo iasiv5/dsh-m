@@ -19,7 +19,7 @@ const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
-const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo } = require("./operations.js");
+const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 
@@ -32,7 +32,7 @@ const ZH = {
   "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "badge.verified": "已实测",
   "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
   "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
-  "op.clear": "清除已完成",
+  "op.clear": "清除已结束", "op.clear.none": "没有可清除的已结束记录",
   "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认", "op.remove": "移除记录", "op.panel.jump": "查看操作面板",
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
@@ -140,7 +140,7 @@ const EN = {
   "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "badge.verified": "Verified",
   "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
   "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
-  "op.clear": "Clear finished",
+  "op.clear": "Clear ended", "op.clear.none": "Nothing finished to clear",
   "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled", "op.remove": "Dismiss", "op.panel.jump": "Open operations panel",
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
@@ -2224,6 +2224,9 @@ function OperationsPanel({ records, onClearFinished, onRemove }) {
   const active = records.filter((r) => r.status === "queued" || r.status === "running" || r.status === "input");
   const finished = records.filter((r) => active.indexOf(r) < 0).slice(-6);
   if (!active.length && !finished.length) return null;
+  // 0.9.6：清除按钮覆盖全部终态（含 failed/superseded，主人裁决）——无可清终态时置灰并说明，
+  // 不再做无声 no-op（Windows 实机反馈：按钮对着失败记录点了没反应）。
+  const clearable = records.some((r) => TERMINAL_CLEARABLE.has(r.status));
   const row = (r) =>
     h(
       "div",
@@ -2248,7 +2251,7 @@ function OperationsPanel({ records, onClearFinished, onRemove }) {
           "div",
           { className: "dsvm-opgroup done" },
           ...finished.map(row),
-          h("button", { className: "dshm-btn sm", onClick: onClearFinished }, lookup("op.clear")),
+          h("button", { className: "dshm-btn sm", disabled: !clearable, title: clearable ? undefined : lookup("op.clear.none"), onClick: onClearFinished }, lookup("op.clear")),
         )
       : null,
   );
