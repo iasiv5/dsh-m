@@ -12,6 +12,7 @@ const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips）
 const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice } = require("./market-state.js");
+const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -558,23 +559,34 @@ function useAsync(fn, deps) {
   return { ...state, reload: run };
 }
 
-// ---------- 市场数据唯一 owner（服务端分页 + generation/abort） ----------
+// ---------- 市场数据唯一 owner（服务端分页 + generation/abort + 0.9.14 默认首页快照秒开） ----------
 function useMarketData(zone = "community") {
   const [query, setQuery] = useState(() => normalizeMarketQuery(createZoneState(zone), zone));
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // 0.9.14 快照秒开：仅首渲染读一次 localStorage（useState 惰性初始化），命中即先渲染上次
+  // 默认首页响应（loading=false），background 换新；读侧再过一次 normalize 兜形状漂移
+  const [boot] = useState(() => {
+    const snap = readMarketSnapshot(typeof window !== "undefined" && window.localStorage ? window.localStorage : null, { zone });
+    return snap ? { data: normalizeMarketResponse(snap), has: true } : { data: null, has: false };
+  });
+  const [data, setData] = useState(boot.data);
+  const [loading, setLoading] = useState(!boot.has);
   const [error, setError] = useState(null);
   const genRef = useRef(0);
   const abortRef = useRef(null);
   const queryRef = useRef(query);
+  const dataRef = useRef(boot.data);
+  const storage = () => (typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
 
-  const fetchPage = useCallback((nextQuery, force) => {
+  const fetchPage = useCallback((nextQuery, force, background = false) => {
     const gen = ++genRef.current;
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    setLoading(true);
-    setError(null);
+    // background 且已有数据可显示：不置 loading、不清 error（静默换新，失败保留旧数据）
+    if (!background || !dataRef.current) {
+      setLoading(true);
+      setError(null);
+    }
     const params = {
       query: nextQuery.query || undefined,
       category: nextQuery.category || undefined,
@@ -587,11 +599,16 @@ function useMarketData(zone = "community") {
     return api("market", params, ac.signal)
       .then((raw) => {
         if (genRef.current !== gen || ac.signal.aborted) return;
-        setData(normalizeMarketResponse(raw));
+        const next = normalizeMarketResponse(raw);
+        dataRef.current = next;
+        setData(next);
         setLoading(false);
+        // 0.9.14：默认首页成功响应写快照（force 刷新也写——快照永远取最新成功数据）
+        if (isDefaultFirstPageQuery(nextQuery, zone)) writeMarketSnapshot(storage(), { zone, response: next });
       })
       .catch((e) => {
         if (genRef.current !== gen || ac.signal.aborted) return;
+        if (background && dataRef.current) return;   // background 失败静默保留旧数据
         setError(String((e && e.message) || e));
         setLoading(false);
       });
@@ -607,7 +624,7 @@ function useMarketData(zone = "community") {
   const reload = useCallback((force) => fetchPage(queryRef.current, force), [fetchPage]);
 
   useEffect(() => {
-    fetchPage(queryRef.current, false);
+    fetchPage(queryRef.current, false, boot.has);
     return () => abortRef.current?.abort();
   }, [fetchPage]);
 
