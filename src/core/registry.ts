@@ -717,7 +717,13 @@ async function loadDefaultChain(
   const errors: string[] = []
   const startedAt = Date.now()
   const routes = opts.defaultRoutes ?? DEFAULT_URLS
-  for (const candidate of routes) {
+  // 0.9.14 线路粘性：cache 记录的上次成功线路排最前（稳定排序保序；cache 缺失 = 原序）。
+  // 粘性读不判 TTL——过期 cache 的 source 依然是有效线路记忆；force 同样生效。
+  const stickySource = (await readCacheFile(chain.namespace, DEFAULT_CACHE_KEY, chain.profile))?.source
+  const ordered = stickySource
+    ? [...routes].sort((a, b) => Number(b.source === stickySource) - Number(a.source === stickySource))
+    : routes
+  for (const candidate of ordered) {
     try {
       const { registry, finalUrl } = await fetchRegistryFromUrl(candidate.url, attemptTimeoutMs(cfg, opts, startedAt), opts.signal)
       const fetchedAt = new Date().toISOString()

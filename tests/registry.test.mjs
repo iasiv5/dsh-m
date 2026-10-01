@@ -888,3 +888,54 @@ describe('0.9.0 双 profile：cacheRoot 与缓存段隔离', () => {
     }
   })
 })
+
+// ---------- 0.9.14 Task 1：default 链线路粘性 ----------
+
+describe('default 链线路粘性', () => {
+  const regJson = JSON.stringify(reg([localEntry(1)]))
+
+  async function startOrderingServer(paths) {
+    const srv = createServer((req, res) => {
+      paths.push(req.url || '/')
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(regJson)
+    })
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r))
+    return {
+      base: `http://127.0.0.1:${srv.address().port}`,
+      close: () => new Promise((r) => { srv.closeAllConnections(); srv.close(() => r()) }),
+    }
+  }
+
+  it('粘性：cache 记录上次成功线路为 jsdelivr → 后续链路先试 jsdelivr（force 下仍生效）', async () => {
+    const paths = []
+    const srv = await startOrderingServer(paths)
+    try {
+      const dead = await getDeadPort()
+      // 暖机：raw 死、jsdelivr 活 → cache 写入 source=default-jsdelivr
+      await loadRegistry({}, { force: true, defaultRoutes: [
+        { source: 'default-raw', url: `http://127.0.0.1:${dead}/dead.json` },
+        { source: 'default-jsdelivr', url: `${srv.base}/b.json` },
+      ] })
+      paths.length = 0
+      // 观测：force 同步走链，粘性应把 jsdelivr 排前
+      await loadRegistry({}, { force: true, defaultRoutes: [
+        { source: 'default-raw', url: `${srv.base}/a.json` },
+        { source: 'default-jsdelivr', url: `${srv.base}/b.json` },
+      ] })
+      assert.equal(paths[0], '/b.json', '上次成功的线路应先被尝试')
+    } finally { await srv.close() }
+  })
+
+  it('无缓存（全新环境）保持原序 raw→jsDelivr', async () => {
+    const paths = []
+    const srv = await startOrderingServer(paths)
+    try {
+      await loadRegistry({}, { force: true, defaultRoutes: [
+        { source: 'default-raw', url: `${srv.base}/a.json` },
+        { source: 'default-jsdelivr', url: `${srv.base}/b.json` },
+      ] })
+      assert.equal(paths[0], '/a.json', '无粘性记忆时保持既有线路顺序')
+    } finally { await srv.close() }
+  })
+})
