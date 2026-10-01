@@ -400,6 +400,10 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             force: boolArg(body.force),
             withLatest: true,
             namespace: 'host',
+            // 0.9.5 双 profile 读路径接线（实机回归 2026-10-01）：desktop 下市场「已安装」
+            // 徽标此前漏传 profile → listMarket 内部落回 webProfileDir，已装徽标恒空。
+            profileDir: profile.dir,
+            profile: profile.name,
             signal,
           })
           payload = { ...result }
@@ -408,7 +412,15 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'installed': {
           await ctx.controller.ensureReady()
-          const result = await d.listInstalledWithMeta(cfg(), { namespace: 'host', signal })
+          // 0.9.5 双 profile 读路径接线（实机回归 2026-10-01）：desktop 下已装列表此前
+          // 漏传 profile → 落回 webProfileDir，已装页恒显「web profile 尚未安装任何插件」。
+          // 与 tools.ts dshm_list 同款接线（profile.dir 单一事实源）。
+          const result = await d.listInstalledWithMeta(cfg(), {
+            namespace: 'host',
+            profileDir: profile.dir,
+            profile: profile.name,
+            signal,
+          })
           payload = { ...result }
           break
         }

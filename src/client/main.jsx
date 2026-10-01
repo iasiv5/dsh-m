@@ -43,7 +43,7 @@ const ZH = {
   "search.ph": "搜索名称 / 描述 / 标签…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
   "market.loading": "加载收录清单中… ", "market.empty": "无匹配插件，试试其他关键词或分类",
-  "installed.loading": "读取 web profile 中… ", "installed.empty": "web profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
+  "installed.loading": "读取已装列表中… ", "installed.empty": "当前 profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
   "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
   "installed.upgradeAll": "全部更新 ({n})",
   "badge.installed": "已安装", "badge.update": "可升级", "badge.market": "市场安装", "badge.nonmarket": "非市场安装", "badge.custom": "自定义",
@@ -129,7 +129,7 @@ const ZH = {
   "readme.truncated": "…（超过 64KB 已截断，完整内容见插件目录）",
   "warn.unlink": "卸载只移除 profile 对本地目录的引用（{path}），不会删除目录本身。",
   "warn.core": "这是 file: 安装的核心/归档包，卸载可能影响 DSH 功能，且需要手动恢复。",
-  "profile.hint": "web profile：{path}",
+  "profile.hint": "profile：{path}",
   "title.panel": "插件市场", "title.full": "DeepSeek Harness 插件市场",
 };
 const EN = {
@@ -151,7 +151,7 @@ const EN = {
   "search.ph": "Search name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
   "market.loading": "Loading listings… ", "market.empty": "No matching plugins — try another keyword or category",
-  "installed.loading": "Reading web profile… ", "installed.empty": "No DSH plugins installed in this web profile", "installed.none": "Not installed",
+  "installed.loading": "Reading installed list… ", "installed.empty": "No DSH plugins installed in this profile", "installed.none": "Not installed",
   "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
   "installed.upgradeAll": "Update all ({n})",
   "badge.installed": "Installed", "badge.update": "Update", "badge.market": "Via market", "badge.nonmarket": "Non-market", "badge.custom": "Custom",
@@ -236,7 +236,7 @@ const EN = {
   "readme.truncated": "…(truncated at 64KB — see the plugin directory for full content)",
   "warn.unlink": "Uninstalling only removes the profile's reference to the local directory ({path}); the directory itself is kept.",
   "warn.core": "This is a core/archive package installed via file:. Uninstalling may affect DSH features and requires manual restore.",
-  "profile.hint": "web profile: {path}",
+  "profile.hint": "profile: {path}",
   "title.panel": "Plugin Marketplace", "title.full": "DeepSeek Harness Plugin Marketplace",
 };
 function browserLang() {

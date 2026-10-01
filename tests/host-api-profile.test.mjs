@@ -228,6 +228,31 @@ describe('host-api profile 能力表路由（Task 8）', () => {
     assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'status' } })).status, 200)
   })
 
+  // 0.9.5 双 profile 读路径接线（Windows 实机回归 2026-10-01）：desktop 下 GUI 的 installed /
+  // market 漏传 profile → listInstalledPlugins 落回 webProfileDir，已装页恒显
+  // 「web profile 尚未安装任何插件」、市场已装徽标恒空（tools 面同链路已接线故 dshm_list 正常）。
+  it('desktop：installed / market 读路径消费 active profile（profileDir + profile 名）', async () => {
+    const marketOpts = []
+    const { dispatcher, calls } = setupTrust({
+      trust: () => undefined,
+      profile: desktopProfile,
+      overrides: {
+        listMarket: async (cfg, opts) => {
+          marketOpts.push(opts)
+          return { items: [], total: 0, offset: 0, limit: 24, categoryCounts: { primary: 0, community: 0 }, registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'stale', isDefault: true, stale: true, fetchedAt: null, errors: [], count: 0 } }
+        },
+      },
+    })
+    assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed' } })).status, 200)
+    assert.equal(calls.listInstalled.length, 1)
+    assert.equal(calls.listInstalled[0].profileDir, '/d/profiles/desktop', 'installed 必须读 active profile 目录，不得落回 web')
+    assert.equal(calls.listInstalled[0].profile, 'desktop', 'registry/社区缓存必须按 profile 分段')
+    assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })).status, 200)
+    assert.equal(marketOpts.length, 1)
+    assert.equal(marketOpts[0].profileDir, '/d/profiles/desktop', 'market 已装徽标必须读 active profile 目录')
+    assert.equal(marketOpts[0].profile, 'desktop')
+  })
+
   it('unknown profile：install / set-enabled 也拒绝', async () => {
     const { dispatcher, calls } = setupTrust({
       trust: () => undefined,
