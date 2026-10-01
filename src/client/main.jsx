@@ -22,6 +22,7 @@ const { refreshAfterMutation } = require("./view-refresh.js");
 const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
+const { shouldShowInstallCmd } = require("./install-cmd.js");
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -1005,7 +1006,7 @@ function useModalDepth(active) {
   }, [active]);
 }
 
-function DetailModal({ it, labels, busy, onClose, onInstall }) {
+function DetailModal({ it, labels, busy, onClose, onInstall, profileKind }) {
   useModalDepth(true);
   const shots = it.community === true ? safeScreenshots(it) : [];
   const [lb, setLb] = useState(null);
@@ -1043,6 +1044,9 @@ function DetailModal({ it, labels, busy, onClose, onInstall }) {
     }
   };
   const descFull = browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description;
+  // 0.9.14：desktop 上下文整行隐藏——命令两来源（推导 + 上游原文）都是 --profile web 语义，照抄会装进非当前 profile；
+  // desktop 装机走下方「安装」按钮（官方 pluginManager 委派）。已安装条目同样隐藏（命令已无用途）。
+  const showInstallCmd = shouldShowInstallCmd(profileKind, it.installed === true);
   const kv = (k, v) => h(React.Fragment, { key: k }, h("dt", null, k), h("dd", null, v));
   return h(
     "div",
@@ -1114,14 +1118,16 @@ function DetailModal({ it, labels, busy, onClose, onInstall }) {
               : h("div", { className: "dshm-hint" }, lookup("detail.capabilities.unscanned")),
           )
         : null,
-      h(
-        "details",
-        { className: "dsvm-fold" },
-        h("summary", null, lookup("modal.installcmd")),
-        h("div", { className: "dsvm-cmdrow" },
-          h("code", { className: "dsvm-code" }, installCmd),
-          h("button", { className: "dshm-btn sm", onClick: copyCmd }, copied ? lookup("modal.copied") : lookup("modal.copy"))),
-      ),
+      showInstallCmd
+        ? h(
+            "details",
+            { className: "dsvm-fold" },
+            h("summary", null, lookup("modal.installcmd")),
+            h("div", { className: "dsvm-cmdrow" },
+              h("code", { className: "dsvm-code" }, installCmd),
+              h("button", { className: "dshm-btn sm", onClick: copyCmd }, copied ? lookup("modal.copied") : lookup("modal.copy"))),
+          )
+        : null,
       h(
         "div",
         { className: "dsvm-modalactions" },
@@ -1143,7 +1149,7 @@ const ZONE_TABS = [
 
 // 社区区排序（0.7.2 起选项入「筛选」弹层：filter.field 系 + filter.dir 系键，下拉 SORT_OPTIONS 退役）。
 
-function MarketTab({ notify, markets, onMutation, ops, favorites }) {
+function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
@@ -1361,6 +1367,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
             busy: activeInstallTarget === favDetailItem.id,
             onClose: () => setFavDetailItem(null),
             onInstall: (it2) => doInstall(it2),
+            profileKind,
           })
         : null,
     );
@@ -1549,6 +1556,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites }) {
           busy: activeInstallTarget === detailItem.id,
           onClose: () => setDetailId(null),
           onInstall: (it2) => doInstall(it2),
+          profileKind,
         })
       : null,
   );
@@ -2605,7 +2613,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews, ops }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
         h(OperationsPanel, {

@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal };\n',
   )
   await build({
     entryPoints: [entry],
@@ -173,5 +173,21 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     // desktop 态不渲染一键重启按钮（0.9.0 能力表口径保持不变）
     const htmlDesktop = renderToString(h(components.__RestartBanner, { note: 'n', onDone: () => {}, desktop: true, onRestarted: () => {} }))
     assert.ok(!htmlDesktop.includes('dshm-btn primary'), 'desktop 无一键重启')
+  })
+
+  // 0.9.14 详情 Modal「安装命令」折叠行显隐：desktop 上下文/已安装条目整行隐藏，
+  // web 未安装与旧宿主（profileKind 缺席）保持现状——命令两来源都是 --profile web 语义
+  it('DetailModal 安装命令折叠行：web 未安装显示，desktop 或已安装隐藏', () => {
+    const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg' }
+    const base = { labels: {}, busy: false, onClose: () => {}, onInstall: () => {} }
+    const web = renderToString(h(components.__DetailModal, { it: entry, ...base, profileKind: 'web' }))
+    assert.ok(web.includes('dsvm-cmdrow'), 'web 未安装：折叠行在')
+    assert.ok(web.includes('dsh plugin --profile web add demo-pkg'), 'web 推导命令在')
+    const desktop = renderToString(h(components.__DetailModal, { it: entry, ...base, profileKind: 'desktop' }))
+    assert.ok(!desktop.includes('dsvm-cmdrow'), 'desktop：整行隐藏')
+    const installed = renderToString(h(components.__DetailModal, { it: { ...entry, installed: true }, ...base, profileKind: 'web' }))
+    assert.ok(!installed.includes('dsvm-cmdrow'), '已安装：整行隐藏')
+    const legacy = renderToString(h(components.__DetailModal, { it: entry, ...base }))
+    assert.ok(legacy.includes('dsvm-cmdrow'), 'profileKind 缺席（旧宿主）按 web 保留')
   })
 })
