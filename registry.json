@@ -27,7 +27,7 @@
     {
       "id": "dsh-skins",
       "name": "DSH Skins",
-      "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。已适配 0.1.7-rc.2 与 0.2.0-rc.1，详见仓库。",
+      "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。已适配 0.1.7-rc.2 与 0.2.0-rc.1/rc.2，详见仓库。",
       "category": "ui",
       "tags": [
         "皮肤",
@@ -37,7 +37,8 @@
       "verified": [
         "0.1.2-rc.1",
         "0.1.7-rc.2",
-        "0.2.0-rc.1"
+        "0.2.0-rc.1",
+        "0.2.0-rc.2"
       ],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
