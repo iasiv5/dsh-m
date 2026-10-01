@@ -25,6 +25,7 @@ import {
   validateRegistry,
   _waitForRegistryBackgroundForTests,
 } from '../lib/core/registry.js'
+import { ensureLatestCacheSeeded, latestCacheKey, writeLatestCache } from '../lib/core/latest-cache.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -995,5 +996,24 @@ describe('loadRegistry SWR（过期先回 stale）', () => {
       assert.equal(loaded.status, 'ready')
       assert.equal(srv.hits.count, 1)
     } finally { await srv.close() }
+  })
+})
+
+// ---------- 0.9.14 Task 4b：latest 信封 × pruneCaches 交互回归（nsDir 外不变量） ----------
+
+describe('latest 信封 × prune 交互', () => {
+  it('成功刷新触发 pruneCaches 后 latest 信封仍存活（latest/ 在 nsDir 外，评审 R1-#1）', async () => {
+    const latestFile = join(cacheRoot, 'latest', 'host.json')
+    writeLatestCache(latestCacheKey('host', '', { source: 'npm', id: 'x', npm: 'x' }), { version: '9.9.9' })
+    await ensureLatestCacheSeeded({ namespace: 'host' })   // 排空 write-through，信封先落盘
+    assert.ok(existsSync(latestFile), '前置：信封已落盘')
+    server = await startRegistryServer()
+    const dead = await getDeadPort()
+    const loaded = await loadRegistry({}, { force: true, defaultRoutes: [
+      { source: 'default-raw', url: `http://127.0.0.1:${dead}/dead.json` },
+      { source: 'default-jsdelivr', url: server.url('/a.json') },
+    ] })
+    assert.equal(loaded.status, 'ready')
+    assert.ok(existsSync(latestFile), 'prune 后 latest 信封必须存活')
   })
 })

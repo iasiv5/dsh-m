@@ -45,6 +45,7 @@ import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { HttpError } from './httpx.js'
+import { ensureLatestCacheSeeded, latestCacheKey, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
 import { readPnpmLockIntegrity } from './npm-integrity.js'
 import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
@@ -335,43 +336,8 @@ function deadlineRace<T>(task: Promise<T>, ms: number): Promise<T | 'deadline'> 
 }
 
 // ---------- latest TTL cache ----------
-
-interface LatestValue {
-  version?: string
-  tag?: string
-  sha?: string
-}
-
-interface LatestCacheEntry {
-  at: number
-  value: LatestValue
-}
-
-const latestCache = new Map<string, LatestCacheEntry>()
-const LATEST_CACHE_MAX = 5000
-
-function latestCacheKey(namespace: RegistryCacheNamespace, registryKey: string, item: Pick<RegistryEntry, 'source' | 'npm' | 'github' | 'id'>): string {
-  const id = item.source === 'npm' && item.npm ? `npm:${item.npm}` : item.github ? `gh:${item.github}` : item.id
-  return `${namespace}|${registryKey}|${id}`
-}
-
-function readLatestCache(key: string, ttlMin: number): LatestValue | null {
-  const entry = latestCache.get(key)
-  if (!entry) return null
-  if (Date.now() - entry.at >= ttlMin * 60_000) {
-    latestCache.delete(key)
-    return null
-  }
-  return entry.value
-}
-
-function writeLatestCache(key: string, value: LatestValue): void {
-  if (latestCache.size >= LATEST_CACHE_MAX) {
-    const oldest = latestCache.keys().next().value
-    if (oldest !== undefined) latestCache.delete(oldest)
-  }
-  latestCache.set(key, { at: Date.now(), value })
-}
+// 0.9.14 Task 4b：内存 Map + 磁盘信封层整体迁入 latest-cache.ts（write-through 落盘，跨重启存活）；
+// LatestValue/latestCacheKey/readLatestCache/writeLatestCache 自该模块导入，调用点签名不变。
 
 // ---------- probe 基元 ----------
 
@@ -809,6 +775,8 @@ export async function listMarket(
   let latestComplete = true
   let latestTimedOut = false
   if (withLatest && items.length > 0) {
+    // 0.9.14：latest 探测缓存已落盘——探测段前装载/排空磁盘信封（重启后零重放）
+    await ensureLatestCacheSeeded({ namespace, profile: opts.profile })
     // 先吃 cache 命中
     const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
     for (const item of items) {
@@ -839,7 +807,7 @@ export async function listMarket(
           const outcome = await probeWithBudget(task, perBudget, signal)
           if (outcome.ok && outcome.value) {
             applyProbe(item, outcome.value)
-            writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value)
+            writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value, opts.profile)
           } else if (outcome.timeout) {
             item.latestError = '更新检查未完成：超时'
             item.latestErrorCode = 'timeout'
@@ -935,7 +903,9 @@ export async function listInstalledWithMeta(
   const registryState = stateOf(loaded)
 
   matchInstalled(items, community.merged)
-  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+  // 0.9.14：latest 探测缓存已落盘——探测段前装载/排空磁盘信封
+  await ensureLatestCacheSeeded({ namespace, profile: opts.profile })
+  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000, profile: opts.profile })
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
 }
@@ -957,15 +927,16 @@ async function probeLatest(
   items: InstalledItem[],
   ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number },
   d: MarketDeps,
-  rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
+  rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number; profile?: string },
 ): Promise<void> {
   await mapWithConcurrency(items, LATEST_WORKERS, async (item) => {
     const entry = ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
-    // latest 探测沿用 listMarket 的 TTL cache
+    // latest 探测沿用 listMarket 的 TTL cache；npm-only 条目（不在收录清单的已装包）也走
+    // latestCacheKey 归一格式（0.9.14：否则首段非 host/cli 会被落盘层静默跳过）
     const cacheKey = entry
       ? latestCacheKey(rt.namespace, ctx.registryAddress ?? '', entry)
       : item.source === 'npm'
-        ? `npm-only|${rt.namespace}|npm:${item.pkg}`
+        ? latestCacheKey(rt.namespace, 'npm-only', { source: 'npm', id: item.pkg, npm: item.pkg })
         : null
     if (cacheKey) {
       const cached = readLatestCache(cacheKey, ctx.ttlMin)
@@ -991,7 +962,7 @@ async function probeLatest(
           }
           if (value) {
             applyProbe(item, value)
-            writeLatestCache(cacheKey, value)
+            writeLatestCache(cacheKey, value, rt.profile)
           }
         } catch (err) {
           item.latestError = err instanceof Error ? err.message : String(err)

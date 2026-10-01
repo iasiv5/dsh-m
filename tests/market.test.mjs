@@ -3,7 +3,7 @@
  * Task 3 桥接：transaction 注入与 legacy 槽位逐操作回退。
  * 运行：npm run build && node --test tests/market.test.mjs
  */
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,6 +11,15 @@ import { join } from 'node:path'
 
 import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome, capturePreMutationState, derivePrior } from '../lib/core/market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
+
+// 0.9.14 Task 4b：latest 落盘接线后，listMarket/listInstalledWithMeta 会读写真实 cacheRoot——
+// 全文件统一隔离到临时目录（评审 R1-#4：本文件原先零 DSHM_CACHE_DIR，不补则触碰真实 ~/.dsh）。
+const marketTestCacheRoot = mkdtempSync(join(tmpdir(), 'dshm-market-'))
+process.env.DSHM_CACHE_DIR = marketTestCacheRoot
+after(() => {
+  delete process.env.DSHM_CACHE_DIR
+  rmSync(marketTestCacheRoot, { recursive: true, force: true })
+})
 
 const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
