@@ -48,6 +48,10 @@
 
 以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.12 变更：0.9.11 的重发
+
+0.9.11 在 npmjs 遭遇幽灵发布：OIDC 发布被受理并 **staged**（CLI exit 0、provenance 已上 Transparency Log），但从未 commit 进注册表——GET 404、同版本重发 409 `Cannot publish over previously staged version`。等待自愈无果后按标准解法换号重发。**内容与 0.9.11 完全一致：设置页「强制刷新」不再连坐社区清单卡。**
+
 ### 0.9.11 修复：设置页「强制刷新」不再连坐社区清单卡（force 语义只属精选链）
 
 - **场景**：弱网下点精选清单的「强制刷新」，社区清单卡跟着变「不可用 + 获取超时」——根因是 host 把 `force` 一路透传给社区目录 summary，强制重开获取 flight；弱网下 flight 3s 完不成，waiter 超时返回占位摘要（flight 本身在后台 30s hard cap 内继续，跑完即自愈）。
