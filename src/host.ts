@@ -63,10 +63,43 @@ export function apply(ctx: Context, config: Config): void {
   const appExit = appExitFromContext(ctx)
   const restart = (port: number | null = null) => scheduleRestart(port, { appExit })
 
-  // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号
-  const getService = (): PluginManagerLike | undefined =>
-    (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager') as PluginManagerLike | undefined
-  registerTools(ctx, controller.config, { restart }, profile)
+  // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号。
+  // 0.9.8 与 dsh-market 同源修正（Windows 实机 2026-10-01）：pluginManager 是惰性服务，
+  // 外层 apply ctx 的一次性 get 在本机探不到；改为双上下文探测（webServer 注入回调的
+  // hostCtx 优先——dshmarket 即此路径，两轮覆盖安装实证）+ inject 惰性拉起兜底。
+  let serviceCtx: unknown = undefined
+  const getService = (): PluginManagerLike | undefined => {
+    for (const c of [serviceCtx, ctx]) {
+      const svc = (c as unknown as { get?: (name: string) => unknown } | null)?.get?.('pluginManager') as
+        | PluginManagerLike
+        | undefined
+      if (svc !== undefined && svc !== null) return svc
+    }
+    return undefined
+  }
+  // 惰性拉起：get 缺席时经 cordis inject 等官方服务实例化（短超时，仍缺席由调用方 fail-closed）
+  const ensureService = (timeoutMs = 5_000): Promise<PluginManagerLike | undefined> =>
+    new Promise((resolve) => {
+      const immediate = getService()
+      if (immediate !== undefined) {
+        resolve(immediate)
+        return
+      }
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(getService())
+      }
+      const timer = setTimeout(finish, timeoutMs)
+      try {
+        ;(ctx as unknown as { inject?: (deps: string[], cb: (c: unknown) => void) => unknown }).inject?.(['pluginManager'], () => finish())
+      } catch {
+        finish()
+      }
+    })
+  registerTools(ctx, controller.config, { restart, getService, ensureService }, profile)
 
   // 设置页接线（双代兼容，详见 core/settings-compat.ts）：
   // - ≤0.1.5：settings.register('dshm', …) scope（get/update/watch）；
@@ -112,6 +145,7 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
     ).webServer
+    serviceCtx = c // 0.9.8：webServer 注入回调的 hostCtx 是 pluginManager 的可见上下文（dsh-market 同款）
     const rejectRequest = createRequestRejection(ctx)
     const handleApi = createApiDispatcher({
       controller,
@@ -120,6 +154,7 @@ export function apply(ctx: Context, config: Config): void {
       deps: {
         scheduleRestart: restart,
         getService,
+        ensureService,
         rejectRequest,
       },
     })

@@ -83,13 +83,14 @@ describe('assertWriteAllowed：能力表全矩阵', () => {
     }
   })
 
-  it('desktop：仅 install / set-enabled', () => {
-    assert.doesNotThrow(() => assertWriteAllowed({ name: 'desktop', kind: 'desktop', dir: '/d', source: 'host' }, 'install'))
-    assert.doesNotThrow(() => assertWriteAllowed({ name: 'desktop', kind: 'desktop', dir: '/d', source: 'host' }, 'set-enabled'))
+  it('desktop：0.9.8 起 install / set-enabled / upgrade / uninstall / self-upgrade 全放行（dsh-market 同策略委派官方管理器）', () => {
+    for (const action of ['install', 'set-enabled', 'upgrade', 'uninstall', 'self-upgrade']) {
+      assert.doesNotThrow(() => assertWriteAllowed({ name: 'desktop', kind: 'desktop', dir: '/d', source: 'host' }, action), action)
+    }
   })
 
-  it('desktop：upgrade / uninstall / self-upgrade / restart → ProfileUnsupportedError 且字段完整', () => {
-    for (const action of ['upgrade', 'uninstall', 'self-upgrade', 'restart']) {
+  it('desktop：仅 restart → ProfileUnsupportedError 且字段完整（Electron 生命周期归官方壳）', () => {
+    for (const action of ['restart']) {
       let caught = null
       try {
         assertWriteAllowed({ name: 'desktop', kind: 'desktop', dir: '/d', source: 'host' }, action)

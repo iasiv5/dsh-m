@@ -30,7 +30,7 @@ import { servingPort, scheduleRestart } from './restart.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
 import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
-import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, type DesktopManagerLike } from './profile-ops.js'
+import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry, type DesktopManagerLike } from './profile-ops.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** 宿主信任检查的统一签名（生产 = 官方 requestRejection 委派；测试可注入）。 */
@@ -74,6 +74,11 @@ export interface HostApiOverrides {
   /** 0.9.0：Desktop adapter 注入（测试可替换；生产 = profile-ops 实现）。 */
   desktopInstall?: typeof desktopInstallFromRegistry
   desktopToggle?: typeof desktopToggle
+  /** 0.9.8：Desktop 卸载/升级委派（dsh-market 同策略；生产 = profile-ops 实现）。 */
+  desktopUninstall?: typeof desktopUninstall
+  desktopUpgrade?: typeof desktopUpgradeFromRegistry
+  /** 0.9.8：同步探测缺席时的官方惰性服务拉起（host 侧 cordis inject 实现）。 */
+  ensureService?: (timeoutMs?: number) => Promise<PluginManagerLike | undefined>
 }
 
 export interface HostApiContext {
@@ -276,6 +281,9 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     toggle: ctx.deps?.togglePlugin ?? togglePlugin,
     desktopInstall: ctx.deps?.desktopInstall ?? desktopInstallFromRegistry,
     desktopToggle: ctx.deps?.desktopToggle ?? desktopToggle,
+    desktopUninstall: ctx.deps?.desktopUninstall ?? desktopUninstall,
+    desktopUpgrade: ctx.deps?.desktopUpgrade ?? desktopUpgradeFromRegistry,
+    ensureService: ctx.deps?.ensureService,
   }
   const cfg = (): typeof ctx.controller.config => ctx.controller.config
   // 0.9.0：宿主信任检查委派（含 ping 与未知 method，fail-closed）；
@@ -322,8 +330,29 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'self-upgrade': {
-          // 0.9.0：Desktop 结构化拒绝（能力表），Web 走既有路径
           assertWriteAllowed(profile, 'self-upgrade')
+          // 0.9.8：desktop → 官方管理器覆盖安装 dsh-m@latest（dsh-market 同策略实证；
+          // 生效仍需重启 Desktop——banner.desktop 指引由客户端 needsRestart 通道给出）
+          if (profile.kind !== 'web') {
+            const managed = await d.desktopInstall(ctx.pkg.name, cfg(), {
+              namespace: 'host',
+              profile: profile.name,
+              signal,
+            }, { getService: d.getService, ensureService: d.ensureService })
+            if ('needsBuildApproval' in managed) {
+              // build-blocked（自升级罕见）：结构化透出，不冒充成功
+              payload = { ...managed }
+              break
+            }
+            payload = {
+              pkg: managed.pkg,
+              version: managed.version,
+              buildApprovals: managed.buildApprovals ?? [],
+              fallbackAllBuilds: false,
+              needsRestart: true as const,
+            }
+            break
+          }
           // M2 Task 3：self-upgrade 收编 market.selfUpgrade（统一 mutation session + 守卫，直调事务旁路封死）
           const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal })
           payload = {
@@ -450,7 +479,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
               namespace: 'host',
               profile: profile.name,
               signal,
-            })) }
+            }, { getService: d.getService, ensureService: d.ensureService })) }
             break
           }
           const version = typeof body.version === 'string' ? body.version : undefined
@@ -467,8 +496,12 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'uninstall': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          // 0.9.0：Desktop 结构化拒绝（官方入口指引）
           assertWriteAllowed(profile, 'uninstall')
+          // 0.9.8：desktop → 官方管理器 removeBundle（dsh-market 同策略；此前结构化拒绝）
+          if (profile.kind !== 'web') {
+            payload = { ...(await d.desktopUninstall(target, { getService: d.getService, ensureService: d.ensureService, profileDir: profile.dir })) }
+            break
+          }
           const result = await d.uninstallPlugin(target, cfg(), { namespace: 'host', signal })
           payload = { ...result }
           break
@@ -492,8 +525,18 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'upgrade': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          // 0.9.0：Desktop 结构化拒绝（无官方 upgrade API，指引 Settings → Plugins）
           assertWriteAllowed(profile, 'upgrade')
+          // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前结构化拒绝）
+          if (profile.kind !== 'web') {
+            payload = { ...(await d.desktopUpgrade(target, cfg(), {
+              forceIncompatible: boolArg(body.forceIncompatible),
+              namespace: 'host',
+              profile: profile.name,
+              profileDir: profile.dir,
+              signal,
+            }, { getService: d.getService, ensureService: d.ensureService })) }
+            break
+          }
           const result = await d.upgradePlugin(target, cfg(), {
             forceIncompatible: boolArg(body.forceIncompatible),
             namespace: 'host',

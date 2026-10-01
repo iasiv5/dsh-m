@@ -24,8 +24,22 @@ export interface ActiveProfile {
 /** 受能力表管辖的写动作集合（读操作不设限）。 */
 export type ProfileAction = 'install' | 'set-enabled' | 'upgrade' | 'uninstall' | 'self-upgrade' | 'restart'
 
-/** Desktop 首发能力表（ADR-0005）：只读市场 + 安装新包 + 开关；其余结构化拒绝并指引官方入口。 */
-const DESKTOP_ALLOWED: ReadonlySet<ProfileAction> = new Set<ProfileAction>(['install', 'set-enabled'])
+/**
+ * Desktop 能力表：
+ * - 0.9.0 首发：install / set-enabled（upgrade/uninstall/self-upgrade 结构化拒绝）
+ * - 0.9.8 主人裁决（借鉴 dsh-market 官方市场同机实证：0.9.3→0.9.4/0.9.5 两轮覆盖安装、
+ *   removeBundle 卸载均由官方管理器完成）：upgrade（installBundle 覆盖安装）、
+ *   uninstall（removeBundle）、self-upgrade（installBundle('dsh-m@latest')）一并放开；
+ *   全部走官方管理器委派，服务缺席仍结构化拒绝（fail-closed 红线不动：绝不文件级回退）。
+ * - restart 继续拒绝：Electron 进程生命周期归官方壳，dsh-m 不重启宿主。
+ */
+const DESKTOP_ALLOWED: ReadonlySet<ProfileAction> = new Set<ProfileAction>([
+  'install',
+  'set-enabled',
+  'upgrade',
+  'uninstall',
+  'self-upgrade',
+])
 
 /** 结构化拒绝的官方入口指引（zh；GUI/工具/HTTP 三入口共用同一文案源）。 */
 export const WRITE_GUIDANCE: Record<ProfileAction, string> = {

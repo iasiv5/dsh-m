@@ -48,6 +48,13 @@
 
 以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.8 修复：Desktop 包操作全面接通官方管理器（安装恒 no-manager；升级/卸载/自升级开放）
+
+- **安装恒失败的根因**：Host API 的 desktop 安装分支调 `desktopInstall(id, cfg, opts)` 漏传第 4 参 deps——`getService` 根本没进适配器，desktop 安装恒报「官方 pluginManager 服务不可用（fail-closed）」（100% 必现，与时机无关）。工具面 `dshm_install` 同病。
+- **服务解析与 dsh-market 同源**（借鉴其 official-desktop 接线，本机两轮覆盖安装实证）：探测改双上下文（webServer 注入回调的 hostCtx 优先）+ cordis inject 惰性拉起兜底（短超时）——官方 pluginManager 是惰性服务，未被拉起前一次性 get 恒 undefined；仍缺席才结构化拒绝（绝不文件级回退的红线不动）。
+- **能力表扩充（主人裁决，借鉴 dsh-market 策略）**：desktop 的 upgrade（installBundle 覆盖安装）/ uninstall（removeBundle）/ self-upgrade（installBundle('dsh-m@latest')）全部开放——dshmarket 正是这样完成 dsh-m 0.9.3→0.9.4/0.9.5 两轮升级的；判定纪律沿用（application/stage 为准、overridden 非失败、build-blocked 结构化回传 pendingBuilds、listBundles 复读不冒充成功）。restart 继续拒绝（Electron 生命周期归官方壳）。
+- GUI 与工具面（dshm_install / dshm_uninstall / dshm_upgrade）三入口同批接线。
+
 ### 0.9.7 修复：Desktop 下点升级角标弹红色「升级失败」（能力表拒绝应为指导而非报错）
 
 - **根因**：0.9.1 的升级角标点击后一律调 `self-upgrade`；Desktop 能力表按设计 409 结构化拒绝，但客户端把 409 当普通失败渲染成红色「升级失败」横幅——按能力表这根本不是失败，是「该走官方入口」的指引。

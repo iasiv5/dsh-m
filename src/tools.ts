@@ -21,7 +21,7 @@ import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
-import { desktopInstallFromRegistry, desktopToggle } from './core/profile-ops.js'
+import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from './core/profile-ops.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
   market: '市场',
@@ -91,6 +91,12 @@ export interface ToolMarketDeps {
   /** 0.9.0：Desktop adapter 注入（测试可替换；生产 = profile-ops 实现） */
   desktopInstall?: typeof desktopInstallFromRegistry
   desktopToggle?: typeof desktopToggle
+  /** 0.9.8：Desktop 卸载/升级委派（dsh-market 同策略；生产 = profile-ops 实现） */
+  desktopUninstall?: typeof desktopUninstall
+  desktopUpgrade?: typeof desktopUpgradeFromRegistry
+  /** 0.9.8：官方服务探测/惰性拉起（host.ts 共用同一解析器；缺省退回外层 ctx 一次性 get） */
+  getService?: () => unknown
+  ensureService?: (timeoutMs?: number) => Promise<unknown>
 }
 
 function cloneJson(value: unknown) {
@@ -116,13 +122,17 @@ export function registerTools(
     upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
     desktopInstall: deps.desktopInstall ?? desktopInstallFromRegistry,
     desktopToggle: deps.desktopToggle ?? desktopToggle,
+    desktopUninstall: deps.desktopUninstall ?? desktopUninstall,
+    desktopUpgrade: deps.desktopUpgrade ?? desktopUpgradeFromRegistry,
   }
   const restart = deps.restart ?? ((port: number | null = null) =>
     scheduleRestart(port, { appExit: appExitFromContext(ctx) }))
   const toggle = deps.togglePlugin ?? coreTogglePlugin
-  // 开关委派服务探测（ADR-0001）：运行时按存在性，不判版本号
-  const getService = (): unknown =>
-    (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager')
+  // 开关委派服务探测（ADR-0001）：运行时按存在性，不判版本号。
+  // 0.9.8：host.ts 共用解析器（双上下文 + 惰性拉起）优先；缺省退回外层 ctx 一次性 get（旧行为）。
+  const getService = deps.getService ?? ((): unknown =>
+    (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager'))
+  const ensureService = deps.ensureService
 
   ctx.tools.register(defineTool({
     name: 'dshm_search',
@@ -303,7 +313,8 @@ export function registerTools(
       // 0.9.0：desktop → 官方 pluginManager 委派（新包）；未知 profile → 结构化拒绝
       if (profile.kind !== 'web') {
         assertWriteAllowed(profile, 'install')
-        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name }))
+        // 0.9.8：补传服务解析 deps（此前漏传 → desktop 安装恒 no-manager，实机 2026-10-01）
+        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
         return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
@@ -348,7 +359,7 @@ export function registerTools(
       // 0.9.0：desktop → 官方管理器委派（服务缺席结构化拒绝）；web → 既有委派/降级
       if (profile.kind !== 'web') {
         assertWriteAllowed(profile, 'set-enabled')
-        return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, profileDir: profile.dir }))
+        return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir }))
       }
       return cloneJson(await toggle(target, args.enabled, { getService: getService as never }))
     },
@@ -377,6 +388,10 @@ export function registerTools(
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
       assertWriteAllowed(profile, 'uninstall')
+      // 0.9.8：desktop → 官方管理器 removeBundle（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
+      if (profile.kind !== 'web') {
+        return cloneJson(await m.desktopUninstall(target, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir }))
+      }
       return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host' }))
     },
   }))
@@ -462,6 +477,10 @@ export function registerTools(
       if (!target) throw new Error('缺少 pkg')
       const force = args.force === true
       assertWriteAllowed(profile, 'upgrade')
+      // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
+      if (profile.kind !== 'web') {
+        return cloneJson(await m.desktopUpgrade(target, cfg, { forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir }, { getService: getService as never, ensureService: ensureService as never }))
+      }
       try {
         return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host' }))
       } catch (err) {

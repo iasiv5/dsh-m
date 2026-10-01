@@ -12,6 +12,8 @@ import { join } from 'node:path'
 import {
   desktopInstallFromRegistry,
   desktopToggle,
+  desktopUninstall,
+  desktopUpgradeFromRegistry,
   DesktopOpsError,
 } from '../lib/core/profile-ops.js'
 import { ToggleError } from '../lib/core/toggle.js'
@@ -31,9 +33,9 @@ function registryWith(entries) {
   return { configuredAddress: 'reg-test', activeAddress: 'reg-test', source: 'custom-url', status: 'ready', isDefault: false, stale: false, fetchedAt: new Date().toISOString(), errors: [], count: entries.length, registry: { version: 1, plugins: entries } }
 }
 
-/** 官方 manager 桩：记录 installBundle 调用；行为可编排。 */
+/** 官方 manager 桩：记录 installBundle/removeBundle 调用；行为可编排。 */
 function managerStub(overrides = {}) {
-  const calls = { installBundle: [], listBundles: 0 }
+  const calls = { installBundle: [], removeBundle: [], listBundles: 0 }
   const bundles = overrides.bundles ?? [{ name: 'pkg-a', installed: true, enabled: true }]
   const service = {
     listPlugins: async () => [],
@@ -42,6 +44,10 @@ function managerStub(overrides = {}) {
     installBundle: overrides.installBundle ?? (async (spec, options) => {
       calls.installBundle.push({ spec, options })
       return overrides.change ?? { changed: true, application: 'applied', stage: 'install', bundle: 'pkg-a', packageResult: { exitCode: 0 } }
+    }),
+    removeBundle: overrides.removeBundle ?? (async (name) => {
+      calls.removeBundle.push(name)
+      return overrides.removeChange ?? { changed: true, application: 'applied', stage: 'remove', bundle: name }
     }),
     listBundles: overrides.listBundles === null ? undefined : async () => {
       calls.listBundles += 1
@@ -249,5 +255,123 @@ describe('desktopToggle', () => {
     assert.deepEqual(calls.setBundle, [['pkg-x', true]])
     assert.equal(res.via, 'delegate')
     assert.equal(res.applied, 'live')
+  })
+
+  it('ensureService 拉起：同步探测缺席但 ensureService 返回服务 → 委派成功（0.9.8 服务解析回归门）', async () => {
+    const service = {
+      listPlugins: async () => [{ entryId: 'e1', moduleName: 'pkg-x', enabled: true }],
+      setPluginEnabled: async () => ({}),
+      setBundleEnabled: async () => ({ application: 'applied' }),
+    }
+    const res = await desktopToggle('pkg-x', true, {
+      getService: () => undefined,
+      ensureService: async () => service,
+      profileDir,
+    })
+    assert.equal(res.via, 'delegate')
+  })
+})
+
+// ---------- 0.9.8：desktop 卸载（removeBundle）与升级（installBundle 覆盖安装）----------
+
+describe('desktopUninstall：removeBundle 委派（dsh-market 同策略）', () => {
+  it('applied + listBundles 复读不在装 → 成功形态（needsRestart=false）', async () => {
+    const { service, calls } = managerStub({ bundles: [{ name: 'pkg-a', installed: false }] })
+    const res = await desktopUninstall('pkg-a', { getService: () => service })
+    assert.deepEqual(calls.removeBundle, ['pkg-a'])
+    assert.equal(res.pkg, 'pkg-a')
+    assert.equal(res.needsRestart, false)
+    assert.equal(res.via, 'desktop-manager')
+    assert.deepEqual(res.leftovers, [])
+  })
+
+  it('restart-required → needsRestart=true', async () => {
+    const { service } = managerStub({ removeChange: { application: 'restart-required', stage: 'remove', bundle: 'pkg-a' }, bundles: [{ name: 'pkg-a', installed: false }] })
+    const res = await desktopUninstall('pkg-a', { getService: () => service })
+    assert.equal(res.needsRestart, true)
+  })
+
+  it('application=failed → remove-failed', async () => {
+    const { service } = managerStub({ removeChange: { application: 'failed', error: { code: 'E-REMOVE' } } })
+    await assert.rejects(
+      () => desktopUninstall('pkg-a', { getService: () => service }),
+      (err) => err instanceof DesktopOpsError && err.code === 'remove-failed' && err.message.includes('E-REMOVE'),
+    )
+  })
+
+  it('复读仍在装 → verify-failed（不冒充卸载成功）', async () => {
+    const { service } = managerStub({ bundles: [{ name: 'pkg-a', installed: true }] })
+    await assert.rejects(
+      () => desktopUninstall('pkg-a', { getService: () => service }),
+      (err) => err instanceof DesktopOpsError && err.code === 'verify-failed',
+    )
+  })
+
+  it('服务缺席（同步与 ensure 均无）→ no-manager；removeBundle 缺席同样拒绝', async () => {
+    await assert.rejects(() => desktopUninstall('pkg-a', {}), (err) => err.code === 'no-manager')
+    await assert.rejects(() => desktopUninstall('pkg-a', { getService: () => undefined, ensureService: async () => undefined }), (err) => err.code === 'no-manager')
+    const bare = managerStub({ listBundles: null }).service
+    delete bare.removeBundle
+    await assert.rejects(() => desktopUninstall('pkg-a', { getService: () => bare }), (err) => err.code === 'no-manager')
+  })
+
+  it('ensureService 拉起：同步探测缺席但 ensure 返回服务 → 委派成功（服务解析回归门）', async () => {
+    const { service, calls } = managerStub({ bundles: [{ name: 'pkg-a', installed: false }] })
+    const res = await desktopUninstall('pkg-a', { getService: () => undefined, ensureService: async () => service })
+    assert.deepEqual(calls.removeBundle, ['pkg-a'])
+    assert.equal(res.via, 'desktop-manager')
+  })
+})
+
+describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', () => {
+  function upgradeDeps(service, overrides = {}) {
+    return {
+      getService: () => service,
+      loadRegistry: overrides.loadRegistry ?? (async () => registryWith(overrides.entries ?? [ENTRY])),
+      listInstalled: overrides.listInstalled ?? (async () => ({ items: overrides.installed ?? [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0' }] })),
+      npmLatest: overrides.npmLatest ?? (async () => ({ version: '1.2.3', integrity: 'sha512-x' })),
+      precheck: async () => null,
+    }
+  }
+
+  it('覆盖安装：registry 命中 → installBundle(pkg@latest) → 成功 + fromVersion + via=desktop-manager', async () => {
+    const { service, calls } = managerStub()
+    const res = await desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service))
+    assert.deepEqual(calls.installBundle.map((c) => c.spec), ['pkg-a@1.2.3'])
+    assert.equal(res.via, 'desktop-manager')
+    assert.equal(res.version, '1.2.3')
+    assert.equal(res.fromVersion, '1.0.0')
+    assert.equal(res.needsRestart, true)
+  })
+
+  it('desktop profile 未安装该插件 → install-refused', async () => {
+    const { service } = managerStub()
+    await assert.rejects(
+      () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, { installed: [] })),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused' && /未安装/.test(err.message),
+    )
+  })
+
+  it('非收录插件（主清单与社区目录都 miss）→ install-refused', async () => {
+    const { service } = managerStub()
+    await assert.rejects(
+      () => desktopUpgradeFromRegistry('pkg-foreign', {}, {}, upgradeDeps(service, { installed: [{ pkg: 'pkg-foreign', name: 'F', version: '1.0.0' }] })),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused' && /收录/.test(err.message),
+    )
+  })
+
+  it('收录清单不可用 → install-refused', async () => {
+    const { service } = managerStub()
+    await assert.rejects(
+      () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, { loadRegistry: async () => ({ ...registryWith([]), status: 'unavailable' }) })),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused' && /不可用/.test(err.message),
+    )
+  })
+
+  it('no-manager（同步与 ensure 均无）→ no-manager', async () => {
+    await assert.rejects(
+      () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(undefined, { deps: { ensureService: async () => undefined } })),
+      (err) => err instanceof DesktopOpsError && err.code === 'no-manager',
+    )
   })
 })

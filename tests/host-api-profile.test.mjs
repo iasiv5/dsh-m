@@ -55,7 +55,7 @@ async function callApi(dispatcher, args) {
 /** 独立 setup：trust/profile/desktop 行为全可编排；业务 deps 为记录型桩。 */
 function setupTrust({ trust, profile, overrides = {} } = {}) {
   const controller = createRegistryController({})
-  const calls = { listInstalled: [], scheduleRestart: [], upgrade: [], uninstall: [], selfUpgrade: [], desktopInstall: [], desktopToggle: [], toggle: [] }
+  const calls = { listInstalled: [], scheduleRestart: [], upgrade: [], uninstall: [], selfUpgrade: [], desktopInstall: [], desktopToggle: [], desktopUpgrade: [], desktopUninstall: [], toggle: [] }
   const dispatcher = createApiDispatcher({
     controller,
     pkg: { name: 'dsh-m', version: '0.0.0-test' },
@@ -99,6 +99,14 @@ function setupTrust({ trust, profile, overrides = {} } = {}) {
       desktopToggle: async (pkg, enabled, opts) => {
         calls.desktopToggle.push({ pkg, enabled, opts })
         return { pkg, enabled, applied: 'live', via: 'delegate', warnings: [] }
+      },
+      desktopUpgrade: async (pkg, cfg, opts, deps) => {
+        calls.desktopUpgrade.push({ pkg, opts, deps })
+        return { id: 'x', pkg, spec: `${pkg}@2.0.0`, version: '2.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '', via: 'desktop-manager', fromVersion: '1.0.0' }
+      },
+      desktopUninstall: async (pkg, deps) => {
+        calls.desktopUninstall.push({ pkg, deps })
+        return { pkg, liveDisabled: false, needsRestart: true, leftovers: [], via: 'desktop-manager', output: '' }
       },
       ...overrides,
     },
@@ -187,20 +195,44 @@ describe('host-api ping.profile（GUI chip 数据源）', () => {
 describe('host-api profile 能力表路由（Task 8）', () => {
   const desktopProfile = { name: 'desktop', kind: 'desktop', dir: '/d/profiles/desktop', source: 'host' }
 
-  it('desktop：upgrade / uninstall / self-upgrade / restart → 409 结构化拒绝 + 指引，业务零调用', async () => {
+  it('desktop：仅 restart → 409 结构化拒绝（0.9.8 唯一保留项；Electron 生命周期归官方壳）', async () => {
     const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: desktopProfile })
-    for (const method of ['upgrade', 'uninstall', 'self-upgrade', 'restart']) {
-      const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method, pkg: 'pkg-x' } })
-      assert.equal(res.status, 409, `method=${method} 应 409`)
-      assert.equal(res.body.code, 'unsupported-on-profile')
-      assert.equal(res.body.action, method)
-      assert.equal(res.body.profile, 'desktop')
-      assert.ok(String(res.body.guidance).length > 0, '应携带官方入口指引')
-    }
-    assert.equal(calls.upgrade.length, 0)
-    assert.equal(calls.uninstall.length, 0)
-    assert.equal(calls.selfUpgrade.length, 0)
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'restart', pkg: 'pkg-x' } })
+    assert.equal(res.status, 409)
+    assert.equal(res.body.code, 'unsupported-on-profile')
+    assert.equal(res.body.action, 'restart')
+    assert.equal(res.body.profile, 'desktop')
+    assert.ok(String(res.body.guidance).length > 0, '应携带官方入口指引')
     assert.equal(calls.scheduleRestart.length, 0, 'restart helper 不得被触碰')
+  })
+
+  // 0.9.8：upgrade/uninstall/self-upgrade 借鉴 dsh-market 全部改委派官方管理器 adapter
+  // （本机实证：dshmarket 正是经 installBundle 覆盖安装把 dsh-m 升 0.9.3→0.9.4/0.9.5 的）
+  it('desktop：upgrade / uninstall / self-upgrade → 委派 Desktop adapter（携带 profile 目录与名字）', async () => {
+    const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: desktopProfile })
+    const up = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'pkg-x' } })
+    assert.equal(up.status, 200)
+    assert.equal(up.body.via, 'desktop-manager')
+    assert.equal(up.body.fromVersion, '1.0.0')
+    assert.equal(calls.desktopUpgrade.length, 1)
+    assert.equal(calls.desktopUpgrade[0].pkg, 'pkg-x')
+    assert.equal(calls.desktopUpgrade[0].opts.profileDir, '/d/profiles/desktop')
+    assert.equal(calls.upgrade.length, 0, 'web 事务不得被触达')
+
+    const un = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'uninstall', pkg: 'pkg-y' } })
+    assert.equal(un.status, 200)
+    assert.equal(un.body.via, 'desktop-manager')
+    assert.equal(calls.desktopUninstall.length, 1)
+    assert.equal(calls.desktopUninstall[0].pkg, 'pkg-y')
+    assert.equal(calls.desktopUninstall[0].deps.profileDir, '/d/profiles/desktop')
+    assert.equal(calls.uninstall.length, 0, 'web 事务不得被触达')
+
+    const su = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(su.status, 200)
+    assert.equal(su.body.needsRestart, true)
+    assert.equal(calls.desktopInstall.length, 1, 'self-upgrade 走 desktopInstall(dsh-m)')
+    assert.equal(calls.desktopInstall[0].id, 'dsh-m')
+    assert.equal(calls.selfUpgrade.length, 0, 'web 事务不得被触达')
   })
 
   it('desktop：install 路由到 Desktop adapter（携带 profile 名），不走 web 事务', async () => {

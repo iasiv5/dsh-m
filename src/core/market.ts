@@ -438,7 +438,8 @@ function classifyLatestError(err: unknown): LatestErrorCode {
   return 'network-error'
 }
 
-function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github'>, installed: InstalledPlugin[]): InstalledPlugin | undefined {
+/** 0.9.8 导出（原模块私有）：desktopUpgrade 的「已装 ↔ 收录条目」匹配与 web upgradePlugin 同语义。 */
+export function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github'>, installed: InstalledPlugin[]): InstalledPlugin | undefined {
   return installed.find((it) => {
     if (entry.npm && it.pkg === entry.npm) return true
     if (entry.npm && it.name === entry.npm) return true
