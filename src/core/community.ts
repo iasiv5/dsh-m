@@ -341,6 +341,28 @@ async function runChain(
         catalog: cached.catalog,
       }
     }
+    if (cached && pin === null) {
+      // 0.9.14 SWR：过期 → 同步回 stale，force flight 后台自愈（force 分支跳过快速路径，天然无递归；
+      // signal 剥离——原请求 abort 不得经 releaseFlight 腰斩后台 flight，与 registry SWR 对齐）
+      const bg = fetchCommunityCatalog(cfg, { ...opts, force: true, signal: undefined })
+        .finally(() => {
+          const i = backgroundRefreshes.indexOf(bg)
+          if (i >= 0) backgroundRefreshes.splice(i, 1)
+        })
+      backgroundRefreshes.push(bg)
+      void bg.catch(() => undefined)
+      return {
+        state: stateOf({
+          status: 'stale',
+          version: cached.meta.version,
+          checkedAt: cached.meta.checkedAt,
+          fetchedAt: cached.meta.fetchedAt,
+          route: cached.meta.route,
+          count: cached.catalog.plugins.length,
+        }),
+        catalog: cached.catalog,
+      }
+    }
   }
 
   const errors: string[] = []
@@ -584,4 +606,12 @@ export async function getCommunitySummary(
   const task = fetchCommunityCatalog(cfg, { signal: opts.signal, force: opts.force })
   const outcome = await communityOutcome(task, opts.deadlineAt, primaryEntries)
   return outcome.summary
+}
+
+// 0.9.14 SWR：过期触发即登记的后台自愈 flight（waiter 隔离；flight 本体走 fetchCommunityCatalog
+// 的共享 flight 表，此处只留引用供测试钩子等待；.finally 自清）
+const backgroundRefreshes: Array<Promise<unknown>> = []
+/** 测试钩子：等待当前全部后台自愈 flight settle（allSettled，不抛）。 */
+export function _waitForCommunityBackgroundForTests(): Promise<unknown> {
+  return Promise.allSettled([...backgroundRefreshes])
 }

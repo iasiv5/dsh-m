@@ -124,7 +124,7 @@ describe('COMMUNITY_CATEGORY_LABELS 与 fixture 一致（0.7.0 Task 4 改名导�
 import { mkdtempSync, writeFileSync, rmSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
-import { fetchCommunityCatalog } from '../lib/core/community.js'
+import { fetchCommunityCatalog, _waitForCommunityBackgroundForTests } from '../lib/core/community.js'
 
 const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms))
 const catalogJson = (version) =>
@@ -324,7 +324,7 @@ describe('fetchCommunityCatalog（获取链）', () => {
     assert.deepEqual(readdirSync(awesome()).filter((f) => f.includes('..')), [])
   })
 
-  it('⑪ checkedAt 非法：视为过期重新探测（同版本不重拉正文）', async () => {
+  it('⑪ checkedAt 非法：视为过期 → 同步 stale 先回，后台 force 自愈重拉正文（0.9.14 SWR 契约翻转）', async () => {
     const st = makeState()
     const s = await startCatalog(st)
     await fetchCommunityCatalog({}, { routes: s.routes })
@@ -333,22 +333,25 @@ describe('fetchCommunityCatalog（获取链）', () => {
     meta.checkedAt = 'garbage'
     writeFileSync(metaPath, JSON.stringify(meta))
     const second = await fetchCommunityCatalog({}, { routes: s.routes })
-    assert.equal(second.state.status, 'ready')
+    assert.equal(second.state.status, 'stale')
+    await _waitForCommunityBackgroundForTests()
     assert.equal(st.probeHits, 2)
-    assert.equal(st.bodyHits, 1)
+    assert.equal(st.bodyHits, 2)   // bg 为 force flight，不走同版本短路（community.ts `if (!opts.force)`），正文必重拉
   })
 
-  it('⑫ TTL 过期 + dist-tags 同版本：仅更新 checkedAt、正文 0 拉取', async () => {
+  it('⑫ TTL 过期 + dist-tags 同版本：同步 stale 先回，后台 force 自愈重拉正文（0.9.14 SWR 契约翻转）', async () => {
     const st = makeState()
     const s = await startCatalog(st)
-    await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes })
+    await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes })   // 冷启动无缓存：同步探测 ready（断言不变）
+    assert.equal(st.probeHits, 1)
     const first = JSON.parse(readFileSync(join(awesome(), 'meta.json'), 'utf8'))
     await sleep2(20)
     const second = await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes })
+    assert.equal(second.state.status, 'stale')
+    await _waitForCommunityBackgroundForTests()
     const secondMeta = JSON.parse(readFileSync(join(awesome(), 'meta.json'), 'utf8'))
-    assert.equal(second.state.status, 'ready')
     assert.equal(st.probeHits, 2)
-    assert.equal(st.bodyHits, 1)
+    assert.equal(st.bodyHits, 2)   // bg 为 force flight，不走同版本短路，正文必重拉
     assert.notEqual(secondMeta.checkedAt, first.checkedAt)
   })
 
@@ -439,6 +442,44 @@ describe('fetchCommunityCatalog（获取链）', () => {
     assert.equal(catalog, null)
     assert.equal(st.probeHits, 0)
     assert.equal(st.bodyHits, 0)
+  })
+
+  it('0.9.14 SWR：过期 cache 先回 stale（零探测），后台 force flight 自愈', async () => {
+    const st = makeState()
+    const s = await startCatalog(st)
+    await fetchCommunityCatalog({}, { routes: s.routes })            // 暖机：probeHits=1
+    const stale = await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes })
+    assert.equal(stale.state.status, 'stale')
+    assert.equal(st.probeHits, 1, '同步路径零探测')
+    await _waitForCommunityBackgroundForTests()
+    assert.equal(st.probeHits, 2, '后台恰好探测一次（force flight）')
+    const again = await fetchCommunityCatalog({ cacheTtlMin: 60 }, { routes: s.routes })
+    assert.equal(again.state.status, 'ready')
+  })
+
+  it('0.9.14 SWR 并发：3 个过期调用只触发一条后台 flight', async () => {
+    const st = makeState({ bodyDelayMs: 60 })   // 加宽 flight 存活窗口（⑬ L356 先例，防 flight 自删间隙误报）
+    const s = await startCatalog(st)
+    await fetchCommunityCatalog({}, { routes: s.routes })
+    const [a, b, c] = await Promise.all([
+      fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes }),
+      fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes }),
+      fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes }),
+    ])
+    assert.equal(a.state.status, 'stale')
+    assert.equal(b.state.status, 'stale')
+    assert.equal(c.state.status, 'stale')
+    await _waitForCommunityBackgroundForTests()
+    assert.equal(st.probeHits, 2, '并发过期只触发一条后台 flight')
+  })
+
+  it('0.9.14 force 不进 SWR：cacheTtlMin:0 + force 同步探测并返回 ready', async () => {
+    const st = makeState()
+    const s = await startCatalog(st)
+    await fetchCommunityCatalog({}, { routes: s.routes })   // 暖机
+    const forced = await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes, force: true })
+    assert.equal(forced.state.status, 'ready')
+    assert.equal(st.probeHits, 2, 'force 同步探测')
   })
 })
 
