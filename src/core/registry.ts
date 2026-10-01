@@ -640,6 +640,8 @@ export interface RegistryLoadOptions {
   profile?: string
   prune?: boolean
   deadlineMs?: number
+  /** default 链线路覆写（测试缝；生产恒为 DEFAULT_URLS 的 raw → jsDelivr 双线路） */
+  defaultRoutes?: Array<{ source: RegistrySource; url: string }>
 }
 
 function attemptTimeoutMs(cfg: RegistryConfig, opts: RegistryLoadOptions, startedAt: number): number {
@@ -714,7 +716,8 @@ async function loadDefaultChain(
 ): Promise<LoadedRegistry> {
   const errors: string[] = []
   const startedAt = Date.now()
-  for (const candidate of DEFAULT_URLS) {
+  const routes = opts.defaultRoutes ?? DEFAULT_URLS
+  for (const candidate of routes) {
     try {
       const { registry, finalUrl } = await fetchRegistryFromUrl(candidate.url, attemptTimeoutMs(cfg, opts, startedAt), opts.signal)
       const fetchedAt = new Date().toISOString()
@@ -735,7 +738,11 @@ async function loadDefaultChain(
           source: candidate.source,
           status: 'ready',
           fetchedAt,
-          errors,
+          // 0.9.9：后续线路成功 = 先行的线路失败已自愈，不再作为 error 上屏——
+          // 「生效来源」行已如实标注当前线路（如 GitHub 镜像（备用））；那条红色
+          // 「default-raw 失败…可检查网络」对着成功自愈的数据纯属报警噪音（主人 2026-10-01）。
+          // 全线路失败落 cache/bundled 时 errors 照常保留——那才是需要行动的信号。
+          errors: [],
           count: registry.plugins.length,
         }),
         registry,

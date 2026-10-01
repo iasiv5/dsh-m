@@ -573,6 +573,36 @@ describe('Task 2：远程加载与 cache 回退', () => {
     assert.equal(fresh.registry.plugins.length, 0)
   })
 
+  // 0.9.9 提示收敛：default 双线路上后续线路成功 = 先行失败已自愈，errors 不再上屏
+  // （「生效来源」行已标注当前线路）；全线路失败落 cache/bundled 时 errors 照常保留。
+  it('default 双线路：主线路失败、备用成功 → 备用生效且 errors 不携带已自愈失败', async () => {
+    server = await startRegistryServer()
+    const loaded = await loadRegistry({}, {
+      force: true,
+      defaultRoutes: [
+        { source: 'default-raw', url: server.url('/raw-404') },
+        { source: 'default-jsdelivr', url: server.url('/a.json') },
+      ],
+    })
+    assert.equal(loaded.status, 'ready')
+    assert.equal(loaded.source, 'default-jsdelivr')
+    assert.equal(loaded.count, 1)
+    assert.deepEqual(loaded.errors, [], '已自愈的主线路失败不得作为 error 上屏')
+  })
+
+  it('default 全线路失败 → errors 保留（落 cache/bundled 才是需要行动的信号）', async () => {
+    const deadPort = await getDeadPort()
+    const loaded = await loadRegistry({}, {
+      force: true,
+      defaultRoutes: [
+        { source: 'default-raw', url: `http://127.0.0.1:${deadPort}/a.json` },
+        { source: 'default-jsdelivr', url: `http://127.0.0.1:${deadPort}/b.json` },
+      ],
+    })
+    assert.ok(['stale', 'unavailable'].includes(loaded.status))
+    assert.equal(loaded.errors.length, 2, '两条线路的失败都应保留')
+  })
+
   it('force 绕过 TTL，普通读取遵循 cacheTtlMin', async () => {
     server = await startRegistryServer()
     const url = server.url('/a.json')
