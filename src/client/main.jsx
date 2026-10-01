@@ -523,6 +523,11 @@ async function api(method, params, signal) {
   if (!res.ok || data.ok === false) {
     const err = new Error(data.error || `API ${res.status}`);
     if (data && typeof data === "object" && data.issue) err.issue = data.issue; // IncompatibleError 结构化载体
+    // 0.9.6：能力表结构化拒绝（ProfileUnsupportedError 409）全字段透传——GUI 据此把
+    // 「官方入口指引」渲染成中性 info 横幅，而非红色「升级失败」（Windows 实机反馈）
+    if (data && typeof data === "object" && data.code === "unsupported-on-profile") {
+      err.unsupported = { action: data.action, profile: data.profile, guidance: typeof data.guidance === "string" ? data.guidance : "" };
+    }
     // M2 Task 3：装后守卫拦截的字段全保留（GUI 一键重启只读 restartSafe，不得由 needsRestart 推导）
     if (data && typeof data === "object" && data.kind && Array.isArray(data.violations)) {
       err.guard = { kind: data.kind, violations: data.violations, compensation: data.compensation, needsRestart: data.needsRestart === true, restartSafe: data.restartSafe === true, repairBasis: data.repairBasis };
@@ -2308,8 +2313,13 @@ function DshmVersionChip({ version, notify, initialCheck }) {
             : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
       });
     } catch (e) {
-      // Desktop 能力表拒绝（结构化 409）也走这里：错误原文即官方生命周期指引
-      notify({ kind: "err", text: lookup("notify.selfupgraded.failed", { err: (e && e.message) || e }) });
+      // Desktop 能力表拒绝（结构化 409）：不是失败——按官方入口指引出中性 info 横幅
+      // （guidance 单一事实源在服务端 active-profile.ts），不再伪装红色「升级失败」（0.9.6 实机反馈）
+      if (e && e.unsupported) {
+        notify({ kind: "info", text: e.unsupported.guidance || (e && e.message) || String(e) });
+      } else {
+        notify({ kind: "err", text: lookup("notify.selfupgraded.failed", { err: (e && e.message) || e }) });
+      }
     } finally {
       setBusy(false);
     }
@@ -2523,8 +2533,8 @@ function MarketPanel({ onClose }) {
   }, [onClose]);
   useEffect(() => {
     if (!toast) return;
-    // err 文案可能带回滚/自愈长报告，6s 读不完；ok 6s、err 15s
-    const t = setTimeout(() => setToast(null), toast.kind === "err" ? 15000 : 6000);
+    // err 文案可能带回滚/自愈长报告，6s 读不完；ok 6s、info 12s（官方入口指引）、err 15s
+    const t = setTimeout(() => setToast(null), toast.kind === "err" ? 15000 : toast.kind === "info" ? 12000 : 6000);
     return () => clearTimeout(t);
   }, [toast]);
   // needsRestart 为 true 才出重启横幅（安装/卸载/升级/自更新）；registry 配置只 toast
