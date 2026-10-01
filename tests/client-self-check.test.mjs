@@ -102,6 +102,18 @@ describe('deriveChipState 三态', () => {
     assert.deepEqual(deriveChipState(DATA, '0.9.0'), { kind: 'outdated', latest: '0.9.1' })
   })
 
+  it('版本护栏（0.9.2）：check.current ≠ 当前 ping.version（跨服务重启的旧进程判定）→ 一律静默', () => {
+    // 面板常开跨重启：version 已是新进程 0.9.1，check 还是旧进程 0.9.0 的 outdated 判定
+    // ——不得渲染「v0.9.1 ⬆ v0.9.1」
+    assert.deepEqual(deriveChipState(DATA, '0.9.1'), { kind: 'idle' })
+    assert.deepEqual(
+      deriveChipState({ current: '0.9.0', latest: '0.9.1', outdated: false, ahead: true }, '0.9.1'),
+      { kind: 'idle' },
+    )
+    // version 缺席（ping 失败/旧宿主）→ 无从比对，不启用护栏，维持原判定
+    assert.deepEqual(deriveChipState(DATA, null), { kind: 'outdated', latest: '0.9.1' })
+  })
+
   it('outdated=true 但 latest 缺失（服务端半残）→ 静默，不点亮空箭头', () => {
     assert.deepEqual(deriveChipState({ current: '0.9.0', latest: null, outdated: true, ahead: false }), { kind: 'idle' })
     assert.deepEqual(deriveChipState({ current: '0.9.0', outdated: true }), { kind: 'idle' })

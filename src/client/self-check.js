@@ -95,13 +95,17 @@ export function clearSelfCheckCache(storage) {
  * 角标状态推导（纯函数）。
  * - outdated → `{ kind: 'outdated', latest }`：点亮 warn 可点角标（唯一非静默态）；
  * - ahead → `{ kind: 'ahead', latest }`：静默，title 提示本地开发版；
- * - 其余（无数据 / 检查失败 / 已最新）→ `{ kind: 'idle' }`：完全静默。
+ * - 其余（无数据 / 检查失败 / 已最新 / check 与当前版本不符）→ `{ kind: 'idle' }`：完全静默。
  * @param {SelfCheckData | null | undefined} check
- * @param {string | null | undefined} version 当前 ping.version（仅防御性冗余，判定以 host outdated 为准）
+ * @param {string | null | undefined} version 当前 ping.version；与 check.current 不一致
+ *   （面板不关跨服务重启，check 是旧进程判定）时一律静默（0.9.2 版本护栏）
  * @returns {{ kind: 'outdated' | 'ahead' | 'idle', latest?: string | null }}
  */
 export function deriveChipState(check, version) {
   if (!check || typeof check !== 'object') return { kind: 'idle' }
+  // 版本护栏：check.current ≠ 当前 ping.version = 旧进程的判定 → 一律静默；
+  // 不得拿旧 latest 渲染新版本角标（会出现「v0.9.1 ⬆ v0.9.1」），重查交给下一次挂载
+  if (typeof version === 'string' && version !== '' && check.current !== version) return { kind: 'idle' }
   if (check.outdated === true && typeof check.latest === 'string' && check.latest !== '') {
     return { kind: 'outdated', latest: check.latest }
   }

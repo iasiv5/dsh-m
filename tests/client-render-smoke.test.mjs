@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner };\n',
   )
   await build({
     entryPoints: [entry],
@@ -138,5 +138,30 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(!html.includes('<button'), 'ahead 态不可点')
     assert.ok(!html.includes('⬆'), 'ahead 态无升级箭头')
     assert.ok(html.includes('本地开发版') || html.includes('Local dev build'), 'title 提示本地开发版')
+  })
+
+  it('DshmVersionChip 版本护栏：initialCheck 的 current 与 version 不符 → 静默（跨服务重启旧判定）', () => {
+    const html = renderToString(h(components.__DshmVersionChip, {
+      version: '0.9.1',
+      notify: () => {},
+      initialCheck: { current: '0.9.0', latest: '0.9.1', outdated: true, ahead: false },
+    }))
+    assert.ok(!html.includes('<button'), '旧进程判定不得点亮')
+    assert.ok(!html.includes('⬆'), '旧进程判定不得出箭头')
+    assert.ok(html.includes('v0.9.1'), '显示当前真实版本')
+  })
+
+  it('RestartBanner idle 态渲染不抛（0.9.2 onRestarted 接线）', () => {
+    const html = renderToString(h(components.__RestartBanner, {
+      note: '变更完成，需要重启 DSH Web 后生效。',
+      onDone: () => {},
+      desktop: false,
+      onRestarted: () => {},
+    }))
+    assert.ok(typeof html === 'string' && html.includes('dshm-banner'), '横幅在')
+    assert.ok(html.includes('变更完成'), 'note 文案在')
+    // desktop 态不渲染一键重启按钮（0.9.0 能力表口径保持不变）
+    const htmlDesktop = renderToString(h(components.__RestartBanner, { note: 'n', onDone: () => {}, desktop: true, onRestarted: () => {} }))
+    assert.ok(!htmlDesktop.includes('dshm-btn primary'), 'desktop 无一键重启')
   })
 })

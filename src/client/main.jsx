@@ -715,8 +715,8 @@ function TwoStepButton({ label, confirmLabel, className, onConfirm, disabled }) 
   );
 }
 
-// ---------- 重启横幅 ----------
-function RestartBanner({ note, onDone, desktop }) {
+// ---------- 重启横幅（0.9.2：boot id 确认新进程后回调 onRestarted——面板就地重取 ping，角标/profile chip 不再停留旧进程数据） ----------
+function RestartBanner({ note, onDone, desktop, onRestarted }) {
   const [phase, setPhase] = useState("idle"); // idle | restarting | waiting
   const [err, setErr] = useState(null);
   const restart = useCallback(async () => {
@@ -752,12 +752,16 @@ function RestartBanner({ note, onDone, desktop }) {
       // connection and has its own background recovery/retry loop; a full-page
       // reload during the auth/route handoff can land on a blank error page.
       setPhase("idle");
+      // 0.9.2：先就地刷新 ping（版本角标/profile chip），再关横幅；回调异常不影响横幅收尾
+      if (onRestarted) {
+        try { onRestarted(); } catch { /* 回调异常不阻塞横幅关闭 */ }
+      }
       onDone(true);
     } catch (e) {
       setPhase("idle");
       setErr(String((e && e.message) || e));
     }
-  }, [onDone]);
+  }, [onDone, onRestarted]);
   return h(
     "div",
     { className: "dshm-banner" },
@@ -2401,11 +2405,13 @@ function MarketPanel({ onClose }) {
     toggle: useCallback((snapshot) => setFavList(favStore.toggle(snapshot)), [favStore]),
     removeIds: useCallback((ids) => setFavList(favStore.removeIds(ids)), [favStore]),
   };
-  // dsh-m 自身版本：挂载时随 ping 一次性带回（0.7.5 起头部 chip 改显 dsh-m 版本，DSH 运行版本看设置页）；失败/缺席 → chip 整个隐藏（不留占位）
+  // dsh-m 自身版本：挂载时随 ping 带回（0.7.5 起头部 chip 改显 dsh-m 版本，DSH 运行版本看设置页）；失败/缺席 → chip 整个隐藏（不留占位）
+  // 0.9.2：提取 reloadPing——一键重启确认新进程后与页面回前台时各重取一次，
+  // 修「面板不关跨服务重启 → 角标/能力提示停留旧进程数据」（0.9.1 实测：芯片升级 + 重启后仍显 v0.9.0）
   const [pluginVersion, setPluginVersion] = useState(null);
   // 0.9.0 双 profile：ping.profile { name, kind, source }——chip 与重启引导的数据源；缺席 = 旧宿主，按 web 处理
   const [profile, setProfile] = useState(null);
-  useEffect(() => {
+  const reloadPing = useCallback(() => {
     let live = true;
     api("ping")
       .then((r) => {
@@ -2418,6 +2424,15 @@ function MarketPanel({ onClose }) {
       live = false;
     };
   }, []);
+  useEffect(() => reloadPing(), [reloadPing]);
+  // 页面回到前台时重取（面板常开、服务在后台被外部重启的场景；visibilitychange 零轮询成本）
+  useEffect(() => {
+    const onVis = () => {
+      if (typeof document !== "undefined" && !document.hidden) reloadPing();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [reloadPing]);
   // Registry 配置或任一 profile mutation 后，视图一起刷新，避免单页快照不同步（两分区同刷）。
   const marketReloadAll = useCallback(
     (force) => {
@@ -2590,7 +2605,7 @@ function MarketPanel({ onClose }) {
         ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
             h("span", { className: "dshm-banner-text" }, toast.text))
         : null,
-      banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true }) : null,
+      banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true, onRestarted: reloadPing }) : null,
     ),
   );
 }

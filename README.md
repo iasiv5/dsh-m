@@ -48,6 +48,12 @@
 
 以下重启链路仅适用于 **Web**（Desktop 的生效走官方应用生命周期：安装完成后退出并重新打开 Desktop 应用即可，见 0.9.0 节）。安装 / 卸载 / 升级完成后，当前已打开的市场页与已装页会一起重新读取 profile 状态并同步徽标/卡片，不需要关闭后重新打开插件市场；随后出现「⚡ 一键重启」横幅——受 systemd 管理时通过 DSH launcher 的 `appExit` 交给服务的 `Restart` 策略，避免在待停止 unit 的 cgroup 内启动 `systemctl` helper；无 `appExit` 的 systemd 兜底改用 manager-owned transient `systemd-run`，最后才退回 detached-helper。客户端按 boot id 确认新进程已恢复后关闭横幅，交由 DSH Web 自身的后台连接重试恢复页面，不强制整页刷新，避免认证/路由切换期间白屏。重启链路已在当前 DSH Web `0.2.0-rc.2` 实机核验（2026-10-01）：dsh-m 探测 unit `Restart=` 策略后经 `appExit` 交还 systemd，`status=75/TEMPFAIL` 退出由 Restart 策略接住自动拉起，服务恢复后页面后台重连、面板全功能可用。历史口径：`0.1.5-rc.1` 时代已核验 `/dshm` ping 与带认证 `303 → 200`；`0.1.2-rc.1` 按契约核对 + 形态探测兜底收录（verified 数组），部署面演进后不再追旧代 live E2E；transient `systemd-run` 兜底仅适用于无 `appExit` 的宿主（受支持代际均提供 `appExit`），保持设计兜底而非发布门槛；连续安装/卸载由 profile 事务测试面（补偿事务、装后守卫等 813 用例）与 0.4.0→0.4.2 连续发布实证覆盖。安装过程实时显示 pnpm 进度（解析 → 下载 → 链接 → 构建）。
 
+### 0.9.2 修复：跨服务重启后头部角标停留旧版本
+
+- **一键重启确认新进程后就地刷新**：boot id 确认 DSH Web 已恢复的瞬间，面板立即重取 ping——`dsh-m vX.Y.Z` 角标与 profile chip 同步到新进程数据，不再停留旧版本（0.9.1 实测：芯片升级 + 重启后仍显 v0.9.0）。
+- **页面回前台时重取**：面板常开、服务在后台被外部重启的场景，`visibilitychange` 回前台即重取 ping（零轮询成本）。
+- **角标版本护栏**：self-check 判定携带的版本与当前进程不符（旧进程残留判定）时一律静默，杜绝「v0.9.1 ⬆ v0.9.1」式误渲染。
+
 ### 0.9.1 新增：头部版本角标升级提示（有更新才点亮）
 
 - **静默口径**：面板头部 `dsh-m vX.Y.Z` 角标常态维持 0.7.5 起的静态展示——已是最新、检查失败、本地 dev 版领先 npm（ahead）一律不打扰（ahead 仅在悬停 title 里提示「本地开发版」）。
