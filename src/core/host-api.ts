@@ -369,9 +369,12 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           await ctx.controller.ensureReady()
           const snap = await ctx.controller.snapshot({ force: boolArg(body.force), signal })
           // 社区 summary：primaryEntries 直接取本次 snapshot（displaced 与本次响应同代，不重拉主清单）；
-          // 3s 是本 waiter 的等待上限——到点返回 unavailable summary，主清单响应按契约照常返回
+          // 3s 是本 waiter 的等待上限——到点返回 unavailable summary，主清单响应按契约照常返回。
+          // 0.9.11：不再透传 force——「强制刷新」语义是精选清单（registry 链），社区目录走自己的
+          // TTL/共享 flight；此前 force 连坐会在弱网下把社区卡打成 3s 超时的「不可用」占位
+          // （Windows 实机 2026-10-01：点强制刷新 → 社区卡「获取超时」，flight 后台自愈前一直报错）。
           const community = await d.getCommunitySummary(snap.loaded.registry.plugins, cfg(), {
-            force: boolArg(body.force),
+            force: false,
             signal,
             deadlineAt: Date.now() + 3_000,
           })

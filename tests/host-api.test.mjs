@@ -715,4 +715,18 @@ describe('M1 Task 6：host-api 社区契约', () => {
     assert.equal(refs.length, 2)
     assert.ok(refs[0] === refs[1], '两次 registry 快照未变 → 同一 plugins 数组引用（单一来源约束）')
   })
+
+  it('⑥c registry 的 force 不连坐社区 summary（0.9.11：强制刷新语义只属精选链）', async () => {
+    const optsSeen = []
+    const { dispatcher } = setup({
+      getCommunitySummary: async (_primary, _cfg, opts) => {
+        optsSeen.push(opts)
+        return readySummary()
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry', force: true } })
+    assert.equal(res.status, 200)
+    assert.equal(optsSeen.length, 1)
+    assert.equal(optsSeen[0]?.force, false, 'force 不得连坐社区 summary（弱网 3s 超时占位把社区卡打成不可用的教训）')
+  })
 })
