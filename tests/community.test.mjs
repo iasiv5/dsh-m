@@ -305,7 +305,13 @@ describe('fetchCommunityCatalog（获取链）', () => {
     const { state } = await fetchCommunityCatalog({}, { routes: s.routes, flightBudgetMs: 400 })
     const elapsed = Date.now() - t0
     assert.equal(state.status, 'unavailable')
-    assert.ok(state.errors.some((e) => e.includes('预算耗尽')))
+    // 三向计时竞速（Windows 计时粒度）：flight 400ms abort / 单请求 ~remaining 超时 / 墙钟
+    // remaining<=0 判定，谁先到决定错误文案落「预算耗尽 / 请求被取消 / 请求超时」——三者都是
+    // 预算截断的留痕，断言接受任一（2026-10-02 修抖动：原断言只认「预算耗尽」，~1/5 概率闪断）。
+    assert.ok(
+      state.errors.some((e) => e.includes('预算耗尽') || e.includes('请求被取消') || e.includes('请求超时')),
+      `errors=${JSON.stringify(state.errors)}`,
+    )
     // 契约是「不永久挂起」（预算 400ms 收口）；上限给足裕量——全量套件并行时定时器饥饿
     // 曾把 2s 断言顶爆（2026-10-01 两次闪断），10s 依旧能抓住 hang-forever 回归
     assert.ok(elapsed < 10_000, `elapsed=${elapsed}`)
