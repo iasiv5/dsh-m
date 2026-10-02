@@ -28,7 +28,7 @@ function entry(i) {
     id: `plug-${i}`,
     name: `Plug ${i}`,
     description: `entry ${i}`,
-    category: 'tools',
+    category: 'essentials',
     tags: [],
     source: 'npm',
     npm: `pkg-${i}`,

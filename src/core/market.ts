@@ -746,13 +746,22 @@ export async function listMarket(
         ? merged.filter((entry) => !isCommunityEntry(entry))
         : merged
   const counts: CategoryCounts = zeroCounts()
-  for (const entry of zoned) counts[entry.category] = (counts[entry.category] ?? 0) + 1
+  for (const entry of zoned) {
+    counts[entry.category] = (counts[entry.category] ?? 0) + 1
+    // 0.9.17 次级策展桶：跨桶条目在每个归属桶里都计一次（Σcounts 可大于去重总数）；
+    // 社区条目无 alsoCategories（开放集 string），cast 到 RegistryEntry 侧读取
+    const also = (entry as RegistryEntry).alsoCategories
+    for (const extra of also ?? []) {
+      counts[extra] = (counts[extra] ?? 0) + 1
+    }
+  }
   const cat = opts.category ?? null
   // 相关性搜索（0.7.0 Task 3）：归一化分词 + 字段加权评分；0 分不返回；
   // id 整串精确匹配保证命中（收藏 stale 检测依赖）。
   const terms = tokenizeSearchText(normalizeSearchText(opts.query ?? ''))
   const filtered = zoned.filter((entry) => {
-    if (cat && entry.category !== cat) return false
+    const also = (entry as RegistryEntry).alsoCategories ?? []
+    if (cat && entry.category !== cat && !also.includes(cat as RegistryEntry['category'])) return false
     if (terms.length === 0) return true
     return relevanceScore(entry, terms) > 0
   })

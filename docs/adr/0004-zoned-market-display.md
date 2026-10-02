@@ -18,4 +18,4 @@
 
 ## 修订（2026-10-02，0.9.16）
 
-- 精选区分类法从功能五分类（market/tools/ui/search/other）改为**策展五桶**：装机必备（essentials）/ 崔添翼精选（cui-picks）/ iasi自研（self-dev）/ 腾讯轻量云专区（tencent-lighthouse）/ 观察区（watchlist）——分类语义从「插件是什么」转为「为什么值得进精选」（主人策展视角），重叠归属按 装机必备 > 崔添翼精选 > 自研 > 腾讯轻量云 优先级归桶，跨桶出处可用 tags 保留（如 better-sidebar 的「崔添翼精选」tag）。功能五分类退役，旧值仍可作社区开放 slug 命中自定义源；「精选区固定分类法（封闭集）」的机制不变，变的只是集合内容。
+- 精选区分类法从功能五分类（market/tools/ui/search/other）改为**策展五桶**：装机必备（essentials）/ 崔添翼精选（cui-picks）/ iasi自研（self-dev）/ 腾讯轻量云专区（tencent-lighthouse）/ 观察区（watchlist）——分类语义从「插件是什么」转为「为什么值得进精选」（主人策展视角），重叠归属按 装机必备 > 崔添翼精选 > 自研 > 腾讯轻量云 优先级归桶，跨桶出处可用 tags 保留（如 better-sidebar 的「崔添翼精选」tag）。功能五分类退役，旧值仍可作社区开放 slug 命中自定义源；「精选区固定分类法（封闭集）」的机制不变，变的只是集合内容。（**0.9.17 增补**：新增可选 `alsoCategories` 次级归属——跨桶条目在 chips 计数与过滤中按「主桶 ∪ 次桶」双记，主桶仍由优先级决定；首例 better-sidebar/dsh-m 双席位，原 tag 留痕方案由真实席位取代。）

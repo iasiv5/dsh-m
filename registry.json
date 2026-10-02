@@ -6,6 +6,9 @@
       "name": "DSH Marketplace",
       "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 DSH 0.2.0-rc.2，支持 web 与 desktop 双 profile，详见仓库。",
       "category": "essentials",
+      "alsoCategories": [
+        "self-dev"
+      ],
       "tags": [
         "市场",
         "插件管理"
@@ -29,12 +32,14 @@
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
       "category": "essentials",
+      "alsoCategories": [
+        "cui-picks"
+      ],
       "tags": [
         "侧边栏",
         "文件编辑",
         "终端",
-        "Git",
-        "崔添翼精选"
+        "Git"
       ],
       "source": "npm",
       "npm": "dsh-better-sidebar",

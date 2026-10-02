@@ -51,6 +51,10 @@ export interface RegistryEntry {
   /** 实测版本清单（0.4.0 / GLOSSARY.md 术语）：实测声明而非预测声明——只展示与收录
    *  质量提示，不做安装拦截依据。每项必须精确 semver（禁 range/前缀）。 */
   verified?: string[]
+  /** 次级策展桶（0.9.17）：跨桶归属——条目同时计入这些桶的 chips 计数与过滤
+   *  （如 better-sidebar 主桶 essentials + 次桶 cui-picks）。值 ∈ CATEGORIES、
+   *  不得含主 category、去重；主桶仍决定详情页分类标签与展示位。 */
+  alsoCategories?: Category[]
 }
 
 export interface Registry {
@@ -209,7 +213,7 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
 // ---------- 严格 v1 校验 ----------
 
 const TOP_LEVEL_KEYS = new Set(['version', 'plugins'])
-const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified'])
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories'])
 
 /** 精确 semver 判定（与 versions.ts EXACT_VERSION_RE 同语义；接受 prerelease/build，拒绝 range/前缀）。 */
 const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -364,6 +368,36 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       }
     }
 
+    // alsoCategories（0.9.17）：可选次级策展桶——值 ∈ CATEGORIES、不含主 category、去重；
+    // 空数组 = 无次级归属（不产生键）
+    let alsoCategories: Category[] | undefined
+    if (e.alsoCategories !== undefined) {
+      if (!Array.isArray(e.alsoCategories)) {
+        errors.push(`${where}.alsoCategories: 必须是字符串数组`)
+      } else {
+        const list: Category[] = []
+        const seenAlso = new Set<string>()
+        e.alsoCategories.forEach((c, ci) => {
+          const cs = typeof c === 'string' ? c : ''
+          if (!(CATEGORIES as readonly string[]).includes(cs)) {
+            errors.push(`${where}.alsoCategories[${ci}]: 无效 ${JSON.stringify(c)}（须为策展桶）`)
+            return
+          }
+          if (cs === category) {
+            errors.push(`${where}.alsoCategories[${ci}]: 与主 category 重复 ${cs}`)
+            return
+          }
+          if (seenAlso.has(cs)) {
+            errors.push(`${where}.alsoCategories[${ci}]: 重复 ${cs}`)
+            return
+          }
+          seenAlso.add(cs)
+          list.push(cs as Category)
+        })
+        if (list.length > 0) alsoCategories = list
+      }
+    }
+
     plugins.push({
       id,
       name,
@@ -376,6 +410,7 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       ...(entryHomepage !== undefined ? { homepage: entryHomepage } : {}),
       ...(entryIcon !== undefined ? { icon: entryIcon } : {}),
       ...(verified !== undefined ? { verified } : {}),
+      ...(alsoCategories !== undefined ? { alsoCategories } : {}),
     })
   })
 

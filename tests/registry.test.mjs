@@ -1017,3 +1017,22 @@ describe('latest 信封 × prune 交互', () => {
     assert.ok(existsSync(latestFile), 'prune 后 latest 信封必须存活')
   })
 })
+
+// ---------- 0.9.17：alsoCategories 次级策展桶 ----------
+
+describe('alsoCategories 次级策展桶（0.9.17）', () => {
+  it('合法次级桶回传；非法值 / 含主桶 / 重复项 / 非数组拒绝', () => {
+    const ok = validateRegistry({ version: 1, plugins: [{ ...entry(), alsoCategories: ['cui-picks', 'watchlist'] }] })
+    assert.equal(ok.ok, true)
+    assert.deepEqual(ok.registry.plugins[0].alsoCategories, ['cui-picks', 'watchlist'])
+
+    for (const bad of [['tools'], ['essentials'], ['cui-picks', 'cui-picks'], ['UI!!'], 'x', [['cui-picks']]]) {
+      const r = validateRegistry({ version: 1, plugins: [{ ...entry(), alsoCategories: bad }] })
+      assert.equal(r.ok, false, `alsoCategories=${JSON.stringify(bad)} 应拒绝`)
+    }
+
+    const empty = validateRegistry({ version: 1, plugins: [{ ...entry(), alsoCategories: [] }] })
+    assert.equal(empty.ok, true)
+    assert.equal('alsoCategories' in empty.registry.plugins[0], false, '空数组不产生键')
+  })
+})

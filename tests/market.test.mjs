@@ -1103,6 +1103,21 @@ describe('M1 Task 5：合并市场', () => {
     assert.deepEqual(rp.categoryCounts, { essentials: 0, 'cui-picks': 0, 'self-dev': 0, 'tencent-lighthouse': 0, watchlist: 0, tools: 1 })
   })
 
+  it('⑧b alsoCategories 次级桶：计数双记、过滤双命中、total 去重（0.9.17）', async () => {
+    const primary = [
+      { id: 'p-1', name: 'A', description: 'da', category: 'essentials', alsoCategories: ['cui-picks'], tags: [], source: 'npm', npm: 'pkg-1' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([]))
+    const cross = await listMarket(cfg, { withLatest: false, category: 'cui-picks' }, deps)
+    assert.equal(cross.total, 1, '次级桶过滤命中跨桶条目')
+    assert.equal(cross.items[0].id, 'p-1')
+    assert.equal(cross.categoryCounts['cui-picks'], 1, '次级桶计数')
+    assert.equal(cross.categoryCounts.essentials, 1, '主桶同记')
+    const unfiltered = await listMarket(cfg, { withLatest: false }, deps)
+    assert.equal(unfiltered.total, 1, 'total 去重：跨桶条目仍是一条')
+  })
+
   it('⑨ sort downloads：无计数 ≠ 0——无数据恒排有数据之后（组内 stars 降序），dir 只翻转有数据组', async () => {
     const base = fakeDeps()
     const { deps } = withCommunity(base, communityLoaded([
