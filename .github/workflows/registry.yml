@@ -54,3 +54,41 @@ jobs:
 
       - name: Assert npm pack contents
         run: npm pack --dry-run --json | node scripts/assert-pack.mjs
+
+  # 0.9.21：jsDelivr CDN 对 @main 的缓存可能滞后数小时，而客户端默认链「线路粘性 + 恒 200
+  # 即成功」会把滞后快照无限钉死（实证 2026-10-03：收录 DSH Market 18→19 后，粘性线路持续
+  # 拉回 18 条旧版，强制刷新无效）。registry.json 实际变更的 push 在 validate 全绿后自动清缓存。
+  purge-jsdelivr:
+    if: github.event_name == 'push'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Purge jsDelivr when registry.json changed
+        run: |
+          set -euo pipefail
+          before='${{ github.event.before }}'
+          if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ]; then
+            changed=yes # 新分支首推/force-push：保守起见直接清
+          elif git diff --name-only "$before" HEAD -- registry.json | grep -q .; then
+            changed=yes
+          else
+            changed=no
+          fi
+          if [ "$changed" != 'yes' ]; then
+            echo "registry.json untouched in this push — skip purge"
+            exit 0
+          fi
+          echo "## jsDelivr purge (registry.json changed)" >> "$GITHUB_STEP_SUMMARY"
+          purge=$(curl -fsS --max-time 30 'https://purge.jsdelivr.net/gh/iasiv5/dsh-m@main/registry.json')
+          echo "purge: $purge" >> "$GITHUB_STEP_SUMMARY"
+          sleep 3
+          served=$(curl -fsSL --max-time 30 'https://cdn.jsdelivr.net/gh/iasiv5/dsh-m@main/registry.json' |
+            node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);console.log(j.plugins.length+" entries, dsh-market="+j.plugins.some(p=>p.id==="dsh-market"))})')
+          echo "jsDelivr now serves: $served" >> "$GITHUB_STEP_SUMMARY"
+          echo "jsDelivr now serves: $served"

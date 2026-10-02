@@ -8,6 +8,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.21 变更：设置页「强制刷新」显示连带修复 + registry.json 变更自动清 jsDelivr 缓存
+
+- **设置页强刷显示修复（实机 2026-10-03 实证）**：设置页「强制刷新」只重载 `registry` 接口（force 同步强刷全链路），但面板展示的 registryState **优先读 `registry-config` 的挂载时快照**——于是出现「toast 报已强制刷新、生效来源/更新时间/条目数纹丝不动」的假死，重开设置页才对齐。现在强刷成功后连带重载 `registry-config`（force 已更新 controller 内存快照，零成本取新值），显示即时跟随生效数据。
+- **jsDelivr 自动清缓存（`registry.yml` 新增 `purge-jsdelivr` job）**：默认链「线路粘性 + CDN 恒 200 即成功」会让 jsDelivr 的滞后快照**无限钉死**精选清单——实证：0.9.18 收录 DSH Market（18→19）后，粘性在 jsDelivr 的本机持续拉回 18 条旧版，raw 主线路永远轮不到，用户侧强制刷新也无解（唯有手动 `purge.jsdelivr.net`）。现在 push 到 main 且 `registry.json` 实际变更时（`github.event.before` diff 判定），`validate` 全绿后自动调 purge 接口清缓存并回读 cdn 验证条目数，结果写入 step summary；registry.json 未变的 push 与 PR 全部跳过。
+
 ### 0.9.20 变更：latest 探测缓存退回纯内存（重启即失效）+ mutation 定向失效（ADR-0006）
 
 - **事故复盘落地（2026-10-03 凌晨）**：0.9.14 起 latest 探测缓存 write-through 落盘、跨重启存活，失效通道只有 TTL 一条——00:22:58 缓存写入后，00:27–01:05 连发四版、01:07 重启 DSH、01:13 重开面板全部吃到陈旧值，卡片与 `dshm_outdated` 双双误报「已是最新」。本次推翻该设计，决策与取舍全文见 `docs/adr/0006-latest-cache-memory-only.md`。
@@ -229,6 +234,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.21 — Settings force-refresh display fix + automatic jsDelivr purge on registry.json changes
+
+- **Settings force-refresh display fix (observed live 2026-10-03)**: the Settings tab's "Force refresh" only reloaded the `registry` API (synchronous full-chain force fetch), but the panel renders the registryState **from the `registry-config` snapshot taken at mount** — so the toast said "Registry force-refreshed" while source / fetched-at / entry-count stayed frozen until the settings tab was remounted. A successful force refresh now also reloads `registry-config` (force already updated the controller's in-memory snapshot, so this costs nothing) and the display follows the live data immediately.
+- **Automatic jsDelivr purge (new `purge-jsdelivr` job in `registry.yml`)**: the default chain's "sticky route + CDN always answers 200" combo lets a lagging jsDelivr snapshot **pin the curated list indefinitely** — observed: after 0.9.18 added DSH Market (18→19), a machine sticky to jsDelivr kept receiving the 18-entry snapshot; the raw primary route was never retried, and even the user-facing force refresh could not escape (only a manual `purge.jsdelivr.net` call fixed it). Now a push to main that actually changes `registry.json` (diffed against `github.event.before`) triggers a CDN purge **after** `validate` goes green, re-reads the CDN to verify the entry count, and writes both into the step summary; pushes without registry.json changes and PRs skip the job entirely.
 
 ### Changed in 0.9.20 — latest probe cache back to memory-only (restart invalidates) + mutation-scoped invalidation (ADR-0006)
 

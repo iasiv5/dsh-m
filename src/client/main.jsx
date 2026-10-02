@@ -1904,6 +1904,11 @@ function SettingsTab({ notify, onRegistryChanged }) {
     setBusy(true);
     try {
       await reg.reload(true);
+      // 0.9.21：强刷后连带重载 registry-config——面板展示的 registryState 优先读 cfgData
+      // （挂载时快照，host 侧 controller.snapshot() 内存态），只刷 reg 会出现
+      // 「toast 已强制刷新、来源/更新时间/条目数纹丝不动」的假死（实机 2026-10-03 实证）。
+      // force 已更新 controller 内存快照，这里零成本取新值。
+      await reloadRegistryState().catch(() => undefined);
       notify({ kind: "ok", text: lookup("registry.refreshed"), needsRestart: false });
     } finally {
       setBusy(false);
