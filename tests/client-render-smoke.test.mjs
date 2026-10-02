@@ -190,4 +190,23 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     const legacy = renderToString(h(components.__DetailModal, { it: entry, ...base }))
     assert.ok(legacy.includes('dsvm-cmdrow'), 'profileKind 缺席（旧宿主）按 web 保留')
   })
+
+  // 0.9.15 安装信息就地进 Modal：终态行按 kind 着色 + ok 附重启提示；running record 渲染不抛
+  //（ProgressLine 依赖 effect 轮询，SSR 首渲染为 null——冒烟只验终态行与不抛）
+  it('DetailModal 安装终态行：ok/err/hint 着色 + ok 附重启提示；running record 渲染不抛', () => {
+    const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg' }
+    const base = { labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }
+    const ok = renderToString(h(components.__DetailModal, { it: entry, ...base, installNote: { id: entry.id, kind: 'ok', text: '已安装 demo v1.0.0' } }))
+    assert.ok(ok.includes('dshm-ok'), 'ok 行着色类在')
+    assert.ok(ok.includes('已安装 demo v1.0.0'), '终态文案在')
+    assert.ok(ok.includes('变更完成，需要重启') || ok.includes('Changes applied'), 'ok 附重启提示在（zh/en 随环境）')
+    const err = renderToString(h(components.__DetailModal, { it: entry, ...base, installNote: { id: entry.id, kind: 'err', text: '安装失败：boom' } }))
+    assert.ok(err.includes('dshm-err'), 'err 行着色类在')
+    assert.ok(err.includes('安装失败：boom'), '失败文案在')
+    assert.ok(!err.includes('dshm-ok') && !err.includes('Changes applied') && !err.includes('变更完成，需要重启'), 'err 不附重启提示')
+    const hint = renderToString(h(components.__DetailModal, { it: entry, ...base, installNote: { id: entry.id, kind: 'hint', text: 'demo 已跳过' } }))
+    assert.ok(hint.includes('dshm-hint'), 'hint 中性着色在')
+    const running = renderToString(h(components.__DetailModal, { it: entry, ...base, installRec: { kind: 'install', target: entry.id, status: 'running' } }))
+    assert.ok(typeof running === 'string' && running.length > 0, 'running record 渲染不抛（进度行 SSR 为 null）')
+  })
 })

@@ -303,6 +303,7 @@ const CSS = `
 .dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
 .dshm-err{color:var(--dsw-alias-state-error-primary,#b91c1c);font-size:12px;line-height:18px}
+.dshm-ok{color:var(--dsw-alias-state-success-primary,#047857);font-size:12px;line-height:18px;word-break:break-word}
 .dshm-btn{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-3,#fff);color:var(--dsw-alias-label-primary,inherit);border-radius:8px;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
 .dshm-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-btn:disabled{opacity:.5;cursor:default}
@@ -1023,7 +1024,7 @@ function useModalDepth(active) {
   }, [active]);
 }
 
-function DetailModal({ it, labels, busy, onClose, onInstall, profileKind }) {
+function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, installRec, installNote }) {
   useModalDepth(true);
   const shots = it.community === true ? safeScreenshots(it) : [];
   const [lb, setLb] = useState(null);
@@ -1145,6 +1146,19 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind }) {
               h("button", { className: "dshm-btn sm", onClick: copyCmd }, copied ? lookup("modal.copied") : lookup("modal.copy"))),
           )
         : null,
+      // 0.9.15：安装信息就地进 Modal（主人反馈 2026-10-02：进度/终态原先只隔遮罩在底层透出）。
+      // 进度行复用 ProgressLine（自轮询 host status）；底层同源行由 MarketTab 在本 Modal 打开时让位。
+      // installRec 派生自全局操作记录（DESIGN §2.6「状态不挂卡片」的所有权模型不变，此处只是展示）：
+      // 仅 queued/running 挂行，input（兼容待决）走上层 CompatDialog；installNote 为本次终态摘要。
+      installRec && (installRec.status === "running" || installRec.status === "queued")
+        ? h(ProgressLine, { key: "opprog" })
+        : null,
+      installNote
+        ? h("div", { key: "opnote", className: installNote.kind === "err" ? "dshm-err" : installNote.kind === "hint" ? "dshm-hint" : "dshm-ok" }, installNote.text)
+        : null,
+      installNote && installNote.kind === "ok"
+        ? h("div", { key: "opnote-rh", className: "dshm-hint" }, lookup(profileKind === "desktop" ? "profile.restartHint" : "banner.done"))
+        : null,
       h(
         "div",
         { className: "dsvm-modalactions" },
@@ -1192,7 +1206,12 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   // 页号跳转输入（0.7.3）：草稿态纯数字，合法页号回车/点「跳转」直达
   const [pageJump, setPageJump] = useState("");
   // busy 派生自操作记录（0.7.0 Task 13：状态不挂卡片）——首个进行中的 install
-  const activeInstallTarget = (ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
+  // 0.9.15：保留完整 record——详情 Modal 内嵌进度行的数据源（展示仍是记录的派生，所有权不变）
+  const activeInstallRec = ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || null;
+  const activeInstallTarget = activeInstallRec ? activeInstallRec.target : null;
+  // 0.9.15：安装终态的 Modal 内摘要（{ id, kind: "ok"|"err"|"hint", text }）——Modal 是安装入口，
+  // 终态也应就地可见；与底层 toast/横幅并行不冲突，仅在该条目自己的 Modal 内显示
+  const [installNote, setInstallNote] = useState(null);
 
   // 服务端分页数据（0.7.0 Task 8：服务端单一排序源，客户端不再重排）
   const items = (data && data.items) || [];
@@ -1256,17 +1275,18 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     : null;
   const zoneBar = zoneChips;
 
-  const installDone = (res) => {
-    notify({
-      kind: "ok",
-      needsRestart: true,
-      text: lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
-        (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "") +
-        (res.bundleWarning === "no-patch-layer" ? lookup("notify.bundlewarning") : ""),
-    });
+  // 0.9.15：成功文案拆出——底层 toast 与 Modal 内终态行共用同一份
+  const installResultText = (res) =>
+    lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
+    (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "") +
+    (res.bundleWarning === "no-patch-layer" ? lookup("notify.bundlewarning") : "");
+  const installDone = (it2, res) => {
+    notify({ kind: "ok", needsRestart: true, text: installResultText(res) });
+    setInstallNote({ id: it2.id, kind: "ok", text: installResultText(res) });
   };
 
   const doInstall = async (it, version, forceIncompatible, reuseOpId) => {
+    setInstallNote(null); // 0.9.15：新一轮安装先清上一轮 Modal 终态行
     try {
       const res = await ops.runOp(
         "install",
@@ -1275,28 +1295,30 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
         { version, npm: it.npm, github: it.github }, // 审计 #6：meta 携带 npm 供 stillApplies 比对
         reuseOpId, // 审计 #12：确认/重试复用同一记录，不再新开
       );
-      installDone(res);
+      installDone(it, res);
       await (onMutation ? onMutation() : reload(false));
     } catch (e) {
       if (e && e.opSuperseded) {
         notify({ kind: "ok", text: lookup("op.superseded.note", { target: it.name }) });
+        setInstallNote({ id: it.id, kind: "hint", text: lookup("op.superseded.note", { target: it.name }) });
       } else if (e && e.guard) {
         // 装后守卫拦截（M2 Task 3）：无 force 通道；一键重启只读 restartSafe
-        notify({
-          kind: "err",
-          text: [
-            lookup("guard.blocked"),
-            `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
-            e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
-            lookup("guard.noforce"),
-            e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
-          ].filter(Boolean).join(" | "),
-        });
+        const guardText = [
+          lookup("guard.blocked"),
+          `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
+          e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
+          lookup("guard.noforce"),
+          e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
+        ].filter(Boolean).join(" | ");
+        notify({ kind: "err", text: guardText });
+        setInstallNote({ id: it.id, kind: "err", text: guardText });
       } else if (e && e.issue) {
         // peer 预检拦截 → 弹「仍要安装」确认（确认后带 force 重发；复用原记录 id——审计 #12）
         setCompatConfirm({ it, version, issue: e.issue, opId: e.opId });
       } else {
-        notify({ kind: "err", text: lookup("failed.install", { err: (e && e.message) || e }) });
+        const failText = lookup("failed.install", { err: (e && e.message) || e });
+        notify({ kind: "err", text: failText });
+        setInstallNote({ id: it.id, kind: "err", text: failText });
       }
     }
   };
@@ -1385,6 +1407,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
             onClose: () => setFavDetailItem(null),
             onInstall: (it2) => doInstall(it2),
             profileKind,
+            installRec: activeInstallRec && activeInstallRec.target === favDetailItem.id ? activeInstallRec : null,
+            installNote: installNote && installNote.id === favDetailItem.id ? installNote : null,
           })
         : null,
     );
@@ -1463,7 +1487,11 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
       onPick: (id) => updateQuery({ category: id, offset: 0 }),
       trailing: filterTrigger,
     }),
-    activeInstallTarget ? h(ProgressLine, { key: "prog" }) : null,
+    // 0.9.15：安装目标条目的详情 Modal 打开时，进度行入 Modal、底层行让位（避免隔着遮罩双重透出）；
+    // Modal 关闭后底层行照常回归（关闭弹窗的安装仍可见）
+    activeInstallTarget && !(detailItem && detailItem.id === activeInstallTarget)
+      ? h(ProgressLine, { key: "prog" })
+      : null,
     loading && !data
       ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())
       : error
@@ -1574,6 +1602,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           onClose: () => setDetailId(null),
           onInstall: (it2) => doInstall(it2),
           profileKind,
+          installRec: activeInstallRec && activeInstallRec.target === detailItem.id ? activeInstallRec : null,
+          installNote: installNote && installNote.id === detailItem.id ? installNote : null,
         })
       : null,
   );
