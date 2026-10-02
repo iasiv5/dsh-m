@@ -51,6 +51,18 @@
       "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
     },
     {
+      "id": "dsh-market",
+      "name": "DSH Market",
+      "description": "可视化插件市场：浏览、搜索社区插件并一键安装，主题一键热切换，详见仓库。",
+      "category": "essentials",
+      "alsoCategories": ["cui-picks"],
+      "tags": ["市场", "插件管理", "主题"],
+      "source": "npm",
+      "npm": "dshmarket",
+      "github": "dsh-market/dsh-market",
+      "homepage": "https://github.com/dsh-market/dsh-market"
+    },
+    {
       "id": "dsh-context",
       "name": "DSH Context",
       "description": "上下文透视：Context 仪表盘、侧栏面板与 /context 命令，查看上下文组成、演进趋势与压缩剪枝等事件，支持跨会话用量统计。",

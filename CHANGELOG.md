@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.18 变更：精选收录 DSH Market + README 重构与变更日志外迁
+
+- **新收录 DSH Market**（npm `dshmarket`，精选 18→19）：三方可视化插件市场——浏览、搜索社区插件并一键安装，主题一键热切换；主桶装机必备、次桶崔添翼精选（`alsoCategories` 次级归属）。文案按收录规范三句式，三方条目不设 `verified`。
+- **文档面重构**：README/README.en 重写为精简结构（亮点、TOC、环境要求、文档索引、支持矩阵 FAQ），推荐安装路径改为 DSH 官方插件管理界面（附截图与升级限制提示）；本变更日志自 README 外迁（双语维护）；Desktop FAQ 对齐 0.9.8 后能力面；DESIGN §3/§12 补实机核验与实测代际记录。
+- **附带**：registry 守卫测试条数 18→19；`package.json` files 新增 CHANGELOG.md 随包发布。
+
 ### 0.9.17 变更：策展桶次级归属（一插件跨桶）+「iasi自研」更名
 
 - **次级归属 `alsoCategories`**：收录条目可声明次级策展桶——chips 计数与桶过滤按「主桶 ∪ 次桶」计（跨桶条目在每个桶里都出现），详情页分类标签仍随主桶。首批双席位：**better-sidebar**（装机必备 ⊕ 崔添翼精选）、**dsh-m**（装机必备 ⊕ iasi自研）；better-sidebar 原第 5 个「崔添翼精选」tag 由真实席位取代（tags 回归 ≤4 软规范）。
@@ -208,6 +214,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.18 — DSH Market added to Curated + README restructure, changelog extracted
+
+- **DSH Market added** (npm `dshmarket`, Curated 18→19): a third-party visual plugin market — browse, search community plugins, and one-click install; one-click live theme switching. Primary bucket Essentials, secondary Cui's Picks (via `alsoCategories`). Copy follows the registry guide; third-party entries carry no `verified` claims.
+- **Docs restructure**: README/README.en rewritten into a lean shape (highlights, TOC, requirements, documentation index, support-matrix FAQ); the recommended install path is now DSH's official plugin manager (with a screenshot and the upgrade caveat); this changelog moved out of the READMEs (bilingual); the Desktop FAQ reflects the post-0.9.8 capability table; DESIGN §3/§12 gained live-verification and tested-generation records.
+- **Also**: the registry guard test moved 18→19; CHANGELOG.md now ships in the npm package (package.json files).
 
 ### Changed in 0.9.17 — secondary curated-bucket membership (one plugin across buckets) + the "iasi自研" rename
 
