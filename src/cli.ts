@@ -26,7 +26,7 @@ import { resolve } from 'node:path'
 const CLI_CATEGORY_LABELS: Record<string, string> = {
   essentials: '装机必备',
   'cui-picks': '崔添翼精选',
-  'self-dev': '我的自研',
+  'self-dev': 'iasi自研',
   'tencent-lighthouse': '腾讯轻量云专区',
   watchlist: '观察区',
 }

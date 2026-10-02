@@ -15,7 +15,7 @@ const CURATED_ORDER = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthous
 const CURATED_LABELS = {
   essentials: '装机必备',
   'cui-picks': '崔添翼精选',
-  'self-dev': '我的自研',
+  'self-dev': 'iasi自研',
   'tencent-lighthouse': '腾讯轻量云专区',
   watchlist: '观察区',
 }

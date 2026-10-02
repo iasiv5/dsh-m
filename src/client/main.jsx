@@ -29,7 +29,7 @@ const { shouldShowInstallCmd } = require("./install-cmd.js");
 const ZH = {
   "market.title": "插件市场",
   "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
-  "cat.all": "全部", "cat.essentials": "装机必备", "cat.cui-picks": "崔添翼精选", "cat.self-dev": "我的自研", "cat.tencent-lighthouse": "腾讯轻量云专区", "cat.watchlist": "观察区",
+  "cat.all": "全部", "cat.essentials": "装机必备", "cat.cui-picks": "崔添翼精选", "cat.self-dev": "iasi自研", "cat.tencent-lighthouse": "腾讯轻量云专区", "cat.watchlist": "观察区",
   "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
   "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "badge.verified": "已实测",
   "modal.category": "分类", "modal.added": "收录日期", "modal.dlwindow": "下载量（30 天窗口）", "modal.checkedat": "核对于", "modal.dlnone": "无窗口数据",
@@ -137,7 +137,7 @@ const ZH = {
 const EN = {
   "market.title": "Plugin Marketplace",
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
-  "cat.all": "All", "cat.essentials": "Essentials", "cat.cui-picks": "Cui Picks", "cat.self-dev": "Self-dev", "cat.tencent-lighthouse": "Tencent Lighthouse", "cat.watchlist": "Watchlist",
+  "cat.all": "All", "cat.essentials": "Essentials", "cat.cui-picks": "Cui Picks", "cat.self-dev": "iasi Self-dev", "cat.tencent-lighthouse": "Tencent Lighthouse", "cat.watchlist": "Watchlist",
   "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
   "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "badge.verified": "Verified",
   "modal.category": "Category", "modal.added": "Added", "modal.dlwindow": "Downloads (30-day window)", "modal.checkedat": "checked at", "modal.dlnone": "No window data",
