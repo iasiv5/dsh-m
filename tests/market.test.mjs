@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome, capturePreMutationState, derivePrior } from '../lib/core/market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
+import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
 
 // 0.9.14 Task 4b：latest 落盘接线后，listMarket/listInstalledWithMeta 会读写真实 cacheRoot——
 // 全文件统一隔离到临时目录（评审 R1-#4：本文件原先零 DSHM_CACHE_DIR，不补则触碰真实 ~/.dsh）。
@@ -2002,5 +2003,105 @@ describe('0.9.0 双 profile：读模型贯穿', () => {
     await listMarket({}, { profile: 'desktop' }, deps)
     assert.equal(seen.loadRegistry[0].profile, 'desktop')
     assert.equal(seen.community[0].profile, 'desktop')
+  })
+})
+
+// ---------- 0.9.20：latest 缓存纯内存 + mutation 定向失效（ADR-0006） ----------
+
+describe('0.9.20 mutation → latest 缓存定向失效', () => {
+  let dir = ''
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+    dir = ''
+    resetLatestCacheForTest()
+  })
+
+  it('① install 成功 → 该条目 latest 缓存被定向作废（跨 registryKey 变体全清，他条目不误伤）', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: {} }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const browseKey = latestCacheKey('host', 'reg-x', { source: 'npm', id: 'p', npm: 'pkg-a' })
+    const npmOnlyKey = latestCacheKey('host', 'npm-only', { source: 'npm', id: 'p', npm: 'pkg-a' })
+    const otherKey = latestCacheKey('host', 'reg-x', { source: 'npm', id: 'q', npm: 'pkg-other' })
+    writeLatestCache(browseKey, { version: '0.9.9' })
+    writeLatestCache(npmOnlyKey, { version: '0.9.9' })
+    writeLatestCache(otherKey, { version: '0.9.9' })
+
+    const tx = mockTxRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
+        writeInstalledMarkerPkg(dir, 'pkg-a')
+        return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
+      }],
+    }, dir)
+    const res = await installFromRegistry('p', {}, {}, {
+      ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+      transaction: { runner: () => tx.runner, profileDir: dir },
+    })
+    assert.equal(res.version, '1.2.3')
+    assert.equal(res.needsRestart, true)
+    assert.equal(readLatestCache(browseKey, 60), null, '浏览页键已失效')
+    assert.equal(readLatestCache(npmOnlyKey, 60), null, 'npm-only 键已失效')
+    assert.ok(readLatestCache(otherKey, 60), '他条目不误伤')
+  })
+
+  it('① 事务前失败（预检拦截）不作废缓存', async () => {
+    const key = latestCacheKey('host', 'reg-x', { source: 'npm', id: 'p', npm: 'pkg-a' })
+    writeLatestCache(key, { version: '0.9.9' })
+    await assert.rejects(
+      () => installFromRegistry('p', {}, {}, {
+        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+        precheck: async () => ({ pkg: 'pkg-a', version: '1.2.3', runtimeVersion: '0.1.7-rc.2', peers: { '@deepseek-ai/dsh': '<=0.1.6' } }),
+      }),
+      (err) => err instanceof IncompatibleError,
+    )
+    assert.ok(readLatestCache(key, 60), '回滚路径零失效')
+  })
+
+  it('① uninstall 成功 → npm-only 键作废', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', dependencies: { 'pkg-a': '1.2.3' } }),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    mkdirSync(join(dir, 'node_modules', 'pkg-a'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'pkg-a', 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.2.3', dsh: {} }))
+    const key = latestCacheKey('host', 'npm-only', { source: 'npm', id: 'p', npm: 'pkg-a' })
+    writeLatestCache(key, { version: '1.2.3' })
+
+    const res = await uninstallPlugin('pkg-a', {}, {}, {
+      transaction: {
+        profileDir: dir,
+        runner: () => ({
+          add: async () => { throw new Error('不应调用 add') },
+          remove: async () => {
+            writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'p', dependencies: {} }))
+            return { class: 'ok', output: 'removed' }
+          },
+          frozenInstall: async () => ({ class: 'ok', output: 'ok' }),
+          rebuildInstall: async () => ({ class: 'ok', output: 'ok' }),
+        }),
+      },
+    })
+    assert.equal(res.pkg, 'pkg-a')
+    assert.equal(readLatestCache(key, 60), null, '卸载成功后 npm-only 键已失效')
+  })
+
+  it('② 重启语义：reset（模拟重启，无磁盘 seed）后同名 key 重探', async () => {
+    const { deps, calls } = fakeDeps()
+    await listMarket(cfg, { limit: 5 }, deps)
+    assert.equal(calls.npm.length, 5)
+    resetLatestCacheForTest()
+    await listMarket(cfg, { limit: 5 }, deps)
+    assert.equal(calls.npm.length, 10, '重启后重探（0.9.14 会 seed 免重探）')
+  })
+
+  it('② 探测不再落盘：listMarket 后 cacheRoot 无 latest 信封文件', async () => {
+    const { existsSync } = await import('node:fs')
+    const { deps } = fakeDeps()
+    await listMarket(cfg, { limit: 5 }, deps)
+    assert.equal(existsSync(join(marketTestCacheRoot, 'latest', 'host.json')), false)
   })
 })

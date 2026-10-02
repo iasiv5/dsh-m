@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.20 变更：latest 探测缓存退回纯内存（重启即失效）+ mutation 定向失效（ADR-0006）
+
+- **事故复盘落地（2026-10-03 凌晨）**：0.9.14 起 latest 探测缓存 write-through 落盘、跨重启存活，失效通道只有 TTL 一条——00:22:58 缓存写入后，00:27–01:05 连发四版、01:07 重启 DSH、01:13 重开面板全部吃到陈旧值，卡片与 `dshm_outdated` 双双误报「已是最新」。本次推翻该设计，决策与取舍全文见 `docs/adr/0006-latest-cache-memory-only.md`。
+- **缓存退回纯内存**：latest 探测结果只存内存 Map + TTL（`cacheTtlMin`，默认 60 分钟），**重启即失效**——「发完版重启一下就能看到」重新成立。代价是重启后首轮受限重探（当前页条目、8 并发 + deadline 兜底，TTL 内只付一次）；registry/社区**目录正文**的落盘缓存与 SWR 不受影响，页面骨架照旧秒开。0.9.14 遗留的 `<cacheRoot>/latest/<ns>.json` 惰性文件由探测段一次性 best-effort 清扫。
+- **mutation 定向失效**：install/upgrade/uninstall 事务**成功点**按 itemId 作废该条目全部 registryKey 缓存变体（浏览页键 / 已装页 matched 键 / npm-only 键）——升级后卡片不再出现「已装新版 / 最新旧版」自相矛盾；`dshm_outdated` 对刚升级包诚实。只失效不回写（故意装旧版时回写会伪造 latest=已装）；事务回滚路径零失效；卸载对 github 源条目的 `gh:` 键尽力而为（pkg 名不可逆推 repo，交由 TTL 自然过期）。
+- **不做项留痕**：force 穿透探测缓存与浏览页 GitHub 预算对齐经主人拍板暂缓——前者残余盲区仅「不重启 + TTL 内」窗口，后者对现行全 npm 源精选清单收益为零（ADR-0006 §Considered Options）。
+
 ### 0.9.19 变更：供应链等待期「锁文件校验」实证修复——委派前预检 + 全量违规解析 + 账实分裂明示
 
 - **根因（本机 2026-10-03 00:15 实证）**：pnpm 11.7 对 desktop profile 做**锁文件级**供应链校验（`Verifying lockfile against supply-chain policies (180 entries)`），而它给每次成功安装自动追加的 `minimumReleaseAgeExclude` **非 scoped 独立精确条目不被这次校验认可**（`dsh-m@0.9.18` 即被拒；scoped 的 `'@iasiv5/dsh-quota-watch@0.1.13'` 则认可）——装过一个「太新」版本后，**等待期内任何官方包操作都会被这个旁包条目拦死**，与本次目标无关；且校验失败前目标包已被写入 node_modules、官方管理器只回滚 manifest/lockfile → 界面显示新版 active、操作记录却是失败（**「账实分裂」**），下次包操作还会把插件静默回退。
@@ -222,6 +229,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.20 — latest probe cache back to memory-only (restart invalidates) + mutation-scoped invalidation (ADR-0006)
+
+- **Post-mortem landed (night of 2026-10-03)**: since 0.9.14 the latest-version probe cache was written through to disk and survived restarts, with TTL as the only invalidation channel — after a cache write at 00:22:58, four releases (00:27–01:05), a DSH restart (01:07) and a panel reopen (01:13) all served the stale value; cards and `dshm_outdated` both wrongly reported "up to date". That design is overturned; the full decision record lives in `docs/adr/0006-latest-cache-memory-only.md`.
+- **Memory-only cache**: probe results now live in an in-memory Map + TTL (`cacheTtlMin`, default 60) — **a DSH restart drops them**, so "publish, restart, see the new version" works again. The cost is one bounded re-probe wave on the first open after a restart (current page, 8 workers + deadline cap, paid once per TTL window); the registry/community **catalog body** disk cache and SWR are untouched, so the page skeleton still opens instantly. Leftover inert `latest/<ns>.json` envelopes from 0.9.14 are swept once, best-effort, before the probe segment.
+- **Mutation-scoped invalidation**: on **success** of install/upgrade/uninstall, the entry's cached latest value is invalidated across all registryKey variants (browse key / installed matched key / npm-only key) by itemId — no more "installed new / latest old" self-contradicting cards; `dshm_outdated` is honest about freshly upgraded packages. Invalidate-only, no writeback (a deliberate old-version install would otherwise fabricate latest = installed); rollback paths never invalidate; uninstall invalidates npm keys on a best-effort basis (a `gh:` key cannot be reconstructed from a pkg name and expires via TTL).
+- **Not done, on record**: force passthrough of the probe cache and browse-page GitHub budget alignment were deferred by the owner — the former's residual blind spot is only the "no restart, within TTL" window; the latter has zero benefit for today's all-npm curated list (ADR-0006 §Considered Options).
 
 ### Changed in 0.9.19 — supply-chain release-age: pre-delegation gate, full violation parsing, split-state disclosure
 

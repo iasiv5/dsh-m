@@ -25,7 +25,6 @@ import {
   validateRegistry,
   _waitForRegistryBackgroundForTests,
 } from '../lib/core/registry.js'
-import { ensureLatestCacheSeeded, latestCacheKey, writeLatestCache } from '../lib/core/latest-cache.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -999,14 +998,14 @@ describe('loadRegistry SWR（过期先回 stale）', () => {
   })
 })
 
-// ---------- 0.9.14 Task 4b：latest 信封 × pruneCaches 交互回归（nsDir 外不变量） ----------
+// ---------- latest 目录 × pruneCaches 交互回归（nsDir 外不变量；0.9.20 起缓存层纯内存不再落盘，文件由本用例自植） ----------
 
-describe('latest 信封 × prune 交互', () => {
-  it('成功刷新触发 pruneCaches 后 latest 信封仍存活（latest/ 在 nsDir 外，评审 R1-#1）', async () => {
+describe('latest 目录 × prune 交互', () => {
+  it('成功刷新触发 pruneCaches 后 latest/ 目录内容仍存活（latest/ 在 nsDir 外，评审 R1-#1）', async () => {
     const latestFile = join(cacheRoot, 'latest', 'host.json')
-    writeLatestCache(latestCacheKey('host', '', { source: 'npm', id: 'x', npm: 'x' }), { version: '9.9.9' })
-    await ensureLatestCacheSeeded({ namespace: 'host' })   // 排空 write-through，信封先落盘
-    assert.ok(existsSync(latestFile), '前置：信封已落盘')
+    mkdirSync(join(cacheRoot, 'latest'), { recursive: true })
+    writeFileSync(latestFile, JSON.stringify({ version: 1, namespace: 'host', entries: {} }))
+    assert.ok(existsSync(latestFile), '前置：latest 信封文件已自植')
     server = await startRegistryServer()
     const dead = await getDeadPort()
     const loaded = await loadRegistry({}, { force: true, defaultRoutes: [
@@ -1014,7 +1013,7 @@ describe('latest 信封 × prune 交互', () => {
       { source: 'default-jsdelivr', url: server.url('/a.json') },
     ] })
     assert.equal(loaded.status, 'ready')
-    assert.ok(existsSync(latestFile), 'prune 后 latest 信封必须存活')
+    assert.ok(existsSync(latestFile), 'prune 后 latest/ 内容必须存活')
   })
 })
 

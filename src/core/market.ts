@@ -45,7 +45,7 @@ import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { HttpError } from './httpx.js'
-import { ensureLatestCacheSeeded, latestCacheKey, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
+import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
 import { readPnpmLockIntegrity } from './npm-integrity.js'
 import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
@@ -336,8 +336,13 @@ function deadlineRace<T>(task: Promise<T>, ms: number): Promise<T | 'deadline'> 
 }
 
 // ---------- latest TTL cache ----------
-// 0.9.14 Task 4b：内存 Map + 磁盘信封层整体迁入 latest-cache.ts（write-through 落盘，跨重启存活）；
-// LatestValue/latestCacheKey/readLatestCache/writeLatestCache 自该模块导入，调用点签名不变。
+// 0.9.20：纯内存 TTL 缓存（ADR-0006，推翻 0.9.14 的落盘跨重启存活——重启即失效是特性）；
+// mutation 成功后的定向失效走 invalidateLatestForEntry（只失效不回写）。
+
+/** 0.9.20 ①：install/upgrade/uninstall 成功点调用的定向失效——registry 真值交给下一次探测。 */
+function invalidateLatestForEntry(namespace: RegistryCacheNamespace | undefined, entry: Pick<RegistryEntry, 'source' | 'npm' | 'github' | 'id'>): void {
+  invalidateLatestCache(namespace ?? 'host', latestItemId(entry))
+}
 
 // ---------- probe 基元 ----------
 
@@ -784,8 +789,8 @@ export async function listMarket(
   let latestComplete = true
   let latestTimedOut = false
   if (withLatest && items.length > 0) {
-    // 0.9.14：latest 探测缓存已落盘——探测段前装载/排空磁盘信封（重启后零重放）
-    await ensureLatestCacheSeeded({ namespace, profile: opts.profile })
+    // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
+    await ensureLatestCacheSwept({ namespace, profile: opts.profile })
     // 先吃 cache 命中
     const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
     for (const item of items) {
@@ -816,7 +821,7 @@ export async function listMarket(
           const outcome = await probeWithBudget(task, perBudget, signal)
           if (outcome.ok && outcome.value) {
             applyProbe(item, outcome.value)
-            writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value, opts.profile)
+            writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value)
           } else if (outcome.timeout) {
             item.latestError = '更新检查未完成：超时'
             item.latestErrorCode = 'timeout'
@@ -912,9 +917,9 @@ export async function listInstalledWithMeta(
   const registryState = stateOf(loaded)
 
   matchInstalled(items, community.merged)
-  // 0.9.14：latest 探测缓存已落盘——探测段前装载/排空磁盘信封
-  await ensureLatestCacheSeeded({ namespace, profile: opts.profile })
-  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000, profile: opts.profile })
+  // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
+  await ensureLatestCacheSwept({ namespace, profile: opts.profile })
+  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
 }
@@ -936,7 +941,7 @@ async function probeLatest(
   items: InstalledItem[],
   ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number },
   d: MarketDeps,
-  rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number; profile?: string },
+  rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
 ): Promise<void> {
   await mapWithConcurrency(items, LATEST_WORKERS, async (item) => {
     const entry = ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
@@ -971,7 +976,7 @@ async function probeLatest(
           }
           if (value) {
             applyProbe(item, value)
-            writeLatestCache(cacheKey, value, rt.profile)
+            writeLatestCache(cacheKey, value)
           }
         } catch (err) {
           item.latestError = err instanceof Error ? err.message : String(err)
@@ -1474,6 +1479,8 @@ async function installEntryLocked(
       ...(prior.kind === 'dependency' ? { priorPkgs: [pkg] } : {}),
     })
     if (guard.unavailable.length > 0) {
+      // 0.9.20 ①：事务已 committed（守卫不可定 fail-open 亦是成功态）→ 定向作废该条目 latest 缓存
+      invalidateLatestForEntry(opts.namespace, entry)
       return {
         id: entry.id,
         pkg: result.pkg ?? pkg,
@@ -1505,6 +1512,8 @@ async function installEntryLocked(
       })
     }
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
+    // 0.9.20 ①：安装成功 → 定向作废该条目 latest 缓存（只失效不回写，ADR-0006）
+    invalidateLatestForEntry(opts.namespace, entry)
     return {
       id: entry.id,
       pkg: result.pkg ?? pkg,
@@ -1582,6 +1591,8 @@ async function installEntryLocked(
       ...(prior.kind === 'dependency' ? { priorPkgs: [realKey] } : {}),
     })
     if (guard.unavailable.length > 0) {
+      // 0.9.20 ①：事务已 committed（守卫不可定 fail-open 亦是成功态）→ 定向作废该条目 latest 缓存
+      invalidateLatestForEntry(opts.namespace, entry)
       const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
       return {
         id: entry.id,
@@ -1612,6 +1623,8 @@ async function installEntryLocked(
       })
     }
     const notes = result.healActions.map((h) => h.note).filter((n) => n !== '')
+    // 0.9.20 ①：安装成功 → 定向作废该条目 latest 缓存（只失效不回写，ADR-0006）
+    invalidateLatestForEntry(opts.namespace, entry)
     return {
       id: entry.id,
       pkg: realKey,
@@ -1671,6 +1684,9 @@ async function uninstallPluginLocked(
     deps.transaction ?? {},
   )
   if (!result.ok) throw new TransactionError(result)
+  // 0.9.20 ①：卸载成功 → 尽力作废 npm-only 键（github 条目的 gh: 键无法由 pkg 名重构，
+  // 交由 TTL 自然过期——卸载后已装列表无此条目，不存在「已装/最新」自相矛盾场景）
+  invalidateLatestCache(opts.namespace ?? 'host', `npm:${pkg}`)
   const orphaned = result.orphanedPatchFiles ?? []
   const leftovers = [...new Set([...leftoverCandidates(pkg), ...orphaned])]
   return {
