@@ -32,7 +32,7 @@ function toSafeInt(value, fallback, min, max) {
 }
 
 /** 分区初始状态（0.7.0 Task 8/11）：community 默认 downloads-desc；primary 策展序（sort 恒 null），
- *  limit 96 = 单页直出上限（0.9.16 策展 19 条即此形态；自定义源 >96 时由通用分页器降级兜底）。 */
+ *  limit 96 = 单页直出上限（当前策展 18 条即此形态；自定义源 >96 时由通用分页器降级兜底）。 */
 export function createZoneState(zone) {
   const z = zone === 'primary' ? 'primary' : 'community'
   return {
