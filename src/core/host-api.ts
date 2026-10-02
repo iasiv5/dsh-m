@@ -391,7 +391,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(96, Math.max(1, Math.floor(limitRaw))) : 24
           const offsetRaw = Number(body.offset)
           const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
-          // category：精选 5 + 社区开放 slug（非法 slug → 400，不静默吞）
+          // category：策展五桶 + 社区开放 slug（非法 slug → 400，不静默吞）
           const categoryRaw = typeof body.category === 'string' ? body.category.trim() : ''
           let category: string | null = null
           if (categoryRaw !== '') {

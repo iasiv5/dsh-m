@@ -11,7 +11,7 @@ import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'nod
 import { WEB_PROFILE, cacheRoot } from './env.js'
 import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure, type HttpError } from './httpx.js'
 
-export const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other'] as const
+export const CATEGORIES = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist'] as const
 export type Category = (typeof CATEGORIES)[number]
 
 /** 容量上限：2 MiB 是原始 UTF-8 bytes（不是字符数）；条目超限拒绝整份清单。 */

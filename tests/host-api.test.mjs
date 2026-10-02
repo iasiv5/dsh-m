@@ -21,7 +21,7 @@ function entry(i) {
     id: `plug-${i}`,
     name: `Plug ${i}`,
     description: `entry ${i}`,
-    category: 'tools',
+    category: 'essentials',
     tags: [],
     source: 'npm',
     npm: `pkg-${i}`,
@@ -653,8 +653,8 @@ describe('M1 Task 6：host-api 社区契约', () => {
     const { dispatcher, calls } = setup()
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'my-slug' } })
     assert.equal(calls.listMarket[0].category, 'my-slug', '社区开放 slug 透传')
-    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'tools' } })
-    assert.equal(calls.listMarket[1].category, 'tools', '精选分类照旧')
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'essentials' } })
+    assert.equal(calls.listMarket[1].category, 'essentials', '策展分类照旧')
     const bad = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', category: 'UI!!' } })
     assert.equal(bad.status, 400)
     assert.ok(bad.body.error.includes('非法分类'))

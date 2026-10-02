@@ -109,7 +109,7 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   version?: string
 }
 
-/** 开放分类计数：精选 5 键恒在 + 社区开放 slug 键（M1 Task 5）。 */
+/** 开放分类计数：策展五桶恒在 + 社区开放 slug 键（M1 Task 5；0.9.16 策展分类法替换功能五分类）。 */
 export type CategoryCounts = Record<string, number>
 
 /** 社区 registry summary 完整字段口径（Task 6 getCommunitySummary 同型；status=disabled/unavailable 时计数字段 0/null，不伪造）。 */
@@ -277,7 +277,7 @@ export async function mapWithConcurrency<T, R>(
 }
 
 function zeroCounts(): CategoryCounts {
-  return { market: 0, tools: 0, ui: 0, search: 0, other: 0 }
+  return { essentials: 0, 'cui-picks': 0, 'self-dev': 0, 'tencent-lighthouse': 0, watchlist: 0 }
 }
 
 function clampLimit(raw: unknown, max: number): number {

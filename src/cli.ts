@@ -22,13 +22,13 @@ import { scheduleRestart } from './core/restart.js'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 
-/** 分类中文标签（0.7.0 Task 6）：精选 5 类本地表 + 社区已知标签单一事实源；未知 slug 原样。 */
+/** 分类中文标签（0.7.0 Task 6；0.9.16 策展五桶）：精选策展桶本地表 + 社区已知标签单一事实源；未知 slug 原样。 */
 const CLI_CATEGORY_LABELS: Record<string, string> = {
-  market: '市场',
-  tools: '工具',
-  ui: '界面',
-  search: '搜索',
-  other: '其他',
+  essentials: '装机必备',
+  'cui-picks': '崔添翼精选',
+  'self-dev': '我的自研',
+  'tencent-lighthouse': '腾讯轻量云专区',
+  watchlist: '观察区',
 }
 
 function categoryLabelOf(category: string): string {

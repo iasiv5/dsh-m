@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 全部 23 条收录条目的 `description` 与 `tags` 写法。
+> 管辖范围：`registry.json` 全部 19 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19，新增策展五桶分类法：essentials/cui-picks/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。
@@ -41,6 +41,7 @@
 - 只放功能关键词，≤4 个，中文优先（专有名词除外）。
 - **禁止依赖关系 tag**（`需 xxx`、`推荐 xxx`）：关系只活在 §4 的句式里；搜索四字段拼接保证撤出 tags 不损失命中率。
 - 不放与 name/id 重复的词。
+- **例外备案（2026-10-02，主人裁决）**：跨桶策展属性可破例入 tags——装机必备桶内的 better-sidebar 携第 5 个 tag「崔添翼精选」（崔添翼 9/27 X 推荐，因优先级归桶让位装机必备后保留策展出处）。
 
 ## 6. 分级整理深度
 

@@ -5,7 +5,7 @@
       "id": "dsh-m",
       "name": "DSH Marketplace",
       "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 DSH 0.2.0-rc.2，支持 web 与 desktop 双 profile，详见仓库。",
-      "category": "market",
+      "category": "essentials",
       "tags": [
         "市场",
         "插件管理"
@@ -25,14 +25,78 @@
       "homepage": "https://github.com/iasiv5/dsh-m"
     },
     {
+      "id": "dsh-better-sidebar",
+      "name": "DSH Better Sidebar",
+      "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
+      "category": "essentials",
+      "tags": [
+        "侧边栏",
+        "文件编辑",
+        "终端",
+        "Git",
+        "崔添翼精选"
+      ],
+      "source": "npm",
+      "npm": "dsh-better-sidebar",
+      "github": "omdsh-dev/DSH-better-sidebar",
+      "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
+    },
+    {
+      "id": "modsearch",
+      "name": "ModSearch",
+      "description": "免费网页搜索、X 搜索与页面抓取插件，支持 Firecrawl、Tavily、Exa 等引擎自动故障切换。",
+      "category": "essentials",
+      "tags": [
+        "搜索",
+        "网页抓取",
+        "X"
+      ],
+      "source": "npm",
+      "npm": "@liustack/modsearch",
+      "github": "liustack/modsearch",
+      "homepage": "https://github.com/liustack/modsearch"
+    },
+    {
+      "id": "dsh-tui",
+      "name": "DSH TUI",
+      "description": "终端 TUI 客户端：把 DeepSeek Harness 会话搬进终端，基于 DSH 客户端契约远程连接使用。",
+      "category": "cui-picks",
+      "tags": [
+        "终端",
+        "TUI",
+        "远程"
+      ],
+      "source": "npm",
+      "npm": "dsh-tui",
+      "github": "MashedPotato817/dsh-tui",
+      "homepage": "https://github.com/MashedPotato817/dsh-tui"
+    },
+    {
+      "id": "dsh-context",
+      "name": "DSH Context",
+      "description": "上下文透视：Context 仪表盘、侧栏面板与 /context 命令，查看上下文组成、演进趋势与压缩剪枝等事件，支持跨会话用量统计。",
+      "category": "cui-picks",
+      "tags": [
+        "上下文",
+        "Token 统计",
+        "可视化",
+        "仪表盘"
+      ],
+      "source": "npm",
+      "npm": "dsh-context",
+      "github": "bowenliang123/dsh-context",
+      "homepage": "https://github.com/bowenliang123/dsh-context"
+    },
+    {
       "id": "dsh-skins",
       "name": "DSH Skins",
       "description": "DSH Web 皮肤插件：多套品牌皮肤侧栏热切换，一键回到官方界面。已适配 0.1.7-rc.2 与 0.2.0-rc.1/rc.2，详见仓库。",
-      "category": "ui",
+      "category": "self-dev",
       "tags": [
         "皮肤",
         "主题",
-        "美化"
+        "美化",
+        "界面"
       ],
       "verified": [
         "0.1.2-rc.1",
@@ -49,11 +113,12 @@
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
       "description": "为内置 Copilot 提供方补登录/注销设置页与开箱路由；模型目录兜底不覆盖定制。适配 0.1.7-rc.2 与 0.2.0-rc.1，旧版用 1.1.x。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "Copilot",
         "认证",
-        "模型接入"
+        "模型接入",
+        "工具"
       ],
       "verified": [
         "0.1.7-rc.2",
@@ -68,11 +133,12 @@
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
       "description": "替换官方 Connection 跳过 BrowserAuth，免 Token；已适配 0.1.2-rc.1、0.1.5-rc.1/rc.2、0.1.7-rc.1/rc.2 与 0.2.0-rc.1/rc.2。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "BrowserAuth",
         "连接",
-        "安全"
+        "安全",
+        "工具"
       ],
       "verified": [
         "0.1.2-rc.1",
@@ -92,7 +158,7 @@
       "id": "dsh-surf",
       "name": "DSH Surf",
       "description": "网络冲浪入口：设置一级菜单一键打开自托管 Selkies/Chrome 远程桌面，视频流直连；需自建容器并挂认证反代。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "浏览器",
         "远程桌面",
@@ -111,7 +177,7 @@
       "id": "dsh-obmc-web",
       "name": "DSH OBMC Web",
       "description": "在 DSH 里打开 OpenBMC 控制台：同源代理走 SSH 隧道，设置面板一键开启，支持 IP 探测与隧道重定向；需 SSH 跳板可达 BMC。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "OpenBMC",
         "远程管理",
@@ -131,11 +197,12 @@
       "id": "dsh-onetree-log",
       "name": "OneTree Log",
       "description": "OneTree/dreport 日志包上传解包，14 域清单与预览；可登记服务器本地路径；已适配 0.1.7-rc.2，详见仓库。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "日志",
         "OneTree",
-        "诊断"
+        "诊断",
+        "工具"
       ],
       "verified": [
         "0.1.7-rc.2"
@@ -149,7 +216,7 @@
       "id": "dsh-quota-watch",
       "name": "DSH Quota Watch",
       "description": "GLM 与 Copilot 额度悬浮球：胶囊、详情面板与侧栏卡片，宿主解析凭据，适配 web 与 desktop。",
-      "category": "tools",
+      "category": "self-dev",
       "tags": [
         "配额",
         "悬浮球",
@@ -166,56 +233,56 @@
       "homepage": "https://github.com/iasiv5/dsh-quota-watch"
     },
     {
-      "id": "dsh-better-sidebar",
-      "name": "DSH Better Sidebar",
-      "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
-      "category": "ui",
+      "id": "dsh-auth",
+      "name": "DSH Auth",
+      "description": "DSH Web 管理员认证：Argon2id 口令与可撤销会话，经 Caddy forward_auth 保护页面、API、下载、SSE 与 WebSocket。",
+      "category": "tencent-lighthouse",
       "tags": [
-        "侧边栏",
-        "文件编辑",
-        "终端",
-        "Git"
+        "认证",
+        "安全",
+        "工具"
       ],
       "source": "npm",
-      "npm": "dsh-better-sidebar",
-      "github": "omdsh-dev/DSH-better-sidebar",
-      "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
+      "npm": "dsh-auth",
+      "github": "hxy91819/dsh-auth",
+      "homepage": "https://github.com/hxy91819/dsh-auth"
     },
     {
-      "id": "modsearch",
-      "name": "ModSearch",
-      "description": "免费网页搜索、X 搜索与页面抓取插件，支持 Firecrawl、Tavily、Exa 等引擎自动故障切换。",
-      "category": "search",
+      "id": "browser-skill-dsh-plugin",
+      "name": "BrowserSkill",
+      "description": "浏览器自动化：把 BrowserSkill 的 browser_* 工具暴露给模型，让模型在对话中操作浏览器，详见仓库。",
+      "category": "tencent-lighthouse",
       "tags": [
-        "搜索",
-        "网页抓取",
-        "X"
+        "浏览器",
+        "自动化",
+        "工具调用"
       ],
       "source": "npm",
-      "npm": "@liustack/modsearch",
-      "github": "liustack/modsearch",
-      "homepage": "https://github.com/liustack/modsearch"
+      "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
+      "github": "Tencent/BrowserSkill",
+      "homepage": "https://github.com/Tencent/BrowserSkill/tree/main/packages/dsh-plugin-browserskill#readme"
     },
     {
-      "id": "dsh-docs-panel",
-      "name": "DSH Docs Panel",
-      "description": "侧边栏「全局文档」：全局 Markdown 笔记任何工作区可读，支持大纲跳转与一键转编辑器；需 better-sidebar ≥0.4.0。",
-      "category": "ui",
+      "id": "dsh-weknora",
+      "name": "WeKnora",
+      "description": "知识库检索：把 WeKnora 接入模型，提供语义搜索、文档阅读与 RAG 问答等工具，可用自有知识库，详见仓库。",
+      "category": "tencent-lighthouse",
       "tags": [
-        "文档",
-        "Markdown",
-        "侧边栏"
+        "知识库",
+        "RAG",
+        "检索",
+        "工具"
       ],
       "source": "npm",
-      "npm": "dsh-docs-panel",
-      "github": "mlosun/dsh-docs-panel",
-      "homepage": "https://github.com/mlosun/dsh-docs-panel"
+      "npm": "@wxg-prc-cpg/dsh-weknora",
+      "github": "Tencent/WeKnora",
+      "homepage": "https://github.com/Tencent/WeKnora/tree/main/packages/dsh-weknora"
     },
     {
       "id": "dsh-server-deck",
       "name": "DSH Server Deck",
       "description": "服务器卡片仪表盘：实时 CPU/内存/磁盘与趋势图（1h~30d），点卡片进 xterm 终端；可选集成 better-sidebar。",
-      "category": "tools",
+      "category": "watchlist",
       "tags": [
         "服务器",
         "监控",
@@ -231,11 +298,12 @@
       "id": "dsh-flowglass",
       "name": "DSH Flowglass",
       "description": "流镜：把当前会话画成三列泳道流程图，展示工具调用、并行分组与子代理分支；可选集成 better-sidebar。",
-      "category": "ui",
+      "category": "watchlist",
       "tags": [
         "可视化",
         "流程图",
-        "会话"
+        "会话",
+        "界面"
       ],
       "source": "npm",
       "npm": "dsh-flowglass",
@@ -243,125 +311,10 @@
       "homepage": "https://github.com/Iwctwbh/dsh-flowglass"
     },
     {
-      "id": "dsh-auth",
-      "name": "DSH Auth",
-      "description": "DSH Web 管理员认证：Argon2id 口令与可撤销会话，经 Caddy forward_auth 保护页面、API、下载、SSE 与 WebSocket。",
-      "category": "tools",
-      "tags": [
-        "认证",
-        "安全"
-      ],
-      "source": "npm",
-      "npm": "dsh-auth",
-      "github": "hxy91819/dsh-auth",
-      "homepage": "https://github.com/hxy91819/dsh-auth"
-    },
-    {
-      "id": "deepseek-harness-lark",
-      "name": "DeepSeek Harness Lark",
-      "description": "飞书 / Lark 通道插件：把飞书消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
-      "category": "other",
-      "tags": [
-        "飞书",
-        "Lark",
-        "通道"
-      ],
-      "source": "npm",
-      "npm": "deepseek-harness-lark",
-      "github": "sliverp/DeepSeek-harness-lark",
-      "homepage": "https://github.com/sliverp/DeepSeek-harness-lark"
-    },
-    {
-      "id": "deepseek-harness-qqbot",
-      "name": "DeepSeek Harness QQBot",
-      "description": "QQ Bot 通道插件：把 QQ 机器人消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
-      "category": "other",
-      "tags": [
-        "QQ",
-        "通道"
-      ],
-      "source": "npm",
-      "npm": "deepseek-harness-qqbot",
-      "github": "sliverp/DeepSeek-harness-qqbot",
-      "homepage": "https://github.com/sliverp/DeepSeek-harness-qqbot"
-    },
-    {
-      "id": "deepseek-harness-weixin",
-      "name": "DeepSeek Harness Weixin",
-      "description": "微信通道插件：扫码登录，收发文本与图片消息，桥接进 DeepSeek Harness 对话。",
-      "category": "other",
-      "tags": [
-        "微信",
-        "通道"
-      ],
-      "source": "npm",
-      "npm": "deepseek-harness-weixin",
-      "github": "sliverp/DeepSeek-harness-weixin",
-      "homepage": "https://github.com/sliverp/DeepSeek-harness-weixin"
-    },
-    {
-      "id": "deepseek-harness-wecom",
-      "name": "DeepSeek Harness WeCom",
-      "description": "企业微信 AI Bot 通道插件：把企业微信消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
-      "category": "other",
-      "tags": [
-        "企业微信",
-        "通道"
-      ],
-      "source": "npm",
-      "npm": "deepseek-harness-wecom",
-      "github": "sliverp/DeepSeek-harness-wecom",
-      "homepage": "https://github.com/sliverp/DeepSeek-harness-wecom"
-    },
-    {
-      "id": "deepseek-harness-dingtalk",
-      "name": "DeepSeek Harness DingTalk",
-      "description": "钉钉 Stream 通道插件：把钉钉消息桥接进 DeepSeek Harness 对话，支持文本与图片收发。",
-      "category": "other",
-      "tags": [
-        "钉钉",
-        "通道"
-      ],
-      "source": "npm",
-      "npm": "deepseek-harness-dingtalk",
-      "github": "sliverp/DeepSeek-harness-dingtalk",
-      "homepage": "https://github.com/sliverp/DeepSeek-harness-dingtalk"
-    },
-    {
-      "id": "browser-skill-dsh-plugin",
-      "name": "BrowserSkill",
-      "description": "浏览器自动化：把 BrowserSkill 的 browser_* 工具暴露给模型，让模型在对话中操作浏览器，详见仓库。",
-      "category": "tools",
-      "tags": [
-        "浏览器",
-        "自动化",
-        "工具调用"
-      ],
-      "source": "npm",
-      "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
-      "github": "Tencent/BrowserSkill",
-      "homepage": "https://github.com/Tencent/BrowserSkill/tree/main/packages/dsh-plugin-browserskill#readme"
-    },
-    {
-      "id": "dsh-weknora",
-      "name": "WeKnora",
-      "description": "知识库检索：把 WeKnora 接入模型，提供语义搜索、文档阅读与 RAG 问答等工具，可用自有知识库，详见仓库。",
-      "category": "tools",
-      "tags": [
-        "知识库",
-        "RAG",
-        "检索"
-      ],
-      "source": "npm",
-      "npm": "@wxg-prc-cpg/dsh-weknora",
-      "github": "Tencent/WeKnora",
-      "homepage": "https://github.com/Tencent/WeKnora/tree/main/packages/dsh-weknora"
-    },
-    {
       "id": "dsh-chat-manager",
       "name": "DSH Chat Manager",
       "description": "会话管理器：在原生侧边栏搜索归档聊天、恢复会话并安全永久删除；需按内核版本选装，详见仓库。",
-      "category": "tools",
+      "category": "watchlist",
       "tags": [
         "会话管理",
         "归档",
@@ -374,20 +327,20 @@
       "homepage": "https://github.com/WSL043/dsh-chat-manager"
     },
     {
-      "id": "dsh-context",
-      "name": "DSH Context",
-      "description": "上下文透视：Context 仪表盘、侧栏面板与 /context 命令，查看上下文组成、演进趋势与压缩剪枝等事件，支持跨会话用量统计。",
-      "category": "ui",
+      "id": "dsh-docs-panel",
+      "name": "DSH Docs Panel",
+      "description": "侧边栏「全局文档」：全局 Markdown 笔记任何工作区可读，支持大纲跳转与一键转编辑器；需 better-sidebar ≥0.4.0。",
+      "category": "watchlist",
       "tags": [
-        "上下文",
-        "Token 统计",
-        "可视化",
-        "仪表盘"
+        "文档",
+        "Markdown",
+        "侧边栏",
+        "界面"
       ],
       "source": "npm",
-      "npm": "dsh-context",
-      "github": "bowenliang123/dsh-context",
-      "homepage": "https://github.com/bowenliang123/dsh-context"
+      "npm": "dsh-docs-panel",
+      "github": "mlosun/dsh-docs-panel",
+      "homepage": "https://github.com/mlosun/dsh-docs-panel"
     }
   ]
 }

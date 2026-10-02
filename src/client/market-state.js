@@ -10,8 +10,15 @@
 export const MARKET_PAGE_SIZES = [24, 48, 96]
 export const DEFAULT_PAGE_SIZE = 24
 
-const CURATED_ORDER = ['market', 'tools', 'ui', 'search', 'other']
-const CURATED_LABELS = { market: '市场', tools: '工具', ui: '界面', search: '搜索', other: '其他' }
+/** 策展五桶（0.9.16 策展分类法替换功能五分类）：chips 顺序即桶序，腾讯轻量云专区按主人要求垫后。 */
+const CURATED_ORDER = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist']
+const CURATED_LABELS = {
+  essentials: '装机必备',
+  'cui-picks': '崔添翼精选',
+  'self-dev': '我的自研',
+  'tencent-lighthouse': '腾讯轻量云专区',
+  watchlist: '观察区',
+}
 const CURATED_IDS = new Set(CURATED_ORDER)
 /** 社区开放分类安全 slug（与服务端同语义） */
 const SLUG_RE = /^[a-z0-9-]{1,32}$/
@@ -25,7 +32,7 @@ function toSafeInt(value, fallback, min, max) {
 }
 
 /** 分区初始状态（0.7.0 Task 8/11）：community 默认 downloads-desc；primary 策展序（sort 恒 null），
- *  limit 96 = 单页直出上限（当前 registry 23 条即此形态；自定义源 >96 时由通用分页器降级兜底）。 */
+ *  limit 96 = 单页直出上限（0.9.16 策展 19 条即此形态；自定义源 >96 时由通用分页器降级兜底）。 */
 export function createZoneState(zone) {
   const z = zone === 'primary' ? 'primary' : 'community'
   return {
@@ -38,7 +45,7 @@ export function createZoneState(zone) {
   }
 }
 
-/** 规范化分区查询：query trim；category 白名单按 zone（primary=精选 5 ∪ slug、community=slug）；
+/** 规范化分区查询：query trim；category 白名单按 zone（primary=策展五桶 ∪ slug、community=slug）；
  *  offset ≥ 0；limit clamp 1..96 默认 24；sort 仅 community 区合法化（非法形状归 null）。 */
 export function normalizeMarketQuery(input, zone = 'community') {
   const z = zone === 'primary' ? 'primary' : 'community'

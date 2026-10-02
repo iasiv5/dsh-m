@@ -1097,10 +1097,10 @@ describe('M1 Task 5：合并市场', () => {
     ]))
     const res = await listMarket(cfg, { withLatest: false, source: 'community', category: 'theme' }, deps)
     assert.equal(res.total, 2)
-    assert.deepEqual(res.categoryCounts, { market: 0, tools: 0, ui: 0, search: 0, other: 0, theme: 2, dev: 1 })
+    assert.deepEqual(res.categoryCounts, { essentials: 0, 'cui-picks': 0, 'self-dev': 0, 'tencent-lighthouse': 0, watchlist: 0, theme: 2, dev: 1 })
     const rp = await listMarket(cfg, { withLatest: false, source: 'primary', category: 'theme' }, deps)
     assert.equal(rp.total, 0)
-    assert.deepEqual(rp.categoryCounts, { market: 0, tools: 1, ui: 0, search: 0, other: 0 })
+    assert.deepEqual(rp.categoryCounts, { essentials: 0, 'cui-picks': 0, 'self-dev': 0, 'tencent-lighthouse': 0, watchlist: 0, tools: 1 })
   })
 
   it('⑨ sort downloads：无计数 ≠ 0——无数据恒排有数据之后（组内 stars 降序），dir 只翻转有数据组', async () => {

@@ -34,7 +34,7 @@ function entry(overrides = {}) {
     id: 'test-plugin',
     name: 'Test Plugin',
     description: 'A test plugin',
-    category: 'tools',
+    category: 'essentials',
     tags: ['test'],
     source: 'npm',
     npm: 'test-plugin',
@@ -64,7 +64,7 @@ describe('validateRegistry：官方清单', () => {
     const parsed = validateRegistry(raw)
     assert.equal(parsed.ok, true, parsed.errors.join('; '))
     assert.ok(parsed.registry)
-    assert.equal(parsed.registry.plugins.length, 23)
+    assert.equal(parsed.registry.plugins.length, 19)
   })
 })
 
@@ -796,7 +796,7 @@ describe('Task 2：远程加载与 cache 回退', () => {
 })
 
 describe('verified 字段（0.4.0 Task 19）', () => {
-  const base = { id: 'x', name: 'X', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'x-pkg' }
+  const base = { id: 'x', name: 'X', description: 'd', category: 'essentials', tags: [], source: 'npm', npm: 'x-pkg' }
   it('精确 semver 数组通过并回传', () => {
     const r = validateRegistry({ version: 1, plugins: [{ ...base, verified: ['0.1.7-rc.2', '0.1.5-rc.1'] }] })
     assert.equal(r.ok, true)

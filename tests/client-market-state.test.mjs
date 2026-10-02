@@ -68,11 +68,14 @@ describe('normalizeMarketQuery（分区化）', () => {
     assert.equal(normalizeMarketQuery({ sort: { field: 'stars', dir: 'up' } }, 'community').sort, null, '非法方向归 null')
   })
 
-  it('primary 区：精选 5 ∪ slug 白名单；sort 恒 null（策展序）', () => {
+  it('primary 区：策展五桶 ∪ slug 白名单；sort 恒 null（策展序）', () => {
     const q = normalizeMarketQuery({}, 'primary')
     assert.equal(q.source, 'primary')
-    assert.equal(normalizeMarketQuery({ category: 'tools' }, 'primary').category, 'tools')
+    assert.equal(normalizeMarketQuery({ category: 'essentials' }, 'primary').category, 'essentials')
+    assert.equal(normalizeMarketQuery({ category: 'cui-picks' }, 'primary').category, 'cui-picks')
     assert.equal(normalizeMarketQuery({ category: 'memory' }, 'primary').category, 'memory')
+    assert.equal(normalizeMarketQuery({ category: 'tools' }, 'primary').category, 'tools', '旧功能分类退出策展桶后仍可作开放 slug 命中自定义源')
+    assert.equal(normalizeMarketQuery({ category: 'UI!!' }, 'primary').category, null)
     assert.equal(normalizeMarketQuery({ sort: { field: 'stars', dir: 'asc' } }, 'primary').sort, null)
   })
 
@@ -113,18 +116,18 @@ describe('zoneChips 分区构建器', () => {
   const labels = {
     agi: 'AGI 架构探索', ui: 'UI 增强', tools: '工具与能力', theme: '主题与外观', memory: '记忆',
   }
-  it('primary：精选 5 类固定序（0 计数也展示）', () => {
-    const chips = zoneChips({ tools: 3, market: 0 }, labels, 'primary')
-    assert.deepEqual(chips.map((c) => c.id), ['market', 'tools', 'ui', 'search', 'other'])
-    assert.deepEqual(chips.map((c) => c.count), [0, 3, 0, 0, 0])
-    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.market', 'cat.tools', 'cat.ui', 'cat.search', 'cat.other'])
+  it('primary：策展五桶固定序（0 计数也展示）', () => {
+    const chips = zoneChips({ essentials: 3 }, labels, 'primary')
+    assert.deepEqual(chips.map((c) => c.id), ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist'])
+    assert.deepEqual(chips.map((c) => c.count), [3, 0, 0, 0, 0])
+    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.essentials', 'cat.cui-picks', 'cat.self-dev', 'cat.tencent-lighthouse', 'cat.watchlist'])
   })
-  it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数精选种子跳过', () => {
+  it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数跳过', () => {
     const counts = { market: 1, tools: 5, ui: 7, search: 0, other: 0, agi: 10, theme: 4, 'brand-new-slug': 2, 'empty-slug': 0 }
     const chips = zoneChips(counts, labels, 'community')
     const ids = chips.map((c) => c.id)
     assert.ok(ids.includes('agi') && ids.includes('ui') && ids.includes('tools'), '社区区含同名真实计数键')
-    assert.ok(!ids.includes('search') && !ids.includes('other'), '0 计数精选种子不进社区区')
+    assert.ok(!ids.includes('search') && !ids.includes('other'), '0 计数键不进社区区')
     assert.ok(!ids.includes('empty-slug'), '0 计数未知分类跳过')
     assert.equal(ids[ids.length - 1], 'brand-new-slug', '未知 slug 尾组')
     assert.equal(chips.find((c) => c.id === 'agi').label, 'AGI 架构探索')

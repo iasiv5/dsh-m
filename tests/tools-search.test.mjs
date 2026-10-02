@@ -98,7 +98,7 @@ describe('dshm_search 新契约（0.7.0 Task 5）', () => {
   })
 
   it('输出 item 携带 community/downloads/stars/categoryLabel（社区分类中文直出）', async () => {
-    const search = await loadSearch(() => resultOf([communityItem({ category: 'memory' }), primaryItem({ category: 'tools' })], { total: 2 }))
+    const search = await loadSearch(() => resultOf([communityItem({ category: 'memory' }), primaryItem({ category: 'essentials' })], { total: 2 }))
     const out = await search.execute({})
     const [c, p] = out.items
     assert.equal(c.community, true)
@@ -107,7 +107,7 @@ describe('dshm_search 新契约（0.7.0 Task 5）', () => {
     assert.equal(c.categoryLabel, '记忆', '社区分类中文标签直出，不回退英文 slug')
     assert.equal(p.community, false)
     assert.equal(p.downloads, null)
-    assert.equal(p.categoryLabel, '工具', '精选分类中文标签')
+    assert.equal(p.categoryLabel, '装机必备', '精选策展桶中文标签')
   })
 
   it('renderSearch：[社区] 标记 + 中文分类 + 翻页尾行 / 已到末尾', async () => {

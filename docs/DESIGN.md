@@ -40,7 +40,7 @@
       "id": "dsh-skins",              // slug，唯一
       "name": "DSH Skins",
       "description": "中文描述",        // v1 只有中文
-      "category": "ui",               // market|tools|ui|search|other 五选一
+      "category": "essentials",      // 策展五桶：essentials|cui-picks|self-dev|tencent-lighthouse|watchlist 五选一（0.9.16 策展分类法；旧功能五分类退役）
       "tags": ["主题"],
       "source": "github",             // npm|github
       "npm": "可选；source=npm 时必填",

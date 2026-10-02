@@ -24,11 +24,11 @@ import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './
 import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from './core/profile-ops.js'
 
 export const CATEGORY_LABELS: Record<RegistryEntry['category'], string> = {
-  market: '市场',
-  tools: '工具',
-  ui: '界面',
-  search: '搜索',
-  other: '其他',
+  essentials: '装机必备',
+  'cui-picks': '崔添翼精选',
+  'self-dev': '我的自研',
+  'tencent-lighthouse': '腾讯轻量云专区',
+  watchlist: '观察区',
 }
 
 /** 分类中文标签（0.7.0 Task 5）：精选 5 类 + 社区已知标签（单一事实源 COMMUNITY_CATEGORY_LABELS）；未知 slug 原样。 */
