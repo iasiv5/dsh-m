@@ -17,6 +17,7 @@ import {
   DesktopOpsError,
   _setEnableRetryDelayForTests,
 } from '../lib/core/profile-ops.js'
+import { _resetReleaseAgeCachesForTests } from '../lib/core/release-age.js'
 import { ToggleError } from '../lib/core/toggle.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 
@@ -66,6 +67,9 @@ function depsFor(service, overrides = {}) {
     githubLatestTag: overrides.githubLatestTag ?? (async () => ({ tag: 'v0.9.0', sha: 'a'.repeat(40) })),
     precheck: overrides.precheck ?? (async () => null),
     ...(overrides.loadRegistry ? { loadRegistry: overrides.loadRegistry } : {}),
+    ...(overrides.packumentTimes ? { packumentTimes: overrides.packumentTimes } : {}),
+    ...(overrides.workspacePolicy ? { workspacePolicy: overrides.workspacePolicy } : {}),
+    ...(overrides.listInstalled ? { listInstalled: overrides.listInstalled } : {}),
   }
 }
 
@@ -157,7 +161,7 @@ describe('desktopInstallFromRegistry：守门与委派', () => {
     )
   })
 
-  it('0.9.10：ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION → release-age-wait + 诚实等待指引（策略正确工作，非故障）', async () => {
+  it('0.9.19：ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION → release-age-wait，全量违规解析 + 目标/旁包分述（0.9.10 只取首条的实证修复）', async () => {
     const diagnostic = [
       '? Verifying lockfile against supply-chain policies (8 entries)...',
       '✗ Lockfile failed supply-chain policy check (8 entries in 350ms)',
@@ -169,12 +173,45 @@ describe('desktopInstallFromRegistry：守门与委派', () => {
       () => desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service)),
       (err) => {
         assert.ok(err instanceof DesktopOpsError && err.code === 'release-age-wait', `应归类 release-age-wait：${err.message.slice(0, 80)}`)
-        assert.ok(err.message.includes('dsh-m@0.9.8'), '应点名等待期内的条目')
+        assert.ok(err.message.includes('dsh-m@0.9.8'), '应点名锁内违规条目')
+        assert.ok(err.message.includes('不在违规名单'), '应说明本次目标未违规（旁包连坐），而非冒充目标被拦')
+        assert.ok(err.message.includes('pkg-a@1.2.3'), '应点名本次目标')
         assert.ok(err.message.includes('minimumReleaseAge'), '应说明是供应链等待期策略')
-        assert.ok(err.message.includes('DSH Web'), '应给出等待期内的替代路径')
+        assert.ok(!err.message.includes('DSH Web'), '不应再给「改用 DSH Web」的失配指引')
         assert.ok(!err.message.includes('ERR_PNPM'), '不应向用户甩 pnpm 原始码')
+        assert.equal(err.details?.violations?.length, 1, '结构化违规清单随错误携带')
+        assert.equal(err.details?.targetViolating, false)
         return true
       },
+    )
+  })
+
+  it('0.9.19：等待期失败 + 账实分裂复读——node_modules 已是新版而 manifest 仍旧版时，明示回退风险', async () => {
+    const diagnostic = '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:\n  dsh-m@0.9.8 was published at 2026-10-01T14:26:10.989Z, within the minimumReleaseAge cutoff (2026-09-30T15:08:06.630Z)'
+    const { service } = managerStub({ change: { application: 'failed', error: { code: 'operation-error', diagnostic } } })
+    const deps = depsFor(service, {
+      listInstalled: async () => ({ items: [{ pkg: 'pkg-a', version: '1.2.3', spec: '1.0.0', isDsh: true }], others: [], complete: true }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => {
+        assert.equal(err.code, 'release-age-wait')
+        assert.ok(err.message.includes('账实分裂'), '应明示账实分裂形态')
+        assert.ok(err.message.includes('1.0.0'), '应点名 manifest 仍旧版')
+        assert.ok(err.message.includes('回退'), '应明示下次包操作的回退风险')
+        assert.equal(err.details?.splitState?.manifestSpec, '1.0.0')
+        assert.equal(err.details?.splitState?.installedVersion, '1.2.3')
+        return true
+      },
+    )
+  })
+
+  it('0.9.19：账实分裂复读不可用（无 listInstalled）→ 只给等待指引，不遮蔽原错误', async () => {
+    const diagnostic = '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION]\n  dsh-m@0.9.8 was published at 2026-10-01T14:26:10.989Z, within the minimumReleaseAge cutoff (2026-09-30T15:08:06.630Z)'
+    const { service } = managerStub({ change: { application: 'failed', error: { code: 'operation-error', diagnostic } } })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, depsFor(service)),
+      (err) => err.code === 'release-age-wait' && !err.message.includes('账实分裂'),
     )
   })
 
@@ -456,5 +493,79 @@ describe('desktopInstallFromRegistry：enable 失败自动重试与文案精确�
       (err) => err instanceof DesktopOpsError && err.code === 'install-refused',
     )
     assert.equal(calls.installBundle.length, 1, '非 enable 失败不触发重试')
+  })
+})
+
+describe('0.9.19 供应链等待期委派前预检（releaseAgePrecheck 接线）', () => {
+  const MIN = 60_000
+  const isoAgo = (ms) => new Date(Date.now() - ms).toISOString()
+
+  beforeEach(_resetReleaseAgeCachesForTests)
+
+  it('目标版本未满等待期 → 委派前 release-age-wait，installBundle 零调用（该挡的挡在门外）', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('pkg-a@1.2.3'),
+    )
+    assert.equal(calls.installBundle.length, 0, '未委派官方管理器（避免半写 node_modules 的账实分裂）')
+  })
+
+  it('目标已满期 → 正常委派', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(res.spec, 'pkg-a@1.2.3')
+    assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('scoped 独立精确排除条目视为有效覆盖（本机 quota-watch@0.1.13 实证）→ 放行', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      entry: { id: 'plug-scoped', name: 'Scoped', description: '', category: 'tools', tags: [], source: 'npm', npm: '@scope/pkg-a' },
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['@scope/pkg-a@1.2.3'] }),
+    })
+    const res = await desktopInstallFromRegistry('plug-scoped', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(res.spec, '@scope/pkg-a@1.2.3')
+    assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('目标已满期但锁内非 scoped 独立精确条目未满期 → 拦（dsh-m@0.9.18 连坐形态实证）', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async (pkg) => (pkg === 'dsh-m'
+        ? { '0.9.18': isoAgo(24 * MIN) }
+        : { '1.2.3': isoAgo(72 * 60 * MIN) }),
+      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['dsh-m@0.9.18'] }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('dsh-m@0.9.18') && err.message.includes('锁内排除条目'),
+    )
+    assert.equal(calls.installBundle.length, 0)
+  })
+
+  it('profileDir 缺席 → 预检跳过（fail-open），照常委派', async () => {
+    const { service, calls } = managerStub()
+    await desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service))
+    assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('发布时刻不可得（registry 查询失败）→ fail-open 放行', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async () => null,
+      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+    })
+    await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 1)
   })
 })

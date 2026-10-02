@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.19 变更：供应链等待期「锁文件校验」实证修复——委派前预检 + 全量违规解析 + 账实分裂明示
+
+- **根因（本机 2026-10-03 00:15 实证）**：pnpm 11.7 对 desktop profile 做**锁文件级**供应链校验（`Verifying lockfile against supply-chain policies (180 entries)`），而它给每次成功安装自动追加的 `minimumReleaseAgeExclude` **非 scoped 独立精确条目不被这次校验认可**（`dsh-m@0.9.18` 即被拒；scoped 的 `'@iasiv5/dsh-quota-watch@0.1.13'` 则认可）——装过一个「太新」版本后，**等待期内任何官方包操作都会被这个旁包条目拦死**，与本次目标无关；且校验失败前目标包已被写入 node_modules、官方管理器只回滚 manifest/lockfile → 界面显示新版 active、操作记录却是失败（**「账实分裂」**），下次包操作还会把插件静默回退。
+- **委派前预检（`releaseAgePrecheck`，只读、零文件级红线不破、fail-open）**：npm 源安装/升级在委派官方管理器前，对目标版本与锁内「不被校验认可的独立精确排除条目」逐个核对 registry 发布时刻，任一未满等待期 → 结构化 `release-age-wait` 拒绝（含各自可重试时刻），不再产生半写状态；发布时刻不可得 / 策略不可读 / 命中有效排除条目（包名级、`||` 复合、scoped 独立精确）→ 放行，pnpm 仍是最终执行者。
+- **失败翻译换新（替代 0.9.10 单条解析）**：解析全部违规条目，按「本次目标 vs 锁内旁包」分述发布时刻与可重试时刻——旁包连坐不再被冒充成目标被拦；移除「改用 DSH Web 安装」的失配指引。`DesktopOpsError` 新增结构化 `details`（violations/targetViolating/splitState/blockers）。
+- **账实分裂复读**：等待期失败后复读实装状态，node_modules 已是目标版本而 manifest 仍旧版时，在错误信息中明示「下次包操作会回退到旧版，等待期满重新升级即可对齐」。
+- **接线**：desktop install / self-upgrade 调用点补穿 `profileDir`（升级路径此前已有）。
+
 ### 0.9.18 变更：精选收录 DSH Market + README 重构与变更日志外迁
 
 - **新收录 DSH Market**（npm `dshmarket`，精选 18→19）：三方可视化插件市场——浏览、搜索社区插件并一键安装，主题一键热切换；主桶装机必备、次桶崔添翼精选（`alsoCategories` 次级归属）。文案按收录规范三句式，三方条目不设 `verified`。
@@ -214,6 +222,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.19 — supply-chain release-age: pre-delegation gate, full violation parsing, split-state disclosure
+
+- **Root cause (observed 2026-10-03 00:15 on this machine)**: pnpm 11.7 runs a **lockfile-wide** supply-chain verification on desktop installs (`Verifying lockfile against supply-chain policies (180 entries)`), and the standalone exact `minimumReleaseAgeExclude` entries it auto-appends after each successful install are **not honored by that verification when unscoped** (`dsh-m@0.9.18` flagged; scoped `'@iasiv5/dsh-quota-watch@0.1.13'` honored) — so one freshly installed version bricks every package operation for 24h, regardless of the current target. The target package gets written into node_modules before the verification fails while the official manager rolls back only manifest/lockfile → **"split state"**: the UI shows the new version active, the operation record says failed, and the next operation silently downgrades the plugin.
+- **Pre-delegation gate (`releaseAgePrecheck`; read-only, fail-open)**: npm installs/upgrades now check the target version and untrusted lockfile exclude entries against registry publish times **before** delegating; anything inside its waiting window is refused up front as structured `release-age-wait` with per-entry ready times — no more half-written states. Missing publish data / unreadable policy / entries covered by effective selectors (package-level, `||` compound, scoped standalone exact) → proceed; pnpm remains the final enforcer.
+- **Failure translation rewritten** (replacing the 0.9.10 single-match parser): all violations are parsed and reported as "target vs lockfile bystanders" with their own publish times and retry deadlines; the misleading "install via DSH Web instead" hint is gone. `DesktopOpsError` gained structured `details` (violations/targetViolating/splitState/blockers).
+- **Split-state re-read**: after a release-age failure the installed state is re-read; when node_modules already holds the target version while the manifest still records the old one, the error explains the upcoming silent downgrade and how to converge.
+- **Wiring**: desktop install / self-upgrade call sites now pass `profileDir` (upgrade already did).
 
 ### Changed in 0.9.18 — DSH Market added to Curated + README restructure, changelog extracted
 

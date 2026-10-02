@@ -337,6 +337,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             const managed = await d.desktopInstall(ctx.pkg.name, cfg(), {
               namespace: 'host',
               profile: profile.name,
+              profileDir: profile.dir,
               signal,
             }, { getService: d.getService, ensureService: d.ensureService })
             if ('needsBuildApproval' in managed) {
@@ -481,6 +482,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
               forceIncompatible: boolArg(body.forceIncompatible),
               namespace: 'host',
               profile: profile.name,
+              profileDir: profile.dir,
               signal,
             }, { getService: d.getService, ensureService: d.ensureService })) }
             break

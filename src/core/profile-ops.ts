@@ -14,6 +14,9 @@
  *   重试把 pending 名单原样传回 `approvedBuilds`（键格式由官方管理器自己写），
  *   dsh-m 绝不直接编辑 desktop profile 的 pnpm-workspace.yaml，绝不全量放行；
  * - 成功判定 = 官方结果无 error + `listBundles()` 复读目标 bundle 在装，二者同时满足。
+ * - 0.9.19：供应链等待期在委派前预检（release-age.ts，零写操作 fail-open）；失败翻译解析
+ *   全部违规条目并复读「账实分裂」（pnpm 11 锁文件校验失败前目标已写入 node_modules、
+ *   官方管理器只回滚 manifest/lockfile 的实证形态——0:15 quota-watch 事件）。
  *
  * 禁止事项：desktop 路径零 Web fallback——不做文件级装后守卫（app.asar 探测盲区）、
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
@@ -26,6 +29,7 @@ import { listInstalledPlugins as defaultListInstalled } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { npmLatest as defaultNpmLatest, githubLatestTag as defaultGithubLatestTag } from './versions.js'
 import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
+import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckDeps } from './release-age.js'
 import type { RegistryConfig, RegistryCacheNamespace } from './registry.js'
 
 /** 官方 pluginManager 的 Desktop 超集投影（运行时探测，缺方法按不可用处理）。 */
@@ -41,39 +45,20 @@ export interface DesktopManagerLike {
 
 export type DesktopOpsErrorCode = 'no-manager' | 'install-refused' | 'enable-failed' | 'remove-failed' | 'verify-failed' | 'release-age-wait'
 
-function humanDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '不到 1 分钟'
-  const minutes = Math.round(ms / 60_000)
-  if (minutes < 60) return `${minutes} 分钟`
-  const hours = Math.floor(minutes / 60)
-  const rest = minutes % 60
-  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`
-}
-
-/**
- * 0.9.10：desktop profile 的 pnpm 供应链策略（minimumReleaseAge）拒绝「太新鲜」的版本——
- * 这是策略在正确工作（防供应链攻击的发布等待期），不是环境故障。解析出条目/发布时刻/
- * 策略截止，翻译成「何时可重试」的诚实指引，而不是甩一屏 pnpm 原文（dsh-market #732 同态度）。
- */
-function releaseAgeWaitMessage(diagnostic: string): string {
-  const m = /(\S+@\S+) was published at ([^,]+), within the minimumReleaseAge cutoff \(([^)]+)\)/.exec(diagnostic)
-  if (!m) {
-    return '官方管理器的供应链策略（minimumReleaseAge）未满足：新发布的版本需满等待期才能装入 desktop profile。稍后再点升级即可；等待期内也可改用 DSH Web 安装'
-  }
-  const entry = m[1]!
-  const publishedAt = Date.parse(m[2]!)
-  const cutoff = Date.parse(m[3]!)
-  const deadline = Number.isFinite(publishedAt) && Number.isFinite(cutoff) ? publishedAt + (Date.now() - cutoff) : NaN
-  const when = Number.isFinite(deadline) ? `约 ${humanDuration(deadline - Date.now())}后（${new Date(deadline).toLocaleString('zh-CN', { hour12: false })}）` : '稍后'
-  return `官方管理器的供应链策略（minimumReleaseAge）要求新发布版本满等待期才能安装：${entry} 尚在等待期内，预计 ${when}可重试。等待期内也可改用 DSH Web 安装同版本`
-}
+// 0.9.19：等待期失败翻译移入 release-age.ts（describeReleaseAgeFailure）——全量违规解析 +
+// 目标/旁包分述。0.9.10 版只取第一条违规并把旁包名字当成本次目标、给「改用 DSH Web」的
+// 失配指引（本机 quota-watch 0.1.15 事件实证：被拦的是旁包 dsh-m@0.9.18，文案却让用户等
+// 旁包满期、去装 web profile）。
 
 export class DesktopOpsError extends Error {
   readonly code: DesktopOpsErrorCode
-  constructor(code: DesktopOpsErrorCode, message: string) {
+  /** 0.9.19：结构化细节（release-age：violations/targetViolating/splitState；precheck：blockers）。 */
+  readonly details?: Record<string, unknown>
+  constructor(code: DesktopOpsErrorCode, message: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'DesktopOpsError'
     this.code = code
+    if (details !== undefined) this.details = details
   }
 }
 
@@ -131,6 +116,8 @@ export interface DesktopInstallOptions {
   approvedBuilds?: string[]
   namespace?: RegistryCacheNamespace
   profile?: string
+  /** 目标 profile 目录（0.9.19 供应链等待期预检与账实分裂复读需要；缺席则两者跳过） */
+  profileDir?: string
   signal?: AbortSignal
 }
 
@@ -145,6 +132,11 @@ export interface DesktopInstallDeps {
   precheck?: typeof precheckNpmCompat
   /** 透传给 resolveRegistryEntry（测试注入清单源） */
   loadRegistry?: InstallDeps['loadRegistry']
+  /** 0.9.19 供应链等待期预检注入（测试；缺省 npmjs packument / 读 profile pnpm-workspace.yaml） */
+  packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
+  workspacePolicy?: ReleaseAgePrecheckDeps['workspacePolicy']
+  /** 0.9.19 账实分裂复读（测试注入；缺省 installed.ts 实现） */
+  listInstalled?: typeof defaultListInstalled
 }
 
 export type DesktopInstallResult =
@@ -222,10 +214,24 @@ async function desktopInstallLocked(
     throw new DesktopOpsError('install-refused', `收录条目 ${entry.id} 缺少 npm/github 来源，无法在 desktop 安装`)
   }
 
+  // 0.9.19：供应链等待期预检——pnpm 11 锁文件校验会拦死整次安装，且失败前目标已写入
+  // node_modules（账实分裂）；目标太新或锁内「独立精确排除条目」未满期 → 委派前结构化拒绝。
+  if (entry.source === 'npm' && version !== undefined) {
+    const gate = await releaseAgePrecheck({
+      pkg,
+      version,
+      profileDir: opts.profileDir,
+      timeoutMs,
+      signal: opts.signal,
+      deps: { packumentTimes: deps.packumentTimes, workspacePolicy: deps.workspacePolicy },
+    })
+    if (gate.blocked) throw new DesktopOpsError('release-age-wait', gate.message, { blockers: gate.blockers })
+  }
+
   let change: DesktopChangeResult
   let bundleName: string
   try {
-    ({ change, bundleName } = await runManagedInstall(service, pkg, spec, opts.approvedBuilds))
+    ({ change, bundleName } = await runManagedInstall(service, { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled }))
   } catch (err) {
     if (err instanceof DesktopBuildApprovalNeeded) {
       return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message }
@@ -274,6 +280,9 @@ export async function desktopToggle(pkg: string, enabled: boolean, deps: Desktop
  * desktopInstall / desktopUpgrade 共用；build-blocked 以 DesktopBuildApprovalNeeded 抛出，
  * 由调用方映射各自的返回形态。判定纪律沿用文件头「报告 §5.2」（dsh-market #703/#772 实证）：
  * 以 application/stage 为准，绝不只看 packageResult.exitCode；overridden 非失败。
+ * 0.9.19：release-age 失败翻译换 release-age.ts（全量违规解析 + 目标/旁包分述），并复读
+ * 「账实分裂」（pnpm 11 锁文件校验失败前目标可能已写入 node_modules，官方管理器只回滚
+ * manifest/lockfile），把回退风险明示进错误信息。
  *
  * 本地增强（2026-10-02，未随计划发版）：enable 阶段失败自动重试一次 + 文案按 packageResult 精确化。
  * 背景：desktop 高频装卸/插件树重载窗口下，官方管理器 enable 阶段与应用侧操作竞速，返回
@@ -303,49 +312,78 @@ function enableStageFailureMessage(pkg: string, change: DesktopChangeResult): st
   return `安装后启用阶段失败（${pkg}；application=failed、stage=enable${change.error?.code ? `、error=${change.error.code}` : ''}）：${writtenText}，请在官方 Desktop 插件页查看状态或重试`
 }
 
+/** runManagedInstall 上下文（0.9.19）：目标标识 + 账实分裂复读所需的 profileDir/listInstalled。 */
+interface ManagedInstallCtx {
+  pkg: string
+  spec: string
+  /** npm 源精确目标版本（等待期翻译与账实分裂复读用；github 源缺席） */
+  version?: string
+  profileDir?: string
+  approvedBuilds?: string[] | undefined
+  listInstalled?: typeof defaultListInstalled
+}
+
 async function runManagedInstall(
   service: DesktopManagerLike,
-  pkg: string,
-  spec: string,
-  approvedBuilds: string[] | undefined,
+  ctx: ManagedInstallCtx,
 ): Promise<{ change: DesktopChangeResult; bundleName: string }> {
   const installOnce = async (): Promise<DesktopChangeResult> =>
-    changeOf(await service.installBundle!(spec, {
+    changeOf(await service.installBundle!(ctx.spec, {
       enabled: true,
-      ...(approvedBuilds && approvedBuilds.length > 0 ? { approvedBuilds } : {}),
+      ...(ctx.approvedBuilds && ctx.approvedBuilds.length > 0 ? { approvedBuilds: ctx.approvedBuilds } : {}),
     }))
 
   /** 失败映射（既有语义不变：cancelled / build-blocked 审批 / release-age 等待 / enable / 通用）。 */
-  const mapFailure = (change: DesktopChangeResult): never => {
+  const mapFailure = async (change: DesktopChangeResult): Promise<never> => {
     if (change.application === 'cancelled') {
-      throw new DesktopOpsError('install-refused', `安装已被取消（${pkg}）：desktop profile 文件已由官方管理器恢复，未安装`)
+      throw new DesktopOpsError('install-refused', `安装已被取消（${ctx.pkg}）：desktop profile 文件已由官方管理器恢复，未安装`)
     }
     const pending = Array.isArray(change.pendingBuilds) ? change.pendingBuilds.filter((n) => typeof n === 'string') : []
     if (change.packageResult?.kind === 'build-blocked' && pending.length > 0) {
       throw new DesktopBuildApprovalNeeded(pending)
     }
-    // 0.9.10：供应链等待期（minimumReleaseAge）——策略正确工作，翻译成「何时可重试」
+    // 0.9.19：供应链等待期——解析全部违规条目（0.9.10 只取第一条，旁包被当成被拦目标）、
+    // 目标/旁包分述 + 账实分裂复读（pnpm 11 校验失败前已写入 node_modules 的实证形态）。
     const diagnosticText = `${change.error?.diagnostic ?? ''}\n${change.error?.code ?? ''}`
     if (/ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION|minimumReleaseAge/i.test(diagnosticText)) {
-      throw new DesktopOpsError('release-age-wait', releaseAgeWaitMessage(diagnosticText))
+      const view = describeReleaseAgeFailure({ pkg: ctx.pkg, version: ctx.version, diagnostic: diagnosticText })
+      let message = view.message
+      let splitState: { installedVersion: string; manifestSpec: string } | undefined
+      if (ctx.profileDir && ctx.version) {
+        try {
+          const items = (await ctx.listInstalled?.(ctx.profileDir) ?? { items: [] }).items
+          const row = items.find((it) => it.pkg === ctx.pkg)
+          if (row && row.version === ctx.version && typeof row.spec === 'string' && row.spec !== '') {
+            splitState = { installedVersion: row.version, manifestSpec: row.spec }
+            message += `\n注意：${row.version} 已写入 node_modules 且在运行，但 manifest/lockfile 仍记录 ${row.spec}（官方管理器失败回滚所致，「账实分裂」）——官方管理器下次任何包操作都会把它回退到 ${row.spec}；等待期满后重新升级即可对齐。`
+          }
+        } catch {
+          // 复读失败不遮蔽原错误
+        }
+      }
+      throw new DesktopOpsError('release-age-wait', message, {
+        violations: view.violations,
+        targetViolating: view.targetViolating,
+        ...(splitState !== undefined ? { splitState } : {}),
+      })
     }
     if (change.stage === 'enable') {
-      throw new DesktopOpsError('enable-failed', enableStageFailureMessage(pkg, change))
+      throw new DesktopOpsError('enable-failed', enableStageFailureMessage(ctx.pkg, change))
     }
-    throw new DesktopOpsError('install-refused', `官方管理器安装失败（${pkg}；application=${change.application ?? 'failed'}${change.error?.code ? `、error=${change.error.code}` : ''}${change.error?.diagnostic ? `：${change.error.diagnostic}` : ''}）`)
+    throw new DesktopOpsError('install-refused', `官方管理器安装失败（${ctx.pkg}；application=${change.application ?? 'failed'}${change.error?.code ? `、error=${change.error.code}` : ''}${change.error?.diagnostic ? `：${change.error.diagnostic}` : ''}）`)
   }
 
   /** 复读校验：listBundles 可用必须见目标在装；不可用（老管理器）至少要求官方宣称产出 bundle。 */
   const verifyAndBundle = async (change: DesktopChangeResult): Promise<{ change: DesktopChangeResult; bundleName: string }> => {
-    const bundleName = change.bundle ?? pkg
+    const bundleName = change.bundle ?? ctx.pkg
     if (typeof service.listBundles === 'function') {
       const bundles = await service.listBundles()
       const found = (bundles ?? []).find((b) => b && b.name === bundleName)
       if (!found || found.installed === false) {
-        throw new DesktopOpsError('verify-failed', `安装复读失败（${pkg}）：官方结果为 ${change.application ?? 'unknown'} 但 listBundles 未見目标 bundle 在装——不冒充安装成功`)
+        throw new DesktopOpsError('verify-failed', `安装复读失败（${ctx.pkg}）：官方结果为 ${change.application ?? 'unknown'} 但 listBundles 未見目标 bundle 在装——不冒充安装成功`)
       }
     } else if (!change.bundle) {
-      throw new DesktopOpsError('verify-failed', `安装复读不可用（${pkg}）：官方结果未携带 bundle 字段且 listBundles 缺席——不冒充安装成功`)
+      throw new DesktopOpsError('verify-failed', `安装复读不可用（${ctx.pkg}）：官方结果未携带 bundle 字段且 listBundles 缺席——不冒充安装成功`)
     }
     return { change, bundleName }
   }
@@ -357,7 +395,7 @@ async function runManagedInstall(
     if (enableRetryDelayMs > 0) await sleepMs(enableRetryDelayMs)
     change = await installOnce()
   }
-  if (change.application === 'failed' || change.application === 'cancelled' || change.error) mapFailure(change)
+  if (change.application === 'failed' || change.application === 'cancelled' || change.error) await mapFailure(change)
   return verifyAndBundle(change)
 }
 
@@ -426,6 +464,9 @@ export interface DesktopUpgradeDeps extends DesktopEnsureService {
   npmLatest?: typeof defaultNpmLatest
   githubLatestTag?: typeof defaultGithubLatestTag
   precheck?: typeof precheckNpmCompat
+  /** 0.9.19 供应链等待期预检注入（测试；缺省 npmjs packument / 读 profile pnpm-workspace.yaml） */
+  packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
+  workspacePolicy?: ReleaseAgePrecheckDeps['workspacePolicy']
 }
 
 /**
@@ -506,10 +547,23 @@ async function desktopUpgradeLocked(
     throw new DesktopOpsError('install-refused', `收录条目 ${entry.id} 缺少 npm/github 来源，无法在 desktop 升级`)
   }
 
+  // 0.9.19：供应链等待期预检（同 desktopInstallLocked；0:15 quota-watch 事件即此形态实证）
+  if (entry.source === 'npm' && version !== undefined) {
+    const gate = await releaseAgePrecheck({
+      pkg,
+      version,
+      profileDir: opts.profileDir,
+      timeoutMs,
+      signal: opts.signal,
+      deps: { packumentTimes: deps.packumentTimes, workspacePolicy: deps.workspacePolicy },
+    })
+    if (gate.blocked) throw new DesktopOpsError('release-age-wait', gate.message, { blockers: gate.blockers })
+  }
+
   let change: DesktopChangeResult
   let bundleName: string
   try {
-    ({ change, bundleName } = await runManagedInstall(service, pkg, spec, opts.approvedBuilds))
+    ({ change, bundleName } = await runManagedInstall(service, { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled }))
   } catch (err) {
     if (err instanceof DesktopBuildApprovalNeeded) {
       return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message }

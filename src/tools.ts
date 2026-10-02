@@ -314,7 +314,7 @@ export function registerTools(
       if (profile.kind !== 'web') {
         assertWriteAllowed(profile, 'install')
         // 0.9.8：补传服务解析 deps（此前漏传 → desktop 安装恒 no-manager，实机 2026-10-01）
-        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name }, { getService: getService as never, ensureService: ensureService as never }))
+        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
         return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host' }))
