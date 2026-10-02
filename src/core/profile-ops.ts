@@ -274,22 +274,52 @@ export async function desktopToggle(pkg: string, enabled: boolean, deps: Desktop
  * desktopInstall / desktopUpgrade 共用；build-blocked 以 DesktopBuildApprovalNeeded 抛出，
  * 由调用方映射各自的返回形态。判定纪律沿用文件头「报告 §5.2」（dsh-market #703/#772 实证）：
  * 以 application/stage 为准，绝不只看 packageResult.exitCode；overridden 非失败。
+ *
+ * 本地增强（2026-10-02，未随计划发版）：enable 阶段失败自动重试一次 + 文案按 packageResult 精确化。
+ * 背景：desktop 高频装卸/插件树重载窗口下，官方管理器 enable 阶段与应用侧操作竞速，返回
+ * application=failed/stage=enable/error=operation-error（实机实证 dsh-copilot-auth 三装卸两败，
+ * 失败 operation 的 pnpm.log 均为 0 字节——失败发生在 pnpm 之前的应用侧 enable，重试即愈）。
  */
+
+let enableRetryDelayMs = 1_200
+/** 测试钩子：调整 enable 重试退避毫秒（0 = 立即重试）。 */
+export function _setEnableRetryDelayForTests(ms: number): void {
+  enableRetryDelayMs = Math.max(0, ms)
+}
+
+const sleepMs = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+/** enable 阶段失败文案：按 packageResult 如实区分「已写入 / 未写入 / 未知」——
+ *  enable 先行失败（pnpm 未跑）时旧文案「包已写入」是错误断言（实机实证）。 */
+function enableStageFailureMessage(pkg: string, change: DesktopChangeResult): string {
+  const pr = change.packageResult
+  let writtenText: string
+  if (pr && typeof pr === 'object') {
+    const written = pr.exitCode === 0 || (typeof pr.kind === 'string' && /applied|ok|installed|success/i.test(pr.kind))
+    writtenText = written ? '包已写入但未能启用' : '包未能写入（启用注册先行失败，安装步骤未执行）'
+  } else {
+    writtenText = '启用阶段失败（官方未回传包写入结果，是否写入未知）'
+  }
+  return `安装后启用阶段失败（${pkg}；application=failed、stage=enable${change.error?.code ? `、error=${change.error.code}` : ''}）：${writtenText}，请在官方 Desktop 插件页查看状态或重试`
+}
+
 async function runManagedInstall(
   service: DesktopManagerLike,
   pkg: string,
   spec: string,
   approvedBuilds: string[] | undefined,
 ): Promise<{ change: DesktopChangeResult; bundleName: string }> {
-  const raw = await service.installBundle!(spec, {
-    enabled: true,
-    ...(approvedBuilds && approvedBuilds.length > 0 ? { approvedBuilds } : {}),
-  })
-  const change = changeOf(raw)
-  if (change.application === 'cancelled') {
-    throw new DesktopOpsError('install-refused', `安装已被取消（${pkg}）：desktop profile 文件已由官方管理器恢复，未安装`)
-  }
-  if (change.application === 'failed' || change.error) {
+  const installOnce = async (): Promise<DesktopChangeResult> =>
+    changeOf(await service.installBundle!(spec, {
+      enabled: true,
+      ...(approvedBuilds && approvedBuilds.length > 0 ? { approvedBuilds } : {}),
+    }))
+
+  /** 失败映射（既有语义不变：cancelled / build-blocked 审批 / release-age 等待 / enable / 通用）。 */
+  const mapFailure = (change: DesktopChangeResult): never => {
+    if (change.application === 'cancelled') {
+      throw new DesktopOpsError('install-refused', `安装已被取消（${pkg}）：desktop profile 文件已由官方管理器恢复，未安装`)
+    }
     const pending = Array.isArray(change.pendingBuilds) ? change.pendingBuilds.filter((n) => typeof n === 'string') : []
     if (change.packageResult?.kind === 'build-blocked' && pending.length > 0) {
       throw new DesktopBuildApprovalNeeded(pending)
@@ -300,22 +330,35 @@ async function runManagedInstall(
       throw new DesktopOpsError('release-age-wait', releaseAgeWaitMessage(diagnosticText))
     }
     if (change.stage === 'enable') {
-      throw new DesktopOpsError('enable-failed', `安装后启用阶段失败（${pkg}；application=failed、stage=enable${change.error?.code ? `、error=${change.error.code}` : ''}）：包已写入但未能启用，请在官方 Desktop 插件页查看状态或重试`)
+      throw new DesktopOpsError('enable-failed', enableStageFailureMessage(pkg, change))
     }
     throw new DesktopOpsError('install-refused', `官方管理器安装失败（${pkg}；application=${change.application ?? 'failed'}${change.error?.code ? `、error=${change.error.code}` : ''}${change.error?.diagnostic ? `：${change.error.diagnostic}` : ''}）`)
   }
-  // 复读校验：listBundles 可用必须见目标在装；不可用（老管理器）至少要求官方宣称产出 bundle
-  const bundleName = change.bundle ?? pkg
-  if (typeof service.listBundles === 'function') {
-    const bundles = await service.listBundles()
-    const found = (bundles ?? []).find((b) => b && b.name === bundleName)
-    if (!found || found.installed === false) {
-      throw new DesktopOpsError('verify-failed', `安装复读失败（${pkg}）：官方结果为 ${change.application ?? 'unknown'} 但 listBundles 未見目标 bundle 在装——不冒充安装成功`)
+
+  /** 复读校验：listBundles 可用必须见目标在装；不可用（老管理器）至少要求官方宣称产出 bundle。 */
+  const verifyAndBundle = async (change: DesktopChangeResult): Promise<{ change: DesktopChangeResult; bundleName: string }> => {
+    const bundleName = change.bundle ?? pkg
+    if (typeof service.listBundles === 'function') {
+      const bundles = await service.listBundles()
+      const found = (bundles ?? []).find((b) => b && b.name === bundleName)
+      if (!found || found.installed === false) {
+        throw new DesktopOpsError('verify-failed', `安装复读失败（${pkg}）：官方结果为 ${change.application ?? 'unknown'} 但 listBundles 未見目标 bundle 在装——不冒充安装成功`)
+      }
+    } else if (!change.bundle) {
+      throw new DesktopOpsError('verify-failed', `安装复读不可用（${pkg}）：官方结果未携带 bundle 字段且 listBundles 缺席——不冒充安装成功`)
     }
-  } else if (!change.bundle) {
-    throw new DesktopOpsError('verify-failed', `安装复读不可用（${pkg}）：官方结果未携带 bundle 字段且 listBundles 缺席——不冒充安装成功`)
+    return { change, bundleName }
   }
-  return { change, bundleName }
+
+  let change = await installOnce()
+  // 本地增强：enable 阶段失败自动重试一次（受限单次 + 短退避；与高频装卸/插件树重载的竞速重试即愈；
+  // cancelled / build-blocked / release-age 等其他失败形态不重试）
+  if (change.stage === 'enable' && (change.application === 'failed' || change.error)) {
+    if (enableRetryDelayMs > 0) await sleepMs(enableRetryDelayMs)
+    change = await installOnce()
+  }
+  if (change.application === 'failed' || change.application === 'cancelled' || change.error) mapFailure(change)
+  return verifyAndBundle(change)
 }
 
 export interface DesktopUninstallDeps extends DesktopEnsureService {

@@ -15,6 +15,7 @@ import {
   desktopUninstall,
   desktopUpgradeFromRegistry,
   DesktopOpsError,
+  _setEnableRetryDelayForTests,
 } from '../lib/core/profile-ops.js'
 import { ToggleError } from '../lib/core/toggle.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
@@ -394,5 +395,66 @@ describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', 
       () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(undefined, { deps: { ensureService: async () => undefined } })),
       (err) => err instanceof DesktopOpsError && err.code === 'no-manager',
     )
+  })
+})
+
+// ---------- 本地增强（2026-10-02，未随计划发版）：enable 阶段失败自动重试一次 + 文案按 packageResult 精确化 ----------
+// 背景：desktop 高频装卸/插件树重载窗口下，官方管理器 enable 阶段竞速返回 application=failed/stage=enable/
+// error=operation-error（实机实证 dsh-copilot-auth 三装卸两败，失败 pnpm.log 均为 0 字节——失败在 pnpm 之前）。
+
+const ENABLE_FAIL = { changed: false, application: 'failed', stage: 'enable', error: { code: 'operation-error' } }
+
+describe('desktopInstallFromRegistry：enable 失败自动重试与文案精确化', () => {
+  it('enable 失败（operation-error）→ 自动重试一次；重试成功则安装成功', async () => {
+    _setEnableRetryDelayForTests(0)
+    let n = 0
+    const { service, calls } = managerStub({ installBundle: async (spec, options) => {
+      calls.installBundle.push({ spec, options })
+      n += 1
+      return n === 1
+        ? { ...ENABLE_FAIL }
+        : { changed: true, application: 'applied', stage: 'enable', bundle: 'pkg-a', packageResult: { exitCode: 0 } }
+    } })
+    const res = await desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service))
+    assert.equal(res.ok, undefined, '成功形态沿用 InstallResult（无 ok 布尔）')
+    assert.equal(res.via, 'desktop-manager')
+    assert.equal(calls.installBundle.length, 2, '恰好自动重试一次')
+  })
+
+  it('重试仍 enable 失败且 packageResult 缺席 → 文案不得声称「包已写入」（enable 先行失败 = 安装未执行）', async () => {
+    _setEnableRetryDelayForTests(0)
+    const { service, calls } = managerStub({ installBundle: async (spec, options) => {
+      calls.installBundle.push({ spec, options })
+      return { ...ENABLE_FAIL }
+    } })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service)),
+      (err) => err instanceof DesktopOpsError && err.code === 'enable-failed'
+        && !err.message.includes('包已写入')
+        && err.message.includes('官方未回传包写入结果'),
+    )
+    assert.equal(calls.installBundle.length, 2, '受限单次重试')
+  })
+
+  it('重试仍失败且 packageResult.exitCode===0 → 文案如实「包已写入」', async () => {
+    _setEnableRetryDelayForTests(0)
+    const { service } = managerStub({ installBundle: async () => ({ ...ENABLE_FAIL, packageResult: { exitCode: 0 } }) })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service)),
+      (err) => err instanceof DesktopOpsError && err.code === 'enable-failed' && err.message.includes('包已写入但未能启用'),
+    )
+  })
+
+  it('非 enable 阶段失败（install stage）不重试：installBundle 恰一次', async () => {
+    _setEnableRetryDelayForTests(0)
+    const { service, calls } = managerStub({ installBundle: async (spec, options) => {
+      calls.installBundle.push({ spec, options })
+      return { changed: false, application: 'failed', stage: 'install', error: { code: 'boom' }, packageResult: { exitCode: 1 } }
+    } })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service)),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused',
+    )
+    assert.equal(calls.installBundle.length, 1, '非 enable 失败不触发重试')
   })
 })
