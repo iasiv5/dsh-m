@@ -186,12 +186,12 @@ describe('registryNotice / marketNotice（0.7.1：信息性来源横幅退役）
     assert.equal(registryNotice({ isDefault: true, status: 'stale', stale: true }, 10), null, '缓存 stale → 无横幅（0.7.0 前恒挂的噪音）')
     assert.deepEqual(registryNotice({ status: 'unavailable' }), { key: 'notice.unavailable' }, '错误态保留')
   })
-  it('双源语义：主 down+社区 up → communityFallback；社区 stale → communityStale；旗标独立于 notice 键', () => {
+  it('双源语义：主 down+社区 up → communityFallback；社区 stale → 无横幅（0.9.15+ 退役，状态由设置页承接）；旗标独立于 notice 键', () => {
     const fallback = marketNotice({ isDefault: true, status: 'unavailable', stale: false }, { enabled: true, status: 'ready' })
     assert.equal(fallback.communityFallback, true)
     assert.deepEqual(fallback.notice, { key: 'notice.unavailable' }, 'unavailable 仍在场')
     const staleOnly = marketNotice({ isDefault: true, status: 'stale', stale: true }, { status: 'stale' })
-    assert.equal(staleOnly.communityStale, true, '社区 stale 提示不被来源横幅退役连坐')
+    assert.equal(staleOnly.communityStale, undefined, '社区 stale 横幅退役（SWR 时代 stale 是设计常态态，不打扰用户；状态由设置页承接）')
     assert.equal(staleOnly.notice, undefined, '主清单仅 stale（可用）→ 无错误横幅')
     const silent = marketNotice({ isDefault: true, status: 'ready', stale: false }, { status: 'unavailable' })
     assert.notEqual(silent.communityStale, true)

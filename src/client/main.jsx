@@ -85,7 +85,7 @@ const ZH = {
   "market.page.prev": "上一页", "market.page.next": "下一页", "market.page.info": "第 {page} / {pages} 页 · 共 {total} 条",
   "notice.toolview.err": "收录清单暂不可用",
   "badge.community": "社区收录",
-  "community.stale": "社区目录为缓存快照（显示的不是最新数据）", "community.fallback": "收录清单不可用，当前展示社区清单条目",
+  "community.fallback": "收录清单不可用，当前展示社区清单条目",
   "detail.capabilities": "能力披露", "detail.capabilities.unscanned": "未扫描 ≠ 未检出", "detail.redlines": "能力红线",
   "guard.blocked": "安装被装后守卫拦截", "guard.compstatus": "补偿终态", "guard.repairbasis": "修复依据",
   "guard.restartsafenow": "可以重启 DSH Web", "guard.restartunsafe": "修复后再重启（不要现在一键重启）",
@@ -193,7 +193,7 @@ const EN = {
   "market.page.prev": "Previous", "market.page.next": "Next", "market.page.info": "Page {page} / {pages} · {total} listings",
   "notice.toolview.err": "Registry temporarily unavailable",
   "badge.community": "Community",
-  "community.stale": "Community catalog served from cache (not the latest data)", "community.fallback": "Registry unavailable — showing community listings",
+  "community.fallback": "Registry unavailable — showing community listings",
   "detail.capabilities": "Capabilities", "detail.capabilities.unscanned": "Not scanned ≠ not detected", "detail.redlines": "Capability red lines",
   "guard.blocked": "Install blocked by post-install guard", "guard.compstatus": "Compensation status", "guard.repairbasis": "Repair basis",
   "guard.restartsafenow": "You can restart DSH Web now", "guard.restartunsafe": "Fix before restarting (do not one-click restart now)",
@@ -1478,7 +1478,6 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
       ? h("div", { className: "dshm-err" }, lookup(notice.notice.key))
       : null,
     notice && notice.communityFallback ? h("div", { className: "dshm-hint" }, lookup("community.fallback")) : null,
-    notice && notice.communityStale ? h("div", { className: "dshm-hint" }, lookup("community.stale")) : null,
     h(ZoneChips, {
       zone,
       counts,

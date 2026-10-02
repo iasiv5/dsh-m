@@ -282,7 +282,7 @@ dshm restart --yes
 
 除手工 curated 的主清单外，市场还会叠加一层**只读的社区清单**：锚定 npm 包 [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog)（CC0-1.0，awesome-dsh-plugin 全量目录，4,000+ 条），数据层与主清单合并去重（**主清单恒优先**，重名条目社区侧让位），展示层按「社区 / 精选」分区呈现（ADR-0004）——社区区不再显示与主清单重复的条目，精选区保持策展序单页直出。
 
-- **数据获取**：dist-tags 探测最新版本 → jsDelivr 按精确版本直取 → npmmirror → unpkg 三线路兜底；版本未变不重拉正文，TTL 内跳过探测。失败回落 `<缓存目录>/awesome/` 运行时缓存并**显式标注「缓存快照」**——过期数据绝不冒充最新。
+- **数据获取**：dist-tags 探测最新版本 → jsDelivr 按精确版本直取 → npmmirror → unpkg 三线路兜底；版本未变不重拉正文，TTL 内跳过探测。失败回落 `<缓存目录>/awesome/` 运行时缓存先展示（先回缓存、后台自愈）——过期数据绝不冒充最新；缓存状态（缓存快照/目录版本/获取线路/更新时间）在**设置页**可见，浏览页不打扰。
 - **开关与锁定**：设置页 `communityCatalog` 开关（默认开，live 生效）、`communityCatalogPin` 可锁定目录版本（精确 semver）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出、`DSHM_COMMUNITY_CATALOG_PIN` 锁版本。
 - **分类与搜索**：社区分类是开放集（已知 23 个分类带中英双语标签：中文由包内单一事实源维护、英文取上游目录，按界面语言下发）；搜索走相关性加权管线（中英文双匹配）；社区区排序可切（下载量/Star/收录日期 × 升降，默认下载量降序，无下载量 ≠ 0 下载）。
 - **安装语义**：社区条目与主清单走同一 `installEntry`（npm 锁精确版本 / GitHub 锁 commit SHA）；市场浏览页只对 npm 条目做更新探测，GitHub 条目不做页面级探测（匿名配额 60 次/小时不可控）。

@@ -234,15 +234,17 @@ export function zoneChips(categoryCounts, categoryLabels, zone) {
 }
 
 /**
- * 双源 notice（0.7.1 修订）：恒返回旗标对象（可全空），调用方按旗标渲染——
+ * 双源 notice（0.7.1 修订；0.9.15 修订）：恒返回旗标对象（可全空），调用方按旗标渲染——
  * - notice: { key: 'notice.unavailable' } 错误态（主清单不可用）；
- * - communityFallback：主 down+社区 up；communityStale：社区目录为缓存快照。
+ * - communityFallback：主 down+社区 up。
  * 旗标独立于 notice 键存在（社区提示不再被信息性来源横幅的退役连坐）。
+ * 0.9.15 修订：communityStale 旗标退役——SWR 时代 stale 是设计常态态（先回缓存、后台自愈），
+ * 市场页不再提示临时的缓存状态（避免用户无谓担心）；stale 状态由设置页社区卡承接
+ * （状态=缓存快照 + 目录版本/获取线路/更新时间）。
  */
 export function marketNotice(registryState, community) {
   const out = {}
   const c = community && typeof community === 'object' ? community : {}
-  if (c.status === 'stale') out.communityStale = true
   if (registryState && registryState.status === 'unavailable' && (c.status === 'ready' || c.status === 'stale')) {
     out.communityFallback = true
   }
