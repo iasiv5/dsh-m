@@ -4,246 +4,92 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](../../actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.2.0--rc.2%20dual--API-2563eb)](#faq)
+[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.2.0--rc.2-2563eb)](#faq)
 
 English · [中文](./README.md)
 
-A DeepSeek Harness (DSH) plugin marketplace with a customizable registry: **browse, install, uninstall, upgrade** — all local. Ships as a DSH web plugin: the "Plugin Marketplace" sidebar entry opens a three-view panel, backed by eight `dshm_*` agent tools and the `dshm` CLI. The same package installs into **both the Web (`web`) and official Desktop (`desktop`) profiles** (0.9.0+; capability table in the changelog).
+dsh-m is a plugin marketplace for DeepSeek Harness (DSH): **browse · install · uninstall · upgrade**, entirely on your machine — no server, no account. The "Plugin Marketplace" panel opens from the sidebar, with agent-tool and CLI surfaces sharing the same core.
+
+**Highlights**
+
+- **Dual profile** — the same package installs into Web (`web`) and official Desktop (`desktop`); everything manages the host's current profile;
+- **Dual-catalog market** — the 4,000+ entry community catalog (awesome-dsh-plugin) is the default, layered with a hand-curated registry; zoned browsing with click-to-install;
+- **Three consistent surfaces** — the GUI panel, eight `dshm_*` agent tools, and the `dshm` CLI share one data model and semantics;
+- **Security baseline** — npm exact versions with integrity checks, GitHub installs pinned to commit SHA, official pluginManager delegation, and key-by-key build approvals.
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp" alt="Plugin Marketplace panel — Market view: Community / Curated / Favorites zones, category chips, and plugin cards (verified / installed badges, npm & GitHub detail links)" width="100%">
-  <p><sub>The "Plugin Marketplace" panel · Market view (Community 4,200+ · Curated 23 · Favorites): click a card to install</sub></p>
+  <p><sub>The "Plugin Marketplace" panel · browse Community, Curated, and Favorites with compatibility and install status</sub></p>
 </div>
+
+## Table of contents
+
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Panel](#panel)
+- [Agent tools (8)](#agent-tools-8)
+- [CLI](#cli)
+- [Community catalog (awesome-dsh-plugin)](#community-catalog-awesome-dsh-plugin)
+- [Curated registry (registry.json)](#curated-registry-registryjson)
+- [Documentation](#documentation)
+- [FAQ](#faq)
+
+Version history is not expanded on this page — see [`CHANGELOG.md`](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md) for the complete record.
+
+## Requirements
+
+- Node.js ≥ 22 on the host side;
+- DSH Web or official Desktop (supported host generations: see the [FAQ matrix](#faq));
+- No extra services or accounts — installing and managing plugins happens entirely locally.
 
 ## Quick start
 
-**Paste this whole block to your agent to install:**
+1. In DSH, open the official plugin manager and choose "Add plugin".
+2. Enter `dsh-m`, select an install source that works for your network, then click "Install".
+3. Follow the host lifecycle to activate it: restart DSH Web and refresh the page; on official Desktop, quit and reopen the app.
+4. Once loaded, open "Plugin Marketplace" from the bottom of the sidebar.
 
-```text
-Install and enable the DSH plugin dsh-m:
-1. Run `dsh plugin --profile web add dsh-m`
-2. Restart DSH Web to load the plugin (restart the DSH user unit used by your deployment; do not hardcode a unit name)
-3. Poll `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080` until it returns 200 again
-4. Run `curl -s -X POST http://127.0.0.1:3080/dshm -H 'content-type: application/json' -d '{"method":"ping"}'` and confirm the reply has `plugin: dsh-m`
-5. Then remind me to refresh the page and click "Plugin Marketplace" at the bottom of the sidebar
-```
+<div align="center">
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/official-plugin-install.webp" alt="DSH official plugin manager: the Add Plugin dialog with dsh-m entered and an install source selected" width="86%">
+  <p><sub>Recommended · add and install dsh-m from DSH's official plugin manager</sub></p>
+</div>
 
-> `npm install -g dsh-m` installs only the `dshm` CLI (terminal management) — it does **not** register the plugin into the web profile; it can coexist with the plugin install above.
-
-The default registry includes DSH Skins, ModSearch, the Lark / QQ / Weixin / WeCom / DingTalk channel bridges, and dsh-m itself.
+> **Upgrade note:** The official plugin manager currently says in-place updates are not supported. To upgrade through it, uninstall `dsh-m` first, then install the newer version; follow the latest UI guidance if this changes.
 
 ## Panel
 
 | View | Capabilities |
 |---|---|
-| **Market** | **Zoned** (0.7.0): **Community** (default landing, the 4,000+ full catalog) and **Curated** (hand-picked primary registry, single page) as two independent zones — each keeps its own category/search/sort/pagination state across tab switches; plus a **Favorites** zone (browser-local bookmarks with delisted-entry detection and one-click cleanup). Community zone: two-row collapsible category chips with sticky collapse, sort switch (downloads/stars/added × asc/desc), windowed pagination (24/48/96 per page), card byline (owner/downloads/stars); clicking a card opens a **detail modal** (superset of the card: download window, screenshot lightbox, capabilities collapsed by default, install command — the row is hidden on desktop and for installed entries since 0.9.14; install progress and result shown in-modal since 0.9.15); npm sources pin the latest exact version, GitHub sources pin the release/tag commit |
-| **Operations** | Install/upgrade/uninstall/toggle all flow through a global operation log (0.7.0): state lives off cards, surviving paging/searching/tab switches; persisted to localStorage and resumed after host reloads (each restored op re-validated "still applies" before executing); benignly-invalidated ops show as a neutral "skipped"; the Installed page gains "Update all (N)" batch queueing |
-| **Installed** | What the current profile (web / desktop, 0.9.0+) actually has, annotated "via market / non-market"; update badges, upgrade, two-step confirm uninstall; 📖 README preview (64KB cap); **live phase badge** (●active / ●failed / ○pending) and a **one-click toggle** (0.4.0: delegates to the official pluginManager service for live application; falls back to file-level edits + restart notice when absent; dsh-m itself and official host lifelines are locked) |
-| **Settings** | Registry address draft with "Force refresh / Validate & apply / Restore default / Download default registry.json"; configured vs active address and status at a glance (shown only when abnormal); community catalog toggle; dsh-m self-update |
+| **Market** | Community (4,000+ entries) / Curated / Favorites zones, each keeping its own category, search, sort, and pagination state; cards open a detail modal with install progress and results shown in place. |
+| **Operations** | Installs, upgrades, uninstalls, and toggles flow through one global operation log — state lives off cards and resumes automatically after host reloads. |
+| **Installed** | What the current profile actually has: source annotation, live phase badge, one-click toggle, upgrade, and two-step confirmed uninstall. |
+| **Settings** | Curated registry configuration and status, community catalog toggle, dsh-m self-update. |
 
 <div align="center">
   <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/settings.webp" alt="Settings view — community catalog status card (catalog version / route / entries), curated registry configuration card (address draft with force-refresh / validate & apply / restore default / download), and the About card" width="86%">
   <p><sub>Settings view · community catalog status, curated registry configuration, and dsh-m self-update</sub></p>
 </div>
 
-The restart chain below applies to **Web only** (Desktop takes effect via the official app lifecycle: after installing, quit and reopen the Desktop app — see the 0.9.0 section). After any mutation, the already-open Market and Installed views refresh the profile state together, keeping badges and cards in sync without closing and reopening the marketplace; a "⚡ Restart" banner appears — under systemd, the DSH launcher's `appExit` hook hands the restart back to a unit configured with `Restart=on-failure` or `Restart=always`, avoiding a `systemctl` helper inside the unit cgroup that is about to stop; if `appExit` is unavailable, the fallback uses a manager-owned transient `systemd-run` service and only then a detached helper. The client confirms the replacement by boot id and dismisses the banner, leaving DSH Web's own background connection recovery in control; it does not force a full-page reload during the auth/route handoff. The restart chain has been live-verified on the current DSH Web `0.2.0-rc.2` (2026-10-01): dsh-m probes the unit's `Restart=` policy, hands the stop back via `appExit`, the `status=75/TEMPFAIL` exit is caught by the Restart policy and auto-started, and after recovery the page reconnects in the background with the panel fully functional. Historical scope: the `0.1.5-rc.1` era covered live `/dshm` ping and authenticated `303 → 200` checks; `0.1.2-rc.1` is covered by contract checks plus runtime shape-detection fallback (see the verified array) — with the deployment moved on, no live E2E is chased on retired generations; the transient `systemd-run` fallback only applies to hosts without `appExit` (all supported generations provide it) and stays a documented fallback rather than a release gate; repeated install/uninstall is covered by the profile-transaction test surface (compensation, post-install guard, 813 cases) plus the 0.4.0→0.4.2 consecutive-release evidence. Installs stream live pnpm progress (resolve → download → link → build).
+How changes take effect (Web only):
 
-### Changed in 0.9.15 — install progress/result now live inside the detail modal
+- After install / uninstall / upgrade, the Market and Installed views sync automatically — no need to close and reopen the panel;
+- A "⚡ Restart" banner follows: under systemd, the DSH launcher's `appExit` hands the restart to the unit's `Restart` policy; hosts without `appExit` fall back by design;
+- The client confirms the new process by boot id, dismisses the banner, and lets DSH Web's background reconnection restore the page — no forced full reload;
+- Installs stream live pnpm progress (resolve → download → link → build).
 
-- **Scenario**: clicking Install in the detail modal rendered all install feedback (the pnpm phase line, the "changes applied" banner/toast) on the panel layer beneath, half-visible through the modal mask — inside the modal the button just spun, with no sense of progress (live screenshot feedback, 2026-10-02). Uninstall never had this problem: no modal is involved and status already lives on the installed card.
-- **Change**: while an install runs, the modal hosts the progress line itself (same host-status polling: phase / bar / current package); terminal states render an inline result row — success with version + build-script notes and a restart hint (desktop gets the official app lifecycle guide), failure / guard block with the reason and a re-enabled retry button, "skipped" presented neutrally; while the modal is open the underlying twin line steps aside (and returns once the modal closes). Everything still derives from the global operation log and the install result — the "state lives off cards" ownership model is unchanged (DESIGN §2.6).
-
-### Changed in 0.9.14 (instant-open quartet + context-aware "Install command" row)
-
-- **Instant-open quartet** — a fix combo for the marketplace spinner that used to show on every panel open:
-  - **SWR (serve-stale-while-revalidate)**: expired TTL no longer blocks on the network — the disk cache is returned immediately as a snapshot (the community zone keeps its honest "cached snapshot" banner; never pretending to be fresh), a background single-flight refreshes it for the next open. "Force refresh" semantics unchanged (always synchronous; community card stays decoupled).
-  - **Route stickiness**: the default two-route chain (GitHub raw → jsDelivr mirror) is ordered by the **last successful route** recorded in the cache — once the mirror has worked it goes first, instead of re-paying the raw timeout on every cold open (~10-20s saved per cold open on CN networks).
-  - **Persistent probe cache**: per-page npm/GitHub latest-version probes now persist to a disk envelope (`latest/`, survives restarts) — no probe replay on the first open after a DSH service restart.
-  - **Client snapshot**: the default first page is cached browser-locally (10-min TTL); opening the panel renders the last response first and refreshes in the background — the spinner now only appears on the very first use (no snapshot yet).
-- **Detail modal "Install command" row is context-aware**:
-  - **Scenario**: the row's derived command hardcodes `dsh plugin --profile web add …`, and community entries' upstream `install` text carries the same web-profile semantics — neither source looks at the current host profile. Copying it on Desktop installs into the web profile (invisible in the current UI); for already-installed entries the command is pure noise (live screenshot evidence: desktop + the dsh-m self entry, `installed` badge and the command on screen together).
-  - **Change**: the row is hidden entirely on desktop and for installed entries; web + not-installed keeps today's behavior (the CLI bootstrap path, same command as Quick start). The sanctioned Desktop path is the modal's own Install button (official pluginManager delegation, ADR 0005 discipline). No "simplify by dropping --profile": the explicit `--profile web` flag is a settled 0.9.0 decision (see the "profile target" section), and a bare `dsh plugin add` has ambiguous default-profile semantics — not simpler, just worse.
-
-### Changed in 0.9.13 — desktop chip hover copy updated (owner decision)
-
-- The old copy "当前 DSH profile：{name}（Desktop 首发仅支持只读市场、安装新包与开关）" was stale after 0.9.8 opened upgrades/uninstall/self-upgrade; per owner decision it now reads "当前生效 Profile" (Active profile).
-
-### Changed in 0.9.12 — re-issue of 0.9.11
-
-0.9.11 hit a npmjs ghost publish: the OIDC publish was accepted and **staged** (CLI exit 0, provenance published to the transparency log) but never committed into the registry — GET 404, and re-publishing the same version is rejected with 409 `Cannot publish over previously staged version`. After waiting out any propagation, the standard workaround applies: re-issue under a new number. **Content is identical to 0.9.11: settings force-refresh no longer takes down the community catalog card.**
-
-### Fixed in 0.9.11 — Settings "force refresh" no longer takes down the community catalog card (force semantics belong to the curated chain only)
-
-- **Scenario**: on a weak network, clicking the curated registry card's force refresh also flipped the community catalog card to "unavailable / fetch timeout" — the host forwarded `force` into the community summary, restarting its fetch flight; under a weak network the flight couldn't finish within the 3s waiter, which returned the timeout placeholder (the flight itself keeps running under its 30s hard cap and self-heals).
-- **Fix**: the `registry` force is no longer forwarded to the community summary — force semantics belong to the curated chain; the community catalog keeps its own TTL/shared-flight cadence (a first-ever load on a terrible network can still transiently time out, but force refresh no longer triggers it).
-
-### Fixed in 0.9.10 — Desktop self-upgrade hitting the official supply-chain release-age policy now yields an honest wait guide
-
-- **Scenario**: clicking the upgrade chip routes through the official manager, whose pnpm supply-chain policy (`minimumReleaseAge`, releases must age 24h before installation) rejected the just-published version — `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`. **The policy is working as designed** (anti-supply-chain-attack release waiting period); dsh-m just dumped a screen of raw pnpm output as a generic failure.
-- **Fix**: the manager-result judgment recognizes the policy code and translates it into an honest guide — naming the pending entry and its publish time, deriving when a retry will pass, and offering the interim path (install the same version from DSH Web). No policy bypass, ever (the waiting period is the anti-attack red line; same stance as dsh-market #732).
-- Also: community chain ⑨ hang-cap assertion 2s→10s (timer starvation under the full parallel suite tripped it twice; the "never hangs forever" contract is unchanged).
-
-### Fixed in 0.9.9 — No more red "primary route failed" notice once the mirror line took over (notice convergence)
-
-- **Scenario**: with the default dual-line registry (raw → jsDelivr), when the primary `default-raw` failed and the mirror succeeded, the settings page still showed a red "Remote notice: default-raw 失败：fetch failed…可稍后重试或检查网络后重试" — alarming against data that had already self-healed, with advice that didn't apply (intermittent raw.githubusercontent.com unreachability is exactly why the mirror line exists).
-- **Fix**: a later line succeeding means the earlier failure self-healed — `errors` no longer carries it (the "effective source" row already states the live line, e.g. "GitHub 镜像（备用）"). When ALL lines fail into cache/bundled, the errors are still kept — that's the actionable signal. The custom chain (custom source failing into cache) keeps its warning, unchanged.
-- Added a test seam for the default chain (`defaultRoutes` override); regression gates cover both convergence and the keep-on-total-failure cases.
-
-### Fixed in 0.9.8 — Desktop package operations fully wired to the official manager (install always failed; upgrade/uninstall/self-upgrade opened)
-
-- **Why every install failed**: the Host API's desktop install branch called `desktopInstall(id, cfg, opts)` without the 4th `deps` argument — `getService` never reached the adapter, so desktop installs always failed with "official pluginManager service unavailable (fail-closed)" (100% reproducible, timing irrelevant). The `dshm_install` tool had the same defect.
-- **Service resolution aligned with dsh-market** (borrowed from its official-desktop wiring, proven on this machine by two managed upgrades): the probe now checks both contexts (the hostCtx from the webServer inject callback first) and falls back to a short-timeout cordis `inject` to lazily wake the official service — `pluginManager` is lazy, so a one-shot `get` returns undefined until something used it. Only a genuinely absent service still refuses (the no-file-level-fallback red line is untouched).
-- **Capability table widened (owner decision, following dsh-market strategy)**: desktop upgrade (installBundle over the installed bundle), uninstall (removeBundle) and self-upgrade (installBundle('dsh-m@latest')) are now delegated to the official manager — exactly how dshmarket performed the dsh-m 0.9.3→0.9.4/0.9.5 upgrades on this machine. Judgment discipline unchanged (application/stage first, overridden is not a failure, build-blocked returns structured pendingBuilds, listBundles re-read never fakes success). restart stays refused (Electron lifecycle belongs to the shell).
-- All three entry points (GUI, installed-view actions, and the dshm_install / dshm_uninstall / dshm_upgrade tools) are wired in the same pass.
-
-### Fixed in 0.9.7 — Upgrade chip on Desktop showed a red "upgrade failed" banner (capability refusal is guidance, not an error)
-
-- **Root cause**: the 0.9.1 upgrade chip always calls `self-upgrade`; the Desktop capability table refuses by design with a structured 409, but the client rendered that 409 like any other failure — a red "upgrade failed" banner. Per the capability table this is not a failure, it's a pointer to the official entry.
-- **Fix**: `api()` now forwards the structured refusal fields (code/action/profile/guidance); on a 409 the chip click shows a **neutral info banner** with the official-entry guidance (the guidance text's single source stays server-side in `active-profile.ts`, zero duplication in the client); info banners stay for 12s. Real failures on Web still use the red error banner — unchanged.
-
-### Fixed in 0.9.6 — "Clear finished" silently no-opped on failed records
-
-- **Root cause**: the 0.7.0 review consensus excluded failed/superseded records from clearing (kept for review), so clicking the button against a failed record did nothing with zero feedback — reported as a bug from the real Windows host (2026-10-01). An explicit clear click is not a "silent wipe"; the old consensus is overruled.
-- **Fix**: "Clear ended" (formerly "Clear finished") now clears **all terminal states** (done/warned/failed/superseded); in-flight records (queued/running/input) are untouched. When there is nothing terminal to clear, the button is disabled with an explanatory tooltip instead of silently no-oping. The per-row ✕ still removes single records.
-- English copy updated accordingly.
-
-### Fixed in 0.9.5 — GUI read paths missed the active profile on Desktop (Installed tab always showed web)
-
-- **Root cause**: the 0.9.0 dual-profile wiring missed the `installed` / `market` read paths in the Host API — `listInstalledWithMeta` / `listMarket` fell back to `webProfileDir()`: on Desktop the Installed tab always said "no plugins installed in this web profile" and the market "installed" badges stayed empty (the agent-tool surface `dshm_list` was wired correctly, so only the GUI was wrong).
-- **Fix**: both now pass `profileDir: profile.dir` + `profile: profile.name` (same as the tools surface; profileContext as the single source of truth); registry/community cache segments follow the `profile` parameter automatically.
-- **Copy**: the hardcoded "web profile" in the installed empty/loading states and the profile hint is now profile-neutral (the actual path is still shown).
-
-### Fixed in 0.9.4 — Fullscreen header eaten by the Windows Desktop titlebar (tabs / restore unreachable)
-
-- **Root cause**: on Windows Desktop the shell runs `titleBarStyle:hidden + titleBarOverlay` — the top 40px of the window is a full-width `-webkit-app-region:drag` band (drag hits are decided by layout and ignore z-index / paint order), and the OS-drawn — □ ✕ caption buttons float above everything. The maximized panel header landed inside that band: tab clicks were swallowed by window dragging and the restore/close buttons were covered by the system buttons — no way back.
-- **Fix**: the same approach the shell uses for its own overlays — consume the `--dsh-windows-titlebar-height` variable the shell sets on `html` (fullscreen `top:var(…)`; floating `padding-top:max(24px,var(…))`, which also fixes the short-window edge case where the floating panel's top edge sat under the band).
-- **Zero drift on Web**: browsers / DSH Web have no such variable — it falls back to 0px, byte-identical to 0.9.3.
-
-### Fixed in 0.9.3 — Windows native support (verified on a real Windows host)
-
-- **Registry atomic writes**: temp file names were derived with `split('/')`, but Windows paths separate with `\` — the "basename" came out as the entire path, the temp-file open always failed silently, and every cache / accepted-metadata write silently failed; now uses `basename()`, identical on all three platforms.
-- **Local-file registry address parsing**: `C:\…` drive paths and `\\server\share` UNC were misread as URL schemes (with a misleading "HTTPS only" error), and `file://C:/…` normalized to a drive-less dangling path that always failed with ENOENT; all three local forms (POSIX absolute / Windows drive / UNC) now parse correctly as file kind.
-- **Build**: `node_modules/.bin/tsc` is a POSIX sh shim; on Windows `spawnSync` failed with ENOENT — the build now runs TypeScript's JS entry with the current Node, identical on all platforms.
-- **Test surface**: on a real Windows host the full 829-case suite went from 41 failures to **0** (821 pass / 8 skipped); POSIX-only contracts (process-group/SIGTERM timing, symlink privileges, platform path assertions, fixed-sleep timing) are now labeled skips, platform-neutral, or poll-based — test contracts unchanged.
-
-### Fixed in 0.9.2 — Header chip stuck on the old version after a service restart
-
-- **In-place refresh once the restart is confirmed**: the moment the boot id confirms DSH Web is back, the panel re-fetches ping — the `dsh-m vX.Y.Z` chip and the profile chip sync to the new process's data instead of lingering on the old version (observed on 0.9.1: chip upgrade + restart still showed v0.9.0).
-- **Refetch when the page becomes visible again**: with the panel left open while the service is restarted externally, returning to the tab refetches ping via `visibilitychange` (zero polling cost).
-- **Chip version guard**: a self-check verdict whose version doesn't match the current process (stale verdict from the old process) is treated as silent, preventing "v0.9.1 ⬆ v0.9.1"-style misrenders.
-
-### New in 0.9.1 — Header version chip upgrade notice (lights up only when an update exists)
-
-- **Silent by default**: the panel-header `dsh-m vX.Y.Z` chip keeps the static look introduced in 0.7.5 — up to date, failed check, or a local dev build ahead of npm (ahead) never interrupt (ahead only shows a "local dev build" hint in the hover title).
-- **Lights up only when outdated**: when `self-check` (npm latest vs the installed version, read-only) finds a newer version, the chip turns into a warn state showing `⬆ v<latest>`; clicking it runs `self-upgrade` (same mutation session + post-install guard) and a "⚡ Restart" banner follows on success. On Desktop the click is rejected structurally by the capability table (409, with official lifecycle guidance).
-- **TTL cache + version guard**: check results are cached in browser localStorage for 30 minutes so opening the panel doesn't hit npm every time; after an upgrade + restart the cache auto-invalidates by version. Failed checks stay silent — no error is shown.
-
-### New in 0.9.0 — Official Desktop (dual profile) support
-
-- **One package, two profiles**: dsh-m now installs into the official Desktop's `desktop` profile (`~/.dsh/profiles/desktop`) alongside the Web `web` profile; the catalog, panel, and agent tools are shared, and everything manages the host's current profile (official `profileContext` as the single source of truth).
-- **Entrust admission to the host**: every `/dshm` method (including ping and unknown methods) delegates to the official `connection.requestRejection()` before any body is read (trustedHosts / loopback / cross-site / `Origin: null` semantics come from the host); rejected requests consume no body and call no business logic; hosts without the capability fail closed. **Behavior change**: the old home-grown "missing Origin → 403" guard is gone — Origin-less requests from the Desktop bridge are admitted per official semantics, and unauthenticated health probes now follow host trust instead of a blanket 403.
-- **Desktop first-release capability table**: read-only market + **installing new packages** (delegated to the official `pluginManager.installBundle`; integrity, locking, and application phases stay with the official manager) + **toggles** (delegated; structured refusal when the service is absent, never a file-level fallback); **upgrade / uninstall / self-update / one-click restart** return structured 409 refusals with official-entry guidance (no official upgrade API exists; restarts belong to the Electron lifecycle); build scripts retry with the exact official `pendingBuilds` list — never an allow-all.
-- **Per-profile read model and cache**: market installed-badges, the installed list, and README previews only read the current profile; registry / community / accepted-source caches are segmented per profile (web keeps its legacy paths — zero migration, zero clearing); favorites and operation logs stay per browser origin and do not sync between Web and Desktop.
-- **CLI always targets the web profile**: `--profile web` is explicit; `--profile desktop` is rejected with a pointer to the official Desktop plugin management page.
-- **Honest limitations**: Desktop on-device (Win/macOS) E2E has not been run; the `registry.json` verified arrays gain **no** Desktop generation (to be recorded after real testing); dsh-m's file-level post-install guard is skipped on Desktop (app.asar probing blind spot) and replaced by official result checks plus a `listBundles` re-read.
-
-### Fixed in 0.8.5
-
-- **dshm_upgrade fake success on guard blocks**: when an upgrade hit the post-install guard (e.g. link/file-sourced plugins cannot be auto-rolled-back), the text output was mis-rendered as "✅ undefined 已升级（最新）"; it now reports the block reason, compensation status and repair basis honestly, consistent with the card title (Guard block).
-
-### Changed in 0.8.4 — Category labels now follow the UI language
-
-- **Community categories**: English names for the 23 known categories come straight from the upstream catalog's `categories.en`; under the English UI, category chips and the category row in detail/favorite modals show English. Upstream categories without an English name fall back to Chinese and keep rendering as raw slugs in the temporary group until labels land in a release. The Chinese UI is unchanged.
-- **Curated categories**: the five chips now go through the bilingual dictionary (Market/Tools/UI/Search/Other ⇄ 市场/工具/界面/搜索/其他), consistent with the detail modal.
-- **Implementation**: the summary carries `categoryLabelsEn` (derived from the upstream catalog in `communityOutcome`; ids without English are omitted — no second hand-maintained table), and the client merges per UI language. 0.8.1–0.8.3 were local iteration numbers with no separate changelog surface.
-
-### Changed in 0.8.0 — Settings page redo (aligned with the zoned dual-catalog positioning)
-
-- **Information architecture**: Community catalog (from awesome-dsh-plugin) → Curated registry (registry.json) → dsh-m itself → About; the primary registry's user-facing name is now unified as "Curated registry".
-- **Community catalog toggle**: a new GUI switch (live effect, instant, no confirm; when off the whole card collapses to one line); new `set-community` API.
-- **Curated registry slimmed**: status fields consolidated from 7 rows to 4 (merged address, removed the hard-coded "caching" row); config status only appears when abnormal; buttons reduced to "Force refresh / Validate & apply / Restore default / Download default registry"; "Check entries reachability" removed from the GUI (`registry-diagnose` API kept).
-- **Copy fixes**: the custom-source note now says it replaces the whole primary registry and only affects the Curated zone; removed the hard-coded TTL description that didn't match reality (`timeoutMs`/`cacheTtlMin` remain config-file settings).
-- **dsh-m itself**: when the local dev build is ahead of npm, show "local dev build" instead of the misleading old "npm latest" (new `ahead` field).
-- **About**: copy aligned with the current positioning, plus GitHub repo and issue-tracker links.
-
-### Polished in 0.7.10
-
-- **Head split into three groups**: a hairline divider between the title and tab navigation — "title | nav | status + window controls" reads clearly.
-- **Version badge unified color**: the v-number no longer uses the bright primary text color; it matches the dsh-m name in secondary gray.
-- **Vertical rhythm consolidated**: window-control cells 26→28px to match tab height; version badge adjusted to 24px; maximize/restore icons unified at 12px; title weight 700→600.
-
-### Fixed in 0.7.9
-
-- **Category chips keep a stable order**: retired the "promote active to front" reordering (every click on a clipped category used to jump it to first place). Instead, when the active category falls inside the collapsed clip region, the row auto-expands so the active filter stays visible — same goal, stable order; a manual collapse under the same active category is respected, and picking another clipped category or "All" resets it.
-
-### Changed in 0.7.8
-
-- **Root cause fix for "maximize does nothing" — CSS hot-update self-healing**: the panel stylesheet was only injected once (`#dshm-css` present → skip), so after a hot update the stale stylesheet lacked rules for new classes (fullscreen/window controls) — new features appeared dead and buttons rendered as unstyled natives. The injected stylesheet now carries a content hash (djb2); reopening the panel after a bundle update swaps in the fresh styles automatically, no page refresh needed.
-- **Window-control group recolored**: dropped the raised surface for a transparent background + hairline outline (same language as the search clear button); cells widened 34→44px against mis-clicks; close keeps its red hover.
-
-### Changed in 0.7.7
-
-- **Fullscreen ported from dsh-market**: a maximize/restore control joins the panel head as a unified window-control group (equal-width maximize + close cells, hairline divider, shared SVG line icons; close tints red on hover). Fullscreen fills the viewport without rounded corners, the state is remembered in localStorage, and Esc still closes the panel.
-- 0.7.6 catch-up: version badge de-bolded and made static (no copy-on-click); sticky category row's top gap fixed (sticky anchor shifted to offset container padding); close/clear buttons moved to the outlined flat style.
-
-### Changed in 0.7.5
-
-- **Header version chip now shows dsh-m's own version** (`dsh-m v0.7.5`, click to copy; the DSH runtime version lives in Settings and `dshm ping`).
-- **× close/clear buttons redrawn**: search clear, detail-modal close, and operation-row remove now use an SVG line icon on a dedicated hover-tinted button; the search clear button floats inside the pill's right edge.
-- **Fixed the dsh-market peer warning**: `@deepseek-ai/dsh-tools` peer changed from `*` (strict semver never matches rc prereleases) to the explicit range `^0.1.7-rc.2 || ^0.2.0-rc.1 || >=0.2.0`; newer rc lines (e.g. 0.3.0-rc.x) need another entry.
-
-### Changed in 0.7.4
-
-- **Panel tabs reverted to the classic segmented style** (0.7.2 mistakenly introduced underline tabs; the rounded button group with a highlighted active tab is back).
-- **Full-width search**: fixed the search wrapper missing `display:flex`, which kept the input from stretching to the row.
-- **Filter button and page-jump control recolored**: the filter button now uses an elevated surface with squared corners to stand apart from the pill category chips (accent outline when open); the page input is a slim pill with a hairline border and an accent-colored "Go" text button.
-- **Sticky category row fully opaque**: the background now uses the opaque base token directly (the previous color-mix translucency still let card text bleed through on the dark theme); the bottom divider stays.
-
-### Changed in 0.7.3 (includes 0.7.2)
-
-- **Home layout modeled after dsh-market**: the market view becomes "zone chips → full-width search row → category chips with a trailing Filter popover"; the popover gets its own look (rounded rectangle + leading chevron) and holds sort field (npm downloads/stars/date added), direction, and page size (the old sort dropdown and pager page-size select are retired).
-- **Favorites cards open the detail modal**: fixed favorites-zone cards not responding to clicks — favorite snapshots lack full fields, so opening resolves the complete entry by id (in-memory zones → market API → snapshot fallback), reusing the detail modal and the full install path (peer confirm included).
-- **Page-number jump**: the pager gains a page input — type a valid page and hit Enter or "Go" to jump.
-- **Frosted sticky category row**: the sticky row now blurs content beneath it (backdrop blur + divider), so card text no longer bleeds through.
-- **Removed by request**: the "discover/request listing" line (dsh-m does not accept listings), the "Tasks" button (operations panel is always visible again), and the "Refresh" button (force refresh lives in Settings).
-- Note: registry entries carry no host-version requirement field, so dsh-market's "host version" filter has no data source here and was not replicated.
-
-### Fixed in 0.7.1
-
-- **Community entries are installable again**: fixes a 0.7.0 regression where installing a community listing failed with "registry 中没有该条目" (install-by-id only consulted the primary registry, never the community catalog); the path now mirrors upgrades — on a primary miss the catalog is searched by id.
-- **Compact market header**: search, refresh, and sort (community zone) move into the zone chips row; informational source banners ("official default registry / custom registry / served from local cache") are retired — their "{count} listings" figure was never wired up (always 0); the "registry unavailable" error and community fallback/stale hints remain.
-
-### New in 0.7.0
-
-- **Zoned market** ([ADR-0004](./docs/adr/0004-zoned-market-display.md)): the dual-catalog data merge stays, but the display splits into Community (default) / Curated / Favorites zones; `dshm_search` and `dshm search` switch to `--source community|primary|all` + `--offset` real pagination (default 10 cards) — `primary_only` is retired.
-- **Relevance search**: NFKC normalization + CJK↔Latin boundaries + field weighting (name/npm > owner > description > category > tags), multi-term same-field matching; whole-id exact match takes top priority.
-- **Operation log + resume executor**, **local favorites + delisted cleanup**, **detail modal + screenshot lightbox**, community byline/deprecated badges/catalog-snapshot version fallback (never used for outdated).
-
-### New in 0.4.0
-
-- **Enablement toggle**: one-click on/off per installed card; internally routed to a row override (single-row plugins, applies live) or bundle selection (multi-row); the write path delegates to the official `pluginManager` service and falls back to direct loader operations when absent ([ADR-0001](./docs/adr/0001-delegate-with-fallback-for-plugin-manager.md)).
-- **Live phase badges**: a projection of loader fiber state — failed plugins are visible at a glance.
-- **Protection roster**: `dsh-m` itself plus the 16 official host lifeline modules cannot be toggled or uninstalled (upgrades unaffected).
-- **Precise build approval**: when pnpm blocks build scripts, only the pending list is approved key-by-key; the allow-everything fallback is labeled honestly ([ADR-0002](./docs/adr/0002-precise-build-approval.md)).
-- **Peer compatibility precheck**: install/upgrade validates `@deepseek-ai/dsh(-*)` peers against the runtime version before touching the profile (GitHub sources state the check was skipped); on mismatch the GUI asks, the agent tool returns structured data, the CLI takes `--force`.
-- **Verified runtimes**: an optional `verified` array per registry entry records DSH runtimes actually tested — a claim of record, not a prediction; display-only, never gates installs.
-- **Bundle identity check**: post-install warning when a package lands without a patch layer ("installed as a plain dependency").
-
-### Retired in 0.4.x
-
-- **Metadata source probe**: 0.4.0 introduced an npmjs / npmmirror ping race to pick the metadata read source; it has been removed entirely (including the `probeEnabled` / `probeTimeoutMs` / `probeCacheTtlMin` settings and the settings-page display). The official counterpart probe only pre-selects a registry in the interactive install dialog, which dsh-m does not have, and npmjs measured consistently faster from the host, so the probe always equaled the default. Metadata reads now always use npmjs, matching the install path (profile `.npmrc` default).
+On Desktop, changes take effect via the official app lifecycle: quit and reopen the app after installing. Restart-chain mechanics and per-generation verification records live in [`docs/DESIGN.md`](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md).
 
 ## Agent tools (8)
 
 | Tool | Purpose |
 |---|---|
-| `dshm_search` | Search the curated registry (renders cards in chat) |
+| `dshm_search` | Search curated & community listings (renders cards in chat) |
 | `dshm_list` | List installed plugins (market / non-market annotated) |
 | `dshm_install` | Install by listing id (peer compatibility precheck before install; incompatible results return structured data for user confirmation, then `force` retries) |
 | `dshm_uninstall` | Uninstall (confirm first; data kept, leftovers reported) |
 | `dshm_outdated` | Check for newer versions |
 | `dshm_upgrade` | Upgrade to the latest |
-| `dshm_toggle` | Toggle a plugin on/off (0.4.0; confirm by default, execute directly when the user already asked in the same message) |
+| `dshm_toggle` | Toggle a plugin on/off (confirm by default, execute directly when the user already asked in the same message) |
 | `dshm_restart` | Restart DSH Web (with user consent) |
 
 ## CLI
@@ -260,15 +106,41 @@ dshm restart --yes
 
 When the registry is unavailable, `registry` / `search` / `outdated` print the configured vs active address and exit 1; `list` still shows installed plugins. The CLI uses its own cache namespace and never touches the Web side's.
 
-**Profile target (0.9.0)**: the CLI always acts on the web profile — `--profile web` makes it explicit; `--profile desktop` is rejected outright (Desktop plugin management belongs to the official Desktop plugin management page).
+**Profile target**: the CLI always acts on the web profile — `--profile web` makes it explicit; `--profile desktop` is rejected outright (Desktop plugin management belongs to the official Desktop app). On headless hosts you can still install the plugin via the official `dsh` CLI: `dsh plugin --profile web add dsh-m`.
 
-## Registry
+> `npm install -g dsh-m` installs only the `dshm` CLI (terminal management) — it does **not** register the plugin into the web profile; it can coexist with the official-manager install.
 
-`registry.json` is hand-curated and fetched at runtime in order: **GitHub raw (`@main`) → GitHub mirror (jsDelivr CDN, backup line) → local 60-min TTL cache → bundled snapshot** — listing updates are decoupled from plugin releases. To add or amend a listing, edit `registry.json` and open a PR; CI validates the strict schema, npm/GitHub existence, duplicate ids and URL reachability.
+## Community catalog (awesome-dsh-plugin)
 
-**Custom registry (overrides the official one)**: the Settings tab supports a single custom registry address that **replaces** the default registry (no merging):
+**The community catalog is dsh-m's default catalog**: anchored to the npm package [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog) (CC0-1.0, the full awesome-dsh-plugin directory, 4,000+ entries). On top of it sits the hand-curated **curated registry** (registry.json); the data layer merges and dedupes (the curated registry **always takes precedence**, duplicate community entries displaced), and the display layer splits into Community / Curated zones (ADR-0004) — the community zone no longer shows entries duplicated by the curated registry, and the curated zone stays a single curated-order page.
 
-1. "Download default registry.json" gives you a copy of the official listing;
+<div align="center">
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/community-catalog.webp" alt="Market view, Community zone — Community / Curated / Favorites tabs, the search row, and counted open category chips" width="86%">
+  <p><sub>Community catalog · the default landing zone: zone tabs, persistent search, and counted open category chips</sub></p>
+</div>
+
+- **Fetch chain**: dist-tags probe → jsDelivr pinned fetch → npmmirror → unpkg fallback; unchanged versions are not re-fetched, probes are skipped within TTL. On failure it falls back to the runtime cache under `<cache dir>/awesome/` and **explicitly labels it "cached snapshot"** — stale data never masquerades as fresh.
+- **Switch & pin**: `communityCatalog` toggle in Settings (default on, live), `communityCatalogPin` to lock the catalog version (exact semver); CLI opt-out with `DSHM_COMMUNITY_CATALOG=0`, pin with `DSHM_COMMUNITY_CATALOG_PIN`.
+- **Categories & search**: community categories are an open set (23 known categories with bilingual labels — Chinese maintained in-repo as the single source of truth, English from the upstream catalog, served per UI language); search runs a relevance-weighted pipeline (Chinese + English); the community zone offers a sort switch (downloads/stars/added × asc/desc, default downloads-desc; missing downloads ≠ zero downloads).
+- **Install semantics**: community entries go through the same install path as curated entries (npm exact version / GitHub pinned commit SHA); the browse page probes npm entries only — GitHub entries are not probed at page level (anonymous 60 req/h quota is uncontrollable).
+- **Installed-page budget (best-effort)**: update checks for GitHub-sourced plugins are capped at ≤25 wire requests per run and ≤50 per rolling hour per host process (passive checks only; active install/upgrade unaffected); capped items are honestly labeled "check incomplete" instead of "all up to date". A standalone CLI process does not share the host budget and makes no guarantee under concurrency.
+- **Capability disclosure**: capabilities/red lines appear only in the detail fold (**absent = not scanned ≠ not detected**), never as card badges; screenshots load only in the detail layer and pass a client-side allowlist.
+- **Not a security review**: the community catalog is all-inclusive and **not security-reviewed** — verify plugin origin and capabilities before installing; the curated registry's curation and CI checks do not apply to community entries.
+
+## Curated registry (registry.json)
+
+The curated registry is hand-curated, layered on top of the community catalog (duplicates always defer to it), and organized into **five curated buckets**: Essentials / Cui's Picks / iasi In-house / Tencent Lighthouse / Watchlist. It currently includes DSH Skins, DSH TUI, ModSearch, Better Sidebar, DSH Context, and more.
+
+<div align="center">
+  <img src="https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/curated-registry.webp" alt="Market view, Curated zone — Community / Curated / Favorites tabs and the five curated-bucket chips (Essentials / Cui's Picks / iasi In-house / Tencent Lighthouse / Watchlist)" width="86%">
+  <p><sub>Curated registry · the five curated buckets: Essentials / Cui's Picks / iasi In-house / Tencent Lighthouse / Watchlist</sub></p>
+</div>
+
+The registry is fetched at runtime over two lines — **GitHub raw (`@main`) → GitHub mirror (jsDelivr CDN, backup)** — ordered adaptively by the last successful route, falling back to the local 60-min TTL cache and the bundled snapshot. Listing updates stay decoupled from plugin releases: after a push, allow up to one cache period (or force a refresh in Settings). To add or amend a listing, edit `registry.json` and open a PR; CI validates the strict schema, npm/GitHub existence, duplicate ids and URL reachability.
+
+**Custom curated registry (replaces the default)**: the Settings tab supports a single custom registry address that **replaces** the default curated registry (no merging) and **only affects the Curated zone** — the community catalog is untouched:
+
+1. "Download default registry" gives you a copy of the official listing;
 2. edit the copy yourself (add/remove entries);
 3. paste its address in Settings and hit "Validate & apply" — an **HTTPS URL**, a local **absolute path / `file://`** (HTTP only for 127.0.0.1/localhost debugging);
 4. validation failures (bad fields, missing path, over 2 MiB / 1,000 entries, …) are never saved — the currently active registry stays; a successful apply takes effect **immediately, no restart** (only the first deploy of a new dsh-m version needs one restart);
@@ -278,30 +150,15 @@ Rules and limits: strict v1 schema (unknown fields / invalid ids / oversized val
 
 Security baseline: HTTPS-only fetches (loopback HTTP excepted) with per-hop redirect checks, size caps and timeouts; npm installs verify the exact version's dist integrity against the pnpm lockfile — mismatches fail closed and roll back; GitHub installs pinned to commit SHA; pnpm build scripts are allowed-by-policy with an explicit report when unblocked.
 
-## Community catalog (awesome-dsh-plugin, 0.5.0)
+## Documentation
 
-On top of the hand-curated primary registry, the market layers a **read-only community catalog** anchored to the npm package [`dsh-plugin-catalog`](https://www.npmjs.com/package/dsh-plugin-catalog) (CC0-1.0, the full awesome-dsh-plugin directory, 4,000+ entries). The data layer still merges and dedupes with the primary registry **always taking precedence** (duplicate entries displace the community side); the display layer splits into Community / Curated zones (ADR-0004) — the community zone no longer shows entries duplicated by the primary registry, and the curated zone stays a single curated-order page.
-
-- **Fetch chain**: dist-tags probe → jsDelivr pinned fetch → npmmirror → unpkg fallback; unchanged versions are not re-fetched, probes are skipped within TTL. On failure it falls back to the runtime cache under `<cache dir>/awesome/` and **explicitly labels it "cached snapshot"** — stale data never masquerades as fresh.
-- **Switch & pin**: `communityCatalog` toggle in Settings (default on, live), `communityCatalogPin` to lock the catalog version (exact semver); CLI opt-out with `DSHM_COMMUNITY_CATALOG=0`, pin with `DSHM_COMMUNITY_CATALOG_PIN`.
-- **Categories & search**: community categories are an open set (23 known categories with bilingual labels — Chinese maintained in-repo as the single source of truth, English from the upstream catalog, served per UI language); search runs a relevance-weighted pipeline (Chinese + English); the community zone offers a sort switch (downloads/stars/added × asc/desc, default downloads-desc; missing downloads ≠ zero downloads).
-- **Install semantics**: community entries go through the same `installEntry` (npm exact version / GitHub pinned commit SHA); the browse page probes npm entries only — GitHub entries are not probed at page level (anonymous 60 req/h quota is uncontrollable).
-- **Installed-page budget (best-effort)**: update checks for GitHub-sourced plugins are capped at ≤25 wire requests per run and ≤50 per rolling hour per host process (passive checks only; active install/upgrade unaffected); capped items are honestly labeled "check incomplete" instead of "all up to date". A standalone CLI process does not share the host budget and makes no guarantee under concurrency.
-- **Capability disclosure**: capabilities/red lines appear only in the detail fold (**absent = not scanned ≠ not detected**), never as card badges; screenshots load only in the detail layer and pass a client-side allowlist.
-- **Not a security review**: the community catalog is all-inclusive and **not security-reviewed** — verify plugin origin and capabilities before installing; the primary registry's curation and CI checks do not apply to community entries.
-
-## Development
-
-```sh
-npm ci
-npm run build        # tsc (host/core/cli) + esbuild (client, tree-shaking off)
-npm run typecheck
-node scripts/validate-registry.mjs
-```
-
-For local iteration use a `link:` dependency (same trick as dsh-skins): point the profile dependency at this repo, then `npm run build` + restart.
-
-Release: `npm version patch|minor|major && git push --tags` → OIDC trusted publishing.
+| Doc | Read it when |
+|---|---|
+| [CHANGELOG.md](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md) | You want the details of any release (bilingual, complete back to 0.4.x) |
+| [docs/DESIGN.md](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) | Design consensus, panel behavior details, dual-generation compatibility, and the restart chain; development & release workflow in its §6 |
+| [docs/adr/](https://github.com/iasiv5/dsh-m/tree/main/docs/adr) | Architecture decisions: delegation & fallback, precise build approval, community catalog merge, zoned market, dual profile |
+| [docs/registry-copy-guide.md](https://github.com/iasiv5/dsh-m/blob/main/docs/registry-copy-guide.md) | Writing descriptions and tags for curated registry entries |
+| [docs/plans/](https://github.com/iasiv5/dsh-m/tree/main/docs/plans) | Implementation plan archive, one per release |
 
 ## FAQ
 
@@ -309,19 +166,28 @@ Release: `npm version patch|minor|major && git push --tags` → OIDC trusted pub
 Intermediate commits on main can be unstable. dsh-m tracks **releases / tags** only (`releases/latest` first, tags list as fallback) and pins the commit SHA the tag points to.
 
 **1.5 What works on the official Desktop?**
-Desktop (the `desktop` profile) first release supports: browsing the market, **installing new packages**, and plugin toggles; upgrade/uninstall/self-update/one-click restart return structured refusals with official-entry guidance (official plugin management page / Desktop app restart). Installed badges and the installed list reflect only what Desktop itself has installed; favorites and operation logs do not sync with the Web side.
+Desktop (the `desktop` profile) supports browsing the market, **installing new packages**, and plugin toggles. Since 0.9.8, upgrades, uninstalls, and dsh-m self-updates are also delegated to the official `pluginManager`; an unavailable service returns a structured refusal with guidance. One-click restart remains part of the official Desktop app lifecycle, so quit and reopen the app. Installed badges and the installed list reflect only the Desktop profile; favorites and operation logs do not sync with Web.
 
 **2. Does uninstalling dsh-m delete my data?**
 No. Only the package reference in the profile is removed (live UI disabled first), and suspected leftover paths are reported to you.
 
 **3. Will a custom registry slow the market down?**
-Listings over 200 entries trigger a performance notice. The market list is server-paginated (24/48/96 per page); even a 1,000-entry registry queries latest versions for the current page only.
+The market list is server-paginated (24/48/96 per page); even a 1,000-entry registry queries latest versions for the current page only, so browsing stays fast.
 
 **4. What if my custom source goes down?**
-dsh-m serves its last successful cache for that source and marks it as cached; with no cache at all the market shows "registry unavailable" while installed plugins stay manageable. Fix the address or restore the default anytime.
+dsh-m serves its last successful cache for that source (the Settings tab's effective-source row labels it honestly); with no cache at all the market reports the listing unavailable while installed plugins stay manageable. Fix the address or restore the default anytime.
 
 **5. Which DSH Web versions are supported?**
-Same scope as dsh-skip-browser-auth: the public package contracts for `0.1.2-rc.1`, `0.1.5-rc.1/rc.2`, `0.1.7-rc.1/rc.2`, and `0.2.0-rc.1/rc.2` are all checked (0.2.0-rc.2 being the current live runtime). DSH 0.1.7 reshaped the settings service into `SettingsForms` (the old `settings.register` is gone); dsh-m stays compatible via runtime shape detection: the whole ≤0.1.5 generation uses the `register()` scope path (0.1.5-rc.2's dsh-settings still ships the old API and is covered), while 0.1.7-rc.1 / rc.2 use Config `.volatile()` fields + `settings.update` + the `loader/volatile-update` event (byte-identical dsh-settings and the same loader across both rcs, so one implementation covers both). Unknown shapes degrade to the cordis config-file path with marketplace features unaffected. All these versions expose the dsh-m `appExit` launcher hook used by the restart button, and the restart chain itself was live-verified on the current `0.2.0-rc.2` runtime (2026-10-01, see the Panel section). The 0.1.7 adaptation's live E2E was written back on 2026-09-28: install and `/dshm` toolchain liveness proven on `0.1.7-rc.2` through the consecutive 0.4.0→0.4.2 releases across two service restarts (`dshm list/upgrade` fully working, registry served normally); settings write persistence remains the only unverified bit (dsh-m's own config is already observed persisted in the profile's `cordis.patch.yml` — a GUI write → restart comparison is left for first real use of the settings panel). Systemd deployments must configure `Restart=on-failure` or `Restart=always`; otherwise use the deployment's manual restart procedure.
+
+| DSH version | Settings path | Verification |
+|---|---|---|
+| `0.1.2-rc.1` | shape-detection fallback to the cordis config-file path | contract-checked |
+| `0.1.5-rc.1` / `rc.2` | `register()` scope path | checked; rc.1 additionally live-verified `/dshm` ping and authenticated `303 → 200` |
+| `0.1.7-rc.1` / `rc.2` | Config `.volatile()` fields + `settings.update` + the `loader/volatile-update` event | checked; the two rcs ship byte-identical dsh-settings, so one implementation covers both |
+| `0.2.0-rc.1` / `rc.2` | same as `0.1.7` | `rc.2` is the current live runtime; the restart chain was live-verified on 2026-10-01 |
+
+- The path is chosen by runtime **shape detection**, not version branching; unrecognized shapes degrade to the cordis config-file path with marketplace features unaffected. Implementation details: [`docs/DESIGN.md`](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) §12.
+- Systemd deployments must configure `Restart=on-failure` or `Restart=always`; otherwise use the deployment's manual restart procedure.
 
 ## License
 
