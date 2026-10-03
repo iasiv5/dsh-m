@@ -12,6 +12,10 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { installTimeoutMs, WEB_PROFILE, webProfileDir } from './env.js'
 import { createProgressTracker, type ProgressPhase, type ProgressTracker } from './progress.js'
 import { applyPreciseBuilds, readPendingBuilds } from './build-approval.js'
+import { governExcludeBlock, parseNpmSpec, registerExclusion } from './exclude-governance.js'
+import { listInstalledPlugins } from './installed.js'
+
+const DUAL_CODE_RE = /ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION|ERR_PNPM_NO_MATURE_MATCHING_VERSION/
 
 /** pnpm patchedDependencies 条目键与目标包匹配：`pkg` 或 `pkg@任意版本/区间`。 */
 function matchesPatchedKey(key: string, pkg: string): boolean {
@@ -666,11 +670,75 @@ export async function runDshPlugin(
 export function makeAddViaLadder(deps: {
   runDshPlugin: PluginRunner
   resolveBuilds?: (profileDirectory: string) => BuildApprovalDecision
+  /** ADR-0009：委派前治理（排除块规范形态）；缺省绑 exclude-governance 落盘封装 */
+  govern?: (profileDirectory: string) => Promise<{ changed: boolean; mergedNames?: string[] }>
+  /** ADR-0009：成功后登记（仅 npm 精确 spec 的窗口内目标）；缺省绑 exclude-governance 落盘封装 */
+  register?: (profileDirectory: string, target: { pkg: string; version: string; previousVersion?: string }) => Promise<{ applied: boolean; form?: string }>
+  /** ADR-0009：上一版本读取缝（测试；缺省 installed.ts 本地读，失败 → undefined） */
+  installedVersion?: (profileDirectory: string, pkg: string) => Promise<string | undefined>
 }): (source: string, profileDir: string, signal?: AbortSignal) => Promise<RunnerOutcome> {
   const run = deps.runDshPlugin
   const resolveBuilds = deps.resolveBuilds ?? writePreciseBuilds
   const opts = (signal?: AbortSignal) => (signal !== undefined ? { signal } : undefined)
   return async (source: string, profileDir: string, signal?: AbortSignal): Promise<RunnerOutcome> => {
+    // ADR-0009 挂点1：委派前治理（fail-open）——已落盘的编辑以短语进 output（成功/失败都带）
+    let governNote = ''
+    try {
+      const gov = await (deps.govern ?? governExcludeBlock)(profileDir)
+      if (gov.changed && gov.mergedNames?.length) governNote = `；排除条目治理：合并 ${gov.mergedNames.join('、')}`
+    } catch {
+      // fail-open：治理失败不阻塞
+    }
+    // 登记原料：npm 精确 spec + 上一版本（本地读，失败 → undefined）
+    const spec = parseNpmSpec(source)
+    let previousVersion: string | undefined
+    if (spec) {
+      try {
+        previousVersion = deps.installedVersion
+          ? await deps.installedVersion(profileDir, spec.pkg)
+          : (await listInstalledPlugins(profileDir)).items.find((it) => it.pkg === spec.pkg)?.version
+      } catch {
+        previousVersion = undefined
+      }
+    }
+    let registerNote = ''
+    const safeRegister = async (): Promise<void> => {
+      if (!spec) return
+      try {
+        const reg = await (deps.register ?? registerExclusion)(profileDir, { ...spec, previousVersion })
+        if (reg.applied && reg.form) registerNote = `；排除条目已登记 ${spec.pkg}@${spec.version}（${reg.form}）`
+      } catch {
+        // fail-open：登记失败不影响成功态
+      }
+    }
+    const okOutcome = async (output: string, buildApprovals: string[] = [], fallbackAllBuilds = false): Promise<RunnerOutcome> => {
+      await safeRegister()
+      return { class: 'ok', output: truncateOutput(output + governNote + registerNote), buildApprovals, fallbackAllBuilds }
+    }
+    const failOutcome = (text: string): RunnerOutcome => ({ ...classifyPnpmError(text), output: truncateOutput(text + governNote) })
+    // ADR-0009 挂点3：阶梯内每次真实 pnpm 命令统一包装——双码失败 → 治理 → changed 则
+    // 重试该命令一次（布尔全局保证每次 ladder 调用至多一次；四个失败出口共用）。
+    let governedRetryUsed = false
+    const attemptAdd = async (args: string[]): Promise<{ ok: true; output: string } | { ok: false; text: string }> => {
+      try {
+        return { ok: true, output: await run(WEB_PROFILE, args, opts(signal)) }
+      } catch (err) {
+        const text = errText(err)
+        if (governedRetryUsed || !DUAL_CODE_RE.test(text)) return { ok: false, text }
+        governedRetryUsed = true
+        try {
+          const gov = await (deps.govern ?? governExcludeBlock)(profileDir)
+          if (!gov.changed) return { ok: false, text }
+        } catch {
+          return { ok: false, text }
+        }
+        try {
+          return { ok: true, output: await run(WEB_PROFILE, args, opts(signal)) }
+        } catch (retryErr) {
+          return { ok: false, text: errText(retryErr) }
+        }
+      }
+    }
     const retryAfterPrepare = async (): Promise<RunnerOutcome> => {
       // Y2（终审复审）：放行写入本身失败也必须转换为结果，维持「永不 throw」契约
       let decision: BuildApprovalDecision
@@ -678,41 +746,29 @@ export function makeAddViaLadder(deps: {
         decision = resolveBuilds(profileDir)
       } catch (err) {
         const text = errText(err)
-        return { class: 'hard-fail', output: truncateOutput(text) }
+        return { class: 'hard-fail', output: truncateOutput(text + governNote) }
       }
-      try {
-        const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-        return { class: 'ok', output: truncateOutput(output), buildApprovals: decision.approvals, fallbackAllBuilds: decision.fallbackAll }
-      } catch (retryErr) {
-        return { ...classifyPnpmError(errText(retryErr)), output: truncateOutput(errText(retryErr)) }
-      }
+      const retried = await attemptAdd(['add', source])
+      if (retried.ok) return okOutcome(retried.output, decision.approvals, decision.fallbackAll)
+      return { ...classifyPnpmError(retried.text), output: truncateOutput(retried.text + governNote) }
     }
-    try {
-      const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-      return { class: 'ok', output: truncateOutput(output), buildApprovals: [], fallbackAllBuilds: false }
-    } catch (err) {
-      const text = errText(err)
-      if (text.includes(PNPM_OUTCOME_CODES.PUBLIC_HOIST_PATTERN_DIFF)) {
-        try {
-          await run(WEB_PROFILE, ['install', '--no-frozen-lockfile'], opts(signal))
-        } catch (rebuildErr) {
-          const rebuildText = errText(rebuildErr)
-          return { ...classifyPnpmError(rebuildText), output: truncateOutput(rebuildText) }
-        }
-        try {
-          const output = await run(WEB_PROFILE, ['add', source], opts(signal))
-          return { class: 'ok', output: truncateOutput(output), buildApprovals: [], fallbackAllBuilds: false }
-        } catch (retryErr) {
-          const retryText = errText(retryErr)
-          if (isPrepareBlocked(retryText)) return retryAfterPrepare()
-          return { ...classifyPnpmError(retryText), output: truncateOutput(retryText) }
-        }
-      }
-      if (!isPrepareBlocked(text)) {
-        return { ...classifyPnpmError(text), output: truncateOutput(text) }
-      }
-      return retryAfterPrepare()
+    const first = await attemptAdd(['add', source])
+    if (first.ok) return okOutcome(first.output)
+    const text = first.text
+    if (text.includes(PNPM_OUTCOME_CODES.PUBLIC_HOIST_PATTERN_DIFF)) {
+      // 重建 install 自身也过锁文件校验：双码治理+重试同样适用（attemptAdd 包装）
+      const rebuild = await attemptAdd(['install', '--no-frozen-lockfile'])
+      if (!rebuild.ok) return failOutcome(rebuild.text)
+      const second = await attemptAdd(['add', source])
+      if (second.ok) return okOutcome(second.output)
+      const retryText = second.text
+      if (isPrepareBlocked(retryText)) return retryAfterPrepare()
+      return failOutcome(retryText)
     }
+    if (!isPrepareBlocked(text)) {
+      return failOutcome(text)
+    }
+    return retryAfterPrepare()
   }
 }
 

@@ -94,10 +94,18 @@ function fakeRunner(script) {
   return { run, calls }
 }
 
-/** resolveBuilds 决策桩：默认精确放行 node-sass（可覆盖）。 */
-function ladderOf(run, resolveBuilds) {
+/** resolveBuilds 决策桩：默认精确放行 node-sass（可覆盖）。
+ *  ADR-0009：govern/register 缺省注入 no-op 替身——既有用例零改动且不被动出网
+ *  （缺省绑定会走 exclude-governance 的真实读盘/registry 探测）。 */
+function ladderOf(run, resolveBuilds, overrides = {}) {
   const decision = resolveBuilds ?? (() => ({ approvals: ['node-sass'], fallbackAll: false }))
-  return makeAddViaLadder({ runDshPlugin: run, resolveBuilds: decision })
+  return makeAddViaLadder({
+    runDshPlugin: run,
+    resolveBuilds: decision,
+    govern: overrides.govern ?? (async () => ({ ok: true, changed: false })),
+    register: overrides.register ?? (async () => ({ applied: false })),
+    installedVersion: overrides.installedVersion ?? (async () => undefined),
+  })
 }
 
 describe('makeAddViaLadder：加装阶梯工厂', () => {
