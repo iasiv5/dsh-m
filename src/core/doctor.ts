@@ -406,7 +406,9 @@ async function readLockImporters(lockPath: string): Promise<LockImporters> {
     for (const [name, value] of Object.entries(depsObj)) {
       // link: 依赖在 lock 里是 { specifier, link: true } 无 version → 自然落空（按契约置 null）
       if (value && typeof value === 'object' && typeof value.version === 'string' && value.version) {
-        map.set(name, value.version)
+        // pnpm lock v9 的 version 可带 peer 后缀：`0.9.28(@deepseek-ai/schemastery@3.18.4)`
+        // ——剥去括号后缀再入账（实机预演 2026-10-04 曾因此把 4 条三处一致的依赖误报账实分裂）
+        map.set(name, value.version.replace(/\([^)]*\)$/, ''))
       }
     }
     return { map, supported: true }

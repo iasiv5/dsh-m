@@ -304,6 +304,18 @@ describe('checkAccount', () => {
     assert.equal(r.account[0].consistent, true)
     assert.equal(r.findings.length, 0)
   })
+
+  it('lock version 带 peer 后缀（实机形态：0.9.28(@deepseek-ai/schemastery@3.18.4)）→ 剥后缀后一致，不误报', async () => {
+    mkProfile(
+      { 'pkg-h': '1.0.0' },
+      "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      pkg-h:\n        specifier: 1.0.0\n        version: 1.0.0(@deepseek-ai/schemastery@3.18.4)\n",
+    )
+    mkInstalled('pkg-h', '1.0.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].lockfile, '1.0.0')
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
+  })
 })
 
 // ---------- Task 5：runDoctor 聚合 + dualMarket 信息级 ----------
