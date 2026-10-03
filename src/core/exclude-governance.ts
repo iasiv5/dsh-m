@@ -265,7 +265,8 @@ export interface RegisterDeps {
 
 /**
  * 成功后登记：仅对发布时刻可判「窗口内」（显式 age 值优先，缺省 1440 分钟）的目标
- * 触发；时刻不可得一律不登记（不发明）。与治理同锁同 fail-open 纪律。
+ * 触发；时刻不可得一律不登记（不发明）。本地检查（文件缺席 → no-file）先于 registry
+ * 探测——缺省绑定下无块文件零网络。与治理同锁同 fail-open 纪律。
  */
 export async function registerExclusion(
   profileDir: string,
@@ -273,13 +274,6 @@ export async function registerExclusion(
   deps: RegisterDeps = {},
 ): Promise<RegisterResult> {
   if (!profileDir) return { applied: false, reason: 'no-dir' }
-  const times = await (deps.packumentTimes ?? cachedPackumentTimes)(target.pkg, 12_000)
-  const now = deps.nowMs ?? Date.now()
-  const publishedAt = times ? Date.parse(times[target.version] ?? '') : NaN
-  if (!Number.isFinite(publishedAt)) return { applied: false, reason: 'not-young' }
-  const policy = await readWorkspacePolicy(profileDir)
-  const windowMin = policy?.minimumReleaseAgeMin ?? DEFAULT_MINIMUM_RELEASE_AGE_MIN
-  if (now >= publishedAt + windowMin * 60_000) return { applied: false, reason: 'not-young' }
   const doRead = deps.readFile ?? ((path: string) => readFileFs(path, 'utf8'))
   const doWrite =
     deps.writeFile ??
@@ -289,12 +283,20 @@ export async function registerExclusion(
   const file = join(profileDir, WS_FILE)
   try {
     return await withFileLock(join(profileDir, 'package.json'), async () => {
+      // 本地检查先行：文件缺席直接 no-file（不发 registry 探测——缺省绑定下测试离线可跑）
       let yaml: string
       try {
         yaml = await doRead(file)
       } catch {
         return { applied: false, reason: 'no-file' as const }
       }
+      const times = await (deps.packumentTimes ?? cachedPackumentTimes)(target.pkg, 12_000)
+      const now = deps.nowMs ?? Date.now()
+      const publishedAt = times ? Date.parse(times[target.version] ?? '') : NaN
+      if (!Number.isFinite(publishedAt)) return { applied: false, reason: 'not-young' as const }
+      const policy = await readWorkspacePolicy(profileDir)
+      const windowMin = policy?.minimumReleaseAgeMin ?? DEFAULT_MINIMUM_RELEASE_AGE_MIN
+      if (now >= publishedAt + windowMin * 60_000) return { applied: false, reason: 'not-young' as const }
       const next = registerExclusionInYaml(yaml, target)
       if (next === null) return { applied: false, reason: 'unparseable' as const }
       if (!next.changed) return { applied: false, reason: 'up-to-date' as const, form: next.form }

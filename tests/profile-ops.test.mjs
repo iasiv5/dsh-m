@@ -741,4 +741,54 @@ describe('ADR-0009 排除条目治理 + 供应链等待期（治理/预检/双�
     assert.equal(calls.installBundle.length, 1)
     assert.ok(res.output.includes('；排除条目已登记 pkg-a@1.2.3（created-composite）'))
   })
+
+  it('评审执行轮：hook1 clean + 挂点3 changed（重试成功）→ output 含挂点3 治理短语', async () => {
+    let governCalls = 0
+    let attempt = 0
+    const { service, calls } = managerStub({
+      installBundle: async (spec, options) => {
+        calls.installBundle.push({ spec, options })
+        attempt += 1
+        if (attempt === 1) return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
+        return { changed: true, application: 'applied', stage: 'install', bundle: 'pkg-a', packageResult: { exitCode: 0 } }
+      },
+    })
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => {
+        governCalls += 1
+        return governCalls === 1 ? { ok: true, changed: false } : { ok: true, changed: true, mergedNames: ['dsh-m'] }
+      },
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 2)
+    assert.equal(governCalls, 2)
+    assert.ok(res.output.includes('；排除条目治理：合并 dsh-m'), `挂点3 治理短语应留痕：${res.output}`)
+  })
+
+  it('评审执行轮：hook1 clean + 挂点3 changed（重试仍败）→ message 含挂点3 治理短语', async () => {
+    let governCalls = 0
+    let attempt = 0
+    const { service, calls } = managerStub({
+      installBundle: async (spec, options) => {
+        calls.installBundle.push({ spec, options })
+        attempt += 1
+        return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
+      },
+    })
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => {
+        governCalls += 1
+        return governCalls === 1 ? { ok: true, changed: false } : { ok: true, changed: true, mergedNames: ['dsh-m'] }
+      },
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('排除条目治理：合并 dsh-m'),
+    )
+    assert.equal(calls.installBundle.length, 2)
+  })
 })

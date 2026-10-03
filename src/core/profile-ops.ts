@@ -252,8 +252,9 @@ async function desktopInstallLocked(
   let change: DesktopChangeResult
   let bundleName: string
   let registerNote: string | undefined
+  let managed: Awaited<ReturnType<typeof runManagedInstall>> | undefined
   try {
-    const managed = await runManagedInstall(
+    managed = await runManagedInstall(
       service,
       { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled },
       { governExclude: deps.governExclude, registerExclude: deps.registerExclude, packumentTimes: deps.packumentTimes },
@@ -265,9 +266,13 @@ async function desktopInstallLocked(
     if (err instanceof DesktopBuildApprovalNeeded) {
       return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message + governanceNote }
     }
-    if (err instanceof Error && governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
+    if (err instanceof Error) {
+      if (governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
+      if (managed?.governRetryNote !== undefined && !err.message.includes(managed.governRetryNote)) err.message += managed.governRetryNote
+    }
     throw err
   }
+  const retryNote = managed.governRetryNote !== undefined && !governanceNote.includes(managed.governRetryNote) ? managed.governRetryNote : ''
 
   return {
     id: entry.id,
@@ -281,7 +286,7 @@ async function desktopInstallLocked(
     ...(compat !== null ? { compat } : {}),
     ...(compatSkipped ? { compatSkipped } : {}),
     needsRestart: true,
-    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${releaseAgeNotice}${registerNote ?? ''}`,
+    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${retryNote}${releaseAgeNotice}${registerNote ?? ''}`,
     via: 'desktop-manager',
     ...(change.application === 'overridden' ? { overridden: true } : {}),
   }
@@ -376,7 +381,7 @@ async function runManagedInstall(
   service: DesktopManagerLike,
   ctx: ManagedInstallCtx,
   deps: ManagedInstallDeps = {},
-): Promise<{ change: DesktopChangeResult; bundleName: string; registerNote?: string }> {
+): Promise<{ change: DesktopChangeResult; bundleName: string; registerNote?: string; governRetryNote?: string }> {
   const installOnce = async (): Promise<DesktopChangeResult> =>
     changeOf(await service.installBundle!(ctx.spec, {
       enabled: true,
@@ -446,12 +451,24 @@ async function runManagedInstall(
     change = await installOnce()
   }
   // ADR-0009 挂点3：双码失败 → 治理 → changed 则重试该命令一次（每次调用至多一次；
-  // cancelled / build-blocked 不治理不重试）。仍败走既有 mapFailure（含账实分裂复读）。
+  // cancelled / build-blocked 不治理不重试）。仍败走既有 mapFailure（含账实分裂复读）；
+  // 挂点3 已落盘的合并以短语并入失败 message 与成功 output（留痕契约含挂点3）。
+  let governRetryNote: string | undefined
   if (isGovableFailure(change) && DUAL_CODE_RE.test(`${change.error?.diagnostic ?? ''}\n${change.error?.code ?? ''}`)) {
     const gov = await (deps.governExclude ?? governExcludeBlock)(ctx.profileDir ?? '')
-    if (gov.changed) change = await installOnce()
+    if (gov.changed) {
+      if (gov.mergedNames?.length) governRetryNote = `；排除条目治理：合并 ${gov.mergedNames.join('、')}`
+      change = await installOnce()
+    }
   }
-  if (change.application === 'failed' || change.application === 'cancelled' || change.error) await mapFailure(change)
+  if (change.application === 'failed' || change.application === 'cancelled' || change.error) {
+    try {
+      await mapFailure(change)
+    } catch (err) {
+      if (err instanceof Error && governRetryNote !== undefined && !err.message.includes(governRetryNote)) err.message += governRetryNote
+      throw err
+    }
+  }
   const verified = await verifyAndBundle(change)
   // ADR-0009 挂点2：成功后登记（仅 npm 源窗口内目标；fail-open，applied 短语由调用方并入 output）
   let registerNote: string | undefined
@@ -471,7 +488,7 @@ async function runManagedInstall(
       // fail-open：登记失败不影响安装/升级成功态
     }
   }
-  return { ...verified, ...(registerNote !== undefined ? { registerNote } : {}) }
+  return { ...verified, ...(registerNote !== undefined || governRetryNote !== undefined ? { registerNote, governRetryNote } : {}) }
 }
 
 export interface DesktopUninstallDeps extends DesktopEnsureService {
@@ -658,8 +675,9 @@ async function desktopUpgradeLocked(
   let change: DesktopChangeResult
   let bundleName: string
   let registerNote: string | undefined
+  let managed: Awaited<ReturnType<typeof runManagedInstall>> | undefined
   try {
-    const managed = await runManagedInstall(
+    managed = await runManagedInstall(
       service,
       { pkg, spec, version, previousVersion: target.version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled },
       { governExclude: deps.governExclude, registerExclude: deps.registerExclude, packumentTimes: deps.packumentTimes },
@@ -671,9 +689,13 @@ async function desktopUpgradeLocked(
     if (err instanceof DesktopBuildApprovalNeeded) {
       return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message + governanceNote }
     }
-    if (err instanceof Error && governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
+    if (err instanceof Error) {
+      if (governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
+      if (managed?.governRetryNote !== undefined && !err.message.includes(managed.governRetryNote)) err.message += managed.governRetryNote
+    }
     throw err
   }
+  const retryNote = managed.governRetryNote !== undefined && !governanceNote.includes(managed.governRetryNote) ? managed.governRetryNote : ''
 
   // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态
   let activation: ActivationClassification | undefined
@@ -699,7 +721,7 @@ async function desktopUpgradeLocked(
     ...(compat !== null ? { compat } : {}),
     ...(compatSkipped ? { compatSkipped } : {}),
     needsRestart,
-    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${releaseAgeNotice}${registerNote ?? ''}`,
+    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${retryNote}${releaseAgeNotice}${registerNote ?? ''}`,
     via: 'desktop-manager',
     ...(change.application === 'overridden' ? { overridden: true } : {}),
     fromVersion: target.version,

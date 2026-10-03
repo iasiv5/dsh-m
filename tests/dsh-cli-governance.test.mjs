@@ -6,6 +6,9 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { makeAddViaLadder } from '../lib/core/dsh-cli.js'
 
@@ -200,5 +203,43 @@ describe('web ladder 三挂点（ADR-0009）：留痕与 fail-open', () => {
     })('github:owner/repo#abcd1234', '/tmp/profile')
     assert.equal(out.class, 'ok')
     assert.deepEqual(seen, [])
+  })
+
+  it('评审执行轮：hook1 clean + 挂点3 changed（重试成功）→ output 含挂点3 治理短语', async () => {
+    let governCalls = 0
+    const { run, calls } = fakeRunner([new Error(DUAL), 'ok after retry'])
+    const out = await ladderOf(run, {
+      govern: async () => {
+        governCalls += 1
+        return governCalls === 1 ? { ok: true, changed: false } : { ok: true, changed: true, mergedNames: ['dsh-m'] }
+      },
+    })('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'ok')
+    assert.equal(calls.length, 2)
+    assert.equal(governCalls, 2)
+    assert.ok(out.output.includes('；排除条目治理：合并 dsh-m'), `挂点3 治理短语应留痕：${out.output}`)
+  })
+
+  it('评审执行轮：hook1 clean + 挂点3 changed（重试仍败）→ output 仍含挂点3 治理短语', async () => {
+    let governCalls = 0
+    const { run, calls } = fakeRunner([new Error(DUAL), new Error(DUAL)])
+    const out = await ladderOf(run, {
+      govern: async () => {
+        governCalls += 1
+        return governCalls === 1 ? { ok: true, changed: false } : { ok: true, changed: true, mergedNames: ['dsh-m'] }
+      },
+    })('pkg-a@1.2.3', '/tmp/profile')
+    assert.notEqual(out.class, 'ok')
+    assert.equal(calls.length, 2)
+    assert.ok(out.output.includes('；排除条目治理：合并 dsh-m'), `挂点3 治理短语应留痕：${out.output}`)
+  })
+
+  it('计划矩阵：profileDir 无 pnpm-workspace.yaml → 缺省绑定全链 no-op、不写盘（首跑成功）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-ladder-'))
+    const { run } = fakeRunner(['installed!'])
+    // 缺省绑定（govern/register 不注入）：govern no-file fail-open、register 本地检查先行 no-file（零网络）
+    const out = await makeAddViaLadder({ runDshPlugin: run })('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'ok')
+    assert.equal(existsSync(join(dir, 'pnpm-workspace.yaml')), false, '登记不应为无块文件创建任何东西')
   })
 })

@@ -283,4 +283,19 @@ describe('registerExclusion（落盘登记：young 判定内聚 + fail-open）',
     const noDir = await registerExclusion('', { pkg: 'a', version: '1.0.0' }, { packumentTimes: async () => ({ '1.0.0': isoAgo(MIN, NOW) }), nowMs: NOW })
     assert.equal(noDir.reason, 'no-dir')
   })
+  it('评审执行轮：本地检查先行——文件缺席时探测不发生（packumentTimes 抛错也不外泄）', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'dshm-excl-'))
+    const r = await registerExclusion(
+      empty,
+      { pkg: 'a', version: '1.0.0' },
+      {
+        packumentTimes: async () => {
+          throw new Error('network down')
+        },
+        nowMs: NOW,
+      },
+    )
+    assert.equal(r.applied, false)
+    assert.equal(r.reason, 'no-file')
+  })
 })

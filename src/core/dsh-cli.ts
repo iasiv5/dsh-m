@@ -713,12 +713,14 @@ export function makeAddViaLadder(deps: {
     }
     const okOutcome = async (output: string, buildApprovals: string[] = [], fallbackAllBuilds = false): Promise<RunnerOutcome> => {
       await safeRegister()
-      return { class: 'ok', output: truncateOutput(output + governNote + registerNote), buildApprovals, fallbackAllBuilds }
+      return { class: 'ok', output: truncateOutput(output + governNote + governRetryNote + registerNote), buildApprovals, fallbackAllBuilds }
     }
-    const failOutcome = (text: string): RunnerOutcome => ({ ...classifyPnpmError(text), output: truncateOutput(text + governNote) })
+    const failOutcome = (text: string): RunnerOutcome => ({ ...classifyPnpmError(text), output: truncateOutput(text + governNote + governRetryNote) })
     // ADR-0009 挂点3：阶梯内每次真实 pnpm 命令统一包装——双码失败 → 治理 → changed 则
     // 重试该命令一次（布尔全局保证每次 ladder 调用至多一次；四个失败出口共用）。
+    // 挂点3 已落盘的合并以短语并入 output（留痕契约含挂点3，与 hook1 短语去重）。
     let governedRetryUsed = false
+    let governRetryNote = ''
     const attemptAdd = async (args: string[]): Promise<{ ok: true; output: string } | { ok: false; text: string }> => {
       try {
         return { ok: true, output: await run(WEB_PROFILE, args, opts(signal)) }
@@ -729,6 +731,10 @@ export function makeAddViaLadder(deps: {
         try {
           const gov = await (deps.govern ?? governExcludeBlock)(profileDir)
           if (!gov.changed) return { ok: false, text }
+          if (gov.mergedNames?.length) {
+            const note = `；排除条目治理：合并 ${gov.mergedNames.join('、')}`
+            if (!governNote.includes(note)) governRetryNote = note
+          }
         } catch {
           return { ok: false, text }
         }
@@ -746,11 +752,11 @@ export function makeAddViaLadder(deps: {
         decision = resolveBuilds(profileDir)
       } catch (err) {
         const text = errText(err)
-        return { class: 'hard-fail', output: truncateOutput(text + governNote) }
+        return { class: 'hard-fail', output: truncateOutput(text + governNote + governRetryNote) }
       }
       const retried = await attemptAdd(['add', source])
       if (retried.ok) return okOutcome(retried.output, decision.approvals, decision.fallbackAll)
-      return { ...classifyPnpmError(retried.text), output: truncateOutput(retried.text + governNote) }
+      return { ...classifyPnpmError(retried.text), output: truncateOutput(retried.text + governNote + governRetryNote) }
     }
     const first = await attemptAdd(['add', source])
     if (first.ok) return okOutcome(first.output)
