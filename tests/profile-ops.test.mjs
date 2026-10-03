@@ -390,6 +390,8 @@ describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', 
       listInstalled: overrides.listInstalled ?? (async () => ({ items: overrides.installed ?? [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0' }] })),
       npmLatest: overrides.npmLatest ?? (async () => ({ version: '1.2.3', integrity: 'sha512-x' })),
       precheck: async () => null,
+      // 0.9.22 生效判定缝：缺省会真实出网 diff tarball——既有用例统一桩 unknown（保持 needsRestart=true 语义）
+      classifyActivation: overrides.classifyActivation ?? (async () => 'unknown'),
     }
   }
 

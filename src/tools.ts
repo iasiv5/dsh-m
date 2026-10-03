@@ -455,7 +455,7 @@ export function registerTools(
   ctx.tools.register(defineTool({
     name: 'dshm_upgrade',
     description:
-      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success, tell the user it needs a restart, and offer dshm_restart.',
+      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart.',
     parameters: {
       pkg: { type: 'string', required: true, description: '包名 from dshm_list / dshm_outdated' },
       force: { type: 'boolean', description: 'peer 兼容预检不通过且用户已确认风险后置 true（等价 forceIncompatible，跳过 @deepseek-ai/dsh(-*) peer 拦截）；守卫拦截（guard）无 force 通道，不受此参数影响。' },
@@ -577,6 +577,8 @@ interface InstallOut {
   compatSkipped?: 'github-source'
   bundleWarning?: 'no-patch-layer'
   fromVersion?: string
+  /** 生效判定（0.9.22）：仅 npm 源升级产出；renderUpgrade 按此分流重启提示 */
+  activation?: 'client-only' | 'restart-required' | 'unknown'
   healActions?: Array<{ code: string; note: string }>
 }
 
@@ -695,7 +697,7 @@ function renderOutdated(out: ListOut): string {
   return head.join('\n')
 }
 
-function renderUpgrade(out: InstallOut & { fromVersion?: string }): string {
+export function renderUpgrade(out: InstallOut & { fromVersion?: string }): string {
   // 0.8.5 修复：升级工具会命中装后守卫拦截（复用 installEntry，link/file prior 不可回退等），
   // execute 返回 guard 形态结果——旧 render 没有该分支，把拦截渲染成「✅ undefined 已升级」假成功。
   if (out.guard === true) {
@@ -710,7 +712,13 @@ function renderUpgrade(out: InstallOut & { fromVersion?: string }): string {
   const from = out.fromVersion ? `v${out.fromVersion} → ` : ''
   const to = out.version ? `v${out.version}` : out.sha ? out.sha.slice(0, 7) : '最新'
   const extra = buildsNote(out)
-  return `✅ ${out.pkg} 已升级（${from}${to}）。${extra}需要重启生效——询问是否 dshm_restart。`
+  // 0.9.22 生效判定三态分流：client-only 明确不问重启；unknown 保守建议重启；其余现状
+  const tail = out.activation === 'client-only'
+    ? '纯客户端更新：刷新页面即可生效，无需重启——不要询问 dshm_restart。'
+    : out.activation === 'unknown'
+      ? '生效判定未完成（网络或解析失败）：为确保生效建议重启——询问是否 dshm_restart。'
+      : '需要重启生效——询问是否 dshm_restart。'
+  return `✅ ${out.pkg} 已升级（${from}${to}）。${extra}${tail}`
 }
 
 function clamp(n: number, min: number, max: number): number {

@@ -39,6 +39,17 @@ export const OP_STORAGE_KEY = 'dshm-operations'
  * @property {Record<string, unknown>} [meta] 操作参数（version/force/on…）
  */
 
+/**
+ * 升级完成提示三态（0.9.22 生效判定）：activation → toast 的 needsRestart 门与文案后缀键。
+ * 'client-only' 不出重启横幅（刷新页面即生效）；'unknown' 保守出横幅；缺席（github 源升级等）= 现状。
+ * 纯函数无 DOM/React 依赖，client-operations 单测覆盖。
+ */
+export function upgradeNotify(activation) {
+  if (activation === 'client-only') return { needsRestart: false, suffixKey: 'notify.upgraded.clientonly' }
+  if (activation === 'unknown') return { needsRestart: true, suffixKey: 'notify.upgraded.activationUnknown' }
+  return { needsRestart: true, suffixKey: null }
+}
+
 // 终态可清集合（0.9.6 主人裁决，推翻 0.7.0 评审共识「failed/superseded 保留供回看」）：
 // 「清除已结束」是显式点击动作而非静默抹除，失败/已跳过同样应可清——否则按钮对着
 // 一屏失败记录无声 no-op（Windows 实机反馈 2026-10-01）；单条 ✕ 仍是逐条出口。

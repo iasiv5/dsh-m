@@ -19,6 +19,7 @@ import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
+import { upgradeEffectLine } from './core/activation.js'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 
@@ -408,7 +409,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'
       out(`✅ 已升级 ${res.pkg}（${from}${to}）`)
       outBuildsNote(res, out)
-      out('需要重启 DSH Web 生效：dshm restart --yes')
+      out(upgradeEffectLine(res.activation))
       return 0
     }
 

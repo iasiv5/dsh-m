@@ -1752,6 +1752,7 @@ packages:
         precheck: async () => null,
         fetchCommunityCatalog: async () => ({ state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null }),
         transaction: { runner: () => runner, profileDir },
+        classifyActivation: async () => 'unknown',
       }
       const res = await upgradePlugin('@scope/pkg-a', cfg, {}, deps)
       assert.equal(res.version, '2.0.0')
@@ -1817,6 +1818,7 @@ packages:
         precheck: async () => null,
         fetchCommunityCatalog: async () => communityLoaded([communityRaw('pkg-b', 'o', { npm: '@scope/pkg-b' })]),
         transaction: { runner: () => runner, profileDir },
+        classifyActivation: async () => 'unknown',
       }
       const res = await upgradePlugin('@scope/pkg-b', cfg, {}, deps)
       assert.equal(res.version, '1.1.0')

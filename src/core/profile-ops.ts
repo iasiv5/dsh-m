@@ -28,6 +28,7 @@ import { adaptCommunityCatalog } from './community-adapter.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { npmLatest as defaultNpmLatest, githubLatestTag as defaultGithubLatestTag } from './versions.js'
+import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
 import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
 import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckDeps } from './release-age.js'
 import type { RegistryConfig, RegistryCacheNamespace } from './registry.js'
@@ -467,6 +468,8 @@ export interface DesktopUpgradeDeps extends DesktopEnsureService {
   /** 0.9.19 供应链等待期预检注入（测试；缺省 npmjs packument / 读 profile pnpm-workspace.yaml） */
   packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
   workspacePolicy?: ReleaseAgePrecheckDeps['workspacePolicy']
+  /** 生效判定注入（0.9.22 测试用；缺省 = classifyUpgradeActivation，npm 源升级成功点调用） */
+  classifyActivation?: (pkg: string, fromVersion: string, toVersion: string) => Promise<ActivationClassification>
 }
 
 /**
@@ -479,7 +482,7 @@ export async function desktopUpgradeFromRegistry(
   cfg: RegistryConfig = {},
   opts: DesktopUpgradeOptions = {},
   deps: DesktopUpgradeDeps = {},
-): Promise<DesktopInstallResult & { fromVersion?: string }> {
+): Promise<DesktopInstallResult & { fromVersion?: string; activation?: ActivationClassification }> {
   return withMutationSession(() => desktopUpgradeLocked(pkg, cfg, opts, deps))
 }
 
@@ -488,7 +491,7 @@ async function desktopUpgradeLocked(
   cfg: RegistryConfig,
   opts: DesktopUpgradeOptions,
   deps: DesktopUpgradeDeps,
-): Promise<DesktopInstallResult & { fromVersion?: string }> {
+): Promise<DesktopInstallResult & { fromVersion?: string; activation?: ActivationClassification }> {
   const service = await resolveManager(deps)
   if (!service || typeof service.installBundle !== 'function') {
     throw new DesktopOpsError('no-manager', '官方 pluginManager 服务不可用（desktop profile 的升级必须由官方管理器执行覆盖安装）；拒绝升级（fail-closed）')
@@ -571,6 +574,18 @@ async function desktopUpgradeLocked(
     throw err
   }
 
+  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态
+  let activation: ActivationClassification | undefined
+  let needsRestart = true
+  if (entry.source === 'npm' && entry.npm && target.version && version !== undefined) {
+    try {
+      activation = await (deps.classifyActivation ?? classifyUpgradeActivation)(entry.npm, target.version, version)
+      if (activation === 'client-only') needsRestart = false
+    } catch {
+      activation = 'unknown'
+    }
+  }
+
   return {
     id: entry.id,
     pkg,
@@ -582,10 +597,11 @@ async function desktopUpgradeLocked(
     fallbackAllBuilds: false,
     ...(compat !== null ? { compat } : {}),
     ...(compatSkipped ? { compatSkipped } : {}),
-    needsRestart: true,
+    needsRestart,
     output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}`,
     via: 'desktop-manager',
     ...(change.application === 'overridden' ? { overridden: true } : {}),
     fromVersion: target.version,
+    ...(activation ? { activation } : {}),
   }
 }

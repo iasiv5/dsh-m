@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.22 变更：升级生效判定——tarball 差异三态分类 + 三端重启提示分流（ADR-0007）
+
+- **问题（0.9.21 实证）**：`@iasiv5/dsh-skins` 1.2.3→1.3.0 升级后未重启即已生效（客户端 bundle rev 热更），三端仍无条件提示「需要重启」——警报疲劳会侵蚀提示的权威性，重启本身也有真实成本（web 服务瞬断 / desktop 手动重开）。
+- **生效判定（GLOSSARY「生效判定/纯客户端更新」）**：npm 源升级成功点拉取新旧两版 tarball（并行、总 deadline 10s、单包 8MiB、无缓存），零依赖 ustar 只读解析（支持 pax 长名）+ 逐文件 sha256 diff，分类 `activation: 'client-only' | 'restart-required' | 'unknown'`。规则五条：client 集合 = `exports['./client']` 目标；`dsh.bundle.patch` 声明的补丁目标变更 → 宿主；`package.json` 忽略顶层 version 后语义比较（dependencies 等字段变化照常算宿主）；其余差异按路径归属；client 指向变化保守判宿主。**fail-open**：一切异常 → unknown → 现状提示，绝不影响升级成功态。
+- **三端分流**：agent 工具消息 client-only 明示「刷新页面即可生效，不要询问 dshm_restart」、unknown 保守建议重启；GUI toast 后缀 + `needsRestart` 门（client-only 不亮重启横幅；纯函数 `upgradeNotify` 可单测）；CLI 行文案换挡。`needsRestart` 源头放宽 boolean（TS2430 规避），`UpgradeResult`/desktop 升级结果新增 `activation` 字段；接线点 `upgradePluginLocked` + `desktopUpgradeLocked`，selfUpgrade/install/uninstall/github 源维持现状。
+- **测试与文档**：新增 ustar 解析 11 例、分类规则+fail-open 18 例、升级接线 7 例（npm/github/selfUpgrade/desktop）、renderUpgrade 4 例、upgradeNotify 3 例；既有升级替身统一补 `classifyActivation` 缝（防隐式出网）。决策与已知局限全文见 `docs/adr/0007-activation-classification.md`（client chunk require 图不追踪；docs 类随版差异保守判宿主侧）。
+
 ### 0.9.21 变更：设置页「强制刷新」显示连带修复 + registry.json 变更自动清 jsDelivr 缓存
 
 - **设置页强刷显示修复（实机 2026-10-03 实证）**：设置页「强制刷新」只重载 `registry` 接口（force 同步强刷全链路），但面板展示的 registryState **优先读 `registry-config` 的挂载时快照**——于是出现「toast 报已强制刷新、生效来源/更新时间/条目数纹丝不动」的假死，重开设置页才对齐。现在强刷成功后连带重载 `registry-config`（force 已更新 controller 内存快照，零成本取新值），显示即时跟随生效数据。
@@ -234,6 +241,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.22 — upgrade activation classification (tarball diff, three states) + three-surface restart-hint split (ADR-0007)
+
+- **Problem (observed in 0.9.21)**: after upgrading `@iasiv5/dsh-skins` 1.2.3→1.3.0 the plugin was already live without a restart (client bundle rev hot-reload), yet all three surfaces still said "restart required" — the noise trains users to ignore the hint, and restarts have real costs (web service blip / manual desktop reopen).
+- **Activation classification** (GLOSSARY「生效判定 / 纯客户端更新」): npm-source upgrades now fetch both tarballs at the success point (parallel, 10s total deadline, 8MiB per tarball, no cache), parse them with a zero-dependency read-only ustar reader (pax long names supported) and classify by per-file sha256 diff into `activation: 'client-only' | 'restart-required' | 'unknown'`. Five rules: client set = `exports['./client']` target; a changed `dsh.bundle.patch`-declared patch file → host; `package.json` compared semantically with the top-level `version` ignored (dependency changes still count as host); every other added/removed/changed file attributed by path; a changed client pointer conservatively counts as host. **Fail-open**: any error → unknown → current conservative hint, never affecting the upgrade's success.
+- **Three-surface split**: the agent tool message for `client-only` says a page refresh suffices and explicitly forbids offering `dshm_restart`; the GUI toast gains a suffix and its restart banner gate follows `needsRestart` (pure helper `upgradeNotify`, unit-tested); the CLI line switches accordingly. `needsRestart` widened to boolean at the source (TS2430 avoidance); `UpgradeResult` and the desktop upgrade result carry the new `activation` field; wired at `upgradePluginLocked` + `desktopUpgradeLocked`; selfUpgrade/install/uninstall/github sources unchanged.
+- **Tests & docs**: 11 new ustar parser cases, 18 classifier rule/fail-open cases, 7 upgrade-wiring cases (npm/github/selfUpgrade/desktop), 4 renderUpgrade cases, 3 upgradeNotify cases; existing upgrade fixtures gained a `classifyActivation` seam (no implicit network). Full decision record and known limitations in `docs/adr/0007-activation-classification.md` (no client chunk require-graph tracking; docs-only diffs conservatively count as host).
 
 ### Changed in 0.9.21 — Settings force-refresh display fix + automatic jsDelivr purge on registry.json changes
 

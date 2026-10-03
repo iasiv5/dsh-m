@@ -20,7 +20,7 @@ const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
-const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE } = require("./operations.js");
+const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE, upgradeNotify } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 const { shouldShowInstallCmd } = require("./install-cmd.js");
@@ -114,7 +114,7 @@ const ZH = {
   "compat.force": "仍要安装", "common.cancel": "取消",
   "notify.uninstalled": "已卸载 {pkg}", "notify.livedisabled": "（已先下线运行中的界面）",
   "notify.leftovers": "；检测到疑似残留数据：{paths}",
-  "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
+  "notify.upgraded": "已升级 {pkg}（{from} → {to}）", "notify.upgraded.clientonly": "。纯客户端更新：刷新页面即可生效，无需重启", "notify.upgraded.activationUnknown": "。生效判定未完成：为确保生效请重启 DSH Web", "notify.upgradehint": "（注意：该插件执行了构建脚本）",
   "notify.selfupgraded": "dsh-m 已升级（v{from} → v{to}）", "notify.selfupgraded.failed": "dsh-m 升级失败：{err}",
   "failed.install": "安装失败：{err}", "failed.uninstall": "卸载失败：{err}", "failed.upgrade": "升级失败：{err}",
   "failed.load": "加载失败：{err}", "failed.read": "读取失败：{err}", "failed.open": "打开市场面板失败:",
@@ -221,7 +221,7 @@ const EN = {
   "compat.force": "Install anyway", "common.cancel": "Cancel",
   "notify.uninstalled": "Uninstalled {pkg}", "notify.livedisabled": " (live UI disabled first)",
   "notify.leftovers": "; possible leftover data: {paths}",
-  "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgradehint": " (note: this plugin ran build scripts)",
+  "notify.upgraded": "Upgraded {pkg} ({from} → {to})", "notify.upgraded.clientonly": ". Client-only update: refresh the page to take effect — no restart needed", "notify.upgraded.activationUnknown": ". Activation classification unavailable: restart DSH Web to ensure the new version is live", "notify.upgradehint": " (note: this plugin ran build scripts)",
   "notify.selfupgraded": "dsh-m upgraded (v{from} → v{to})", "notify.selfupgraded.failed": "dsh-m upgrade failed: {err}",
   "failed.install": "Install failed: {err}", "failed.uninstall": "Uninstall failed: {err}", "failed.upgrade": "Upgrade failed: {err}",
   "failed.load": "Load failed: {err}", "failed.read": "Read failed: {err}", "failed.open": "Failed to open the marketplace panel:",
@@ -1722,14 +1722,16 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
   const doUpgrade = async (it) => {
     try {
       const res = await ops.runOp("upgrade", it.pkg, () => api("upgrade", { pkg: it.pkg }));
+      // 0.9.22 生效判定：needsRestart 分流 + 文案后缀（缺席 = github 源等未判定，维持现状横幅）
+      const note = upgradeNotify(res.activation);
       notify({
         kind: "ok",
-        needsRestart: true,
+        needsRestart: note.needsRestart,
         text: lookup("notify.upgraded", {
           pkg: res.pkg,
           from: res.fromVersion ? `v${res.fromVersion}` : "—",
           to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest",
-        }) + (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : ""),
+        }) + (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "") + (note.suffixKey ? lookup(note.suffixKey) : ""),
       });
       await (onMutation ? onMutation() : reload());
     } catch (e) {

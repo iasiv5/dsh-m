@@ -44,6 +44,7 @@ import {
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
+import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
 import { HttpError } from './httpx.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
@@ -1002,6 +1003,8 @@ export interface InstallDeps extends Partial<MarketDeps> {
   candidateKey?: typeof candidateKeyOf
   /** peer 兼容预检注入（Task 11）；缺省 = precheckNpmCompat */
   precheck?: typeof precheckNpmCompat
+  /** 生效判定注入（0.9.22 测试用；缺省 = classifyUpgradeActivation，npm 源升级成功点调用） */
+  classifyActivation?: (pkg: string, fromVersion: string, toVersion: string) => Promise<ActivationClassification>
   /** 事务依赖注入（runner/预热/退避/tmpdir 等）；B3 预热统一走 transaction.warmPackument */
   transaction?: TransactionDeps
   /** 目标 profile 目录（0.9.0 双 profile；缺省 webProfileDir()；transaction.profileDir 优先） */
@@ -1027,7 +1030,8 @@ export interface InstallResult {
   compat?: CompatIssue | null
   /** github 源不做兼容预检的明示（Task 11） */
   compatSkipped?: 'github-source'
-  needsRestart: true
+  /** 变更完成需重启宿主生效。0.9.22 源头放宽 boolean：TS 禁止派生接口放宽属性（TS2430），UpgradeResult 纯客户端更新覆写 false；生产方语义不变（install/uninstall/self-upgrade 恒 true）。 */
+  needsRestart: boolean
   output: string
   /** 事务自愈动作（机器可断言 code + 给人看的 note） */
   healActions?: HealAction[]
@@ -1700,6 +1704,8 @@ async function uninstallPluginLocked(
 
 export interface UpgradeResult extends InstallResult {
   fromVersion?: string
+  /** 生效判定（0.9.22）：仅 npm 源升级产出；'client-only' 时 needsRestart 必为 false，'unknown' 保守为 true */
+  activation?: ActivationClassification
 }
 
 /** 升级 = 按最新重新安装（npm 拉最新精确版；github 重新锁 HEAD）。 */
@@ -1732,7 +1738,18 @@ async function upgradePluginLocked(
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
   const result = await installEntryLocked(entry, cfg, opts, deps)
-  return { ...result, fromVersion: target.version }
+  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态
+  let activation: ActivationClassification | undefined
+  let needsRestart = result.needsRestart
+  if (entry.source === 'npm' && entry.npm && target.version && result.version) {
+    try {
+      activation = await (deps?.classifyActivation ?? classifyUpgradeActivation)(entry.npm, target.version, result.version)
+      if (activation === 'client-only') needsRestart = false
+    } catch {
+      activation = 'unknown'
+    }
+  }
+  return { ...result, fromVersion: target.version, needsRestart, ...(activation ? { activation } : {}) }
 }
 
 /**

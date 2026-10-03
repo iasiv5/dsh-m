@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, OP_STORAGE_KEY } from '../src/client/operations.js'
+import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, OP_STORAGE_KEY, upgradeNotify } from '../src/client/operations.js'
 
 /** localStorage mock（可注入故障）。 */
 function memStorage() {
@@ -382,5 +382,20 @@ describe('恢复所有权语义（R3·N1 修正：session 标记区分泵拥有 
     // 恢复校验此时才落库（陈旧快照视角还是 queued）——不得回卷
     store.replaceAll(await restoreRecords(staleSnapshot, async () => true))
     assert.equal(store.list().find((r) => r.id === 'picked').status, 'done', '泵拥有的 done 不被回卷')
+  })
+})
+
+describe('upgradeNotify：升级完成提示三态（0.9.22 生效判定）', () => {
+  it('client-only → needsRestart false + 刷新文案后缀键', () => {
+    assert.deepEqual(upgradeNotify('client-only'), { needsRestart: false, suffixKey: 'notify.upgraded.clientonly' })
+  })
+
+  it('unknown → needsRestart true + 判定未完成后缀键', () => {
+    assert.deepEqual(upgradeNotify('unknown'), { needsRestart: true, suffixKey: 'notify.upgraded.activationUnknown' })
+  })
+
+  it('restart-required 与缺席 → needsRestart true、无后缀（现状横幅）', () => {
+    assert.deepEqual(upgradeNotify('restart-required'), { needsRestart: true, suffixKey: null })
+    assert.deepEqual(upgradeNotify(undefined), { needsRestart: true, suffixKey: null })
   })
 })
