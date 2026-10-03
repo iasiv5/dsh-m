@@ -472,3 +472,50 @@ export async function checkAccount(profileDir: string): Promise<{ account: Accou
   }
   return { account, findings }
 }
+
+// ---------- 聚合（Task 5） ----------
+
+/**
+ * 体检聚合：三项检查 + 双市场信息级事实 → DoctorReport。
+ * runtimeVersion 由调用方注入（method 通路宿主内纯 FS 可得；CLI 通路 null 即降级），
+ * 原样透传进报告——两通路差异如实可见。布局 unknown 时显式标注扫描受限（不冒充健康）。
+ */
+export async function runDoctor(profileDir: string, runtimeVersion: string | null): Promise<DoctorReport> {
+  const root = resolve(profileDir)
+  const layout = await detectLayout(root)
+  const farmR = await analyzeFarm(root, layout, runtimeVersion)
+  const residueR = await listResidue(root, layout)
+  const accountR = await checkAccount(root)
+
+  const unknowns = [...farmR.unknowns, ...residueR.unknowns]
+  if (layout === 'unknown') unknowns.unshift('布局未知——扫描范围受限（unknown≠broken，不冒充健康）')
+
+  const deps = await readProfileDeps(root)
+  const dualMarket =
+    Object.hasOwn(deps, 'dsh-m') && Object.hasOwn(deps, 'dshmarket') ? ['dsh-m', 'dshmarket'] : null
+
+  const findings = [...farmR.findings, ...accountR.findings]
+  return {
+    schema: 'dsh-m/doctor/v1',
+    profileDir: root,
+    layout,
+    runtimeVersion,
+    scannedAt: new Date().toISOString(),
+    summary: {
+      errors: findings.filter((f) => f.severity === 'error').length,
+      warnings: findings.filter((f) => f.severity === 'warning').length,
+      farmChecked: farmR.farm.length,
+      farmDangling: farmR.farm.filter((x) => x.state === 'dangling').length,
+      farmStale: farmR.farm.filter((x) => x.state === 'stale-target').length,
+      residueCount: residueR.residue.length,
+      accountChecked: accountR.account.length,
+      accountMismatched: accountR.account.filter((a) => !a.consistent).length,
+      unknowns,
+    },
+    farm: farmR.farm,
+    residue: residueR.residue,
+    account: accountR.account,
+    findings,
+    dualMarket,
+  }
+}

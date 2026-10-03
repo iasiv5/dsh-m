@@ -4,11 +4,11 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { detectLayout, analyzeFarm, listResidue, checkAccount } from '../lib/core/doctor.js'
+import { detectLayout, analyzeFarm, listResidue, checkAccount, runDoctor } from '../lib/core/doctor.js'
 
 let root
 beforeEach(() => {
@@ -301,5 +301,85 @@ describe('checkAccount', () => {
     assert.equal(r.account[0].lockfile, null)
     assert.equal(r.account[0].consistent, true)
     assert.equal(r.findings.length, 0)
+  })
+})
+
+// ---------- Task 5：runDoctor 聚合 + dualMarket 信息级 ----------
+
+describe('runDoctor', () => {
+  let home, profile
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-run-'))
+    profile = join(home, 'profiles', 'web')
+    mkdirSync(join(profile, 'node_modules'), { recursive: true })
+    mkdirSync(join(home, 'node_modules', '@deepseek-ai'), { recursive: true })
+    process.env.DSH_HOME = home
+  })
+  afterEach(() => {
+    delete process.env.DSH_HOME
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  function buildFixture() {
+    writeFileSync(join(profile, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\n')
+    // 农场：1 悬空 + 1 dsh stale + 1 健康
+    symlinkSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x'))
+    const staleTarget = join(home, 'store', '@deepseek-ai+dsh@0.1.7-rc.2_abc123ef', 'node_modules', '@deepseek-ai', 'dsh')
+    mkdirSync(staleTarget, { recursive: true })
+    symlinkSync(staleTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh'))
+    const okTarget = join(home, 'rt', '.pnpm', 'node_modules', '@deepseek-ai', 'dsh-tools')
+    mkdirSync(okTarget, { recursive: true })
+    writeFileSync(join(okTarget, 'package.json'), JSON.stringify({ version: '0.1.7-rc.2' }))
+    symlinkSync(okTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh-tools'))
+    // 残留：1 个 bak
+    writeFileSync(join(profile, 'package.json.bak-20260903'), '{}')
+    // 账实：2 个依赖（含双市场）三处一致
+    writeFileSync(
+      join(profile, 'package.json'),
+      JSON.stringify({ dependencies: { 'dsh-m': '0.9.28', dshmarket: '1.66.8' } }),
+    )
+    writeFileSync(
+      join(profile, 'pnpm-lock.yaml'),
+      "lockfileVersion: '9.0'\nimporters:\n  .:\n    dependencies:\n      dsh-m:\n        specifier: 0.9.28\n        version: 0.9.28\n      dshmarket:\n        specifier: 1.66.8\n        version: 1.66.8\n",
+    )
+    for (const [n, v] of [['dsh-m', '0.9.28'], ['dshmarket', '1.66.8']]) {
+      mkdirSync(join(profile, 'node_modules', n), { recursive: true })
+      writeFileSync(join(profile, 'node_modules', n, 'package.json'), JSON.stringify({ name: n, version: v }))
+    }
+  }
+
+  it('聚合：summary 计数与分项一致；runtimeVersion 透传；schema 信封', async () => {
+    buildFixture()
+    const r = await runDoctor(profile, '0.2.0-rc.2')
+    assert.equal(r.schema, 'dsh-m/doctor/v1')
+    assert.equal(r.layout, 'hoisted')
+    assert.equal(r.runtimeVersion, '0.2.0-rc.2')
+    assert.ok(r.scannedAt)
+    assert.equal(r.summary.errors, 1) // 悬空
+    assert.equal(r.summary.warnings, 0)
+    assert.equal(r.summary.farmChecked, 3)
+    assert.equal(r.summary.farmDangling, 1)
+    assert.equal(r.summary.farmStale, 1)
+    assert.equal(r.summary.residueCount, 1)
+    assert.equal(r.summary.accountChecked, 2)
+    assert.equal(r.summary.accountMismatched, 0)
+    assert.ok(Array.isArray(r.summary.unknowns))
+  })
+
+  it('dualMarket：双市场并存命中（信息级，不产生 finding）', async () => {
+    buildFixture()
+    const r = await runDoctor(profile, null)
+    assert.deepEqual(r.dualMarket, ['dsh-m', 'dshmarket'])
+    assert.ok(!r.findings.some((f) => f.title.includes('dshmarket')))
+  })
+
+  it('dualMarket：无 dshmarket → null', async () => {
+    buildFixture()
+    const pkg = JSON.parse(readFileSync(join(profile, 'package.json'), 'utf8'))
+    delete pkg.dependencies.dshmarket
+    writeFileSync(join(profile, 'package.json'), JSON.stringify(pkg))
+    rmSync(join(profile, 'node_modules', 'dshmarket'), { recursive: true, force: true })
+    const r = await runDoctor(profile, null)
+    assert.equal(r.dualMarket, null)
   })
 })
