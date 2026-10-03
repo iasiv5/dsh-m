@@ -172,7 +172,7 @@ Desktop (the `desktop` profile) supports browsing the market, **installing new p
 No. Only the package reference in the profile is removed (live UI disabled first), and suspected leftover paths are reported to you.
 
 **3. Will a custom registry slow the market down?**
-The market list is server-paginated (24/48/96 per page); even a 1,000-entry registry queries latest versions for the current page only, so browsing stays fast.
+The market list is server-paginated (32/64/96 per page); even a 1,000-entry registry queries latest versions for the current page only, so browsing stays fast.
 
 **4. What if my custom source goes down?**
 dsh-m serves its last successful cache for that source (the Settings tab's effective-source row labels it honestly); with no cache at all the market reports the listing unavailable while installed plugins stay manageable. Fix the address or restore the default anytime.

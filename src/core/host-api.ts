@@ -385,11 +385,11 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'market': {
           await ctx.controller.ensureReady()
-          // GUI policy：忽略客户端 withLatest，固定 true；limit clamp 1..96、缺省 24
-          // （0.7.0 Task 7 探测预算决策：96 为 opt-in 页大小，默认 24 低于 0.6.x 默认 50 的探测负载；
+          // GUI policy：忽略客户端 withLatest，固定 true；limit clamp 1..96、缺省 32
+          // （0.7.0 Task 7 探测预算决策：96 为 opt-in 页大小，0.9.28 起默认 32 仍低于 0.6.x 默认 50 的探测负载；
           //  最坏情况被 core 60s deadline 框死为 latestError，不阻塞列表，Q46 不动）
           const limitRaw = Number(body.limit)
-          const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(96, Math.max(1, Math.floor(limitRaw))) : 24
+          const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(96, Math.max(1, Math.floor(limitRaw))) : 32
           const offsetRaw = Number(body.offset)
           const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0
           // category：策展五桶 + 社区开放 slug（非法 slug → 400，不静默吞）

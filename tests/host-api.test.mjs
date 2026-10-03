@@ -267,13 +267,13 @@ describe('host-api：method 响应', () => {
     assert.ok(badSort.body.error.includes('非法 sort'))
   })
 
-  it('market limit 缺省为 24、负数归一（0.7.0 Task 7）', async () => {
+  it('market limit 缺省为 32、负数归一（0.7.0 Task 7）', async () => {
     const { dispatcher, calls } = setup()
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
-    assert.equal(calls.listMarket[0].limit, 24)
+    assert.equal(calls.listMarket[0].limit, 32)
     assert.equal(calls.listMarket[0].source, 'all', 'source 缺省 all')
     await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', limit: -5 } })
-    assert.equal(calls.listMarket[1].limit, 24)
+    assert.equal(calls.listMarket[1].limit, 32)
   })
 
   it('installed 转发 host namespace', async () => {

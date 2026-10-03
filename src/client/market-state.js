@@ -7,8 +7,8 @@
  * 排序单一事实源在服务端（客户端不再重排，sortMergedItems 已删除）。
  */
 
-export const MARKET_PAGE_SIZES = [24, 48, 96]
-export const DEFAULT_PAGE_SIZE = 24
+export const MARKET_PAGE_SIZES = [32, 64, 96]
+export const DEFAULT_PAGE_SIZE = 32
 
 /** 策展五桶（0.9.16 策展分类法替换功能五分类）：chips 顺序即桶序，腾讯轻量云专区按主人要求垫后。 */
 const CURATED_ORDER = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist']
@@ -46,7 +46,7 @@ export function createZoneState(zone) {
 }
 
 /** 规范化分区查询：query trim；category 白名单按 zone（primary=策展五桶 ∪ slug、community=slug）；
- *  offset ≥ 0；limit clamp 1..96 默认 24；sort 仅 community 区合法化（非法形状归 null）。 */
+ *  offset ≥ 0；limit clamp 1..96 默认 32；sort 仅 community 区合法化（非法形状归 null）。 */
 export function normalizeMarketQuery(input, zone = 'community') {
   const z = zone === 'primary' ? 'primary' : 'community'
   const raw = input && typeof input === 'object' ? input : {}

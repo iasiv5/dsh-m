@@ -249,7 +249,7 @@ export interface InstalledResult {
 // ---------- 通用工具 ----------
 
 const DEFAULT_DEADLINE_MS = 60_000
-/** withLatest 上限 = 96（0.7.0 Task 7：50→96，opt-in 页大小；默认页 24 的探测负载低于 0.6.x 默认 50——
+/** withLatest 上限 = 96（0.7.0 Task 7：50→96，opt-in 页大小；默认页 24、0.9.28 起 32，探测负载仍低于 0.6.x 默认 50——
  * 96/页冷缓存最坏情况被 60s deadline 框死为 latestError 不阻塞列表，Q46「探测对象=页面条目」不动；
  * 人工验收阈值：96/页冷缓存 latestError > 20% 即回退默认页大小并重议）。 */
 const WITH_LATEST_MAX = 96

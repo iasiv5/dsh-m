@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.28 变更：页大小档位去上游化——32/64/96 取代 24/48/96，默认 32
+
+- **动机**：24/48/96 是复刻 dsh-market 筛选面板（0.7.2）时带过来的上游血统数字。甄别后发现 96 早已被 dsh-m 内化为核心参数（`WITH_LATEST_MAX` 探测上限、精选区默认页、fast-open 快照判定基准），真正的上游痕迹只有 24——「砍 24、保 96」即去上游化与兼容性的交集。
+- **新档位**：`MARKET_PAGE_SIZES = [32, 64, 96]`（等差 +32，读序顺）、社区区默认 `DEFAULT_PAGE_SIZE = 32`（首页更满，仍低于 0.6.x 历史默认 50 的探测负载，Q46 预算姿态不变）；精选区默认 96 与 core clamp 1..96 不动。
+- **联动**：host-api GUI 通道兜底默认 24 → 32（三端一致，不留暗默认）；探测预算注释同步（market.ts / host-api.ts）；README×2 与 DESIGN.md 措辞同步；GLOSSARY「精选区」词条按代码实态锐化（单页无分页 → 常态单页直出 + 超限降级分页）；测试断言与快照 fixture 同步（偏离档位断言改用组内值 64，覆盖「档位内但非默认仍拒写/判假」）。
+- **已知一次性影响**：升级后社区区旧快照（limit=24）不再命中 fast-open 判定，首次打开市场多一次正常请求，快照按新默认重建后自愈；不加 legacy 兼容分支。
+- **验证**：`npm run build` 成功；全量 1030 pass / 0 fail（8 skipped）。
+
 ### 0.9.27 变更：修复遮罩拖选误关——面板内按下、拖出释放不再关面板
 
 - **问题（装机实测 2026-10-03）**：在市场搜索框内左键按下向左拖选（越过面板边界）释放，整个面板被关闭。非浏览器鼠标手势——面板遮罩是裸 `onClick: onClose`，而在面板内容里按下、拖到遮罩上释放时，浏览器把 `click` 派发到按下/释放目标的公共祖先（恰是遮罩），被误判为「点遮罩关面板」。详情 Modal、截图灯箱、兼容确认弹层同属该缺陷类。
@@ -274,6 +282,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.28 — page-size set de-upstreamed: 32/64/96 replaces 24/48/96, default 32
+
+- **Motivation**: 24/48/96 came bundled with the dsh-market filter-panel replica (0.7.2). On inspection, 96 has long been internalized as a dsh-m core parameter (`WITH_LATEST_MAX` probe cap, primary-zone default page, fast-open snapshot baseline); the only real upstream trace is 24 — "drop 24, keep 96" is exactly the intersection of de-upstreaming and compatibility.
+- **New set**: `MARKET_PAGE_SIZES = [32, 64, 96]` (arithmetic +32), community default `DEFAULT_PAGE_SIZE = 32` (fuller first page, still below the 0.6.x default of 50 in probe load; Q46 posture unchanged); primary default 96 and the core clamp 1..96 untouched.
+- **Ripple**: host-api GUI fallback default 24 → 32 (three ends consistent, no hidden default); probe-budget comments updated (market.ts / host-api.ts); README×2 and DESIGN.md wording synced; GLOSSARY "Primary Zone" entry sharpened to match the code (single-page-no-pager → normally single page, degraded to the community pager beyond capacity); test assertions and snapshot fixtures synced (off-default assertions now use in-set value 64, covering "in set but not default is still rejected/false").
+- **Known one-time impact**: after upgrading, a community snapshot with limit=24 no longer matches the fast-open check — the first market open makes one extra normal request, then the snapshot rebuilds on the new default; no legacy-compat branch added.
+- **Verification**: `npm run build` clean; full suite 1030 pass / 0 fail (8 skipped).
 
 ### Changed in 0.9.27 — fix accidental drag-out close: press inside, release on backdrop no longer closes the panel
 

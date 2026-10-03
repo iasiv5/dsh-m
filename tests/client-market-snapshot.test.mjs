@@ -36,9 +36,9 @@ function memStorage({ throwOn = null } = {}) {
 }
 
 const NOW = 1_700_000_000_000
-const RESP_24 = { items: [{ id: 'a' }, { id: 'b' }], total: 2, offset: 0, limit: 24 }
+const RESP_32 = { items: [{ id: 'a' }, { id: 'b' }], total: 2, offset: 0, limit: 32 }
 const RESP_96 = { items: [{ id: 'p' }], total: 1, offset: 0, limit: 96 }
-const Q_COMMUNITY_DEFAULT = { query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 24 }
+const Q_COMMUNITY_DEFAULT = { query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 32 }
 const Q_PRIMARY_DEFAULT = { query: '', category: null, sort: null, offset: 0, limit: 96 }
 
 describe('market-snapshot 缓存', () => {
@@ -50,8 +50,8 @@ describe('market-snapshot 缓存', () => {
 
   it('write → read 回环：TTL 内命中原响应', () => {
     const s = memStorage()
-    writeMarketSnapshot(s, { zone: 'community', response: RESP_24, now: NOW })
-    assert.deepEqual(readMarketSnapshot(s, { zone: 'community', now: NOW + 1000 }), RESP_24)
+    writeMarketSnapshot(s, { zone: 'community', response: RESP_32, now: NOW })
+    assert.deepEqual(readMarketSnapshot(s, { zone: 'community', now: NOW + 1000 }), RESP_32)
     assert.ok(s._map.has(snapshotKey('community')))
     // 双 zone 互不串扰
     writeMarketSnapshot(s, { zone: 'primary', response: RESP_96, now: NOW })
@@ -60,7 +60,7 @@ describe('market-snapshot 缓存', () => {
 
   it('TTL 过期 → null（默认 10 分钟；自定义 ttlMs 同样生效）', () => {
     const s = memStorage()
-    writeMarketSnapshot(s, { zone: 'community', response: RESP_24, now: NOW })
+    writeMarketSnapshot(s, { zone: 'community', response: RESP_32, now: NOW })
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW + MARKET_SNAPSHOT_TTL_MS + 1 }), null)
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW + 1000, ttlMs: 500 }), null)
   })
@@ -71,25 +71,25 @@ describe('market-snapshot 缓存', () => {
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW }), null)
     s._map.set(snapshotKey('community'), JSON.stringify({ ts: NOW, response: { nope: true } }))
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW }), null)
-    s._map.set(snapshotKey('community'), JSON.stringify({ ts: 'x', response: RESP_24 }))
+    s._map.set(snapshotKey('community'), JSON.stringify({ ts: 'x', response: RESP_32 }))
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW }), null)
   })
 
   it('非默认首页形状的 response 拒写（offset≠0 / limit≠该区默认）', () => {
     const s = memStorage()
-    writeMarketSnapshot(s, { zone: 'community', response: { ...RESP_24, offset: 24 }, now: NOW })
+    writeMarketSnapshot(s, { zone: 'community', response: { ...RESP_32, offset: 24 }, now: NOW })
     assert.equal(s._map.has(snapshotKey('community')), false)
-    writeMarketSnapshot(s, { zone: 'community', response: { ...RESP_24, limit: 48 }, now: NOW })
+    writeMarketSnapshot(s, { zone: 'community', response: { ...RESP_32, limit: 64 }, now: NOW })
     assert.equal(s._map.has(snapshotKey('community')), false)
-    writeMarketSnapshot(s, { zone: 'primary', response: RESP_24, now: NOW })   // primary 区 limit 24 ≠ 96
+    writeMarketSnapshot(s, { zone: 'primary', response: RESP_32, now: NOW })   // primary 区 limit 32 ≠ 96
     assert.equal(s._map.has(snapshotKey('primary')), false)
   })
 
   it('storage 不可用 / 故障静默降级', () => {
     assert.equal(readMarketSnapshot(null, { zone: 'community', now: NOW }), null)
-    assert.doesNotThrow(() => writeMarketSnapshot(null, { zone: 'community', response: RESP_24, now: NOW }))
+    assert.doesNotThrow(() => writeMarketSnapshot(null, { zone: 'community', response: RESP_32, now: NOW }))
     const s = memStorage({ throwOn: 'set' })
-    assert.doesNotThrow(() => writeMarketSnapshot(s, { zone: 'community', response: RESP_24, now: NOW }))
+    assert.doesNotThrow(() => writeMarketSnapshot(s, { zone: 'community', response: RESP_32, now: NOW }))
     const g = memStorage({ throwOn: 'get' })
     assert.equal(readMarketSnapshot(g, { zone: 'community', now: NOW }), null)
     assert.doesNotThrow(() => clearMarketSnapshots(memStorage({ throwOn: 'remove' })))
@@ -97,7 +97,7 @@ describe('market-snapshot 缓存', () => {
 
   it('clear 后 → null', () => {
     const s = memStorage()
-    writeMarketSnapshot(s, { zone: 'community', response: RESP_24, now: NOW })
+    writeMarketSnapshot(s, { zone: 'community', response: RESP_32, now: NOW })
     writeMarketSnapshot(s, { zone: 'primary', response: RESP_96, now: NOW })
     clearMarketSnapshots(s)
     assert.equal(readMarketSnapshot(s, { zone: 'community', now: NOW }), null)
@@ -108,7 +108,7 @@ describe('market-snapshot 缓存', () => {
 describe('isDefaultFirstPageQuery 真假表', () => {
   it('community 默认首页真；limit/sort/query/category/offset 偏离即假', () => {
     assert.equal(isDefaultFirstPageQuery(Q_COMMUNITY_DEFAULT, 'community'), true)
-    assert.equal(isDefaultFirstPageQuery({ ...Q_COMMUNITY_DEFAULT, limit: 48 }, 'community'), false)
+    assert.equal(isDefaultFirstPageQuery({ ...Q_COMMUNITY_DEFAULT, limit: 64 }, 'community'), false)
     assert.equal(isDefaultFirstPageQuery({ ...Q_COMMUNITY_DEFAULT, sort: null }, 'community'), false)
     assert.equal(isDefaultFirstPageQuery({ ...Q_COMMUNITY_DEFAULT, query: 'git' }, 'community'), false)
     assert.equal(isDefaultFirstPageQuery({ ...Q_COMMUNITY_DEFAULT, category: 'ui' }, 'community'), false)
@@ -117,7 +117,7 @@ describe('isDefaultFirstPageQuery 真假表', () => {
 
   it('primary 默认首页真（sort 恒 null、limit 96）；偏离即假', () => {
     assert.equal(isDefaultFirstPageQuery(Q_PRIMARY_DEFAULT, 'primary'), true)
-    assert.equal(isDefaultFirstPageQuery({ ...Q_PRIMARY_DEFAULT, limit: 24 }, 'primary'), false)
+    assert.equal(isDefaultFirstPageQuery({ ...Q_PRIMARY_DEFAULT, limit: 32 }, 'primary'), false)
     assert.equal(isDefaultFirstPageQuery({ ...Q_PRIMARY_DEFAULT, sort: { field: 'downloads', dir: 'desc' } }, 'primary'), false)
     assert.equal(isDefaultFirstPageQuery({ ...Q_PRIMARY_DEFAULT, query: 'x' }, 'primary'), false)
   })

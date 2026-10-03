@@ -31,14 +31,14 @@ describe('旧混排导出已删除（0.7.0 Task 8）', () => {
 })
 
 describe('分区常量与状态工厂', () => {
-  it('页大小档位 24/48/96，默认 24', () => {
-    assert.deepEqual(MARKET_PAGE_SIZES, [24, 48, 96])
-    assert.equal(DEFAULT_PAGE_SIZE, 24)
+  it('页大小档位 32/64/96，默认 32', () => {
+    assert.deepEqual(MARKET_PAGE_SIZES, [32, 64, 96])
+    assert.equal(DEFAULT_PAGE_SIZE, 32)
   })
 
   it('createZoneState：community 默认 downloads-desc；primary 策展序 sort=null', () => {
     assert.deepEqual(createZoneState('community'), {
-      zone: 'community', query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 24,
+      zone: 'community', query: '', category: null, sort: { field: 'downloads', dir: 'desc' }, offset: 0, limit: 32,
     })
     assert.deepEqual(createZoneState('primary'), {
       zone: 'primary', query: '', category: null, sort: null, offset: 0, limit: 96,
@@ -48,7 +48,7 @@ describe('分区常量与状态工厂', () => {
 })
 
 describe('normalizeMarketQuery（分区化）', () => {
-  it('community 区：默认值 + slug 白名单 + limit clamp 1..96 默认 24 + sort 合法化', () => {
+  it('community 区：默认值 + slug 白名单 + limit clamp 1..96 默认 32 + sort 合法化', () => {
     const q = normalizeMarketQuery({}, 'community')
     assert.equal(q.zone, 'community')
     assert.equal(q.source, 'community')
@@ -56,14 +56,14 @@ describe('normalizeMarketQuery（分区化）', () => {
     assert.equal(q.category, null)
     assert.equal(q.sort, null, '未传 sort 归 null（非法形状也归 null）')
     assert.equal(q.offset, 0)
-    assert.equal(q.limit, 24)
+    assert.equal(q.limit, 32)
     assert.equal(normalizeMarketQuery({ query: '  主题  ' }, 'community').query, '主题')
     assert.equal(normalizeMarketQuery({ category: 'memory' }, 'community').category, 'memory')
     assert.equal(normalizeMarketQuery({ category: 'tools' }, 'community').category, 'tools', '社区区接受同名 slug（真实计数键）')
     assert.equal(normalizeMarketQuery({ category: 'UI!!' }, 'community').category, null)
     assert.equal(normalizeMarketQuery({ limit: 1000 }, 'community').limit, 96)
     assert.equal(normalizeMarketQuery({ limit: 0 }, 'community').limit, 1)
-    assert.equal(normalizeMarketQuery({ limit: Number.NaN }, 'community').limit, 24)
+    assert.equal(normalizeMarketQuery({ limit: Number.NaN }, 'community').limit, 32)
     assert.deepEqual(normalizeMarketQuery({ sort: { field: 'stars', dir: 'asc' } }, 'community').sort, { field: 'stars', dir: 'asc' })
     assert.equal(normalizeMarketQuery({ sort: { field: 'name', dir: 'asc' } }, 'community').sort, null, '非法字段归 null')
     assert.equal(normalizeMarketQuery({ sort: { field: 'stars', dir: 'up' } }, 'community').sort, null, '非法方向归 null')
