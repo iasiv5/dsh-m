@@ -131,3 +131,27 @@ profile `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 中一条豁免规�
 
 **等待期（Release Age）**:
 `minimumReleaseAge` 窗口，缺省 1440 分钟（pnpm 11.7 实测）；显式设置或 `minimumReleaseAgeStrict` 开启时，点名窗口内新版本会被拒。_Avoid_: 冷却期、隔离期
+
+**体检（Doctor）**:
+对单个 profile 的只读健康检查：纯文件系统分析（无进程、无网络、无写入），首期覆盖农场测活、残留物清点、账实一致三类；产物是结构化报告，永不修复（ADR-0010）。
+_Avoid_: 修复器、清理器、诊断修复（体检不做修复）
+
+**三级严重度（Severity Tiers）**:
+体检报告的分级纪律：error（断链或必然阻断启动）/ warning（确认异常但不阻止启动）/ 结构化清单（只列不警，零告警渲染）。清单项永不升格为告警。
+_Avoid_: 全部当警告、错误级别（泛称时）
+
+**unknown ≠ broken（第三态）**:
+诊断进程「看不见」的对象（官方 in-box、asar 内包、无法判定的布局等）显式标记为 unknown 并保持沉默；看不见不推断为损坏。
+_Avoid_: 盲区告警、把解析不到当损坏
+
+**账实分裂（Manifest-Reality Split）**:
+profile 三处记账任一不符的形态：package.json 的版本 pin、node_modules 实装版本、pnpm-lock 解析版本（know-how 023 §6.2 实录：pnpm 非零退出拦住 pin 写入，node_modules 已 1.2.7 而 pin 仍 1.2.5）。
+_Avoid_: 版本不一致（过泛）、缓存滞后
+
+**残留物（Residue）**:
+profile 内陈旧但「可见而非清理」的对象：残留目录（无 package.json 目录、空 scope 目录、pnpm `*_tmp_*` 暂存）与备份文件（`*.bak-*`）。体检只清点不删除——删除正是常被进程句柄拒绝的操作。
+_Avoid_: 垃圾文件（暗示可自动清理）、临时文件（过窄）
+
+**农场测活（Farm Liveness）**:
+对 profile 可见范围内 `@deepseek-ai/*` 符号链接的存活与指向检查：目标悬空为 error；指向非当前运行时版本的 store 目录为提示级（know-how 014：DSH 升级后唯一现役周期必查项，曾 81 条悬空）。
+_Avoid_: 符号链接检查（过泛）、农场修复（体检不修复）
