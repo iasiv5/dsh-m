@@ -448,13 +448,42 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           // 0.9.5 双 profile 读路径接线（实机回归 2026-10-01）：desktop 下已装列表此前
           // 漏传 profile → 落回 webProfileDir，已装页恒显「web profile 尚未安装任何插件」。
           // 与 tools.ts dshm_list 同款接线（profile.dir 单一事实源）。
+          // 两段加载（ADR-0008）：body.probe === false → 跳过探测段（面板第一段快列表）；
+          // 缺省 'full'——工具/CLI/旧客户端行为不变。
           const result = await d.listInstalledWithMeta(cfg(), {
             namespace: 'host',
             profileDir: profile.dir,
             profile: profile.name,
+            probeMode: body.probe === false ? 'none' : 'full',
             signal,
           })
           payload = { ...result }
+          break
+        }
+
+        case 'installedUpdates': {
+          // 两段加载（ADR-0008）第二段：probeMode 'only' → ttlMin=0 永远新鲜（先删共享缓存条目再重探）。
+          // 响应只保留更新字段且含全部已装项（latestError 项也在——client 的「检查未完成」依赖它），
+          // 不携带 items/others 全量负载。
+          await ctx.controller.ensureReady()
+          const result = await d.listInstalledWithMeta(cfg(), {
+            namespace: 'host',
+            profileDir: profile.dir,
+            profile: profile.name,
+            probeMode: 'only',
+            signal,
+          })
+          payload = {
+            updates: result.items.map((it) => ({
+              pkg: it.pkg,
+              latestVersion: it.latestVersion ?? null,
+              latestTag: it.latestTag ?? null,
+              latestSha: it.latestSha ?? null,
+              outdated: it.outdated,
+              latestError: it.latestError ?? null,
+              latestErrorCode: it.latestErrorCode ?? null,
+            })),
+          }
           break
         }
 

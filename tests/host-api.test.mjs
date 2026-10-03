@@ -73,7 +73,7 @@ async function callApi(dispatcher, args) {
   return { status: res.statusCode, body: parsed, raw: res.bodyText }
 }
 
-function setup(overrides = {}, controllerInitial = {}) {
+function setup(overrides = {}, controllerInitial = {}, installedResult = null) {
   const controller = createRegistryController(controllerInitial)
   const calls = { listMarket: [], listInstalled: [], diagnose: [], npm: [] }
   const dispatcher = createApiDispatcher({
@@ -108,6 +108,7 @@ function setup(overrides = {}, controllerInitial = {}) {
       },
       listInstalledWithMeta: async (cfg, opts) => {
         calls.listInstalled.push(opts)
+        if (installedResult) return installedResult
         return {
           items: [],
           others: 0,
@@ -281,6 +282,48 @@ describe('host-api：method 响应', () => {
     assert.equal(res.status, 200)
     assert.equal(calls.listInstalled[0].namespace, 'host')
     assert.equal(res.body.registryState.status, 'stale')
+  })
+
+  it('installed {probe:false} → probeMode none（两段加载第一段）', async () => {
+    const installedResult = {
+      items: [{ pkg: 'pkg-a', name: 'A', version: '1.0.0', description: '', homepage: '', spec: '1.0.0', source: 'npm', dsh: true, path: '/x/a', outdated: false }],
+      others: 0, profileDir: '/tmp/profile',
+      registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'stale', isDefault: true, stale: true, fetchedAt: null, errors: [], count: 1 },
+    }
+    const { dispatcher, calls } = setup({}, {}, installedResult)
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed', probe: false } })
+    assert.equal(res.status, 200)
+    assert.equal(calls.listInstalled[0].probeMode, 'none')
+    assert.equal(res.body.items[0].latestVersion, undefined, 'probe:false 下无探测字段')
+  })
+
+  it('installed 缺省 probeMode full（工具/CLI 向后兼容护栏）', async () => {
+    const { dispatcher, calls } = setup()
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed' } })
+    assert.equal(calls.listInstalled[0].probeMode, 'full')
+  })
+
+  it('installedUpdates：TTL=0 探测 + 七字段全量裁剪（两段加载第二段）', async () => {
+    const installedResult = {
+      items: [
+        { pkg: 'pkg-a', name: 'A', version: '1.0.0', description: '', homepage: '', spec: '1.0.0', source: 'npm', dsh: true, path: '/x/a', outdated: true, latestVersion: '2.0.0' },
+        { pkg: 'pkg-b', name: 'B', version: '1.0.0', description: '', homepage: '', spec: '1.0.0', source: 'npm', dsh: true, path: '/x/b', outdated: false, latestError: '更新检查未完成：超时', latestErrorCode: 'timeout' },
+      ],
+      others: 3, profileDir: '/tmp/profile',
+      registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'stale', isDefault: true, stale: true, fetchedAt: null, errors: [], count: 2 },
+    }
+    const { dispatcher, calls } = setup({}, {}, installedResult)
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installedUpdates' } })
+    assert.equal(res.status, 200)
+    assert.equal(calls.listInstalled[0].probeMode, 'only')
+    assert.equal(res.body.updates.length, 2, 'latestError 项（outdated=false）也在 updates 内')
+    for (const u of res.body.updates) {
+      assert.deepEqual(new Set(Object.keys(u)), new Set(['pkg', 'latestVersion', 'latestTag', 'latestSha', 'outdated', 'latestError', 'latestErrorCode']))
+    }
+    assert.equal(res.body.updates[0].latestVersion, '2.0.0')
+    assert.equal(res.body.updates[1].latestError, '更新检查未完成：超时')
+    assert.equal(res.body.items, undefined, '不携带全量已装负载')
+    assert.equal(res.body.others, undefined)
   })
 
   it('registry-config 返回完整配置快照', async () => {
