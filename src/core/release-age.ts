@@ -1,40 +1,43 @@
 /**
- * Desktop 供应链等待期（minimumReleaseAge）预检与失败翻译（0.9.19）。
+ * 供应链等待期（minimumReleaseAge）预检与失败翻译（0.9.19 立基，0.9.x 按治理语义收敛，ADR-0009）。
  *
- * pnpm 11.7 实机实证（2026-10-03，本机 desktop profile，官方管理器操作日志
- * operation-hNjgaN / operation-l5fXEd）：
- * 1. 显式安装「太新」目标：非严格模式放行，pnpm 自动向 pnpm-workspace.yaml 的
- *    `minimumReleaseAgeExclude` 追加一条「独立精确条目」（`pkg@ver` 形态）；
- * 2. 但后续任何包操作的锁文件级供应链校验（`Verifying lockfile against
- *    supply-chain policies (N entries)`）不认可 pnpm 自己追加的这种条目——
- *    任何一条未满期的 `pkg@ver` 都会拦死整个安装，且与本次目标无关（旁包能拦住
- *    所有升级，0.9.18 拦住 quota-watch 0.1.15 升级即实证）；
+ * 实证基准（2026-10-03，本机 desktop profile，pnpm 11.7.0，官方管理器操作日志
+ * operation-zsc4ei / operation-L8oq1z / operation-l5fXEd）：
+ * 1. 默认策略（未显式设置 age、未开 strict = 非严格）下，显式点名的「太新」目标
+ *    直接放行安装，pnpm 自动向 pnpm-workspace.yaml 的 `minimumReleaseAgeExclude`
+ *    追加 `pkg@ver` 条目（"Added 1 entry …"）；
+ * 2. pnpm 的 evaluateVersionPolicy **每包名只认第一条排除规则**，同名后续规则死亡
+ *    （dshmarket #732 实证，首条规则生效机理）——死规则会让等待期内全部包操作被
+ *    锁文件级校验拦死（0:15 quota-watch 连坐实录）；
  * 3. 校验失败前目标包可能已写入 node_modules，官方管理器只回滚 manifest/lockfile
- *    →「账实分裂」：界面实装新版 active，账本仍旧版，下次包操作静默回退。
+ *    →「账实分裂」，下次包操作静默回退。
  *
- * 对策（零文件级红线不破：只读 profile 文件，绝不写）：
- * ① 委派前预检（releaseAgePrecheck）：目标版本或锁内「不被校验认可的独立精确
- *    排除条目」任一未满等待期 → 结构化拒绝，不委派官方管理器；
+ * 职责（ADR-0009）：
+ * ① 委派前预检（releaseAgePrecheck）：仅「显式设置 age 或 strict 开启」时对窗口内
+ *    目标拒绝（附可重试时刻）；默认策略放行并返回陈述性 notice。锁内坏形态由
+ *    exclude-governance 的治理挂点处理，本模块不再预拒绝（0.9.19 ②腿退役）。
  * ② 失败翻译（describeReleaseAgeFailure）：解析全部违规条目，按「本次目标 vs
- *    锁内旁包」分别给出发布时刻与可重试时刻——不再把旁包名字冒充成本次目标被拦。
+ *    旁包」分述发布时刻与可重试时刻。
+ * ③ cachedPackumentTimes：预检与登记共用的带缓存 packument 探测。
  *
- * fail-open 纪律：发布时刻不可得 / 策略文件不可读 / profileDir 缺席 / 命中有效排除
- * 条目（包名级、`||` 复合、scoped 独立精确）→ 一律放行；pnpm 仍是最终执行者。
+ * fail-open 纪律：发布时刻不可得 / 策略文件不可读 / profileDir 缺席 / 命中任一
+ * 排除规则（首条规则口径）→ 一律放行；pnpm 仍是最终执行者。
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { fetchJsonLimited } from './httpx.js'
-import { isExactVersion } from './versions.js'
 
 /** pnpm 11.7 实机测得的策略窗口：24h（operation-l5fXEd 的 cutoff = 检查时刻 − 1440min）。 */
 export const DEFAULT_MINIMUM_RELEASE_AGE_MIN = 1440
-/** 锁内「独立精确排除条目」旁包探测上限（防清单失控；超出部分放弃预判，交 pnpm 兜底）。 */
-export const MAX_EXCLUDE_PROBES = 8
 
 export interface WorkspacePolicy {
+  /** `minimumReleaseAge` 键是否显式存在（显式设置时 pnpm 对精确点名的新版本改判硬失败 NO_MATURE_MATCHING_VERSION，dshmarket #531 实测） */
+  explicitAge: boolean
   /** minimumReleaseAge（分钟）；未配置 = null（调用方用 DEFAULT 兜底） */
   minimumReleaseAgeMin: number | null
+  /** minimumReleaseAgeStrict: true（自动豁免改判 prompt 门，非交互委派过不去） */
+  strict: boolean
   /** minimumReleaseAgeExclude 原始条目（字符串原样，仅 trim） */
   excludes: string[]
 }
@@ -51,7 +54,7 @@ function scalarNumber(value: unknown): number | null {
  * 调用方按默认窗口 + 无排除处理，绝不抛。
  */
 export function parseWorkspacePolicy(text: string): WorkspacePolicy {
-  const empty: WorkspacePolicy = { minimumReleaseAgeMin: null, excludes: [] }
+  const empty: WorkspacePolicy = { explicitAge: false, minimumReleaseAgeMin: null, strict: false, excludes: [] }
   let document
   try {
     document = parseDocument(text)
@@ -68,29 +71,32 @@ export function parseWorkspacePolicy(text: string): WorkspacePolicy {
       }
     }
   }
-  // yaml 库的 Map.get() 对标量返回已解包的原始值（number/string），对集合返回节点——两种形态都兜住
+  // yaml 库的 Map.get() 对标量返回已解包的原始值（number/string/boolean），对集合返回节点——两种形态都兜住
   const rawAge: unknown = document.contents.get('minimumReleaseAge')
   const age = isScalar(rawAge) ? scalarNumber(rawAge.value) : scalarNumber(rawAge)
-  return { minimumReleaseAgeMin: age !== null && age > 0 ? age : null, excludes }
+  const rawStrict: unknown = document.contents.get('minimumReleaseAgeStrict')
+  const strict = rawStrict === true || (isScalar(rawStrict) && rawStrict.value === true)
+  return {
+    explicitAge: rawAge !== undefined && rawAge !== null,
+    minimumReleaseAgeMin: age !== null && age > 0 ? age : null,
+    strict,
+    excludes,
+  }
 }
 
 /**
- * 单条 exclude 选择器对 (pkg, version) 的覆盖判定——pnpm 11.7 实证语义：
- * - 包名级（`dshmarket`）与 `||` 复合条目（含复合段内的裸版本号）：锁文件校验认可 → effective；
- * - scoped 独立精确条目（`@scope/pkg@1.2.3`）：本机实证被校验认可
- *   （quota-watch@0.1.13 发布 4h、带此条目，0:15 校验未标记）→ effective；
- * - 非 scoped 独立精确条目（`dsh-m@0.9.18`，pnpm 安装时自动追加的形态）：
- *   两次实证（0.9.14、0.9.18）均被锁文件校验拒绝 → unreliable-unscoped-exact（预检按会拦死处理）；
- * - 其余（版本段非精确等值等）不判覆盖。
+ * 单条 exclude 选择器对 (pkg, version) 的覆盖判定——首条规则生效口径（ADR-0009）：
+ * 规范形态下每包名只有一条规则，命中即覆盖。0.9.19 的 `unreliable-unscoped-exact`
+ * 形态论退役（020 §2.4 的 ❌ 案例实为同名第二规则死亡，见 §8 改判）。
  */
-export type ExcludeMatch = 'effective' | 'unreliable-unscoped-exact' | 'no'
+export type ExcludeMatch = 'effective' | 'no'
 
 export function excludeMatch(selector: string, pkg: string, version: string): ExcludeMatch {
   const s = selector.trim()
   if (s === '') return 'no'
   if (s.includes('||')) {
     for (const part of s.split('||')) {
-      if (excludeMatch(part.trim(), pkg, version) !== 'no') return 'effective'
+      if (excludeMatch(part.trim(), pkg, version) === 'effective') return 'effective'
     }
     return 'no'
   }
@@ -99,33 +105,7 @@ export function excludeMatch(selector: string, pkg: string, version: string): Ex
     // 包名级（dshmarket）或裸版本号段（只应出现在复合条目内，顶层出现视为包名比较）
     return s === pkg || s === version ? 'effective' : 'no'
   }
-  const namePart = s.slice(0, at)
-  const verPart = s.slice(at + 1)
-  if (namePart !== pkg) return 'no'
-  if (verPart === version) {
-    return pkg.startsWith('@') ? 'effective' : 'unreliable-unscoped-exact'
-  }
-  return 'no'
-}
-
-export interface ExactSelector {
-  pkg: string
-  version: string
-  /** scoped 独立精确条目被锁校验认可（effective），不参与「会拦死」旁包探测。 */
-  reliable: boolean
-}
-
-/** 从独立精确条目提取 (pkg, version)；复合/包名级/版本段非精确 semver → null。 */
-export function splitExactSelector(selector: string): ExactSelector | null {
-  const s = selector.trim()
-  if (s === '' || s.includes('||')) return null
-  const at = s.lastIndexOf('@')
-  if (at <= 0) return null
-  const pkg = s.slice(0, at)
-  const version = s.slice(at + 1)
-  if (!isExactVersion(version)) return null
-  if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) return null
-  return { pkg, version, reliable: pkg.startsWith('@') }
+  return s.slice(0, at) === pkg && s.slice(at + 1) === version ? 'effective' : 'no'
 }
 
 const VIOLATION_RE = /(\S+@\S+) was published at ([^,]+), within the minimumReleaseAge cutoff \(([^)]+)\)/g
@@ -213,13 +193,13 @@ export function describeReleaseAgeFailure(input: {
 
 export interface ReleaseAgeBlocker {
   entry: string
-  role: 'target' | 'lockfile-exclude'
+  role: 'target'
   publishedAt: number
   deadline: number
 }
 
 export type ReleaseAgePrecheckResult =
-  | { blocked: false }
+  | { blocked: false; notice?: string }
   | { blocked: true; message: string; blockers: ReleaseAgeBlocker[] }
 
 export interface ReleaseAgePrecheckDeps {
@@ -259,14 +239,29 @@ export async function readWorkspacePolicy(profileDir?: string): Promise<Workspac
 const packumentCache = new Map<string, { at: number; times: Record<string, string> | null }>()
 const PACKUMENT_CACHE_TTL_MS = 5 * 60_000
 
+/**
+ * 带进程内缓存的 packument time 探测（TTL 5min）：预检与登记（exclude-governance）
+ * 共用——同一操作里预检刚拉过的 packument 不二次拉取（8MiB 级全量）。
+ */
+export async function cachedPackumentTimes(pkg: string, timeoutMs = 12_000, signal?: AbortSignal): Promise<Record<string, string> | null> {
+  const hit = packumentCache.get(pkg)
+  if (hit && Date.now() - hit.at < PACKUMENT_CACHE_TTL_MS) return hit.times
+  const times = await npmPackumentTimes(pkg, timeoutMs, signal)
+  packumentCache.set(pkg, { at: Date.now(), times })
+  return times
+}
+
 /** 测试钩子：清空 packument 进程内缓存。 */
 export function _resetReleaseAgeCachesForTests(): void {
   packumentCache.clear()
 }
 
 /**
- * 委派前预检：目标版本与锁内「不被校验认可的独立精确排除条目」逐个对发布时刻，
- * 任一未满等待期 → 结构化拒绝（blocked + 多行理由）。零写操作；不确定一律放行。
+ * 委派前预检（ADR-0009 收敛语义）：仅当策略显式设置 age 或开启 strict 时，对窗口内
+ * 且未被任一排除规则覆盖（首条规则口径）的目标结构化拒绝（附可重试时刻）；默认
+ * 策略（非严格）放行并返回陈述性 notice——官方管理器对显式点名的新版本会直接
+ * 安装并自动登记，锁内坏形态由 exclude-governance 的治理挂点处理。零写操作；
+ * fail-open：发布时刻不可得 / profileDir 缺席 / 命中排除规则 → 放行。
  */
 export async function releaseAgePrecheck(input: {
   pkg: string
@@ -277,58 +272,37 @@ export async function releaseAgePrecheck(input: {
   nowMs?: number
   deps?: ReleaseAgePrecheckDeps
 }): Promise<ReleaseAgePrecheckResult> {
-  // profileDir 缺席 = 读不到操作员排除条目 → 不预判（避免误拦操作员显式 pin 的安装）
+  // profileDir 缺席 = 读不到操作员排除条目与策略 → 不预判
   if (!input.profileDir) return { blocked: false }
   const now = input.nowMs ?? Date.now()
   const policy = input.deps?.workspacePolicy
     ? await input.deps.workspacePolicy(input.profileDir)
     : await readWorkspacePolicy(input.profileDir)
-  const policyMin = policy?.minimumReleaseAgeMin ?? DEFAULT_MINIMUM_RELEASE_AGE_MIN
+  const explicit = policy?.explicitAge ?? false
+  const strict = policy?.strict ?? false
+  const policyMin = explicit && policy?.minimumReleaseAgeMin != null ? policy.minimumReleaseAgeMin : DEFAULT_MINIMUM_RELEASE_AGE_MIN
   const probe = async (pkg: string): Promise<Record<string, string> | null> => {
-    const hit = packumentCache.get(pkg)
-    if (hit && Date.now() - hit.at < PACKUMENT_CACHE_TTL_MS) return hit.times
-    const times = await (input.deps?.packumentTimes ?? npmPackumentTimes)(pkg, Math.min(input.timeoutMs ?? 20_000, 12_000), input.signal)
-    packumentCache.set(pkg, { at: Date.now(), times })
-    return times
+    if (input.deps?.packumentTimes) return input.deps.packumentTimes(pkg, Math.min(input.timeoutMs ?? 20_000, 12_000), input.signal)
+    return cachedPackumentTimes(pkg, 12_000, input.signal)
   }
-  const blockers: ReleaseAgeBlocker[] = []
-  // ① 本次目标版本的发布时刻（有效排除条目覆盖 → 放行）
   const times = await probe(input.pkg)
   const publishedAt = times ? Date.parse(times[input.version] ?? '') : NaN
-  if (Number.isFinite(publishedAt)) {
-    const exempt = (policy?.excludes ?? []).some((sel) => excludeMatch(sel, input.pkg, input.version) === 'effective')
-    if (!exempt) {
-      const deadline = publishedAt + policyMin * 60_000
-      if (now < deadline) {
-        blockers.push({ entry: `${input.pkg}@${input.version}`, role: 'target', publishedAt, deadline })
-      }
+  if (!Number.isFinite(publishedAt)) return { blocked: false }
+  const exempt = (policy?.excludes ?? []).some((sel) => excludeMatch(sel, input.pkg, input.version) === 'effective')
+  const deadline = publishedAt + policyMin * 60_000
+  if (exempt || now >= deadline) return { blocked: false }
+  if (!explicit && !strict) {
+    return {
+      blocked: false,
+      notice: `目标 ${input.pkg}@${input.version} 发布于 ${fmtLocal(publishedAt)}（等待期内）：官方管理器将按显式点名安装，装好后 dsh-m 会登记豁免条目`,
     }
   }
-  // ② 锁内「不被校验认可的独立精确排除条目」（非 scoped）——任何一条未满期都会拦死整次安装
-  const seen = new Set<string>([`${input.pkg}@${input.version}`])
-  const candidates = (policy?.excludes ?? [])
-    .map((sel) => splitExactSelector(sel))
-    .filter((x): x is ExactSelector => x !== null && !x.reliable)
-  for (const ex of candidates.slice(0, MAX_EXCLUDE_PROBES)) {
-    const entry = `${ex.pkg}@${ex.version}`
-    if (seen.has(entry)) continue
-    seen.add(entry)
-    const t2 = await probe(ex.pkg)
-    const pub = t2 ? Date.parse(t2[ex.version] ?? '') : NaN
-    if (!Number.isFinite(pub)) continue
-    const deadline = pub + policyMin * 60_000
-    if (now < deadline) {
-      blockers.push({ entry, role: 'lockfile-exclude', publishedAt: pub, deadline })
-    }
-  }
-  if (blockers.length === 0) return { blocked: false }
   const lines: string[] = ['官方管理器的供应链策略（minimumReleaseAge）将拦截本次安装，已提前拒绝（未触碰 profile 文件）：']
-  for (const b of blockers) {
-    lines.push(b.role === 'target'
-      ? `· 目标 ${b.entry}：发布于 ${fmtLocal(b.publishedAt)}，预计 ${fmtLocal(b.deadline)} 后满等待期`
-      : `· 锁内排除条目 ${b.entry}：发布于 ${fmtLocal(b.publishedAt)}，预计 ${fmtLocal(b.deadline)} 后满等待期（pnpm 自动追加的独立精确条目不被锁文件校验认可，等待期内任何官方包操作都会被拦）`)
+  lines.push(`· 目标 ${input.pkg}@${input.version}：发布于 ${fmtLocal(publishedAt)}，预计 ${fmtLocal(deadline)} 后满等待期`)
+  lines.push(`预计 ${fmtLocal(deadline)} 后可重试；等待期内也可由操作员修正 pnpm-workspace.yaml 的排除条目形态（包名级/复合）解除拦截`)
+  return {
+    blocked: true,
+    message: lines.join('\n'),
+    blockers: [{ entry: `${input.pkg}@${input.version}`, role: 'target', publishedAt, deadline }],
   }
-  const maxDeadline = Math.max(...blockers.map((b) => b.deadline))
-  lines.push(`预计 ${fmtLocal(maxDeadline)} 后可重试；等待期内也可由操作员修正 pnpm-workspace.yaml 的排除条目形态（包名级/复合）解除拦截`)
-  return { blocked: true, message: lines.join('\n'), blockers }
 }

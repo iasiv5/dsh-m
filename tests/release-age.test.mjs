@@ -1,5 +1,6 @@
 /**
- * 0.9.19：release-age 纯函数——策略解析、排除条目覆盖判定、违规解析、失败文案、委派前预检。
+ * release-age 纯函数——策略解析（explicit/strict）、排除条目覆盖判定（首条规则口径）、
+ * 违规解析、失败文案、委派前预检（ADR-0009 收敛语义）。
  * 实证基准：2026-10-03 本机 desktop profile 的 pnpm 11.7 行为与真实策略文件/诊断原文。
  * 运行：npm run build && node --test tests/release-age.test.mjs
  */
@@ -14,7 +15,6 @@ import {
   parseViolations,
   parseWorkspacePolicy,
   releaseAgePrecheck,
-  splitExactSelector,
 } from '../lib/core/release-age.js'
 
 // 本机 desktop profile 的真实策略文件形态（2026-10-03 00:15 快照，无敏感值）
@@ -47,49 +47,38 @@ const REAL_DIAGNOSTIC = [
 ].join('\n')
 
 describe('parseWorkspacePolicy', () => {
-  it('本机真实形态：读出 4 条 exclude；minimumReleaseAge 未配置 → null（调用方用默认 1440 兜底）', () => {
+  it('本机真实形态：读出 4 条 exclude；minimumReleaseAge 未配置 → explicitAge=false、min=null（调用方用默认 1440 兜底）', () => {
     const p = parseWorkspacePolicy(REAL_WORKSPACE_YAML)
+    assert.equal(p.explicitAge, false)
     assert.equal(p.minimumReleaseAgeMin, null)
+    assert.equal(p.strict, false)
     assert.equal(p.excludes.length, 4)
     assert.deepEqual(p.excludes[3], 'dsh-m@0.9.18')
   })
-  it('minimumReleaseAge 显式配置（分钟）被读取；缺省常量为 1440', () => {
-    assert.equal(parseWorkspacePolicy('minimumReleaseAge: 60\nminimumReleaseAgeExclude:\n  - a@1.0.0\n').minimumReleaseAgeMin, 60)
-    assert.equal(DEFAULT_MINIMUM_RELEASE_AGE_MIN, 1440)
+  it('显式 minimumReleaseAge（分钟）→ explicitAge=true；minimumReleaseAgeStrict: true → strict', () => {
+    const p = parseWorkspacePolicy('minimumReleaseAge: 60\nminimumReleaseAgeStrict: true\nminimumReleaseAgeExclude:\n  - a@1.0.0\n')
+    assert.equal(p.explicitAge, true)
+    assert.equal(p.minimumReleaseAgeMin, 60)
+    assert.equal(p.strict, true)
+    assert.equal(parseWorkspacePolicy('minimumReleaseAgeStrict: false\n').strict, false)
   })
   it('坏 YAML / 结构不符 → 空策略（不抛）', () => {
-    assert.deepEqual(parseWorkspacePolicy('::: [not yaml'), { minimumReleaseAgeMin: null, excludes: [] })
-    assert.deepEqual(parseWorkspacePolicy('- just\n- a\n- list\n'), { minimumReleaseAgeMin: null, excludes: [] })
+    assert.deepEqual(parseWorkspacePolicy('::: [not yaml'), { explicitAge: false, minimumReleaseAgeMin: null, strict: false, excludes: [] })
+    assert.deepEqual(parseWorkspacePolicy('- just\n- a\n- list\n'), { explicitAge: false, minimumReleaseAgeMin: null, strict: false, excludes: [] })
   })
 })
 
-describe('excludeMatch（pnpm 11.7 实证语义）', () => {
-  it('包名级与 `||` 复合条目（含裸版本段）→ effective', () => {
+describe('excludeMatch（首条规则生效口径，ADR-0009）', () => {
+  it('包名级 / `||` 复合（含裸版本段）命中 → effective', () => {
     assert.equal(excludeMatch('dshmarket', 'dshmarket', '1.66.8'), 'effective')
     assert.equal(excludeMatch('dsh-m@0.9.0 || 0.9.1 || 0.9.18', 'dsh-m', '0.9.18'), 'effective')
     assert.equal(excludeMatch('dsh-m@0.9.0 || 0.9.1 || 0.9.15', 'dsh-m', '0.9.18'), 'no')
   })
-  it('scoped 独立精确条目 → effective（0.1.13 带 4h 龄未被 0:15 校验标记的实证）；版本不等 → no', () => {
-    assert.equal(excludeMatch('@iasiv5/dsh-quota-watch@0.1.13', '@iasiv5/dsh-quota-watch', '0.1.13'), 'effective')
-    assert.equal(excludeMatch('@iasiv5/dsh-quota-watch@0.1.13', '@iasiv5/dsh-quota-watch', '0.1.15'), 'no')
-  })
-  it('非 scoped 独立精确条目 → unreliable-unscoped-exact（0.9.14/0.9.18 两次被锁校验拒绝的实证）', () => {
-    assert.equal(excludeMatch('dsh-m@0.9.18', 'dsh-m', '0.9.18'), 'unreliable-unscoped-exact')
-    assert.equal(excludeMatch('dsh-m@0.9.18', 'dsh-m', '0.9.17'), 'no')
+  it('独立精确条目命中 → effective（scoped 与非 scoped 同口径）；版本不等 / 他包 → no', () => {
+    assert.equal(excludeMatch('@scope/pkg@1.2.3', '@scope/pkg', '1.2.3'), 'effective')
+    assert.equal(excludeMatch('pkg-a@1.2.3', 'pkg-a', '1.2.3'), 'effective')
+    assert.equal(excludeMatch('@scope/pkg@1.2.3', '@scope/pkg', '1.2.4'), 'no')
     assert.equal(excludeMatch('other-pkg@1.0.0', 'dsh-m', '0.9.18'), 'no')
-  })
-})
-
-describe('splitExactSelector', () => {
-  it('独立精确条目 → { pkg, version, reliable }；scoped reliable=true', () => {
-    assert.deepEqual(splitExactSelector('dsh-m@0.9.18'), { pkg: 'dsh-m', version: '0.9.18', reliable: false })
-    assert.deepEqual(splitExactSelector('@iasiv5/dsh-quota-watch@0.1.13'), { pkg: '@iasiv5/dsh-quota-watch', version: '0.1.13', reliable: true })
-  })
-  it('复合 / 包名级 / 版本段非精确 semver → null（不参与旁包探测）', () => {
-    assert.equal(splitExactSelector('dsh-m@0.9.0 || 0.9.1'), null)
-    assert.equal(splitExactSelector('dshmarket'), null)
-    assert.equal(splitExactSelector('dsh-m@^0.9.18'), null)
-    assert.equal(splitExactSelector('dsh-m@next'), null)
   })
 })
 
@@ -131,49 +120,84 @@ describe('parseViolations / describeReleaseAgeFailure（0:15 quota-watch 事件�
   })
 })
 
-describe('releaseAgePrecheck（委派前预检）', () => {
+describe('releaseAgePrecheck（委派前预检，ADR-0009 收敛语义）', () => {
   const MIN = 60_000
   const isoAgo = (ms) => new Date(Date.now() - ms).toISOString()
+  /** 默认策略桩：未显式设置 age、未开 strict（本机现状） */
+  const defaultPolicy = () => ({ explicitAge: false, minimumReleaseAgeMin: null, strict: false, excludes: [] })
+  const explicitPolicy = (min) => ({ explicitAge: true, minimumReleaseAgeMin: min, strict: false, excludes: [] })
 
   beforeEach(_resetReleaseAgeCachesForTests)
 
-  it('目标未满期 → blocked（role=target），文案含目标条目与「未触碰 profile」', async () => {
+  it('默认策略 + young + 无覆盖 → 放行 + notice 陈述（含「等待期内」「登记」）', async () => {
     const r = await releaseAgePrecheck({
       pkg: 'pkg-a',
       version: '1.2.3',
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+        workspacePolicy: defaultPolicy,
+      },
+    })
+    assert.equal(r.blocked, false)
+    assert.ok(r.notice && r.notice.includes('等待期内'), 'notice 应说明处于等待期')
+    assert.ok(r.notice && r.notice.includes('登记'), 'notice 应说明将登记豁免')
+    assert.ok(r.notice && r.notice.includes('pkg-a@1.2.3'))
+  })
+
+  it('显式设置 age + young → blocked（role=target），文案含目标与可重试时刻', async () => {
+    const r = await releaseAgePrecheck({
+      pkg: 'pkg-a',
+      version: '1.2.3',
+      profileDir: 'X:/profile-demo',
+      deps: {
+        packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+        workspacePolicy: () => explicitPolicy(1440),
       },
     })
     assert.equal(r.blocked, true)
+    if (!r.blocked) return
     assert.equal(r.blockers[0].role, 'target')
     assert.ok(r.message.includes('pkg-a@1.2.3'))
     assert.ok(r.message.includes('未触碰 profile 文件'))
+    assert.ok(r.message.includes('可重试'))
   })
 
-  it('目标已满期 → 放行', async () => {
+  it('strict 开启（默认窗口）+ young → blocked', async () => {
+    const r = await releaseAgePrecheck({
+      pkg: 'pkg-a',
+      version: '1.2.3',
+      profileDir: 'X:/profile-demo',
+      deps: {
+        packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+        workspacePolicy: () => ({ explicitAge: false, minimumReleaseAgeMin: null, strict: true, excludes: [] }),
+      },
+    })
+    assert.equal(r.blocked, true)
+  })
+
+  it('目标已满期 → 放行且无 notice', async () => {
     const r = await releaseAgePrecheck({
       pkg: 'pkg-a',
       version: '1.2.3',
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+        workspacePolicy: defaultPolicy,
       },
     })
     assert.equal(r.blocked, false)
+    assert.equal(r.notice, undefined)
   })
 
-  it('目标被 scoped 独立精确条目覆盖 → 放行；被非 scoped 独立精确条目「覆盖」→ 仍拦', async () => {
+  it('命中任一排除规则（含非 scoped 独立精确，首条规则口径）→ 放行', async () => {
     const scoped = await releaseAgePrecheck({
       pkg: '@scope/pkg-a',
       version: '1.2.3',
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(5 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['@scope/pkg-a@1.2.3'] }),
+        workspacePolicy: () => ({ ...explicitPolicy(1440), excludes: ['@scope/pkg-a@1.2.3'] }),
       },
     })
     assert.equal(scoped.blocked, false)
@@ -183,34 +207,19 @@ describe('releaseAgePrecheck（委派前预检）', () => {
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(5 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['pkg-a@1.2.3'] }),
+        workspacePolicy: () => ({ ...explicitPolicy(1440), excludes: ['pkg-a@1.2.3'] }),
       },
     })
-    assert.equal(unscoped.blocked, true)
+    assert.equal(unscoped.blocked, false)
   })
 
-  it('目标已满期但锁内非 scoped 独立精确条目未满期 → blocked（role=lockfile-exclude，旁包连坐形态）', async () => {
-    const r = await releaseAgePrecheck({
-      pkg: 'pkg-a',
-      version: '1.2.3',
-      profileDir: 'X:/profile-demo',
-      deps: {
-        packumentTimes: async (pkg) => (pkg === 'dsh-m' ? { '0.9.18': isoAgo(24 * MIN) } : { '1.2.3': isoAgo(72 * 60 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['dsh-m@0.9.18'] }),
-      },
-    })
-    assert.equal(r.blocked, true)
-    assert.equal(r.blockers[0].role, 'lockfile-exclude')
-    assert.ok(r.message.includes('dsh-m@0.9.18'))
-  })
-
-  it('profileDir 缺席 / 发布时刻不可得 / 复合条目覆盖 → 一律放行（fail-open）', async () => {
+  it('fail-open：profileDir 缺席 / 发布时刻不可得 / 复合条目覆盖 → 一律放行', async () => {
     const noDir = await releaseAgePrecheck({
       pkg: 'pkg-a',
       version: '1.2.3',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+        workspacePolicy: () => explicitPolicy(1440),
       },
     })
     assert.equal(noDir.blocked, false)
@@ -220,7 +229,7 @@ describe('releaseAgePrecheck（委派前预检）', () => {
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => null,
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+        workspacePolicy: () => explicitPolicy(1440),
       },
     })
     assert.equal(noTimes.blocked, false)
@@ -230,35 +239,32 @@ describe('releaseAgePrecheck（委派前预检）', () => {
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['pkg-a@1.0.0 || 1.2.3'] }),
+        workspacePolicy: () => ({ ...explicitPolicy(1440), excludes: ['pkg-a@1.0.0 || 1.2.3'] }),
       },
     })
     assert.equal(compound.blocked, false)
   })
 
-  it('显式 minimumReleaseAgeMin（分钟）生效：60min 窗口下 90min 龄放行', async () => {
-    const pass = await releaseAgePrecheck({
-      pkg: 'pkg-a',
-      version: '1.2.3',
-      profileDir: 'X:/profile-demo',
-      deps: {
-        packumentTimes: async () => ({ '1.2.3': isoAgo(90 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 60, excludes: [] }),
-      },
-    })
-    assert.equal(pass.blocked, false)
-  })
-
-  it('显式 minimumReleaseAgeMin（分钟）生效：60min 窗口下 30min 龄拦下', async () => {
+  it('显式窗口值生效：60min 窗口下 30min 龄拦、90min 龄放', async () => {
     const block = await releaseAgePrecheck({
       pkg: 'pkg-a',
       version: '1.2.3',
       profileDir: 'X:/profile-demo',
       deps: {
         packumentTimes: async () => ({ '1.2.3': isoAgo(30 * MIN) }),
-        workspacePolicy: async () => ({ minimumReleaseAgeMin: 60, excludes: [] }),
+        workspacePolicy: () => explicitPolicy(60),
       },
     })
     assert.equal(block.blocked, true)
+    const pass = await releaseAgePrecheck({
+      pkg: 'pkg-a',
+      version: '1.2.3',
+      profileDir: 'X:/profile-demo',
+      deps: {
+        packumentTimes: async () => ({ '1.2.3': isoAgo(90 * MIN) }),
+        workspacePolicy: () => explicitPolicy(60),
+      },
+    })
+    assert.equal(pass.blocked, false)
   })
 })
