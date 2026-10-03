@@ -8,7 +8,8 @@
  * 顶层必须是非 null/非数组对象且有 method → typed method/业务错误映射 → 其他 500。
  */
 import { BOOT_ID, publicInstallStatus } from './dsh-cli.js'
-import { resolveDshVersion } from './dsh-version.js'
+import { resolveDshVersion, readLauncherPackageVersion } from './dsh-version.js'
+import { runDoctor } from './doctor.js'
 import {
   listInstalledWithMeta,
   listMarket,
@@ -623,6 +624,15 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const snap = await ctx.controller.snapshot()
           const check = await d.checkRegistryEntries(snap.loaded.registry, { signal })
           payload = { registryState: snap.loaded, check }
+          break
+        }
+
+        case 'doctor': {
+          // 体检（ADR-0010）：纯 FS 只读，不依赖 registry（清单不可用时照常工作）。
+          // runtimeVersion 只用 readLauncherPackageVersion 纯 FS 通路——resolveDshVersion 的
+          // spawn 回退是 doctor 禁区（无进程派生约束；null 即降级，测试覆盖分工见计划 Task 6）。
+          const report = await runDoctor(profile.dir, readLauncherPackageVersion())
+          payload = { report }
           break
         }
 
