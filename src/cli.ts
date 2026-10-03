@@ -16,6 +16,9 @@ import {
   type MarketResult,
 } from './core/market.js'
 import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
+import { runDoctor } from './core/doctor.js'
+import { readLauncherPackageVersion } from './core/dsh-version.js'
+import { webProfileDir } from './core/env.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
@@ -174,6 +177,7 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
+  dshm doctor [--json]               profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1）
 
 变更命令（必须 --yes）：
   dshm install --id <收录id> [--version 1.2.3] [--force]   （--force：确认兼容风险后跳过预检拦截）
@@ -441,6 +445,52 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const res = scheduleRestart(null)
       out(`✅ 已请求重启（via ${res.via}）。服务恢复后刷新页面即可。`)
       return 0
+    }
+
+    case 'doctor': {
+      // 体检（ADR-0010）：纯 FS 只读、不依赖 registry（清单不可用照常工作）。
+      // runtimeVersion 仅用 readLauncherPackageVersion 纯 FS 通路（CLI 进程下通常为 null
+      // → stale 判定降级 unknown，绝不 spawn）；errors>0 → exit 1。
+      const report = await runDoctor(webProfileDir(), readLauncherPackageVersion())
+      if (flags.json === true) {
+        out(JSON.stringify(report, null, 2))
+        return report.summary.errors > 0 ? 1 : 0
+      }
+      const s = report.summary
+      out(`profile 体检 · ${report.profileDir}`)
+      out(`布局 ${report.layout} · 运行时 ${report.runtimeVersion ?? '未解析（stale 判定降级 unknown，绝不 spawn）'} · 扫描于 ${report.scannedAt}`)
+      out(
+        `农场 ${s.farmChecked}（悬空 ${s.farmDangling} · 指旧 ${s.farmStale}${report.runtimeVersion === null ? '（降级：未判定）' : ''}）` +
+          ` · 残留 ${s.residueCount} · 账实 ${s.accountChecked}（不一致 ${s.accountMismatched}） · errors ${s.errors} · warnings ${s.warnings}`,
+      )
+      const errs = report.findings.filter((f) => f.severity === 'error')
+      const warns = report.findings.filter((f) => f.severity === 'warning')
+      if (errs.length) {
+        out('\n❌ 错误（将阻止对应链接/包正常工作）：')
+        for (const f of errs) {
+          out(`  • ${f.title}`)
+          out(`    ${f.detail}`)
+          out(`    → ${f.hint}`)
+        }
+      }
+      if (warns.length) {
+        out('\n⚠️  警告（确认异常但不阻止启动）：')
+        for (const f of warns) {
+          out(`  • ${f.title}`)
+          out(`    ${f.detail}`)
+          out(`    → ${f.hint}`)
+        }
+      }
+      const stale = report.farm.filter((x) => x.state === 'stale-target').slice(0, 3)
+      if (stale.length) {
+        out('\n指向旧运行时 store（信息级，至多列 3 条，清单零告警）：')
+        for (const x of stale) out(`  • ${x.name} → ${x.targetVersion}`)
+      }
+      if (s.residueCount > 0) out(`\n残留物：${s.residueCount} 项只列不警（可见而非清理，全量见 --json）。`)
+      for (const u of s.unknowns) out(`ℹ️  ${u}`)
+      if (report.dualMarket) out(`ℹ️  双市场并存：${report.dualMarket.join(' + ')} 同时在装（写侧互不知晓，排查时留意）。`)
+      if (errs.length === 0) out('\n未发现 error 级问题。')
+      return errs.length > 0 ? 1 : 0
     }
 
     default: {

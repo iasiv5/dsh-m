@@ -7,6 +7,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 import { detectLayout, analyzeFarm, listResidue, checkAccount, runDoctor } from '../lib/core/doctor.js'
 
@@ -381,5 +383,59 @@ describe('runDoctor', () => {
     rmSync(join(profile, 'node_modules', 'dshmarket'), { recursive: true, force: true })
     const r = await runDoctor(profile, null)
     assert.equal(r.dualMarket, null)
+  })
+})
+
+// ---------- Task 7：CLI `dshm doctor`（DSH_HOME 机制 + exit code + HELP，评审 R1.6/R1.7） ----------
+
+const CLI_JS = fileURLToPath(new URL('../lib/cli.js', import.meta.url))
+
+function runCli(args, envHome) {
+  return spawnSync(process.execPath, [CLI_JS, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, DSH_HOME: envHome },
+  })
+}
+
+describe('dshm doctor（CLI 子命令）', () => {
+  let home, profile
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-doccli-'))
+    profile = join(home, 'profiles', 'web')
+    mkdirSync(join(profile, 'node_modules'), { recursive: true })
+    mkdirSync(join(home, 'node_modules', '@deepseek-ai'), { recursive: true })
+  })
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+
+  it('--json 可解析；有 error（悬空）时 exit 1；stale 维度显示降级而非 0', async () => {
+    symlinkSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x')) // 悬空 → error
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCli(['doctor', '--json'], home)
+    assert.equal(r.status, 1)
+    const report = JSON.parse(r.stdout)
+    assert.equal(report.schema, 'dsh-m/doctor/v1')
+    assert.equal(report.summary.errors, 1)
+    assert.equal(report.runtimeVersion, null) // CLI 通路：纯 FS 解析不可得，绝不 spawn
+    assert.ok(report.summary.unknowns.some((u) => u.includes('stale')))
+  })
+
+  it('健康 profile → exit 0，人读输出含 summary 行', async () => {
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCli(['doctor'], home)
+    assert.equal(r.status, 0)
+    assert.ok(r.stdout.includes('体检') || r.stdout.includes('doctor') || r.stdout.includes('农场'))
+    assert.ok(r.stdout.includes('悬空 0') || r.stdout.includes('dangling 0') || /\d+/.test(r.stdout))
+  })
+
+  it('--profile desktop 被拒绝（CLI 恒 web profile）', async () => {
+    const r = runCli(['doctor', '--profile', 'desktop'], home)
+    assert.equal(r.status, 1)
+    assert.ok(r.stderr.includes('desktop'))
+  })
+
+  it('HELP 命令枚举含 doctor 行（防 HELP 漂移，评审 R1.6）', async () => {
+    const r = runCli([], home) // 无参 → help
+    assert.equal(r.status, 0)
+    assert.ok(r.stdout.includes('doctor'))
   })
 })
