@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.x（待定）变更：排除条目代管——供应链等待期从「提前拒绝」到「治理 + 登记」（ADR-0009）
+
+- **问题（实机 2026-10-03 实证）**：0.9.19 的委派前预检把「目标版本未满 24h 等待期」预测成"官方管理器必拦"并提前拒绝——同目标 dsh-market 却能装上（copilot-auth@1.2.4 发布 8 分钟、quota-watch@0.1.21 两例）。pnpm 11.7 默认非严格策略对显式点名的新版本本来就放行并自动登记排除条目，预检的墙并不存在。
+- **三挂点代管**：① 委派前治理——desktop profile 排除块的坏形态（pnpm 自追加的死规则）合并为"每包一条、版本并集复合"；② 装机成功后登记——等待期内目标并入排除块（scoped 精确单条 / 非 scoped 目标+上一版双选择器）；③ 双码失败（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` / `ERR_PNPM_NO_MATURE_MATCHING_VERSION`）→ 治理 → 至多重试一次，仍败走既有失败翻译与账实分裂复读。web ladder 同套三挂点。
+- **边界与安全**：红线收窄出唯一例外（desktop 仅此块、仅委派前后挂点、原子写、解析失败即弃、留痕不落全文）；治理/登记全程持官方同款锁并 fail-open——任何失败不阻塞委派，pnpm 仍是最终执行者；显式设置 age 或 strict 的 profile 仍前置拒绝并给可重试时刻；机理按"首条规则生效"口径改判（know-how 020 §2.4 形态论退役）。
+- **文档**：决策全文 `docs/adr/0009-release-age-exclude-governance.md`（含 9 项评估过不做的栅栏附录与观察预案）；GLOSSARY 新词「首条规则/排除条目/治理/登记/等待期」。
+
 ### 0.9.23 变更：已装页两段加载——列表秒开 + 更新提示就地补 ⬆（ADR-0008）
 
 - **问题（实机 2026-10-03 实证）**：更新探测焊在已装列表接口里且带 60min 内存 TTL——发版后重开面板吃到陈旧缓存，升级提示迟迟不出现（quota-watch 新版发布 17 分钟后面板仍无提示，dshmarket 同刻已见）。
@@ -248,6 +255,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.x (TBD) — release-age exclusion governance: from pre-flight refusal to govern + register (ADR-0009)
+
+- **Problem (observed live 2026-10-03)**: the 0.9.19 pre-flight precheck predicted "the official manager will block a target inside the 24h release-age window" and refused up front — while dsh-market installed the very same targets (copilot-auth@1.2.8→1.2.4 published 8 minutes prior; quota-watch@0.1.21). pnpm 11.7's default non-strict policy admits explicitly named fresh releases and auto-registers their exclusion entries; the wall the precheck predicted did not exist.
+- **Three governance hooks**: (1) pre-delegation govern — merge malformed exclusion shapes (pnpm's auto-appended dead rules) into "one rule per package, version union"; (2) post-success register — fold in-window targets into the exclusion block (scoped exact / non-scoped target+previous composite); (3) on dual-code failure (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` / `ERR_PNPM_NO_MATURE_MATCHING_VERSION`) → govern → retry the command at most once, then fall through to the existing failure translation. The web ladder gets the same three hooks.
+- **Boundary & safety**: the red line narrows by exactly one exception (desktop: this block only, delegation hooks only, atomic write, parse-failure bail-out, tracing without file dumps); govern/register hold the official same lock and fail open — any failure never blocks delegation, pnpm stays the final enforcer; profiles that explicitly set `minimumReleaseAge` or `minimumReleaseAgeStrict` still get refused up front with a retry time; the mechanism verdict follows "first rule wins" (know-how 020 §2.4 form-theory retired).
+- **Docs**: full decision record in `docs/adr/0009-release-age-exclude-governance.md` (with a fence appendix of 9 evaluated-and-skipped items and the observation contingency); GLOSSARY terms "First Rule / Release-Age Exclusion / Govern / Register / Release Age".
 
 ### Changed in 0.9.23 — two-phase Installed tab: instant list + update hints filled in place (ADR-0008)
 

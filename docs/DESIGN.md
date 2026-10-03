@@ -152,6 +152,8 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 
 与 `application`（Profile 变更事务词汇）的边界：`activation` 只是「新版本如何生效」的操作建议，不是事务状态——事务四态（applied/restart-required/overridden/failed）描述**变更本身**，`activation` 描述**生效方式**；两者不互相推导（GLOSSARY Avoid 行同源）。
 
+排除条目治理与登记（desktop 红线例外的唯一记载处为 ADR）：见 [ADR-0009](./adr/0009-release-age-exclude-governance.md)。
+
 ## 4. GUI（旗舰，v1 必须做好）
 
 0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）。
