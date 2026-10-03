@@ -23,6 +23,7 @@ import {
   readRegistryFile,
   registrySummary,
   validateRegistry,
+  verifiedPollution,
   _waitForRegistryBackgroundForTests,
 } from '../lib/core/registry.js'
 
@@ -812,6 +813,21 @@ describe('verified 字段（0.4.0 Task 19）', () => {
     const r = validateRegistry({ version: 1, plugins: [{ ...base }] })
     assert.equal(r.ok, true)
     assert.equal(r.registry.plugins[0].verified, undefined)
+  })
+})
+
+describe('verifiedPollution（know-how 022：verified 只记 DSH 运行时版本）', () => {
+  const quotaWatchVersions = ['0.0.17', '0.0.18', '0.1.0', '0.1.19', '0.1.21']
+  it('verified 混入插件自身版本 → 报告污染项（历史实证：quota-watch 曾混入 0.1.0）', () => {
+    assert.deepEqual(verifiedPollution(['0.1.7-rc.2', '0.1.0'], quotaWatchVersions), ['0.1.0'])
+    assert.deepEqual(verifiedPollution(['0.1.0'], quotaWatchVersions), ['0.1.0'])
+  })
+  it('DSH 运行时版本与插件版本线不相交 → 空数组', () => {
+    assert.deepEqual(verifiedPollution(['0.1.7-rc.2', '0.2.0-rc.2'], quotaWatchVersions), [])
+  })
+  it('verified 缺省 / 空数组 → 空', () => {
+    assert.deepEqual(verifiedPollution(undefined, quotaWatchVersions), [])
+    assert.deepEqual(verifiedPollution([], quotaWatchVersions), [])
   })
 })
 

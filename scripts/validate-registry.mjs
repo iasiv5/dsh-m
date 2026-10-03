@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { validateRegistry } from '../lib/core/registry.js'
+import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
 
 const root = dirname(fileURLToPath(import.meta.url)) + '/..'
 const raw = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'))
@@ -73,6 +73,9 @@ for (const entry of parsed.registry?.plugins || []) {
       console.warn(`⚠ ${where} verified 未覆盖当前宿主 ${runtimeVersion}——升级后必查（know-how 008）`)
     }
   }
+  // c) verified 污染检测（know-how 022）：verified 只记 DSH 运行时版本；命中插件
+  //    自身 npm 已发布版本即高度可疑（历史实证：dsh-quota-watch 曾混入插件版本 0.1.0）。
+  //    放在网络检查段统一做（需要 packument），此处仅登记入口。
 }
 
 const ghHeaders = {
@@ -84,6 +87,13 @@ const ghHeaders = {
 async function existsOnNpm(pkg) {
   const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg)}/latest`, { headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(`npm 查询 ${pkg} → HTTP ${res.status}`)
+}
+
+async function publishedVersions(pkg) {
+  const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg)}`, { headers: { accept: 'application/vnd.npm.install-v1+json' } })
+  if (!res.ok) throw new Error(`npm packument ${pkg} → HTTP ${res.status}`)
+  const doc = await res.json()
+  return Object.keys(doc.versions || {})
 }
 
 async function existsOnGithub(repo) {
@@ -114,6 +124,17 @@ for (const entry of parsed.registry?.plugins || []) {
     if (entry.npm) {
       await existsOnNpm(entry.npm)
       console.log(`✓ ${where} npm 包存在：${entry.npm}`)
+      if (Array.isArray(entry.verified) && entry.verified.length > 0) {
+        try {
+          for (const v of verifiedPollution(entry.verified, await publishedVersions(entry.npm))) {
+            warned = true
+            console.warn(`⚠ ${where} verified 含 ${v}——命中插件自身 npm 已发布版本：verified 只记 DSH 运行时版本，勿填插件版本（know-how 022）`)
+          }
+        } catch (err) {
+          warned = true
+          console.warn(`⚠ ${where} verified 污染检查跳过：${err instanceof Error ? err.message : err}`)
+        }
+      }
     }
     if (entry.github) {
       await existsOnGithub(entry.github)

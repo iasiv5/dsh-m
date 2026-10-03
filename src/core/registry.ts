@@ -975,3 +975,15 @@ export async function loadDefaultRegistry(cfg: RegistryConfig = {}, opts: Regist
   }
   return loadDefaultChain(cfg, opts, { namespace, profile, includeBundled: true })
 }
+
+/**
+ * verified 污染检测（know-how 022）：`verified` 只记 **DSH 运行时**装机实测版本；
+ * 历史上反复出现把**插件自身版本号**误填进 verified 的事故（实证：dsh-quota-watch
+ * 条目曾出现 "0.1.0"——那是 quota-watch 的插件版本，不是任何 DSH 运行时版本）。
+ * 把条目 verified 与该插件自身 npm 已发布版本求交集，非空即高度可疑（warn 不 fail：
+ * 极小概率某代 DSH 与插件版本字面重合，人工复核后放行）。
+ */
+export function verifiedPollution(verified: readonly string[] | undefined, publishedVersions: readonly string[]): string[] {
+  const own = new Set(publishedVersions)
+  return (verified ?? []).filter((v) => own.has(v))
+}
