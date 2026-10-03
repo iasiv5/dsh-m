@@ -8,7 +8,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
-### 0.9.x（待定）变更：排除条目代管——供应链等待期从「提前拒绝」到「治理 + 登记」（ADR-0009）
+### 0.9.24 变更：排除条目代管——供应链等待期从「提前拒绝」到「治理 + 登记」（ADR-0009）
 
 - **问题（实机 2026-10-03 实证）**：0.9.19 的委派前预检把「目标版本未满 24h 等待期」预测成"官方管理器必拦"并提前拒绝——同目标 dsh-market 却能装上（copilot-auth@1.2.4 发布 8 分钟、quota-watch@0.1.21 两例）。pnpm 11.7 默认非严格策略对显式点名的新版本本来就放行并自动登记排除条目，预检的墙并不存在。
 - **三挂点代管**：① 委派前治理——desktop profile 排除块的坏形态（pnpm 自追加的死规则）合并为"每包一条、版本并集复合"；② 装机成功后登记——等待期内目标并入排除块（scoped 精确单条 / 非 scoped 目标+上一版双选择器）；③ 双码失败（`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` / `ERR_PNPM_NO_MATURE_MATCHING_VERSION`）→ 治理 → 至多重试一次，仍败走既有失败翻译与账实分裂复读。web ladder 同套三挂点。
@@ -256,7 +256,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## English
 
-### Changed in 0.9.x (TBD) — release-age exclusion governance: from pre-flight refusal to govern + register (ADR-0009)
+### Changed in 0.9.24 — release-age exclusion governance: from pre-flight refusal to govern + register (ADR-0009)
 
 - **Problem (observed live 2026-10-03)**: the 0.9.19 pre-flight precheck predicted "the official manager will block a target inside the 24h release-age window" and refused up front — while dsh-market installed the very same targets (copilot-auth@1.2.4 published 8 minutes prior; quota-watch@0.1.21). pnpm 11.7's default non-strict policy admits explicitly named fresh releases and auto-registers their exclusion entries; the wall the precheck predicted did not exist.
 - **Three governance hooks**: (1) pre-delegation govern — merge malformed exclusion shapes (pnpm's auto-appended dead rules) into "one rule per package, version union"; (2) post-success register — fold in-window targets into the exclusion block (scoped exact / non-scoped target+previous composite); (3) on dual-code failure (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` / `ERR_PNPM_NO_MATURE_MATCHING_VERSION`) → govern → retry the command at most once, then fall through to the existing failure translation. The web ladder gets the same three hooks.
