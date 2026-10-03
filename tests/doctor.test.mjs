@@ -55,6 +55,13 @@ describe('detectLayout（布局判据与优先级，评审 R1.1）', () => {
     assert.equal(await detectLayout(root), 'unknown')
   })
 
+  it('unknown（判据收紧·执行评审 E1.5）：.pnpm 仅 lock.yaml + 点文件 → 仍不算 isolated', async () => {
+    mkdirSync(join(root, 'node_modules', '.pnpm'), { recursive: true })
+    writeFileSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), '# vestigial\n')
+    writeFileSync(join(root, 'node_modules', '.pnpm', '.DS_Store'), 'junk')
+    assert.equal(await detectLayout(root), 'unknown')
+  })
+
   it('workspace 声明存在但无 nodeLinker 键 → 不构成 hoisted 判据，按 .pnpm 判', async () => {
     writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
     mkdirSync(join(root, 'node_modules', '.pnpm', 'foo@1.0.0'), { recursive: true })
@@ -431,12 +438,16 @@ describe('dshm doctor（CLI 子命令）', () => {
     assert.ok(report.summary.unknowns.some((u) => u.includes('stale')))
   })
 
-  it('健康 profile → exit 0，人读输出含 summary 行', async () => {
+  it('健康 profile → exit 0，人读输出含 summary 行；残留代表样例呈现且零告警（执行评审 E1.4）', async () => {
     writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
+    writeFileSync(join(profile, 'package.json.bak-20260903'), '{}') // 有残留但零告警
     const r = runCli(['doctor'], home)
     assert.equal(r.status, 0)
     assert.ok(r.stdout.includes('体检') || r.stdout.includes('doctor') || r.stdout.includes('农场'))
-    assert.ok(r.stdout.includes('悬空 0') || r.stdout.includes('dangling 0') || /\d+/.test(r.stdout))
+    assert.ok(r.stdout.includes('[bak-file]')) // 代表样例（kind 标签）
+    assert.ok(r.stdout.includes('package.json.bak-20260903'))
+    assert.ok(!r.stdout.includes('❌')) // 零告警：残留不产生 error/warning
+    assert.ok(!r.stdout.includes('⚠️'))
   })
 
   it('--profile desktop 被拒绝（CLI 恒 web profile）', async () => {

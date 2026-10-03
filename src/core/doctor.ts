@@ -118,7 +118,7 @@ export async function detectLayout(profileDir: string): Promise<'hoisted' | 'iso
   } catch {
     return 'unknown'
   }
-  const hasPackageDir = entries.some((e) => e !== 'lock.yaml')
+  const hasPackageDir = entries.some((e) => !e.startsWith('.') && e !== 'lock.yaml')
   return hasPackageDir ? 'isolated' : 'unknown'
 }
 
@@ -177,7 +177,11 @@ export async function analyzeFarm(
   const unknowns: string[] = []
   let unresolvedVersionCount = 0
 
-  // 祖先链层级收集：profileDir 起向上，含 DSH_HOME 边界（boundary 是祖先时）；越界或到根即止
+  // 祖先链层级收集：profileDir 起向上，含 DSH_HOME 边界（boundary 是祖先时）；越界或到根即止。
+  // 边界不可达的说明（执行评审 E1.6）：两生产通路的 profileDir 恒在 dshHome() 之下
+  // （CLI=env.ts webProfileDir()、method=host ctx.profile.dir，均无用户可控的目录入参），
+  // boundary 不可达仅限误用场景；此时上行至根由 MAX_ANCESTOR_LEVELS=16 有界兜底，
+  // 不会无限扫描，也不存在「止于起点」会误伤的合法非 DSH_HOME 用例（当前不存在该通路）。
   const boundary = resolve(dshHome())
   const levels: string[] = []
   let cur = resolve(profileDir)

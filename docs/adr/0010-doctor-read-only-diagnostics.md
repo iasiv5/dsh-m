@@ -9,7 +9,7 @@ dsh-m 至今没有任何诊断能力：profile 出问题时的排查全靠 know-
 1. **新增体检（Doctor）子系统**：`src/core/doctor.ts` 纯文件系统分析——无进程、无网络、无写入，任意时刻可安全调用；报告 schema 版本化（`dsh-m/doctor/v1`），后续检查项扩展 finding 枚举不破坏消费方。
 2. **三级严重度从第一天编译进数据结构**：error（断链或必然阻断启动）/ warning（确认异常但不阻止启动）/ 结构化清单（只列不警、零告警渲染），另设 unknown≠broken 第三态（看不见的对象显式标 unknown 并沉默，不推断为损坏）。每条告警必须说清三件事：发生了什么 / 为什么 / 现在怎么办。
 3. **三端落位 = 方案 D**：`/dshm` 单路由新增 `doctor` method（照 `registry-diagnose` 先例）+ CLI `dshm doctor` 子命令；**不新增第 9 个 agent 工具**——工具描述是宿主 agent 的常驻上下文，行为面代价大于收益，且「诊断」触发词宽、易与 `dshm_list` / `dshm_outdated` 抢活；确有「对 agent 说帮我体检」的高频场景再议（届时描述必须窄化为「只读体检，不修复」）。
-4. **Day1 范围三项**（本冲刺）：农场测活（悬空 = error，指向非当前运行时 store = 提示级）、残留物清点（结构化清单零告警：无 package.json 目录 / 空 scope 目录 / `*_tmp_*` 暂存 / `*.bak-*` 备份）、账实一致（pin / 实装 / lock 三处任一不符 = warning）。Day2 三项（bundle 栈完整性、全 profile 重复 loader id、peer 漂移 FS 版）与 GUI 折叠区后置为下一批。
+4. **Day1 范围三项**（本冲刺）：农场测活（悬空 = error，指向非当前运行时 store = 提示级；**2026-10-04 补记（执行评审 E1.1）：stale 判定仅限 `@deepseek-ai/dsh` 伞包**——非伞包核心包版本与运行时版本分属不同命名空间，逐包比较必然大面积误报（cordis@4.0.1 之类），误报纪律禁止；非伞包 targetVersion 仅信息呈现）、残留物清点（结构化清单零告警：无 package.json 目录 / 空 scope 目录 / `*_tmp_*` 暂存 / `*.bak-*` 备份）、账实一致（pin / 实装 / lock 三处任一不符 = warning）。Day2 三项（bundle 栈完整性、全 profile 重复 loader id、peer 漂移 FS 版）与 GUI 折叠区后置为下一批。
 5. **边界与修复责任外移**：绝不转储 `cordis.patch.yml` 等含密钥文件内容，只报结构化事实（包名 / 路径 / 版本号）；双布局（hoisted / isolated）适配，布局判定为 unknown 时显式标注扫描受限而非空报告冒充健康；双市场并存列为信息级事实；doctor 永不写不删——修复建议以文字 / 外部剧本形态给出（dsh-market 教训：残留目录的删除正是常被进程句柄拒绝的操作，诊断进程做修复 = 越权踩写侧事务）。
 6. **web profile 先行**：CLI 恒 web profile 的既有惯例不变；desktop profile 诊断不在 Day1（desktop 包操作已委派官方管理器，可见面不同，需要时另议）。
 

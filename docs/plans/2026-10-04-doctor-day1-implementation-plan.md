@@ -78,7 +78,7 @@
   - Consumes: Task 1 的 `FarmLinkItem` 类型；`src/core/dsh-version.ts` 的 `readLauncherPackageVersion`（仅此纯 FS 函数，禁用 `resolveDshVersion` 的 spawn 回退）。
   - Produces: `export async function analyzeFarm(profileDir: string, layout: 'hoisted' | 'isolated' | 'unknown', runtimeVersion: string | null): Promise<{ farm: FarmLinkItem[]; findings: DoctorFinding[]; unknowns: string[] }>`——
     - 遍历规则：**从 profileDir 逐级向上至 DSH_HOME/homedir 边界，扫描每级 node_modules/@deepseek-ai**。（本机实况：农场 236 条全部位于 profile **父目录**的 node_modules；含 pnpm-workspace.yaml 的「工作区根」= profile 自身，其 @deepseek-ai 下 0 条链接——遍历不得以「工作区根」为限，否则 0 命中空转。）
-    - 悬空目标 → severity 'error'（check 'farm-liveness'，title 含包名，hint 给「重装该包或按 know-how 014 重跑 heal」）；`stale-target` → 只进 `farm` 清单不产生 finding。
+    - 悬空目标 → severity 'error'（check 'farm-liveness'，title 含包名，hint 给「重装该包或按 know-how 014 重跑 heal」）；`stale-target` → 只进 `farm` 清单不产生 finding。**（2026-10-04 实现期补记，执行评审 E1.1）**：stale 判定仅对 `@deepseek-ai/dsh` 伞包生效——lockstep 店内非伞包（cordis 4.x / dsh-tools 0.1.x 等）与运行时版本不在同一命名空间，逐包比较会把 cordis@4.0.1 等大面积误标 stale，违反三级严重度的误报纪律；非伞包 targetVersion 仅作信息呈现，不参与判定。
     - `targetVersion` 两级提取：目标目录名版本段 `@deepseek-ai+<pkg>@<ver>_<hash>` 优先；无版本段则读链接目标目录 package.json 的 `version` 字段（包元数据只读，不触密钥红线——本机 236 条中 235 条指向无版本段的 `.pnpm/node_modules/@deepseek-ai/<pkg>` 形态，必须走第二级）；两级皆失败置 null 并聚合计入 unknowns（unknowns 呈现为聚合计数 + 代表例，不得逐条刷屏）。
     - `runtimeVersion === null` 时：全部链不判 stale、记 healthy，unknowns 记一条聚合说明「运行时版本未解析，stale 判定降级」。
 - 验证范围：悬空 / 陈旧（两种目标形态）/ 健康三态判对；祖先链遍历命中「父目录共享店」形态；runtimeVersion=null 降级路径判对。

@@ -486,7 +486,15 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         out('\n指向旧运行时 store（信息级，至多列 3 条，清单零告警）：')
         for (const x of stale) out(`  • ${x.name} → ${x.targetVersion}`)
       }
-      if (s.residueCount > 0) out(`\n残留物：${s.residueCount} 项只列不警（可见而非清理，全量见 --json）。`)
+      if (s.residueCount > 0) {
+        const kindCounts = new Map<string, number>()
+        for (const x of report.residue) kindCounts.set(x.kind, (kindCounts.get(x.kind) ?? 0) + 1)
+        out(
+          `\n残留物：${s.residueCount} 项只列不警（${[...kindCounts].map(([k, n]) => `${k} ${n}`).join(' · ')}；可见而非清理，全量见 --json）：`,
+        )
+        for (const x of report.residue.slice(0, 3)) out(`  • [${x.kind}] ${x.path}${x.note ? `（${x.note}）` : ''}`)
+        if (s.residueCount > 3) out('  …')
+      }
       for (const u of s.unknowns) out(`ℹ️  ${u}`)
       if (report.dualMarket) out(`ℹ️  双市场并存：${report.dualMarket.join(' + ')} 同时在装（写侧互不知晓，排查时留意）。`)
       if (errs.length === 0) out('\n未发现 error 级问题。')
