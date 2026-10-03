@@ -208,6 +208,8 @@ export interface MarketResult {
   offset: number
   limit: number
   categoryCounts: CategoryCounts
+  /** filtered 集合（分区 ∩ query ∩ category）按 community 标记分桶（0.9.25 跨区搜索摘要行数据源） */
+  sourceCounts: { primary: number; community: number }
   registryState: RegistryState
   installedComplete: boolean
   latestComplete: boolean
@@ -724,6 +726,7 @@ export async function listMarket(
       offset: 0,
       limit: maxLimit,
       categoryCounts: zeroCounts(),
+      sourceCounts: { primary: 0, community: 0 },
       registryState: timeoutRegistryState(cfg),
       installedComplete: false,
       latestComplete: false,
@@ -781,6 +784,9 @@ export async function listMarket(
           .map((s) => s.entry)
       : afterSort
   const total = ordered.length
+  // sourceCounts 分桶（0.9.25 跨区搜索摘要行）：filtered（分区 ∩ query ∩ category）计数，与排序/分页无关
+  const communityHitCount = filtered.reduce((n, entry) => n + (isCommunityEntry(entry) ? 1 : 0), 0)
+  const sourceCounts = { primary: filtered.length - communityHitCount, community: communityHitCount }
   const limit = clampLimit(opts.limit, maxLimit)
   let offset = normalizeOffset(opts.offset)
   if (total > 0 && offset >= total) offset = Math.floor((total - 1) / limit) * limit
@@ -854,6 +860,7 @@ export async function listMarket(
     offset,
     limit,
     categoryCounts: counts,
+    sourceCounts,
     registryState,
     installedComplete,
     latestComplete,

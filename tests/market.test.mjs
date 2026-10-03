@@ -1171,6 +1171,28 @@ describe('M1 Task 5：合并市场', () => {
     assert.equal(unfiltered.total, 1, 'total 去重：跨桶条目仍是一条')
   })
 
+  it('⑭ sourceCounts 分桶计数（0.9.25 跨区搜索摘要行）：filtered 集合按 community 标记分桶，两处 return 均携带', async () => {
+    const primary = [
+      { id: 'p-1', name: 'Alpha', description: 'alpha tool', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+      { id: 'p-2', name: 'B', description: 'db', category: 'ui', tags: [], source: 'npm', npm: 'pkg-2' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('alpha-c', 'o1'),
+      communityRaw('beta', 'o2'),
+      communityRaw('gamma', 'o3'),
+    ]))
+    const all = await listMarket(cfg, { withLatest: false, source: 'all' }, deps)
+    assert.deepEqual(all.sourceCounts, { primary: 2, community: 3 })
+    const searched = await listMarket(cfg, { withLatest: false, source: 'all', query: 'alpha' }, deps)
+    assert.deepEqual(searched.sourceCounts, { primary: 1, community: 1 })
+    assert.equal(searched.total, 2)
+    const rc = await listMarket(cfg, { withLatest: false, source: 'community' }, deps)
+    assert.deepEqual(rc.sourceCounts, { primary: 0, community: 3 })
+    const rp = await listMarket(cfg, { withLatest: false, source: 'primary' }, deps)
+    assert.deepEqual(rp.sourceCounts, { primary: 2, community: 0 })
+  })
+
   it('⑨ sort downloads：无计数 ≠ 0——无数据恒排有数据之后（组内 stars 降序），dir 只翻转有数据组', async () => {
     const base = fakeDeps()
     const { deps } = withCommunity(base, communityLoaded([

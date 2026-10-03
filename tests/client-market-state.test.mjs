@@ -19,6 +19,7 @@ const {
   marketNotice,
   zoneChips,
   pageItems,
+  searchSourceOf,
 } = ms
 
 describe('旧混排导出已删除（0.7.0 Task 8）', () => {
@@ -81,6 +82,22 @@ describe('normalizeMarketQuery（分区化）', () => {
 
   it('primaryOnly 旧字段不再存在', () => {
     assert.equal('primaryOnly' in normalizeMarketQuery({}, 'community'), false)
+  })
+})
+
+describe('searchSourceOf（0.9.25 跨区搜索）', () => {
+  it('query 非空 → 全局 all（无视本区 source）；空 query → 本区浏览 source', () => {
+    assert.equal(searchSourceOf({ query: 'x' }), 'all')
+    assert.equal(searchSourceOf({ query: 'x', source: 'primary' }), 'all', '搜索态无视本区 source')
+    assert.equal(searchSourceOf({ query: 'x', source: 'community' }), 'all')
+    assert.equal(searchSourceOf({ query: '', source: 'community' }), 'community')
+    assert.equal(searchSourceOf({ query: '', source: 'primary' }), 'primary')
+    assert.equal(searchSourceOf({ source: 'primary' }), 'primary', '缺 query 键视为浏览态')
+  })
+  it('脏输入防御：非对象/缺 source → community 兜底', () => {
+    assert.equal(searchSourceOf(undefined), 'community')
+    assert.equal(searchSourceOf(null), 'community')
+    assert.equal(searchSourceOf({}), 'community')
   })
 })
 
@@ -160,6 +177,15 @@ describe('normalizeMarketResponse（保留语义 + categoryLabels/categoryLabels
     assert.equal(page.community.categoryLabels.bad, undefined, '非 string 值剔除')
     assert.equal(page.community.categoryLabelsEn.theme, 'Themes & Appearance')
     assert.equal(page.community.categoryLabelsEn.bad, undefined, '非 string 值剔除')
+  })
+
+  it('sourceCounts 收敛（0.9.25）：形状合法透传；缺失/畸形不产生键（摘要行降级信号）', () => {
+    const ok = normalizeMarketResponse({ items: [], total: 0, offset: 0, limit: 24, sourceCounts: { primary: 2, community: 3 } })
+    assert.deepEqual(ok.sourceCounts, { primary: 2, community: 3 })
+    for (const raw of [{}, { sourceCounts: 'x' }, { sourceCounts: { primary: 1 } }, { sourceCounts: { primary: 'a', community: 2 } }, { sourceCounts: [1, 2] }]) {
+      const page = normalizeMarketResponse(raw)
+      assert.equal('sourceCounts' in page, false, JSON.stringify(raw))
+    }
   })
 
   it('缺失/错误字段给出安全空页；community 缺省形状不伪造', () => {

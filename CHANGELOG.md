@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.25 变更：跨区搜索——浏览分区、搜索全局（社区 + 精选一并命中）
+
+- **跨区搜索**：任一分区（社区/精选）的搜索框升级为全局——`query` 非空时底层查询切 `source=all`，两分区条目统一相关性排序；清空关键词回到本区浏览态。分区制浏览（ADR-0004）与 `dshm_search`/CLI 三端同序不动；服务端唯一增量是 `MarketResult.sourceCounts` 分桶计数。
+- **搜索态呈现**：摘要行「⭐ 精选 N · 社区 M」精确计数（`!loading` 门控防旧数字闪现）；精选命中页内置顶分组（段头各自仅在对应段非空时渲染，跨两列 grid）；非社区卡补「精选」徽章；分类 chips 搜索态隐藏、「筛选」按钮随摘要行保留（搜索态只剩页大小组，排序被相关性优先覆盖）；翻页回顶锚点随态切换。
+- **修复**：分区 tab 计数改从恒定字段推导（社区 = `acceptedCount - displaced`、精选 = `registryState.count`），不再随查询变化（此前读「最近一次查询的 total」，跨区搜索会污染计数）；搜索提交时清空激活分类（chips 已隐藏，残留分类会成为不可见过滤）。
+- **降级**：`sourceCounts` 缺失/畸形时摘要行整体不渲染，列表行为不变；旧快照/旧宿主响应形状漂移免疫。
+
 ### 0.9.24 变更：排除条目代管——供应链等待期从「提前拒绝」到「治理 + 登记」（ADR-0009）
 
 - **问题（实机 2026-10-03 实证）**：0.9.19 的委派前预检把「目标版本未满 24h 等待期」预测成"官方管理器必拦"并提前拒绝——同目标 dsh-market 却能装上（copilot-auth@1.2.4 发布 8 分钟、quota-watch@0.1.21 两例）。pnpm 11.7 默认非严格策略对显式点名的新版本本来就放行并自动登记排除条目，预检的墙并不存在。
@@ -255,6 +262,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.25 — cross-zone search: browsing stays zoned, searching goes global (community + curated together)
+
+- **Cross-zone search**: either zone's (Community/Curated) search box now searches globally — with a non-empty `query` the underlying query switches to `source=all` and both zones' entries are ranked by the shared relevance pipeline; clearing the keyword returns to the zone's own browse state. The zoned browsing model (ADR-0004) and the `dshm_search`/CLI shared ordering are untouched; the only server-side addition is the `MarketResult.sourceCounts` bucket count.
+- **Search-mode presentation**: a summary line "⭐ Curated N · Community M" with exact per-zone counts (`!loading`-gated so stale numbers never flash); curated hits grouped on top within the page (section headers render only when their section is non-empty, spanning both grid columns); non-community cards gain a "Curated" badge; category chips hide during search while the Filter button moves onto the summary line (page-size group only — relevance outranks sort while searching); the pagination scroll anchor follows the mode.
+- **Fixes**: zone tab counts now derive from stable fields (community = `acceptedCount - displaced`, curated = `registryState.count`) instead of "the last query's total" — cross-zone searches no longer pollute them; committing a search clears the active category (chips are hidden, so a leftover category would act as an invisible filter).
+- **Degradation**: a missing/malformed `sourceCounts` hides the summary line entirely; list behavior unchanged; old snapshots/old host responses stay shape-drift immune.
 
 ### Changed in 0.9.24 — release-age exclusion governance: from pre-flight refusal to govern + register (ADR-0009)
 

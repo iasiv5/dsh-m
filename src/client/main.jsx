@@ -10,8 +10,8 @@ const { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } = R
 const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
-// 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice } = require("./market-state.js");
+// 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
@@ -43,7 +43,7 @@ const ZH = {
   "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
   "fav.add": "收藏", "fav.remove": "取消收藏",
   "common.clear": "清空",
-  "search.ph": "搜索名称 / 描述 / 标签…",
+  "search.ph": "搜索名称 / 描述 / 标签（社区 + 精选）…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
   "market.loading": "加载收录清单中… ", "market.empty": "无匹配插件，试试其他关键词或分类",
   "installed.loading": "读取已装列表中… ", "installed.empty": "当前 profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
@@ -85,7 +85,7 @@ const ZH = {
   "filter.dir.desc": "降序", "filter.dir.asc": "升序",
   "market.page.prev": "上一页", "market.page.next": "下一页", "market.page.info": "第 {page} / {pages} 页 · 共 {total} 条",
   "notice.toolview.err": "收录清单暂不可用",
-  "badge.community": "社区收录",
+  "badge.community": "社区收录", "search.summary": "⭐ 精选 {n} · 社区 {m}",
   "community.fallback": "收录清单不可用，当前展示社区清单条目",
   "detail.capabilities": "能力披露", "detail.capabilities.unscanned": "未扫描 ≠ 未检出", "detail.redlines": "能力红线",
   "guard.blocked": "安装被装后守卫拦截", "guard.compstatus": "补偿终态", "guard.repairbasis": "修复依据",
@@ -151,7 +151,7 @@ const EN = {
   "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
   "fav.add": "Bookmark", "fav.remove": "Remove bookmark",
   "common.clear": "Clear",
-  "search.ph": "Search name, description, tags…",
+  "search.ph": "Search all plugins — name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
   "market.loading": "Loading listings… ", "market.empty": "No matching plugins — try another keyword or category",
   "installed.loading": "Reading installed list… ", "installed.empty": "No DSH plugins installed in this profile", "installed.none": "Not installed",
@@ -193,7 +193,7 @@ const EN = {
   "filter.dir.desc": "Descending", "filter.dir.asc": "Ascending",
   "market.page.prev": "Previous", "market.page.next": "Next", "market.page.info": "Page {page} / {pages} · {total} listings",
   "notice.toolview.err": "Registry temporarily unavailable",
-  "badge.community": "Community",
+  "badge.community": "Community", "search.summary": "⭐ Curated {n} · Community {m}",
   "community.fallback": "Registry unavailable — showing community listings",
   "detail.capabilities": "Capabilities", "detail.capabilities.unscanned": "Not scanned ≠ not detected", "detail.redlines": "Capability red lines",
   "guard.blocked": "Install blocked by post-install guard", "guard.compstatus": "Compensation status", "guard.repairbasis": "Repair basis",
@@ -389,6 +389,8 @@ const CSS = `
 .dsvm-favbtn.on{color:#e0a33c}
 .dsvm-reddot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-error-primary,#ef4444);margin-left:5px;vertical-align:middle}
 .dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.dsvm-searchmeta{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:2px 0}
+.dsvm-grouphead{grid-column:1/-1;color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;line-height:16px;margin:2px 0 0;font-weight:600;letter-spacing:.02em}
 @media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
@@ -592,7 +594,8 @@ function useMarketData(zone = "community") {
     const params = {
       query: nextQuery.query || undefined,
       category: nextQuery.category || undefined,
-      source: nextQuery.source || "community",
+      // 0.9.25 跨区搜索：query 非空 → source=all（社区+精选一并命中），浏览态维持本区 source
+      source: searchSourceOf(nextQuery),
       ...(nextQuery.sort ? { sort: nextQuery.sort } : {}),
       offset: nextQuery.offset,
       limit: nextQuery.limit,
@@ -1185,6 +1188,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
+  // 0.9.25 跨区搜索态派生：query 非空即搜索（两区通用「搜索=全局、浏览=分区」；收藏区 market=null 时恒 false）
+  const searching = Boolean(query && query.query);
   const [detailId, setDetailId] = useState(null);
   // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null——必须在 favorites 早退之前（hooks 规则）
   const [compatConfirm, setCompatConfirm] = useState(null);
@@ -1227,7 +1232,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   const gotoPage = (p) => {
     updateQuery({ offset: Math.max(0, (p - 1) * limit) });
     if (typeof document !== "undefined") {
-      const el = document.querySelector(".dsvm-chipswrap");
+      // 0.9.25：搜索态 chips 行隐藏 → 摘要行接管回顶锚点
+      const el = document.querySelector(searching ? ".dsvm-searchmeta" : ".dsvm-chipswrap");
       if (el && el.scrollIntoView) el.scrollIntoView({ block: "start" });
     }
   };
@@ -1247,12 +1253,17 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     "div",
     { className: "dshm-chips" },
     ...ZONE_TABS.map((z) => {
-      // 计数固定取各自分区自身的数据（修复：不再用当前激活 zone 的 total 冒充）
+      // 计数取分区恒定值，与查询状态无关（0.9.25 修复：不再读「最近一次查询的 total」——跨区搜索会污染 tab 计数）：
+      // 社区 = 存活社区条目（acceptedCount - displaced）；精选 = 主清单条数（registryState.count）；社区不可用时计 0（渲染层隐藏）
+      const cd = markets.community.data;
+      const pd = markets.primary.data;
       const zCount =
         z.id === "community"
-          ? (markets.community.data && markets.community.data.total) || 0
+          ? (cd && cd.community.status !== "disabled" && cd.community.status !== "unavailable"
+              ? Math.max(0, cd.community.acceptedCount - cd.community.displaced)
+              : 0)
           : z.id === "primary"
-            ? (markets.primary.data && markets.primary.data.total) || 0
+            ? (pd && pd.registryState.count) || 0
             : favorites && favorites.list.length;
       return h(
         "button",
@@ -1271,7 +1282,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     ? h(
         "div",
         { className: "dsvm-searchrow" },
-        h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery({ query: v }) }),
+        h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery(v ? { query: v, category: null } : { query: v }) }),
       )
     : null;
   const zoneBar = zoneChips;
@@ -1430,20 +1441,25 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     ? h(
         "div",
         { className: "dsvm-filterpop", onClick: (e) => e.stopPropagation() },
-        h(
-          "div",
-          { className: "dsvm-filtergroup" },
-          h("div", { className: "dsvm-filtergt" }, lookup("filter.sortfield")),
-          ...[["downloads", "filter.field.downloads"], ["stars", "filter.field.stars"], ["added", "filter.field.added"]].map(([f, key]) =>
-            optRow(lookup(key), curSortField === f, () => updateQuery({ sort: { field: f, dir: curSortDir } }))),
-        ),
-        h(
-          "div",
-          { className: "dsvm-filtergroup" },
-          h("div", { className: "dsvm-filtergt" }, lookup("filter.sortdir")),
-          ...[["desc", "filter.dir.desc"], ["asc", "filter.dir.asc"]].map(([d, key]) =>
-            optRow(lookup(key), curSortDir === d, () => updateQuery({ sort: { field: curSortField, dir: d } }))),
-        ),
+        // 0.9.25 跨区搜索：搜索态排序两组隐藏（query 命中时相关性恒优先，排序只剩 tie-break）；页大小组恒在
+        ...(searching
+          ? []
+          : [
+              h(
+                "div",
+                { className: "dsvm-filtergroup" },
+                h("div", { className: "dsvm-filtergt" }, lookup("filter.sortfield")),
+                ...[["downloads", "filter.field.downloads"], ["stars", "filter.field.stars"], ["added", "filter.field.added"]].map(([f, key]) =>
+                  optRow(lookup(key), curSortField === f, () => updateQuery({ sort: { field: f, dir: curSortDir } }))),
+              ),
+              h(
+                "div",
+                { className: "dsvm-filtergroup" },
+                h("div", { className: "dsvm-filtergt" }, lookup("filter.sortdir")),
+                ...[["desc", "filter.dir.desc"], ["asc", "filter.dir.asc"]].map(([d, key]) =>
+                  optRow(lookup(key), curSortDir === d, () => updateQuery({ sort: { field: curSortField, dir: d } }))),
+              ),
+            ]),
         h(
           "div",
           { className: "dsvm-filtergroup" },
@@ -1469,6 +1485,98 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
       )
     : null;
 
+  // 0.9.25 跨区搜索摘要行：两分区命中精确计数（!loading && !error 门控——fetch 期间 data 保留旧浏览态响应，
+  // 其 sourceCounts 形如 {primary:0, community:N} 会闪现错误数字，门控后随新响应同帧出现；
+  // error 态一并隐藏——请求失败时卡片位已是错误行，旧浏览态计数不得冒充搜索命中数）；
+  // 行尾挂筛选触发器（搜索态 chips 行隐藏，filterTrigger 随行迁移；维持社区区限定）
+  const sc = data && data.sourceCounts;
+  const summaryRow = searching && sc && !loading && !error
+    ? h(
+        "div",
+        { className: "dsvm-searchmeta" },
+        h("span", null, lookup("search.summary", { n: sc.primary, m: sc.community })),
+        filterTrigger,
+      )
+    : null;
+
+  // 卡片渲染单例（0.9.25）：浏览态单列表与搜索态两段分组共用同一映射；搜索态给非社区卡补「精选」徽章
+  const cardOf = (it) =>
+    Card({
+      key: it.id,
+      icon: h(Icon, { entry: it }),
+      name: it.name,
+      badges: [
+        activeInstallTarget === it.id
+          ? h(
+              "button",
+              {
+                className: "dshm-badge warn",
+                key: "busy",
+                title: lookup("op.panel.jump"),
+                onClick: (e) => {
+                  e.stopPropagation();
+                  // 评审 P7：徽章点击打开（滚动到）操作面板
+                  if (typeof document !== "undefined") {
+                    const el = document.querySelector(".dsvm-ops");
+                    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }
+                },
+              },
+              lookup("op.status.running"),
+            )
+          : null,
+        it.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
+        it.community !== true && Array.isArray(it.verified) && it.verified.length ? h("span", { className: "dshm-badge", key: "v", title: it.verified.join("、") }, lookup("badge.verified")) : null,
+        it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
+        it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
+        it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
+        searching && it.community !== true ? h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")) : null,
+        h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
+      ],
+      byline: it.community === true
+        ? [
+            it.owner ? { text: `by ${it.owner}` } : null,
+            typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: String(it.downloads) } : null,
+            typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
+          ].filter(Boolean)
+        : (it.tags || []).map((t) => ({ text: `#${t}` })),
+      desc: browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description,
+      clampLines: it.community === true ? 5 : 2,
+      sub: [
+        it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
+        it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
+        it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
+      ].filter(Boolean).join(" · "),
+      links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
+      onToggle: () => setDetailId(it.id),
+      topRight: favorites
+        ? h("button", {
+            className: `dsvm-favbtn${favorites.list.some((f) => f.id === it.id) ? " on" : ""}`,
+            title: favorites.list.some((f) => f.id === it.id) ? lookup("fav.remove") : lookup("fav.add"),
+            onClick: (e) => {
+              e.stopPropagation();
+              favorites.toggle(snapshotOf(it));
+            },
+          },
+          favorites.list.some((f) => f.id === it.id) ? "★" : "☆")
+        : null,
+    });
+
+  // 搜索态页内分组：精选命中置顶成段；两个段头各自仅在对应段非空时渲染（三组合全覆盖，不渲染悬空段头）；
+  // 段头是 .dshm-cards 容器内独立 DOM 元素（非 items 数组插桩），跨列占满由 .dsvm-grouphead 的
+  // grid-column:1/-1 保证（.dshm-cards 为两列 grid，main.jsx 内嵌样式表）
+  const curatedHits = searching ? items.filter((it) => it.community !== true) : [];
+  const communityHits = searching ? items.filter((it) => it.community === true) : [];
+  const marketCards =
+    searching && curatedHits.length > 0
+      ? [
+          h("div", { className: "dsvm-grouphead", key: "gh-c" }, `⭐ ${lookup("zone.primary")}`),
+          ...curatedHits.map(cardOf),
+          ...(communityHits.length > 0 ? [h("div", { className: "dsvm-grouphead", key: "gh-m" }, lookup("zone.community"))] : []),
+          ...communityHits.map(cardOf),
+        ]
+      : items.map(cardOf);
+
   return h(
     React.Fragment,
     null,
@@ -1479,14 +1587,18 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
       ? h("div", { className: "dshm-err" }, lookup(notice.notice.key))
       : null,
     notice && notice.communityFallback ? h("div", { className: "dshm-hint" }, lookup("community.fallback")) : null,
-    h(ZoneChips, {
-      zone,
-      counts,
-      labels: communityLabels(data),
-      active: query.category,
-      onPick: (id) => updateQuery({ category: id, offset: 0 }),
-      trailing: filterTrigger,
-    }),
+    // 0.9.25 跨区搜索：搜索态隐藏分类 chips（两套分类法跨区口径失义）、「筛选」随摘要行保留；浏览态照旧
+    summaryRow,
+    searching
+      ? null
+      : h(ZoneChips, {
+          zone,
+          counts,
+          labels: communityLabels(data),
+          active: query.category,
+          onPick: (id) => updateQuery({ category: id, offset: 0 }),
+          trailing: filterTrigger,
+        }),
     // 0.9.15：安装目标条目的详情 Modal 打开时，进度行入 Modal、底层行让位（避免隔着遮罩双重透出）；
     // Modal 关闭后底层行照常回归（关闭弹窗的安装仍可见）
     activeInstallTarget && !(detailItem && detailItem.id === activeInstallTarget)
@@ -1504,65 +1616,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
               h(
                 "div",
                 { className: "dshm-cards" },
-                items.map((it) => Card({
-                  key: it.id,
-                  icon: h(Icon, { entry: it }),
-                  name: it.name,
-                  badges: [
-                    activeInstallTarget === it.id
-                      ? h(
-                          "button",
-                          {
-                            className: "dshm-badge warn",
-                            key: "busy",
-                            title: lookup("op.panel.jump"),
-                            onClick: (e) => {
-                              e.stopPropagation();
-                              // 评审 P7：徽章点击打开（滚动到）操作面板
-                              if (typeof document !== "undefined") {
-                                const el = document.querySelector(".dsvm-ops");
-                                if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
-                              }
-                            },
-                          },
-                          lookup("op.status.running"),
-                        )
-                      : null,
-                    it.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
-                    it.community !== true && Array.isArray(it.verified) && it.verified.length ? h("span", { className: "dshm-badge", key: "v", title: it.verified.join("、") }, lookup("badge.verified")) : null,
-                    it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
-                    it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
-                    it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
-                    h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
-                  ],
-                  byline: it.community === true
-                    ? [
-                        it.owner ? { text: `by ${it.owner}` } : null,
-                        typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: String(it.downloads) } : null,
-                        typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
-                      ].filter(Boolean)
-                    : (it.tags || []).map((t) => ({ text: `#${t}` })),
-                  desc: browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description,
-                  clampLines: it.community === true ? 5 : 2,
-                  sub: [
-                    it.latestVersion ? lookup("sub.latest", { v: it.latestVersion }) : it.latestTag ? it.latestTag : it.latestSha ? lookup("sub.head", { sha: it.latestSha.slice(0, 7) }) : null,
-                    it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
-                    it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
-                  ].filter(Boolean).join(" · "),
-                  links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
-                  onToggle: () => setDetailId(it.id),
-                  topRight: favorites
-                    ? h("button", {
-                        className: `dsvm-favbtn${favorites.list.some((f) => f.id === it.id) ? " on" : ""}`,
-                        title: favorites.list.some((f) => f.id === it.id) ? lookup("fav.remove") : lookup("fav.add"),
-                        onClick: (e) => {
-                          e.stopPropagation();
-                          favorites.toggle(snapshotOf(it));
-                        },
-                      },
-                      favorites.list.some((f) => f.id === it.id) ? "★" : "☆")
-                    : null,
-                })),
+                ...marketCards,
               ),
               pages > 1
                 ? h(

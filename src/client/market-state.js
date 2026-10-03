@@ -69,6 +69,14 @@ export function normalizeMarketQuery(input, zone = 'community') {
 
 const sameSort = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
+/** 搜索态 source 覆盖（0.9.25 跨区搜索）：query 非空 → 'all'（社区+精选一并命中，浏览保持分区）；
+ *  空 query/浏览态 → 本区 source（防御缺 source 的旧调用方，兜底 community）。 */
+export function searchSourceOf(query) {
+  const q = query && typeof query === 'object' ? query : {}
+  if (typeof q.query === 'string' && q.query !== '') return 'all'
+  return q.source === 'primary' ? 'primary' : 'community'
+}
+
 /** query/category/sort 变化时把 offset 归零（回到第一页）；同筛选下保留分页。 */
 export function resetPageOnFilterChange(previous, next) {
   const prev = previous && typeof previous === 'object' ? previous : {}
@@ -119,6 +127,14 @@ export function normalizeMarketResponse(raw) {
       if (typeof value === 'number' && Number.isFinite(value)) categoryCounts[key] = value
     }
   }
+  // sourceCounts 收敛（0.9.25 跨区搜索摘要行）：形状合法才透传，缺失/畸形不产生键（摘要行降级信号）
+  let sourceCounts
+  const sc = body.sourceCounts
+  if (sc && typeof sc === 'object' && !Array.isArray(sc)) {
+    if (typeof sc.primary === 'number' && Number.isFinite(sc.primary) && typeof sc.community === 'number' && Number.isFinite(sc.community)) {
+      sourceCounts = { primary: sc.primary, community: sc.community }
+    }
+  }
   const rs = body.registryState && typeof body.registryState === 'object' && !Array.isArray(body.registryState)
     ? body.registryState
     : {}
@@ -151,6 +167,7 @@ export function normalizeMarketResponse(raw) {
     offset,
     limit,
     categoryCounts,
+    ...(sourceCounts ? { sourceCounts } : {}),
     registryState,
     community,
     installedComplete: body.installedComplete === true,
