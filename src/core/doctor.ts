@@ -17,7 +17,9 @@
 import { readdir, readFile, lstat, stat, readlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
+import { satisfies } from 'semver'
 import { dshHome } from './env.js'
+import { readProfileDeps, resolvePluginDir, readPkgJson } from './installed.js'
 
 // ---------- 报告类型（Task 1 契约；schema 版本化，后续检查项扩展 finding 枚举不破坏消费方） ----------
 
@@ -368,4 +370,105 @@ export async function listResidue(
   }
 
   return { residue, unknowns }
+}
+
+// ---------- 账实一致（Task 4，know-how 023 §6.2「账实分裂」的工具化） ----------
+
+/** lockfile importers 最小解析结果：包名 → 解析版本。unsupported = lockfileVersion 非 9.x（不猜）。 */
+interface LockImporters {
+  map: Map<string, string>
+  supported: boolean
+}
+
+/**
+ * 自建最小 lockfile 解析（评审 R1.8：仓内无可复用的 importers 解析导出——
+ * npm-integrity.ts 仅 integrity/overrides，profile-transaction 的 lock 解析为模块私有）。
+ * 仅认 lockfileVersion 9.0 实测形状 `importers.'.'.dependencies.{specifier,version}`；
+ * 其他版本 supported:false（全 null，unknown≠broken 不猜）。
+ */
+async function readLockImporters(lockPath: string): Promise<LockImporters> {
+  let text: string
+  try {
+    text = await readFile(lockPath, 'utf8')
+  } catch {
+    return { map: new Map(), supported: false } // 无 lockfile → 全 null（unknown≠broken）
+  }
+  try {
+    const doc = parseDocument(text)
+    const lv = doc.getIn(['lockfileVersion'], true)
+    const lvStr = lv === undefined || lv === null ? '' : String(lv)
+    if (!lvStr.startsWith('9.')) return { map: new Map(), supported: false }
+    const js = doc.toJS() as {
+      importers?: Record<string, { dependencies?: Record<string, { version?: unknown }> }>
+    }
+    const depsObj = js?.importers?.['.']?.dependencies ?? {}
+    const map = new Map<string, string>()
+    for (const [name, value] of Object.entries(depsObj)) {
+      // link: 依赖在 lock 里是 { specifier, link: true } 无 version → 自然落空（按契约置 null）
+      if (value && typeof value === 'object' && typeof value.version === 'string' && value.version) {
+        map.set(name, value.version)
+      }
+    }
+    return { map, supported: true }
+  } catch {
+    return { map: new Map(), supported: false }
+  }
+}
+
+/** semver.satisfies 安全包装：任一侧非法（dist-tag / workspace 协议等）→ null（不可判定，不猜）。 */
+function satisfiesSafe(version: string, range: string): boolean | null {
+  try {
+    return satisfies(version, range) ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 账实一致：对 profile 每个依赖核对三处记账——package.json pin / node_modules 实装 /
+ * pnpm-lock 解析。不一致 = warning（确认异常但不阻止启动，ADR-0010 决定 4）。
+ * - pin 含 range 按 semver 范围判定，不做字串相等；
+ * - lockfile 解析不出（无记录 / 非 9.x / 无 lockfile）置 null 且**不计为不一致**（unknown≠broken）；
+ * - `link:` 依赖：pin 记原文、installed 取 link 目标 package.json version、lockfile 置 null，
+ *   一致性 = 目标可读（不比较 pin 文本与版本号）。
+ */
+export async function checkAccount(profileDir: string): Promise<{ account: AccountItem[]; findings: DoctorFinding[] }> {
+  const root = resolve(profileDir)
+  const deps = await readProfileDeps(root)
+  const lock = await readLockImporters(join(root, 'pnpm-lock.yaml'))
+  const account: AccountItem[] = []
+  const findings: DoctorFinding[] = []
+  for (const name of Object.keys(deps).sort()) {
+    const spec = deps[name]
+    const isLink = spec.startsWith('link:')
+    const dir = resolvePluginDir(root, name, spec)
+    let installed: string | null = null
+    if (dir) {
+      const pkg = await readPkgJson(dir)
+      const v = pkg?.version
+      if (typeof v === 'string' && v) installed = v
+    }
+    const lockfile = !isLink ? lock.map.get(name) ?? null : null
+    let consistent = true
+    if (isLink) {
+      consistent = installed !== null
+    } else if (installed === null) {
+      consistent = false // pin 在而实装缺失（物化不完整）
+    } else {
+      const pinOk = satisfiesSafe(installed, spec)
+      if (pinOk === false) consistent = false
+      if (lockfile !== null && lockfile !== installed) consistent = false
+    }
+    account.push({ name, pin: spec, installed, lockfile, consistent })
+    if (!consistent) {
+      findings.push({
+        check: 'account-reality',
+        severity: 'warning',
+        title: `${name} 账实分裂`,
+        detail: `pin=${spec} · 实装=${installed ?? '缺失'} · lock=${lockfile ?? '—'}（know-how 023 §6.2 形态：pnpm 非零退出可拦住 pin 写入，三处记账从此各说各话）`,
+        hint: '核验最近一次升级/安装事务的结果，或按 know-how 023 §6.2 处置；体检不代执行',
+      })
+    }
+  }
+  return { account, findings }
 }

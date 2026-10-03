@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { detectLayout, analyzeFarm, listResidue } from '../lib/core/doctor.js'
+import { detectLayout, analyzeFarm, listResidue, checkAccount } from '../lib/core/doctor.js'
 
 let root
 beforeEach(() => {
@@ -210,5 +210,96 @@ describe('listResidue', () => {
     const r = await listResidue(profile, 'hoisted')
     assert.equal(r.residue[0].kind, 'bak-file')
     assert.ok(r.residue[0].note && r.residue[0].note.includes('mtime'))
+  })
+})
+
+// ---------- Task 4：checkAccount（三处记账：pin / 实装 / lockfile） ----------
+
+describe('checkAccount', () => {
+  let home, profile
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-account-'))
+    profile = join(home, 'profiles', 'web')
+    mkdirSync(profile, { recursive: true })
+  })
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+
+  function mkProfile(deps, lockBody) {
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'p', dependencies: deps }))
+    if (lockBody !== null) writeFileSync(join(profile, 'pnpm-lock.yaml'), lockBody)
+  }
+  function mkInstalled(name, version) {
+    mkdirSync(join(profile, 'node_modules', name), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', name, 'package.json'), JSON.stringify({ name, version }))
+  }
+  const lock = (entries) =>
+    'lockfileVersion: \'9.0\'\nimporters:\n  .:\n    dependencies:\n' +
+    entries.map((e) => `      ${e.name}:\n        specifier: ${e.spec}\n        version: ${e.ver}\n`).join('')
+
+  it('三处一致 → consistent，零 finding', async () => {
+    mkProfile({ 'pkg-a': '1.0.0' }, lock([{ name: 'pkg-a', spec: '1.0.0', ver: '1.0.0' }]))
+    mkInstalled('pkg-a', '1.0.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account.length, 1)
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
+  })
+
+  it('pin≠实装（023 §6.2 形态：pin 1.2.5 / 实装+lock 1.2.7）→ warning + hint 提 023', async () => {
+    mkProfile({ 'pkg-b': '1.2.5' }, lock([{ name: 'pkg-b', spec: '1.2.5', ver: '1.2.7' }]))
+    mkInstalled('pkg-b', '1.2.7')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, false)
+    assert.equal(r.account[0].installed, '1.2.7')
+    assert.equal(r.account[0].lockfile, '1.2.7')
+    assert.equal(r.findings.length, 1)
+    assert.equal(r.findings[0].severity, 'warning')
+    assert.equal(r.findings[0].check, 'account-reality')
+    assert.ok(r.findings[0].hint.includes('023'))
+  })
+
+  it('range pin 按范围判定（^1.0.0 配实装 1.2.0）→ consistent', async () => {
+    mkProfile({ 'pkg-c': '^1.0.0' }, lock([{ name: 'pkg-c', spec: '^1.0.0', ver: '1.2.0' }]))
+    mkInstalled('pkg-c', '1.2.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, true)
+  })
+
+  it('lock 无记录（unknown≠broken）→ lockfile=null 不计为不一致', async () => {
+    mkProfile({ 'pkg-d': '1.0.0' }, lock([]))
+    mkInstalled('pkg-d', '1.0.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].lockfile, null)
+    assert.equal(r.account[0].consistent, true)
+  })
+
+  it('pin 存在但实装缺失 → 不一致', async () => {
+    mkProfile({ 'pkg-e': '1.0.0' }, lock([{ name: 'pkg-e', spec: '1.0.0', ver: '1.0.0' }]))
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, false)
+    assert.equal(r.account[0].installed, null)
+  })
+
+  it('link: 依赖——pin 记原文、installed 取目标 package.json、lockfile 置 null', async () => {
+    const target = join(home, 'linked-pkg')
+    mkdirSync(target, { recursive: true })
+    writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'linked-pkg', version: '2.0.0' }))
+    mkProfile({ 'pkg-f': `link:${target}` }, lock([]))
+    mkdirSync(join(profile, 'node_modules'), { recursive: true })
+    symlinkSync(target, join(profile, 'node_modules', 'pkg-f'))
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].pin, `link:${target}`)
+    assert.equal(r.account[0].installed, '2.0.0')
+    assert.equal(r.account[0].lockfile, null)
+    assert.equal(r.account[0].consistent, true)
+  })
+
+  it('非 9.0 lockfile → 不猜（lockfile 全 null，不产生 finding）', async () => {
+    mkProfile({ 'pkg-g': '1.0.0' }, "lockfileVersion: '6.0'\nimporters: {}\n")
+    mkInstalled('pkg-g', '1.0.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].lockfile, null)
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
   })
 })
