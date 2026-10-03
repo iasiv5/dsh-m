@@ -1193,6 +1193,33 @@ describe('M1 Task 5：合并市场', () => {
     assert.deepEqual(rp.sourceCounts, { primary: 2, community: 0 })
   })
 
+  it('⑮ curatedFirst 稳定前置（0.9.26 GUI 跨区搜索）：source=all+query 时精选命中前置、分区内相关序不变；无 flag 不动（tools/CLI 同序）；单分区/空 query 无效', async () => {
+    const primary = [
+      { id: 'p-weak', name: 'W', description: 'alpha widget', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
+      { id: 'p-no', name: 'N', description: 'nothing here', category: 'ui', tags: [], source: 'npm', npm: 'pkg-2' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('alpha', 'o1'),      // name 精确含 alpha → 相关分高于 p-weak（仅描述包含）
+      communityRaw('other', 'o2'),
+    ]))
+    // 无 flag（tools/CLI 路径）：相关序交织——社区强命中排前
+    const plain = await listMarket(cfg, { withLatest: false, source: 'all', query: 'alpha' }, deps)
+    assert.deepEqual(plain.items.map((it) => it.id), ['o1--alpha', 'p-weak'])
+    assert.equal(plain.total, 2)
+    // 带 flag（GUI 路径）：精选稳定前置，分区内相关序保持；total/sourceCounts 不变
+    const cf = await listMarket(cfg, { withLatest: false, source: 'all', query: 'alpha', curatedFirst: true }, deps)
+    assert.deepEqual(cf.items.map((it) => it.id), ['p-weak', 'o1--alpha'])
+    assert.equal(cf.total, 2)
+    assert.deepEqual(cf.sourceCounts, { primary: 1, community: 1 })
+    // 空 query：浏览态 merged 序，flag 无效
+    const browse = await listMarket(cfg, { withLatest: false, source: 'all', curatedFirst: true }, deps)
+    assert.deepEqual(browse.items.map((it) => it.id), ['p-weak', 'p-no', 'o1--alpha', 'o2--other'])
+    // 单分区：flag 无效（community 区本就无精选）
+    const rc = await listMarket(cfg, { withLatest: false, source: 'community', query: 'alpha', curatedFirst: true }, deps)
+    assert.deepEqual(rc.items.map((it) => it.id), ['o1--alpha'])
+  })
+
   it('⑨ sort downloads：无计数 ≠ 0——无数据恒排有数据之后（组内 stars 降序），dir 只翻转有数据组', async () => {
     const base = fakeDeps()
     const { deps } = withCommunity(base, communityLoaded([

@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.26 变更：跨区搜索精选稳定前置——摘要行计数与首页所见一致
+
+- **问题（装机实测 2026-10-03）**：搜索「sidebar」摘要行报「⭐ 精选 3 · 社区 315」，首页精选段只见 1 条。非重复计算——`sourceCounts` 不读分类计数（`alsoCategories` 无涉），3 条为真实精选命中；错位根因是摘要行报全局命中数，而相关性排序叠加社区区默认 downloads 降序 tie-break 把弱命中精选压进后页。
+- **修复**：`listMarket` 新增 `curatedFirst`——`source='all'` 且 query 非空时精选命中**稳定前置**（稳定分区，分区内相关序不变，社区命中随后）；仅 host-api GUI 通道携带，tools/CLI 不传，搜索排序三端同序不变；单分区/浏览态天然无效。跨页精选段头悬空与计数错位随之消失（精选命中 ≤ 页大小时全数落在首页段内）。
+- **验证**：新增测试 ⑮（无 flag 保持交织相关序 / 带 flag 精选前置 / 空 query 与单分区无效）；全量 1025 pass / 0 fail。
+
 ### 0.9.25 变更：跨区搜索——浏览分区、搜索全局（社区 + 精选一并命中）
 
 - **跨区搜索**：任一分区（社区/精选）的搜索框升级为全局——`query` 非空时底层查询切 `source=all`，两分区条目统一相关性排序；清空关键词回到本区浏览态。分区制浏览（ADR-0004）与 `dshm_search`/CLI 三端同序不动；服务端唯一增量是 `MarketResult.sourceCounts` 分桶计数。
@@ -262,6 +268,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.26 — curated hits first in cross-zone search: summary counts now match page one
+
+- **Problem (observed on install, 2026-10-03)**: searching "sidebar" showed "⭐ Curated 3 · Community 315" but only one curated card on the first page. Not double counting — `sourceCounts` never reads category counts (`alsoCategories` is unrelated) and all 3 were genuine curated hits. The mismatch: the summary line reports global hit counts while the relevance ranking plus the community zone's default downloads-desc tie-break pushed weakly-matching curated entries onto later pages.
+- **Fix**: `listMarket` gains `curatedFirst` — with `source='all'` and a non-empty query, curated hits are stably moved to the front (stable partition; relevance order preserved within each segment, community hits follow). Carried only by the host-api GUI channel — tools/CLI don't pass it, so the shared search ordering across the three surfaces is unchanged; single-zone and browse states are naturally unaffected. Dangling cross-page section headers and the count mismatch disappear (with curated hits ≤ page size, all of them land in the first-page section).
+- **Verification**: new test ⑮ (no flag keeps the interleaved relevance order / flag moves curated first / empty query and single-zone are no-ops); full suite 1025 pass / 0 fail.
 
 ### Changed in 0.9.25 — cross-zone search: browsing stays zoned, searching goes global (community + curated together)
 

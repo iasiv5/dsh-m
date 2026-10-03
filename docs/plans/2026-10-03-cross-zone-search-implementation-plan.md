@@ -167,6 +167,13 @@
 - Task 4 Step 3 人工检查单在 live DSH Web 逐项打勾。
 - 可选：`dshm_search` 工具抽查一次社区关键词（回归三端同序未被本计划破坏）。
 
+## 执行后修复记录
+
+### 0.9.26（2026-10-03，装机实测反馈）：跨区搜索精选稳定前置
+
+- 现象：搜索「sidebar」摘要行「精选 3」vs 首页精选段 1 条。取证（CLI `--source primary`）：3 条为真实精选命中，非 alsoCategories 双计（`sourceCounts` 不读分类计数）。根因：摘要行报全局计数，相关性排序 + 社区区默认 downloads 降序 tie-break 把弱命中精选压进后页——计划 Task 4「页内分组」的已知边界（分组只在页内生效）在真实数据下显性化。
+- 修复：`listMarket` 增 `curatedFirst`（MarketQuery；`source='all'` 且 query 非空时对相关性结果做稳定分区，精选前置），host-api GUI 通道恒传；tools/CLI 同序不变。测试 ⑮（tests/market.test.mjs）。CHANGELOG/DESIGN 同步（0.9.26）。
+
 ## 审阅 Checkpoint
 
 - 计划正文结束。审阅通过前不进入实现；执行方默认为普通编码 agent 或人工执行者。

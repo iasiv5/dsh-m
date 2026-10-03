@@ -148,6 +148,10 @@ export interface MarketQuery extends RegistryRuntimeOptions {
   /** 显式排序（0.7.0 Task 2）：不传维持 merged 现序（primary=策展序、community=downloads 降序）。
    *  downloads 排序下无计数 ≠ 0（无数据恒排有数据之后，组内 stars 降序）；stars 缺失视为 -1；added 缺失视为最旧。 */
   sort?: { field: 'downloads' | 'stars' | 'added'; dir: 'asc' | 'desc' }
+  /** GUI 跨区搜索稳定前置（0.9.26）：仅 host-api GUI 通道传入。source='all' 且 query 非空时精选命中
+   *  稳定前置（分区内相关序不变，社区命中随后）——摘要行全局计数与首页所见一致，弱命中精选不被
+   *  downloads tie-break 埋进后页。tools/CLI 不传 → 搜索排序契约不变（三端同序）；单分区/浏览态天然无效。 */
+  curatedFirst?: boolean
   offset?: number
   /** core 按 withLatest hard clamp：true 最大 96（0.7.0 Task 7），false 最大 80 */
   limit?: number
@@ -776,13 +780,18 @@ export async function listMarket(
   })
   // 排序：显式 sort 先行；query 命中时相关性优先（稳定 tie-break 回到既有序——merged 现序或用户排序）
   const afterSort = opts.sort ? sortEntries(filtered, opts.sort) : filtered
-  const ordered =
+  const ranked =
     terms.length > 0
       ? afterSort
           .map((entry, idx) => ({ entry, score: relevanceScore(entry, terms), idx }))
           .sort((a, b) => b.score - a.score || a.idx - b.idx)
           .map((s) => s.entry)
       : afterSort
+  // curatedFirst 稳定前置（0.9.26）：见 MarketQuery 注释——稳定分区不破坏分区内相关序
+  const ordered =
+    opts.curatedFirst === true && source === 'all' && terms.length > 0
+      ? [...ranked.filter((entry) => !isCommunityEntry(entry)), ...ranked.filter(isCommunityEntry)]
+      : ranked
   const total = ordered.length
   // sourceCounts 分桶（0.9.25 跨区搜索摘要行）：filtered（分区 ∩ query ∩ category）计数，与排序/分页无关
   const communityHitCount = filtered.reduce((n, entry) => n + (isCommunityEntry(entry) ? 1 : 0), 0)

@@ -428,6 +428,9 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             category,
             source,
             sort,
+            // 0.9.26：GUI 跨区搜索精选稳定前置（listMarket 内部仅在 source='all' 且 query 非空时生效）。
+            // 本参数仅 GUI 通道携带——tools/CLI 走各自调用面不传，搜索排序三端同序不变。
+            curatedFirst: true,
             offset,
             limit,
             force: boolArg(body.force),
