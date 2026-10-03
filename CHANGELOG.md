@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.29 变更：profile 体检 Doctor——`dshm doctor` 上线（只读：农场测活 / 残留物清点 / 账实一致）
+
+- **动机**：dsh-m 至今没有诊断能力——know-how 014 的「每次 DSH 升级后重跑农场测活」是唯一现役周期必查项（曾 81 条悬空、230 行手工映射留档），know-how 023 实录「账实分裂」形态；本机实扫另发现 8 个空 scope 目录 + 12 个 `*.bak-*` 累积。学 dsh-market check.ts 的设计纪律（纯 FS 边界、三级严重度、unknown≠broken、误报记账、修复责任外移）落地 Day1 子集，选点裁决与对比详见 ADR-0010 与对比报告（2026-10-04）。
+- **新增**：`src/core/doctor.ts` 纯函数核心（无进程/无网络/无写入，任意时刻可安全调用）+ `/dshm` 新 method `doctor` + CLI `dshm doctor [--json]`（error 级发现 exit 1；HELP 同步）。三项检查：**农场测活**（`@deepseek-ai/*` 符号链祖先链遍历；悬空=error；dsh 伞包指向旧运行时 store=提示级——lockstep 店内非伞包版本不与 runtimeVersion 比较，防 cordis 等误报）、**残留物清点**（空 scope / 无 manifest 目录 / pnpm `*_tmp_*` / `*.bak-*`，全部零告警清单，「可见而非清理」）、**账实一致**（pin/实装/lock 三处核对，不一致=warning；lockfile 仅认 9.0 importers 形状，其余 unknown 不猜）。
+- **边界纪律（ADR-0010）**：runtimeVersion 仅用 `readLauncherPackageVersion` 纯 FS 通路（CLI 进程下为 null → stale 判定整体降级 unknown，绝不 spawn）；密钥红线只禁含密钥**配置文件**内容（包元数据 version 字段可读）；布局判定 workspace 声明优先（本机「hoisted 声明 + 仅 lock.yaml 的残留 .pnpm」并存形态实证）；双市场并存（dsh-m+dshmarket 同装）信息级呈现；doctor 永不修复，建议以文字给出。
+- **验收锚点（发版装机后核对）**：本机首跑 farmChecked ≈236（=0 即遍历空转）、悬空 0、8 空 scope + 12 bak 入清单、双市场信息级出现。
+- **验证**：新增 `tests/doctor.test.mjs`（34 例：布局冲突并存/祖先链反空转/两级 targetVersion/降级路径/零告警清单/023 形态/link 协议/CLI 子进程）+ `tests/doctor-api.test.mjs`（2 例：method 信封真跑 + 空 profile）；全量 1074 pass / 0 fail / 0 skipped。
+
 ### 0.9.28 变更：页大小档位去上游化——32/64/96 取代 24/48/96，默认 32
 
 - **动机**：24/48/96 是复刻 dsh-market 筛选面板（0.7.2）时带过来的上游血统数字。甄别后发现 96 早已被 dsh-m 内化为核心参数（`WITH_LATEST_MAX` 探测上限、精选区默认页、fast-open 快照判定基准），真正的上游痕迹只有 24——「砍 24、保 96」即去上游化与兼容性的交集。
@@ -282,6 +290,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.29 — profile Doctor: `dshm doctor` (read-only: farm liveness / residue inventory / manifest-reality consistency)
+
+- **Motivation**: dsh-m had no diagnostics at all — know-how 014's "re-run farm liveness after every DSH upgrade" was the only standing periodic check (81 dangling links and a 230-line manual heal log), know-how 023 documented the manifest-reality split, and a live scan found 8 empty scope dirs + 12 `*.bak-*` files. Day1 subset adopting dsh-market check.ts's design disciplines (pure-FS boundary, three-tier severity, unknown≠broken, false-positive bookkeeping, repair responsibility shifted outward). See ADR-0010 and the comparison report (2026-10-04).
+- **Added**: `src/core/doctor.ts` pure-function core (no processes, no network, no writes — safe to call any time) + new `/dshm` method `doctor` + CLI `dshm doctor [--json]` (exit 1 on error-tier findings; HELP synced). Three checks: **farm liveness** (ancestor-chain walk over `@deepseek-ai/*` symlinks; dangling = error; dsh umbrella pointing at an old runtime store = info-tier — non-umbrella versions are never compared against the runtime version, avoiding cordis-style false positives), **residue inventory** (empty scope dirs / no-manifest dirs / pnpm `*_tmp_*` / `*.bak-*`, all zero-alarm lists, "visible rather than cleaned"), **manifest-reality consistency** (pin vs installed vs lockfile; mismatch = warning; only lockfileVersion 9.0 importers shape is parsed, anything else stays unknown).
+- **Boundary disciplines (ADR-0010)**: runtimeVersion comes only from the pure-FS `readLauncherPackageVersion` (null under the CLI → stale judgment degrades to unknown, never spawns); the secrets red line covers credential-bearing config files only (package metadata version fields are readable); layout detection is workspace-declaration-first (proven on the local "hoisted declaration + vestigial lock.yaml-only .pnpm" shape); dual-market coexistence (dsh-m + dshmarket installed together) surfaces as an informational fact; doctor never repairs — advice is text only.
+- **Acceptance anchors (to verify after install)**: first local run expects farmChecked ≈236 (0 means the walk short-circuited), 0 dangling, 8 empty scopes + 12 bak files listed, dual market flagged.
+- **Verification**: new `tests/doctor.test.mjs` (34 cases) + `tests/doctor-api.test.mjs` (2 cases); full suite 1074 pass / 0 fail / 0 skipped.
 
 ### Changed in 0.9.28 — page-size set de-upstreamed: 32/64/96 replaces 24/48/96, default 32
 

@@ -175,6 +175,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - 工具前缀 `dshm_`，共 7 个：`dshm_search` / `dshm_list` / `dshm_install` / `dshm_uninstall` / `dshm_outdated` / `dshm_upgrade` / `dshm_restart`。Agent tools 运行于 Host 进程，与 Web GUI **共用 `host` namespace 缓存与 active config**；`dshm_search` 走服务端过滤（metadata-only，`withLatest=false`、limit ≤80），返回不含本地路径的短 summary。
 - 0.5.0：`dshm_search`/`dshm_install` 消费**合并市场**（§2.5）；category 参数接受精选 5 分类 + 任意社区分类 slug；summary 增加社区清单状态（条数/来源/是否 stale）；CLI 默认合并社区清单，`DSHM_COMMUNITY_CATALOG=0` 退出，缓存用 `cli/awesome/` 子目录。
 - CLI bin `dshm`：同名同义命令集（`dshm list|search|install|uninstall|outdated|upgrade|restart`），固定 `cli` namespace。`registry`/`search`/`outdated` 在清单不可用时打印配置/实际生效地址并 **exit 1**；`list` 仍列出已装并标记不可用；本地终端可显示完整路径。
+- 体检（Doctor，0.9.29）：`/dshm` method `doctor` + CLI `dshm doctor [--json]`（**不新增第 9 个 agent 工具**——工具描述是宿主 agent 常驻上下文，行为面代价大于收益）。纯 FS 只读（无进程/无网络/无写入，清单不可用照常工作），三项检查（农场测活/残留物清点/账实一致）+ 三级严重度 + unknown≠broken + 双市场信息级；runtimeVersion 仅 `readLauncherPackageVersion` 纯 FS 通路（CLI 下降级 unknown，禁 spawn 回退）。决策全记载见 [ADR-0010](./adr/0010-doctor-read-only-diagnostics.md)。
 - 本地 API：`POST /dshm` 单路由 method 分发；除 `ping` 外全部要求 JSON Content-Type + `trustedRestartRequest` host 等价同源防护；typed 错误映射 400/403/404/405/413/415/422/500；`registry-config-apply` 校验失败 422；清单不可用的 `registry`/`market` 仍返回 200 + 结构化状态。
 - 实现顺序：**GUI 先行，CLI 收尾**（核心逻辑同一层，CLI 是薄封装）。
 
