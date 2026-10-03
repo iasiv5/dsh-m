@@ -112,3 +112,18 @@ _Avoid_: 前端更新、UI 更新（过宽）、live 更新（与开关的即时
 **两段加载（Two-phase Load）**:
 已装页的数据分两段并行获取：第一段快列表（跳过探测段，秒开），第二段 `installedUpdates` 以 TTL=0 真实探测后把更新提示就地补上；探测完成前的短暂无提示不是「没得更新」（ADR-0008）。
 _Avoid_: 检查更新按钮（本设计无手动入口）、延迟加载（第一段并不推迟，两段同时发起）
+
+**首条规则（First Rule）**:
+pnpm 的排除条目校验每包名只认第一条规则、同名后续规则死亡（dshmarket #732 实证）；治理的目标形态是每包一条、版本并集复合（ADR-0009）。_Avoid_: 认可形态/不认可形态（know-how 020 §2.4 旧口径，机理误称，已退役）
+
+**排除条目（Release-Age Exclusion）**:
+profile `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 中一条豁免规则；规范形态 = 每包一条版本并集复合（`name@a || b`）。_Avoid_: 白名单、排除项
+
+**治理（Govern）**:
+委派前/双码失败后把排除块修复为规范形态的动作（同名多规则合并）；只修不建。_Avoid_: 修复、清理
+
+**登记（Register）**:
+装机成功后把等待期内目标版本以规范形态并入排除块的动作；仅发布时刻可判「窗口内」的目标触发。_Avoid_: 追加（pnpm 自动行为另有其名）、pin
+
+**等待期（Release Age）**:
+`minimumReleaseAge` 窗口，缺省 1440 分钟（pnpm 11.7 实测）；显式设置或 `minimumReleaseAgeStrict` 开启时，点名窗口内新版本会被拒。_Avoid_: 冷却期、隔离期
