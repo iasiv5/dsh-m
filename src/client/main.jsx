@@ -20,6 +20,7 @@ const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
+const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
 const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE, upgradeNotify } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
@@ -1667,8 +1668,9 @@ function ReadmeBlock({ pkg }) {
 }
 
 // ---------- 已装页 ----------
-function InstalledTab({ notify, installed, onMutation, ops }) {
+function InstalledTab({ notify, installed, updates, onMutation, ops }) {
   const { loading, data, error, reload } = installed;
+  const updateRows = updates && updates.data && Array.isArray(updates.data.updates) ? updates.data.updates : [];
   const [openPkg, setOpenPkg] = useState(null);
   const [readmePkg, setReadmePkg] = useState(null);
   // busy 派生自操作记录（0.7.0 Task 13）——首个进行中的非 install 操作
@@ -1756,7 +1758,8 @@ function InstalledTab({ notify, installed, onMutation, ops }) {
 
   if (loading && !data) return h("div", { className: "dshm-empty" }, lookup("installed.loading"), Spin());
   if (error) return h("div", { className: "dshm-err" }, lookup("failed.read", { err: error }));
-  const items = (data && data.items) || [];
+  // 两段加载（ADR-0008）：items 指向 merged 视图；updates 未到时即第一段原样（卡片暂无更新提示，常态安静）
+  const items = applyInstalledUpdates((data && data.items) || [], updateRows);
   if (!items.length) return h("div", { className: "dshm-empty" }, `${lookup("installed.empty")} (${data.profileDir})`);
 
   return h(
@@ -2456,7 +2459,9 @@ function MarketPanel({ onClose }) {
   const marketCommunity = useMarketData("community");
   const marketPrimary = useMarketData("primary");
   const markets = { community: marketCommunity, primary: marketPrimary };
-  const installed = useAsync(() => api("installed"), []);
+  const installed = useAsync(() => api("installed", { probe: false }), []);
+  // 两段加载（ADR-0008）第二段：探测 TTL=0 永远新鲜，挂载即与第一段并行发起；未到时卡片暂无更新提示
+  const updates = useAsync(() => api("installedUpdates"), []);
   // 全局操作记录（0.7.0 Task 13 + 审计碰撞修正）：单例 store + 泵执行（queued 真实生命周期）
   const [opRecords, setOpRecords] = useState(() => opsStore.list().map((r) => ({ ...r })));
   const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), []);
@@ -2522,15 +2527,15 @@ function MarketPanel({ onClose }) {
     [marketCommunity.reload, marketPrimary.reload],
   )
   const refreshViews = useCallback(
-    () => refreshAfterMutation({ marketReload: marketReloadAll, installedReload: installed.reload }),
-    [marketReloadAll, installed.reload],
+    () => refreshAfterMutation({ marketReload: marketReloadAll, installedReload: installed.reload, updatesReload: updates.reload }),
+    [marketReloadAll, installed.reload, updates.reload],
   );
   const onRegistryChanged = refreshViews;
   // 恢复/泵共用上下文（审计碰撞·洞3：单一执行路径）。stillApplies 一律执行时实读（禁止复用快照）。
   const stillApplies = useCallback(async (r) => {
     let fresh = null;
     try {
-      fresh = await api("installed");
+      fresh = await api("installed", { probe: false });
     } catch {
       fresh = null;
     }
@@ -2579,10 +2584,12 @@ function MarketPanel({ onClose }) {
     market: marketCommunity.data ? marketCommunity.data.total : null,
     installed: installed.data ? installed.data.items.length : null,
   };
+  // 两段加载（ADR-0008）：updates 就地合并出 merged 视图；updates 未到时 merged 即第一段原样（红点 0，不误点亮）
+  const mergedItems = installed.data && Array.isArray(installed.data.items)
+    ? applyInstalledUpdates(installed.data.items, updates.data && Array.isArray(updates.data.updates) ? updates.data.updates : [])
+    : null;
   // 更新红点（0.7.0 Task 15）：已装页存在 outdated 时已装 tab 打点
-  const outdatedCount = installed.data && Array.isArray(installed.data.items)
-    ? installed.data.items.filter((x) => x && x.outdated).length
-    : 0;
+  const outdatedCount = installedUpdateStats(mergedItems || []).outdatedCount;
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
   useEffect(() => {
@@ -2667,7 +2674,7 @@ function MarketPanel({ onClose }) {
         "div",
         { className: "dshm-body" },
         tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null }) : null,
-        tab === "installed" ? h(InstalledTab, { notify, installed, onMutation: refreshViews, ops }) : null,
+        tab === "installed" ? h(InstalledTab, { notify, installed, updates, onMutation: refreshViews, ops }) : null,
         tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
         h(OperationsPanel, {
           records: opRecords,
