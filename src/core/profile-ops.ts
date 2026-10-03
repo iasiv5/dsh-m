@@ -31,6 +31,7 @@ import { npmLatest as defaultNpmLatest, githubLatestTag as defaultGithubLatestTa
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
 import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
 import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckDeps } from './release-age.js'
+import { governExcludeBlock, registerExclusion } from './exclude-governance.js'
 import type { RegistryConfig, RegistryCacheNamespace } from './registry.js'
 
 /** 官方 pluginManager 的 Desktop 超集投影（运行时探测，缺方法按不可用处理）。 */
@@ -136,6 +137,9 @@ export interface DesktopInstallDeps {
   /** 0.9.19 供应链等待期预检注入（测试；缺省 npmjs packument / 读 profile pnpm-workspace.yaml） */
   packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
   workspacePolicy?: ReleaseAgePrecheckDeps['workspacePolicy']
+  /** ADR-0009 排除条目治理/登记注入（测试；缺省读写 profile pnpm-workspace.yaml 排除块） */
+  governExclude?: typeof governExcludeBlock
+  registerExclude?: typeof registerExclusion
   /** 0.9.19 账实分裂复读（测试注入；缺省 installed.ts 实现） */
   listInstalled?: typeof defaultListInstalled
 }
@@ -215,9 +219,22 @@ async function desktopInstallLocked(
     throw new DesktopOpsError('install-refused', `收录条目 ${entry.id} 缺少 npm/github 来源，无法在 desktop 安装`)
   }
 
-  // 0.9.19：供应链等待期预检——pnpm 11 锁文件校验会拦死整次安装，且失败前目标已写入
-  // node_modules（账实分裂）；目标太新或锁内「独立精确排除条目」未满期 → 委派前结构化拒绝。
-  if (entry.source === 'npm' && version !== undefined) {
+  // ADR-0009：委派前治理（排除块规范形态，fail-open）+ 供应链等待期预检收敛——默认策略
+  // 放行并附陈述（官方管理器对显式点名的新版本直接安装并自动登记）；显式设置 age 或
+  // strict 开启才拒绝。治理已落盘的编辑在成功 output 与失败 message 双路留痕。
+  let governanceNote = ''
+  let releaseAgeNotice = ''
+  let governedMergedNames: string[] | undefined
+  if (entry.source === 'npm' && version !== undefined && opts.profileDir) {
+    try {
+      const gov = await (deps.governExclude ?? governExcludeBlock)(opts.profileDir)
+      if (gov.changed && gov.mergedNames?.length) {
+        governanceNote = `；排除条目治理：合并 ${gov.mergedNames.join('、')}`
+        governedMergedNames = gov.mergedNames
+      }
+    } catch {
+      // fail-open：治理失败不阻塞委派（pnpm 仍是最终执行者）
+    }
     const gate = await releaseAgePrecheck({
       pkg,
       version,
@@ -226,17 +243,29 @@ async function desktopInstallLocked(
       signal: opts.signal,
       deps: { packumentTimes: deps.packumentTimes, workspacePolicy: deps.workspacePolicy },
     })
-    if (gate.blocked) throw new DesktopOpsError('release-age-wait', gate.message, { blockers: gate.blockers })
+    if (gate.blocked) {
+      throw new DesktopOpsError('release-age-wait', gate.message + governanceNote, { blockers: gate.blockers, ...(governedMergedNames !== undefined ? { governanceMerged: governedMergedNames } : {}) })
+    }
+    if (gate.notice) releaseAgeNotice = `；${gate.notice}`
   }
 
   let change: DesktopChangeResult
   let bundleName: string
+  let registerNote: string | undefined
   try {
-    ({ change, bundleName } = await runManagedInstall(service, { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled }))
+    const managed = await runManagedInstall(
+      service,
+      { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled },
+      { governExclude: deps.governExclude, registerExclude: deps.registerExclude, packumentTimes: deps.packumentTimes },
+    )
+    change = managed.change
+    bundleName = managed.bundleName
+    registerNote = managed.registerNote
   } catch (err) {
     if (err instanceof DesktopBuildApprovalNeeded) {
-      return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message }
+      return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message + governanceNote }
     }
+    if (err instanceof Error && governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
     throw err
   }
 
@@ -252,7 +281,7 @@ async function desktopInstallLocked(
     ...(compat !== null ? { compat } : {}),
     ...(compatSkipped ? { compatSkipped } : {}),
     needsRestart: true,
-    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}`,
+    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${releaseAgeNotice}${registerNote ?? ''}`,
     via: 'desktop-manager',
     ...(change.application === 'overridden' ? { overridden: true } : {}),
   }
@@ -313,7 +342,7 @@ function enableStageFailureMessage(pkg: string, change: DesktopChangeResult): st
   return `安装后启用阶段失败（${pkg}；application=failed、stage=enable${change.error?.code ? `、error=${change.error.code}` : ''}）：${writtenText}，请在官方 Desktop 插件页查看状态或重试`
 }
 
-/** runManagedInstall 上下文（0.9.19）：目标标识 + 账实分裂复读所需的 profileDir/listInstalled。 */
+/** runManagedInstall 上下文（0.9.19）：目标标识 + 账实分裂复读所需的 profileDir/listInstalled；previousVersion 供登记复合形态（ADR-0009）。 */
 interface ManagedInstallCtx {
   pkg: string
   spec: string
@@ -322,12 +351,32 @@ interface ManagedInstallCtx {
   profileDir?: string
   approvedBuilds?: string[] | undefined
   listInstalled?: typeof defaultListInstalled
+  /** 升级前的已装版本（ADR-0009 登记复合形态用；全新安装缺席） */
+  previousVersion?: string
+}
+
+interface ManagedInstallDeps {
+  governExclude?: typeof governExcludeBlock
+  registerExclude?: typeof registerExclusion
+  /** 透传给登记的 young 探测（测试注入；缺省 cachedPackumentTimes）——避免测试被动出网 */
+  packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
+}
+
+const DUAL_CODE_RE = /ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION|ERR_PNPM_NO_MATURE_MATCHING_VERSION/
+
+/** 可治理的失败形态：cancelled / build-blocked 不治理不重试（与 mapFailure 分类一致）。 */
+function isGovableFailure(change: DesktopChangeResult): boolean {
+  if (change.application === 'cancelled') return false
+  const pending = Array.isArray(change.pendingBuilds) ? change.pendingBuilds.filter((n) => typeof n === 'string') : []
+  if (change.packageResult?.kind === 'build-blocked' && pending.length > 0) return false
+  return change.application === 'failed' || change.error !== undefined
 }
 
 async function runManagedInstall(
   service: DesktopManagerLike,
   ctx: ManagedInstallCtx,
-): Promise<{ change: DesktopChangeResult; bundleName: string }> {
+  deps: ManagedInstallDeps = {},
+): Promise<{ change: DesktopChangeResult; bundleName: string; registerNote?: string }> {
   const installOnce = async (): Promise<DesktopChangeResult> =>
     changeOf(await service.installBundle!(ctx.spec, {
       enabled: true,
@@ -396,8 +445,33 @@ async function runManagedInstall(
     if (enableRetryDelayMs > 0) await sleepMs(enableRetryDelayMs)
     change = await installOnce()
   }
+  // ADR-0009 挂点3：双码失败 → 治理 → changed 则重试该命令一次（每次调用至多一次；
+  // cancelled / build-blocked 不治理不重试）。仍败走既有 mapFailure（含账实分裂复读）。
+  if (isGovableFailure(change) && DUAL_CODE_RE.test(`${change.error?.diagnostic ?? ''}\n${change.error?.code ?? ''}`)) {
+    const gov = await (deps.governExclude ?? governExcludeBlock)(ctx.profileDir ?? '')
+    if (gov.changed) change = await installOnce()
+  }
   if (change.application === 'failed' || change.application === 'cancelled' || change.error) await mapFailure(change)
-  return verifyAndBundle(change)
+  const verified = await verifyAndBundle(change)
+  // ADR-0009 挂点2：成功后登记（仅 npm 源窗口内目标；fail-open，applied 短语由调用方并入 output）
+  let registerNote: string | undefined
+  if (ctx.profileDir && ctx.version) {
+    try {
+      const reg = await (deps.registerExclude ?? registerExclusion)(
+        ctx.profileDir,
+        {
+          pkg: ctx.pkg,
+          version: ctx.version,
+          ...(ctx.previousVersion !== undefined ? { previousVersion: ctx.previousVersion } : {}),
+        },
+        deps.packumentTimes ? { packumentTimes: deps.packumentTimes } : {},
+      )
+      if (reg.applied && reg.form) registerNote = `；排除条目已登记 ${ctx.pkg}@${ctx.version}（${reg.form}）`
+    } catch {
+      // fail-open：登记失败不影响安装/升级成功态
+    }
+  }
+  return { ...verified, ...(registerNote !== undefined ? { registerNote } : {}) }
 }
 
 export interface DesktopUninstallDeps extends DesktopEnsureService {
@@ -468,6 +542,9 @@ export interface DesktopUpgradeDeps extends DesktopEnsureService {
   /** 0.9.19 供应链等待期预检注入（测试；缺省 npmjs packument / 读 profile pnpm-workspace.yaml） */
   packumentTimes?: ReleaseAgePrecheckDeps['packumentTimes']
   workspacePolicy?: ReleaseAgePrecheckDeps['workspacePolicy']
+  /** ADR-0009 排除条目治理/登记注入（测试；缺省读写 profile pnpm-workspace.yaml 排除块） */
+  governExclude?: typeof governExcludeBlock
+  registerExclude?: typeof registerExclusion
   /** 生效判定注入（0.9.22 测试用；缺省 = classifyUpgradeActivation，npm 源升级成功点调用） */
   classifyActivation?: (pkg: string, fromVersion: string, toVersion: string) => Promise<ActivationClassification>
 }
@@ -550,8 +627,20 @@ async function desktopUpgradeLocked(
     throw new DesktopOpsError('install-refused', `收录条目 ${entry.id} 缺少 npm/github 来源，无法在 desktop 升级`)
   }
 
-  // 0.9.19：供应链等待期预检（同 desktopInstallLocked；0:15 quota-watch 事件即此形态实证）
-  if (entry.source === 'npm' && version !== undefined) {
+  // ADR-0009：委派前治理 + 预检收敛（同 desktopInstallLocked；0:15 quota-watch 事件为治理前的旧形态实证）
+  let governanceNote = ''
+  let releaseAgeNotice = ''
+  let governedMergedNames: string[] | undefined
+  if (entry.source === 'npm' && version !== undefined && opts.profileDir) {
+    try {
+      const gov = await (deps.governExclude ?? governExcludeBlock)(opts.profileDir)
+      if (gov.changed && gov.mergedNames?.length) {
+        governanceNote = `；排除条目治理：合并 ${gov.mergedNames.join('、')}`
+        governedMergedNames = gov.mergedNames
+      }
+    } catch {
+      // fail-open：治理失败不阻塞委派
+    }
     const gate = await releaseAgePrecheck({
       pkg,
       version,
@@ -560,17 +649,29 @@ async function desktopUpgradeLocked(
       signal: opts.signal,
       deps: { packumentTimes: deps.packumentTimes, workspacePolicy: deps.workspacePolicy },
     })
-    if (gate.blocked) throw new DesktopOpsError('release-age-wait', gate.message, { blockers: gate.blockers })
+    if (gate.blocked) {
+      throw new DesktopOpsError('release-age-wait', gate.message + governanceNote, { blockers: gate.blockers, ...(governedMergedNames !== undefined ? { governanceMerged: governedMergedNames } : {}) })
+    }
+    if (gate.notice) releaseAgeNotice = `；${gate.notice}`
   }
 
   let change: DesktopChangeResult
   let bundleName: string
+  let registerNote: string | undefined
   try {
-    ({ change, bundleName } = await runManagedInstall(service, { pkg, spec, version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled }))
+    const managed = await runManagedInstall(
+      service,
+      { pkg, spec, version, previousVersion: target.version, profileDir: opts.profileDir, approvedBuilds: opts.approvedBuilds, listInstalled: deps.listInstalled },
+      { governExclude: deps.governExclude, registerExclude: deps.registerExclude, packumentTimes: deps.packumentTimes },
+    )
+    change = managed.change
+    bundleName = managed.bundleName
+    registerNote = managed.registerNote
   } catch (err) {
     if (err instanceof DesktopBuildApprovalNeeded) {
-      return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message }
+      return { ok: false, needsBuildApproval: true, id: entry.id, pkg, spec, pendingBuilds: err.pendingBuilds, message: err.message + governanceNote }
     }
+    if (err instanceof Error && governanceNote !== '' && !err.message.includes(governanceNote)) err.message += governanceNote
     throw err
   }
 
@@ -598,7 +699,7 @@ async function desktopUpgradeLocked(
     ...(compat !== null ? { compat } : {}),
     ...(compatSkipped ? { compatSkipped } : {}),
     needsRestart,
-    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}`,
+    output: `official pluginManager: application=${change.application ?? 'applied'}, bundle=${bundleName}${change.changed === false ? ', changed=false' : ''}${governanceNote}${releaseAgeNotice}${registerNote ?? ''}`,
     via: 'desktop-manager',
     ...(change.application === 'overridden' ? { overridden: true } : {}),
     fromVersion: target.version,

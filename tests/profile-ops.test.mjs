@@ -69,6 +69,8 @@ function depsFor(service, overrides = {}) {
     ...(overrides.loadRegistry ? { loadRegistry: overrides.loadRegistry } : {}),
     ...(overrides.packumentTimes ? { packumentTimes: overrides.packumentTimes } : {}),
     ...(overrides.workspacePolicy ? { workspacePolicy: overrides.workspacePolicy } : {}),
+    ...(overrides.governExclude ? { governExclude: overrides.governExclude } : {}),
+    ...(overrides.registerExclude ? { registerExclude: overrides.registerExclude } : {}),
     ...(overrides.listInstalled ? { listInstalled: overrides.listInstalled } : {}),
   }
 }
@@ -498,64 +500,86 @@ describe('desktopInstallFromRegistry：enable 失败自动重试与文案精确�
   })
 })
 
-describe('0.9.19 供应链等待期委派前预检（releaseAgePrecheck 接线）', () => {
+describe('ADR-0009 排除条目治理 + 供应链等待期（治理/预检/双码重试/登记 接线）', () => {
   const MIN = 60_000
   const isoAgo = (ms) => new Date(Date.now() - ms).toISOString()
+  const defaultPolicy = () => ({ explicitAge: false, minimumReleaseAgeMin: null, strict: false, excludes: [] })
+  const explicitPolicy = (min, excludes = []) => ({ explicitAge: true, minimumReleaseAgeMin: min, strict: false, excludes })
+  const DUAL = '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:\n  dsh-m@0.9.8 was published at 2026-10-01T14:26:10.989Z, within the minimumReleaseAge cutoff (2026-09-30T15:08:06.630Z)'
 
   beforeEach(_resetReleaseAgeCachesForTests)
 
-  it('目标版本未满等待期 → 委派前 release-age-wait，installBundle 零调用（该挡的挡在门外）', async () => {
+  it('默认策略 + young → 放行委派；register 缝被调且 output 含登记短语（install 无 previousVersion）', async () => {
+    const { service, calls } = managerStub()
+    const registered = []
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      registerExclude: async (profileDir, target) => {
+        registered.push({ profileDir, target })
+        return { applied: true, form: 'created-exact' }
+      },
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 1, '默认策略不拦截（官方管理器对显式点名直接安装）')
+    assert.equal(registered.length, 1)
+    assert.deepEqual(registered[0].target, { pkg: 'pkg-a', version: '1.2.3' })
+    assert.ok(res.output.includes('；排除条目已登记 pkg-a@1.2.3（created-exact）'), `output 应含登记短语：${res.output}`)
+  })
+
+  it('显式 age / strict + young → release-age-wait，installBundle 零调用', async () => {
     const { service, calls } = managerStub()
     const deps = depsFor(service, {
       packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
-      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+      workspacePolicy: () => explicitPolicy(1440),
     })
     await assert.rejects(
       () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
-      (err) => err.code === 'release-age-wait' && err.message.includes('pkg-a@1.2.3'),
+      (err) => err.code === 'release-age-wait' && err.message.includes('pkg-a@1.2.3') && err.message.includes('未触碰 profile 文件'),
     )
-    assert.equal(calls.installBundle.length, 0, '未委派官方管理器（避免半写 node_modules 的账实分裂）')
+    assert.equal(calls.installBundle.length, 0, '显式策略是真的会拦（NO_MATURE_MATCHING_VERSION）')
+    const { service: s2, calls: c2 } = managerStub()
+    const deps2 = depsFor(s2, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: () => ({ explicitAge: false, minimumReleaseAgeMin: null, strict: true, excludes: [] }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps2),
+      (err) => err.code === 'release-age-wait',
+    )
+    assert.equal(c2.installBundle.length, 0)
+  })
+
+  it('命中任一排除规则（scoped 与非 scoped 独立精确，首条规则口径）→ 放行委派', async () => {
+    const scoped = managerStub()
+    const scopedDeps = depsFor(scoped.service, {
+      entry: { id: 'plug-scoped', name: 'Scoped', description: '', category: 'tools', tags: [], source: 'npm', npm: '@scope/pkg-a' },
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: () => explicitPolicy(1440, ['@scope/pkg-a@1.2.3']),
+    })
+    const res = await desktopInstallFromRegistry('plug-scoped', {}, { profileDir: 'X:/profile-demo' }, scopedDeps)
+    assert.equal(res.spec, '@scope/pkg-a@1.2.3')
+    const unscoped = managerStub()
+    const unscopedDeps = depsFor(unscoped.service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: () => explicitPolicy(1440, ['pkg-a@1.2.3']),
+    })
+    await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, unscopedDeps)
+    assert.equal(unscoped.calls.installBundle.length, 1)
   })
 
   it('目标已满期 → 正常委派', async () => {
     const { service, calls } = managerStub()
     const deps = depsFor(service, {
       packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
-      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+      workspacePolicy: defaultPolicy,
     })
     const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
     assert.equal(res.spec, 'pkg-a@1.2.3')
     assert.equal(calls.installBundle.length, 1)
   })
 
-  it('scoped 独立精确排除条目视为有效覆盖（本机 quota-watch@0.1.13 实证）→ 放行', async () => {
-    const { service, calls } = managerStub()
-    const deps = depsFor(service, {
-      entry: { id: 'plug-scoped', name: 'Scoped', description: '', category: 'tools', tags: [], source: 'npm', npm: '@scope/pkg-a' },
-      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
-      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['@scope/pkg-a@1.2.3'] }),
-    })
-    const res = await desktopInstallFromRegistry('plug-scoped', {}, { profileDir: 'X:/profile-demo' }, deps)
-    assert.equal(res.spec, '@scope/pkg-a@1.2.3')
-    assert.equal(calls.installBundle.length, 1)
-  })
-
-  it('目标已满期但锁内非 scoped 独立精确条目未满期 → 拦（dsh-m@0.9.18 连坐形态实证）', async () => {
-    const { service, calls } = managerStub()
-    const deps = depsFor(service, {
-      packumentTimes: async (pkg) => (pkg === 'dsh-m'
-        ? { '0.9.18': isoAgo(24 * MIN) }
-        : { '1.2.3': isoAgo(72 * 60 * MIN) }),
-      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: ['dsh-m@0.9.18'] }),
-    })
-    await assert.rejects(
-      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
-      (err) => err.code === 'release-age-wait' && err.message.includes('dsh-m@0.9.18') && err.message.includes('锁内排除条目'),
-    )
-    assert.equal(calls.installBundle.length, 0)
-  })
-
-  it('profileDir 缺席 → 预检跳过（fail-open），照常委派', async () => {
+  it('profileDir 缺席 → 预检与治理跳过（fail-open），照常委派', async () => {
     const { service, calls } = managerStub()
     await desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service))
     assert.equal(calls.installBundle.length, 1)
@@ -565,9 +589,156 @@ describe('0.9.19 供应链等待期委派前预检（releaseAgePrecheck 接线�
     const { service, calls } = managerStub()
     const deps = depsFor(service, {
       packumentTimes: async () => null,
-      workspacePolicy: async () => ({ minimumReleaseAgeMin: 1440, excludes: [] }),
+      workspacePolicy: defaultPolicy,
     })
     await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
     assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('治理 changed → 委派发生 + output 含治理短语（旧②腿连坐形态由治理修复，不再预拒绝）', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async (pkg) => (pkg === 'dsh-m' ? { '0.9.18': isoAgo(24 * MIN) } : { '1.2.3': isoAgo(72 * 60 * MIN) }),
+      workspacePolicy: () => explicitPolicy(1440, ['dsh-m@0.9.18']),
+      governExclude: async () => ({ ok: true, changed: true, mergedNames: ['dsh-m'] }),
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 1)
+    assert.ok(res.output.includes('；排除条目治理：合并 dsh-m'), `output 应含治理短语：${res.output}`)
+  })
+
+  it('治理注入抛错 → fail-open 仍委派', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => {
+        throw new Error('disk full')
+      },
+    })
+    await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('拒绝路径留痕：显式 age + young + 治理 changed → message 含治理短语', async () => {
+    const { service, calls } = managerStub()
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: () => explicitPolicy(1440),
+      governExclude: async () => ({ ok: true, changed: true, mergedNames: ['dsh-m'] }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('排除条目治理：合并 dsh-m'),
+    )
+    assert.equal(calls.installBundle.length, 0)
+  })
+
+  it('双码失败 → 治理 changed → 重试一次成功（恰 2 次委派），output 含治理+登记短语', async () => {
+    let attempt = 0
+    const { service, calls } = managerStub({
+      installBundle: async (spec, options) => {
+        calls.installBundle.push({ spec, options })
+        attempt += 1
+        if (attempt === 1) return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
+        return { changed: true, application: 'applied', stage: 'install', bundle: 'pkg-a', packageResult: { exitCode: 0 } }
+      },
+    })
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => ({ ok: true, changed: true, mergedNames: ['dsh-m'] }),
+      registerExclude: async () => ({ applied: true, form: 'merged' }),
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(calls.installBundle.length, 2, '治理生效后恰好重试一次')
+    assert.ok(res.output.includes('；排除条目治理：合并 dsh-m'))
+    assert.ok(res.output.includes('；排除条目已登记 pkg-a@1.2.3（merged）'))
+  })
+
+  it('双码失败 + 治理无变化 → 不重试，走既有翻译', async () => {
+    const { service, calls } = managerStub({
+      installBundle: async (spec, options) => {
+        calls.installBundle.push({ spec, options })
+        return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
+      },
+    })
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => ({ ok: true, changed: false }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('可重试'),
+    )
+    assert.equal(calls.installBundle.length, 1)
+  })
+
+  it('两次双码 → 翻译一次，治理短语出现在 message（挂点3 已落盘编辑必须留痕）', async () => {
+    let attempt = 0
+    const { service, calls } = managerStub({
+      installBundle: async (spec, options) => {
+        calls.installBundle.push({ spec, options })
+        attempt += 1
+        return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
+      },
+    })
+    const deps = depsFor(service, {
+      packumentTimes: async () => ({ '1.2.3': isoAgo(25 * 60 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      governExclude: async () => ({ ok: true, changed: true, mergedNames: ['dsh-m'] }),
+    })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, deps),
+      (err) => err.code === 'release-age-wait' && err.message.includes('排除条目治理：合并 dsh-m') && err.message.includes('可重试'),
+    )
+    assert.equal(calls.installBundle.length, 2)
+  })
+
+  it('cancelled / build-blocked → 不治理重试（闸门层治理照常，installBundle 不二次调用）', async () => {
+    let governCalls = 0
+    const countingGovern = async () => {
+      governCalls += 1
+      return { ok: true, changed: true, mergedNames: ['x'] }
+    }
+    const cancelled = managerStub({ change: { changed: false, application: 'cancelled', stage: 'install' } })
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, depsFor(cancelled.service, { governExclude: countingGovern })),
+      (err) => err.code === 'install-refused',
+    )
+    const blocked = managerStub({
+      change: { changed: false, application: 'failed', stage: 'install', packageResult: { exitCode: 1, kind: 'build-blocked' }, pendingBuilds: ['pkg-a'] },
+    })
+    const res = await desktopInstallFromRegistry('plug-a', {}, { profileDir: 'X:/profile-demo' }, depsFor(blocked.service, { governExclude: countingGovern }))
+    assert.equal(res.needsBuildApproval, true)
+    // 两例各有 1 次闸门层治理（委派前），挂点3 未触发（installBundle 均无二次调用）
+    assert.equal(governCalls, 2)
+    assert.equal(cancelled.calls.installBundle.length, 1)
+    assert.equal(blocked.calls.installBundle.length, 1)
+  })
+
+  it('upgrade 成功 → register 缝收到 previousVersion = target.version', async () => {
+    const { service, calls } = managerStub()
+    const registered = []
+    const deps = {
+      getService: () => service,
+      loadRegistry: async () => registryWith([ENTRY]),
+      listInstalled: async () => ({ items: [{ pkg: 'pkg-a', name: 'Plug A', version: '1.1.0' }] }),
+      npmLatest: async () => ({ version: '1.2.3', integrity: 'sha512-x' }),
+      precheck: async () => null,
+      classifyActivation: async () => 'unknown',
+      packumentTimes: async () => ({ '1.2.3': isoAgo(11 * MIN) }),
+      workspacePolicy: defaultPolicy,
+      registerExclude: async (_profileDir, target) => {
+        registered.push(target)
+        return { applied: true, form: 'created-composite' }
+      },
+    }
+    const res = await desktopUpgradeFromRegistry('pkg-a', {}, { profileDir: 'X:/profile-demo' }, deps)
+    assert.equal(res.fromVersion, '1.1.0')
+    assert.deepEqual(registered, [{ pkg: 'pkg-a', version: '1.2.3', previousVersion: '1.1.0' }])
+    assert.equal(calls.installBundle.length, 1)
+    assert.ok(res.output.includes('；排除条目已登记 pkg-a@1.2.3（created-composite）'))
   })
 })
