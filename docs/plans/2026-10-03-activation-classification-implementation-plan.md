@@ -68,7 +68,7 @@ UpgradeResult / DesktopUpgradeResult（+activation 字段）
 | `docs/DESIGN.md` | 修改 | 新增「生效判定」节（规则集、预算、fail-open 边界、三端分流）。 |
 | `CHANGELOG.md` | 修改 | 双语 0.9.22 条目（中文区头部 + English 区头部，沿用既有格式）。 |
 | `package.json` | 修改 | `0.9.21` → `0.9.22`。 |
-| `GLOSSARY.md` | 已完成 | 「生效判定 / 纯客户端更新」两条已随 grill 入册，本计划不含其改动。 |
+| `GLOSSARY.md` | 已完成 | 「生效判定 / 纯客户端更新」两条已随 grill 入册，本计划不含其改动。**留痕（执行评审问题 3）**：grill 定稿先于本计划定稿，词条实际随 7673375 一并入库（+8 行，内容与术语共识一致、文档互链所需）——清单声明与实际入库不符，如实记录不回退。 |
 
 不改动：`selfUpgrade`、`installEntryLocked`、GUI 重启横幅状态机（`main.jsx` L2599 needsRestart 门）、`operations.js` 的操作恢复语义（本计划对该文件仅**新增** `upgradeNotify` 纯导出，恢复逻辑一行不动）、`registry.json`、依赖清单（零新依赖）。
 

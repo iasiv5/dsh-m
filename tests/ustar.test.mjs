@@ -112,3 +112,52 @@ function octalOf(value) {
   // 校验和字段共 8 字节：6 位八进制 + NUL（其余留白），严防越界覆盖 typeflag@156
   return value.toString(8).padStart(6, '0') + '\0'
 }
+
+describe('parseTarEntries：pendingName 不跨条目泄漏（评审问题 5 回归）', () => {
+  function paxRecordOf(key, value) {
+    const payload = `${key}=${value}\n`
+    let total = payload.length + 2
+    for (;;) {
+      const next = payload.length + String(total).length + 1
+      if (next === total) break
+      total = next
+    }
+    return `${total} ${payload}`
+  }
+
+  function rawHeader(name, size, typeflag) {
+    const b = Buffer.alloc(512, 0)
+    b.write(name.slice(0, 100), 0, 'utf8')
+    b.write('0000644', 100, 'utf8')
+    b.write('0000000', 108, 'utf8')
+    b.write('0000000', 116, 'utf8')
+    b.write(octalOf(size), 124, 'utf8')
+    b.write(octalOf(0), 136, 'utf8')
+    b.write(typeflag, 156, 'utf8')
+    b.write('ustar\0', 257, 'utf8')
+    b.write('00', 263, 'utf8')
+    let sum = 0
+    for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 0x20 : b[i]
+    b.write(octalOf(sum), 148, 'utf8')
+    return b
+  }
+
+  function padTo(data) {
+    const pad = (512 - (data.length % 512)) % 512
+    return Buffer.concat([data, Buffer.alloc(pad, 0)])
+  }
+
+  it('pax 长名只属于紧贴条目：后跟目录时被弃用（防泄漏错配）', () => {
+    const longName = `package/${'x/'.repeat(60)}orphan.js`
+    const paxPayload = Buffer.from(paxRecordOf('path', longName), 'utf8')
+    const tar = Buffer.concat([
+      rawHeader('././@PaxHeader', paxPayload.length, 'x'), padTo(paxPayload),
+      rawHeader('package/lib', 0, '5'), // 目录条目：消费/清除 pendingName
+      rawHeader('package/lib/real.js', 1, '0'), padTo(Buffer.from('r', 'utf8')),
+      Buffer.alloc(1024, 0),
+    ])
+    const files = parseTarEntries(tar)
+    assert.deepEqual([...files.keys()], ['package/lib/real.js'], '长名不得泄漏给后续无长名条目')
+    assert.equal(files.get('package/lib/real.js').toString(), 'r')
+  })
+})

@@ -85,8 +85,10 @@ export function parseTarEntries(tar: Buffer): Map<string, Buffer> {
       const name = pendingName ?? entryName(header)
       pendingName = null
       entries.set(name, Buffer.from(content)) // 拷贝，避免 subarray 挂住整块底层 buffer
+    } else {
+      // 目录/链接等其他类型：长名只属于紧贴其后的条目，未消费即弃用（防跨条目错名归属）
+      pendingName = null
     }
-    // 其他类型（'5' 目录、'1' 链接、'2' 符号链接等）：跳过内容
 
     offset = contentEnd + ((BLOCK - (size % BLOCK)) % BLOCK)
   }

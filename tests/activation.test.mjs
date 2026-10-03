@@ -153,6 +153,19 @@ describe('fail-open 矩阵：任何异常 → unknown', () => {
     assert.ok(Date.now() - started < 2000, 'deadline 应按 timeoutMs 生效')
   })
 
+  it('超限（maxTarballBytes=1，fake 尊重上限模拟 fetchBytesLimited cap）→ unknown', async () => {
+    const world = { '1.0.0': buildTarGz(baseFiles('1.0.0')), '2.0.0': buildTarGz(baseFiles('2.0.0')) }
+    const deps = {
+      fetchVersionMeta: async (_p, v) => ({ tarball: `mem://${v}` }),
+      fetchTarball: async (url, maxBytes) => {
+        const buf = url.endsWith('1.0.0') ? world['1.0.0'] : world['2.0.0']
+        if (buf.length > maxBytes) throw new Error(`响应超过上限 ${maxBytes} 字节`)
+        return buf
+      },
+    }
+    assert.equal(await classifyUpgradeActivation('p', '1.0.0', '2.0.0', { maxTarballBytes: 1 }, deps), 'unknown')
+  })
+
   it('maxBytes 接线：默认 8MiB、可覆写（传导到 fetchTarball）', async () => {
     const world = { '1.0.0': buildTarGz(baseFiles('1.0.0')), '2.0.0': buildTarGz(baseFiles('2.0.0')) }
     const seen = []

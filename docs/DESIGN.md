@@ -140,6 +140,18 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
   4. pnpm 构建脚本被拦时，先按 pnpm 待决名单**逐键精确放行**（ADR-0002），名单不可读才 `dangerouslyAllowAllBuilds` 全量兜底，且**必须明确报告**放行了哪些包/是否兜底；
   5. 不做签名/验签体系（自用，明确不做）。
 
+### 3.3 生效判定三态分流（0.9.22，[ADR-0007](./adr/0007-activation-classification.md)）
+
+判定本体（五条规则、10s/8MiB 预算、fail-open、已知局限）见 §3.2「生效判定」条目与 ADR-0007，此处只列三端分流表：
+
+| activation | agent 工具消息 | GUI | CLI |
+|---|---|---|---|
+| `client-only` | 明示刷新生效，**不询问** dshm_restart | toast 后缀「刷新页面即可生效」；重启横幅不亮（`needsRestart=false`） | 「纯客户端更新：刷新页面即生效，无需重启」 |
+| `unknown` | 保守建议重启并询问 dshm_restart | 现状重启横幅 + toast 后缀「判定未完成」 | 「生效判定未完成；建议重启」 |
+| `restart-required` / 字段缺席（github 源等） | 现状「需要重启」并询问 | 现状重启横幅 | 现状行 |
+
+与 `application`（Profile 变更事务词汇）的边界：`activation` 只是「新版本如何生效」的操作建议，不是事务状态——事务四态（applied/restart-required/overridden/failed）描述**变更本身**，`activation` 描述**生效方式**；两者不互相推导（GLOSSARY Avoid 行同源）。
+
 ## 4. GUI（旗舰，v1 必须做好）
 
 0.4.0 增补：已装卡右上 `dshm-switch` 开关（受 `toggleable` 控制，锁因 title 提示）；sub 行相位点 `● active · v1.0.8 · npm`（相位点只映射 phase 五值，「已停用」归 Switch，两输入源各管各的）；开关结果通知按 `applied` 分流（live → 绿 toast「即时生效」；restart-required → 沿用重启横幅 + 一键重启）；安装遇兼容拦截（409 + issue）弹「仍要安装」确认（红字风险 + peers 清单 → `forceIncompatible` 重发）。
