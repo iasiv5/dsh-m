@@ -262,3 +262,110 @@ async function readlinkSafe(linkPath: string): Promise<string | null> {
     return null
   }
 }
+
+// ---------- 残留物清点（Task 3，#663「可见而非清理」纪律） ----------
+
+/** pnpm 暂存目录形态：`<name>_tmp_<pid>_<n>`（中断的更新留下的）。 */
+const TMP_DIR_RE = /^(.+)_tmp_\d+_\w+$/
+
+/** profile 根备份文件形态：`*.bak-*`（本机实况 12 个累积）。 */
+const BAK_FILE_RE = /\.bak-/
+
+/**
+ * 残留物清点：四类全部**结构化清单、零告警**（不产生任何 DoctorFinding——残留是
+ * 历史形态不是故障，告警只会训练用户无视清单；且删除正是常被进程句柄拒绝的操作，
+ * doctor 只清点不删除，ADR-0010 决定 5）。
+ *
+ * - `no-manifest` / `empty-scope`：node_modules 顶层（非点前缀）。空 scope 独立分类
+ *   不并入 no-manifest（本机实况 8 个；dsh-market 扫描器曾把它们误报 incomplete-package）。
+ * - `tmp-dir`：node_modules 顶层 + isolated 布局另扫 `.pnpm` 顶层**一层**（照 check.ts
+ *   有界策略不递归全店）。注意 .pnpm 内正常 store 目录（`foo@1.0.0`）本来就没有根级
+ *   package.json——no-manifest 检查绝不扫进 .pnpm，否则全店误报。
+ * - hoisted 布局不做 .pnpm 扫描，unknowns 记中性事实（本机 hoisted 下存在仅含
+ *   lock.yaml 的残留 .pnpm 目录属正常并存形态，不告警——评审 R1.9）。
+ * - `bak-file`：profile 根一层 `*.bak-*`（mtime 入 note）。
+ */
+export async function listResidue(
+  profileDir: string,
+  layout: 'hoisted' | 'isolated' | 'unknown',
+): Promise<{ residue: ResidueItem[]; unknowns: string[] }> {
+  const residue: ResidueItem[] = []
+  const unknowns: string[] = []
+  const root = resolve(profileDir)
+  const nm = join(root, 'node_modules')
+
+  let top: string[] = []
+  try {
+    top = await readdir(nm)
+  } catch {
+    top = [] // 无 node_modules → 无残留可清点（不算 unknown）
+  }
+  for (const name of top) {
+    if (name.startsWith('.')) continue
+    if (TMP_DIR_RE.test(name)) {
+      residue.push({ kind: 'tmp-dir', path: join(nm, name), note: null })
+      continue
+    }
+    const entryPath = join(nm, name)
+    let isDir = false
+    try {
+      isDir = (await stat(entryPath)).isDirectory()
+    } catch {
+      continue
+    }
+    if (!isDir) continue
+    if (name.startsWith('@')) {
+      let inner: string[]
+      try {
+        inner = await readdir(entryPath)
+      } catch {
+        continue
+      }
+      if (inner.length === 0) residue.push({ kind: 'empty-scope', path: entryPath, note: null })
+      continue
+    }
+    try {
+      await stat(join(entryPath, 'package.json'))
+    } catch {
+      residue.push({ kind: 'no-manifest', path: entryPath, note: null })
+    }
+  }
+
+  if (layout === 'isolated') {
+    let pnpmEntries: string[] = []
+    try {
+      pnpmEntries = await readdir(join(nm, '.pnpm'))
+    } catch {
+      pnpmEntries = []
+    }
+    for (const name of pnpmEntries) {
+      if (TMP_DIR_RE.test(name)) {
+        residue.push({ kind: 'tmp-dir', path: join(nm, '.pnpm', name), note: null })
+      }
+    }
+  } else if (layout === 'hoisted') {
+    unknowns.push('hoisted 布局不扫 .pnpm 店（仅含 lock.yaml 的残留 .pnpm 目录属正常并存形态，不告警）')
+  } else {
+    unknowns.push('布局未知，未扫 .pnpm 店')
+  }
+
+  let rootEntries: string[] = []
+  try {
+    rootEntries = await readdir(root)
+  } catch {
+    rootEntries = []
+  }
+  for (const name of rootEntries) {
+    if (!BAK_FILE_RE.test(name)) continue
+    const filePath = join(root, name)
+    try {
+      const s = await stat(filePath)
+      if (!s.isFile()) continue
+      residue.push({ kind: 'bak-file', path: filePath, note: `mtime: ${s.mtime.toISOString()}` })
+    } catch {
+      continue
+    }
+  }
+
+  return { residue, unknowns }
+}

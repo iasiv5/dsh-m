@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { detectLayout, analyzeFarm } from '../lib/core/doctor.js'
+import { detectLayout, analyzeFarm, listResidue } from '../lib/core/doctor.js'
 
 let root
 beforeEach(() => {
@@ -154,5 +154,61 @@ describe('analyzeFarm', () => {
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm[0].targetVersion, null)
     assert.equal(r.unknowns.filter((u) => u.includes('无法解析')).length, 1)
+  })
+})
+
+// ---------- Task 3：listResidue（四类残留，结构化清单零告警） ----------
+
+describe('listResidue', () => {
+  let home, profile
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-residue-'))
+    profile = join(home, 'profiles', 'web')
+    mkdirSync(join(profile, 'node_modules'), { recursive: true })
+  })
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+
+  it('四类各自命中且零 finding：no-manifest / empty-scope / tmp-dir / bak-file', async () => {
+    mkdirSync(join(profile, 'node_modules', 'broken-pkg')) // 无 package.json
+    mkdirSync(join(profile, 'node_modules', '@ghost')) // 空 scope
+    mkdirSync(join(profile, 'node_modules', 'x_pkg_tmp_123_ab12')) // pnpm 暂存形态
+    mkdirSync(join(profile, 'node_modules', 'healthy'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', 'healthy', 'package.json'), '{}')
+    writeFileSync(join(profile, 'package.json.bak-20260903'), '{}')
+    const r = await listResidue(profile, 'hoisted')
+    const kinds = r.residue.map((x) => x.kind).sort()
+    assert.deepEqual(kinds, ['bak-file', 'empty-scope', 'no-manifest', 'tmp-dir'])
+  })
+
+  it('正常安装不误报：有 package.json 的目录与有成员的 scope 都不算残留', async () => {
+    mkdirSync(join(profile, 'node_modules', 'good'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', 'good', 'package.json'), '{}')
+    mkdirSync(join(profile, 'node_modules', '@scope', 'pkg'), { recursive: true })
+    const r = await listResidue(profile, 'hoisted')
+    assert.equal(r.residue.length, 0)
+  })
+
+  it('isolated：.pnpm 顶层一层只查 *_tmp_*；正常 store 目录（foo@1.0.0，无根级 package.json）不误报', async () => {
+    mkdirSync(join(profile, 'node_modules', '.pnpm', 'foo@1.0.0', 'node_modules', 'foo'), { recursive: true })
+    mkdirSync(join(profile, 'node_modules', '.pnpm', 'leftover_tmp_7_ff3'))
+    const r = await listResidue(profile, 'isolated')
+    assert.equal(r.residue.length, 1)
+    assert.equal(r.residue[0].kind, 'tmp-dir')
+    assert.ok(r.residue[0].path.includes('leftover_tmp_7_ff3'))
+  })
+
+  it('hoisted：不做 .pnpm 扫描，unknowns 记中性事实（含 lock.yaml 残留并存说明）', async () => {
+    mkdirSync(join(profile, 'node_modules', '.pnpm'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', '.pnpm', 'lock.yaml'), '# vestigial\n')
+    const r = await listResidue(profile, 'hoisted')
+    assert.equal(r.residue.length, 0)
+    assert.ok(r.unknowns.some((u) => u.includes('不扫 .pnpm 店')))
+  })
+
+  it('bak-file 的 note 含 mtime（计数+最旧时间入 note）', async () => {
+    writeFileSync(join(profile, 'package.json.bak-20260903'), '{}')
+    const r = await listResidue(profile, 'hoisted')
+    assert.equal(r.residue[0].kind, 'bak-file')
+    assert.ok(r.residue[0].note && r.residue[0].note.includes('mtime'))
   })
 })
