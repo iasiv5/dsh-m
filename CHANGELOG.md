@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.27 变更：修复遮罩拖选误关——面板内按下、拖出释放不再关面板
+
+- **问题（装机实测 2026-10-03）**：在市场搜索框内左键按下向左拖选（越过面板边界）释放，整个面板被关闭。非浏览器鼠标手势——面板遮罩是裸 `onClick: onClose`，而在面板内容里按下、拖到遮罩上释放时，浏览器把 `click` 派发到按下/释放目标的公共祖先（恰是遮罩），被误判为「点遮罩关面板」。详情 Modal、截图灯箱、兼容确认弹层同属该缺陷类。
+- **修复**：新增纯函数 `backdropCloseHandlers`（src/client/backdrop.js）——仅当 **mousedown 与 click 都落在遮罩自身**时才关闭（其余组合一律不关，click 后按位状态复位）；四处遮罩（主面板/详情/灯箱/兼容弹层）统一切换。点遮罩关闭、Esc 关闭、✕ 按钮行为不变。
+- **验证**：新增 `tests/client-backdrop.test.mjs`（关闭/两类拖选不关/状态复位/畸形输入安全，5 组断言）；全量 1030 pass / 0 fail。
+
 ### 0.9.26 变更：跨区搜索精选稳定前置——摘要行计数与首页所见一致
 
 - **问题（装机实测 2026-10-03）**：搜索「sidebar」摘要行报「⭐ 精选 3 · 社区 315」，首页精选段只见 1 条。非重复计算——`sourceCounts` 不读分类计数（`alsoCategories` 无涉），3 条为真实精选命中；错位根因是摘要行报全局命中数，而相关性排序叠加社区区默认 downloads 降序 tie-break 把弱命中精选压进后页。
@@ -268,6 +274,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.27 — fix accidental drag-out close: press inside, release on backdrop no longer closes the panel
+
+- **Problem (observed on install, 2026-10-03)**: pressing inside the market search box and dragging left past the panel edge closed the whole panel. Not a browser mouse gesture — the panel backdrop used a bare `onClick: onClose`; when a press inside the panel content drags onto the backdrop and releases, the browser dispatches `click` to the common ancestor of the press/release targets (the backdrop itself), misread as "clicked the backdrop". The detail modal, screenshot lightbox, and compat dialog shared the same defect class.
+- **Fix**: new pure helper `backdropCloseHandlers` (src/client/backdrop.js) — close only when **both mousedown and click land on the backdrop itself** (all other combinations are ignored; the pressed state resets after each click); all four overlays (main panel/detail/lightbox/compat dialog) switched over. Backdrop-click close, Esc, and the ✕ button behave exactly as before.
+- **Verification**: new `tests/client-backdrop.test.mjs` (close / two drag-out scenarios ignored / state reset / malformed input safe — 5 assertions); full suite 1030 pass / 0 fail.
 
 ### Changed in 0.9.26 — curated hits first in cross-zone search: summary counts now match page one
 

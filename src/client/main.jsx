@@ -13,6 +13,7 @@ const API = "/dshm";
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
 const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
+const { backdropCloseHandlers } = require("./backdrop.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -997,7 +998,7 @@ function Shot({ src, onClick }) {
 function Lightbox({ shots, index, onNav, onClose }) {
   return h(
     "div",
-    { className: "dsvm-lightbox", onClick: onClose },
+    { className: "dsvm-lightbox", ...backdropCloseHandlers(onClose) },
     h("img", { src: shots[index], alt: "", onClick: (e) => e.stopPropagation(), referrerPolicy: "no-referrer" }),
     h(
       "div",
@@ -1072,7 +1073,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
   const kv = (k, v) => h(React.Fragment, { key: k }, h("dt", null, k), h("dd", null, v));
   return h(
     "div",
-    { className: "dsvm-modal", onClick: onClose },
+    { className: "dsvm-modal", ...backdropCloseHandlers(onClose) },
     h(
       "div",
       { className: "dsvm-modalbox", onClick: (e) => e.stopPropagation() },
@@ -1338,7 +1339,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   const CompatDialog = compatConfirm
     ? h(
         "div",
-        { className: "dshm-compat-overlay", onClick: () => setCompatConfirm(null) },
+        { className: "dshm-compat-overlay", ...backdropCloseHandlers(() => setCompatConfirm(null)) },
         h(
           "div",
           { className: "dshm-compat-dialog", onClick: (e) => e.stopPropagation() },
@@ -2673,7 +2674,8 @@ function MarketPanel({ onClose }) {
   }, [profile]);
   return h(
     "div",
-    { className: full ? "dshm-overlay full" : "dshm-overlay", onClick: onClose },
+    // 0.9.27 防拖拽误关：面板内按下拖选到遮罩释放时，click 落在公共祖先（遮罩）上——旧 onClick: onClose 会误关面板
+    { className: full ? "dshm-overlay full" : "dshm-overlay", ...backdropCloseHandlers(onClose) },
     h(
       "div",
       { className: full ? "dshm-panel full" : "dshm-panel", onClick: (e) => e.stopPropagation() },
