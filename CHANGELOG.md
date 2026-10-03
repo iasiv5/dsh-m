@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.23 变更：已装页两段加载——列表秒开 + 更新提示就地补 ⬆（ADR-0008）
+
+- **问题（实机 2026-10-03 实证）**：更新探测焊在已装列表接口里且带 60min 内存 TTL——发版后重开面板吃到陈旧缓存，升级提示迟迟不出现（quota-watch 新版发布 17 分钟后面板仍无提示，dshmarket 同刻已见）。
+- **两段并行（零新增按钮）**：第一段 `installed {probe:false}` 立即返回已装列表（registry 匹配与开关相位不受影响）；第二段新方法 `installedUpdates`（`probeMode: 'only'`，**TTL=0 每次挂载真实探测**）完成后把 ⬆ 徽标 / tab 红点 / 「全部升级 (N)」就地补上；探测失败仍逐项走「检查未完成」，不冒充「没得更新」。
+- **边界与副作用（ADR-0008 如实留痕）**：范围仅已装页——市场浏览页探测、`dshm_list`/`dshm_outdated` 工具、CLI 行为不变（缺省 `probeMode: 'full'`）；ttl=0 会先删 host namespace 共享缓存条目再重探，浏览页/工具的 TTL 内命中被刷新为更新值（数据只更新鲜、代码路径与自身 TTL 制度不变），GitHub 被动预算消耗速率上升（上限 25/req、50/h 滚动不变），超限走 latestError 优雅降级。
+- **文档**：决策全文 `docs/adr/0008-installed-two-phase-probe.md`；DESIGN「已装页/缓存语义」补句；GLOSSARY 新词「两段加载」。
+
 ### 0.9.22 变更：升级生效判定——tarball 差异三态分类 + 三端重启提示分流（ADR-0007）
 
 - **问题（0.9.21 实证）**：`@iasiv5/dsh-skins` 1.2.3→1.3.0 升级后未重启即已生效（客户端 bundle rev 热更），三端仍无条件提示「需要重启」——警报疲劳会侵蚀提示的权威性，重启本身也有真实成本（web 服务瞬断 / desktop 手动重开）。
@@ -241,6 +248,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.23 — two-phase Installed tab: instant list + update hints filled in place (ADR-0008)
+
+- **Problem (observed live 2026-10-03)**: update probes were welded into the installed-list endpoint behind a 60-min in-memory TTL — after publishing a release, reopening the panel served the stale cache and update hints lagged (quota-watch's new version stayed invisible 17 minutes after publish while dsh-market already showed it).
+- **Two parallel phases (zero new buttons)**: phase 1 `installed {probe:false}` returns the installed list immediately (registry matching and toggle phase untouched); phase 2 is a new `installedUpdates` method (`probeMode: 'only'`, **TTL=0 — a real probe on every panel mount**) that fills in ⬆ badges / the tab dot / "Upgrade all (N)" in place; failed checks still surface per item as "check incomplete" instead of pretending "up to date".
+- **Scope & side effects (documented in ADR-0008)**: installed tab only — browse-page probes, `dshm_list`/`dshm_outdated` tools and CLI are unchanged (default `probeMode: 'full'`); ttl=0 evicts shared host-namespace cache entries before re-probing, so browse/tools TTL hits receive fresher write-backs (data only gets fresher; code paths and their own TTL regimes unchanged); GitHub passive budget consumption rate rises (limits unchanged: 25/req, 50/h rolling) with graceful `latestError` degradation.
+- **Docs**: full decision record in `docs/adr/0008-installed-two-phase-probe.md`; DESIGN notes on the installed page / cache semantics; GLOSSARY term "Two-phase Load".
 
 ### Changed in 0.9.22 — upgrade activation classification (tarball diff, three states) + three-surface restart-hint split (ADR-0007)
 
