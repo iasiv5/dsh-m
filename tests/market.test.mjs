@@ -295,6 +295,58 @@ describe('listInstalledWithMeta', () => {
   })
 })
 
+describe('listInstalledWithMeta probeMode', () => {
+  const installed = {
+    items: [{
+      pkg: 'pkg-1',
+      name: 'P1',
+      version: '1.0.0',
+      description: '',
+      homepage: '',
+      spec: '1.0.0',
+      source: 'npm',
+      dsh: true,
+      path: '/tmp/node_modules/pkg-1',
+    }],
+    others: 0,
+    complete: true,
+    profileDir: '/tmp/profile',
+  }
+
+  it("probeMode 'none'：跳过探测段，registry matching 仍生效", async () => {
+    const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
+    const res = await listInstalledWithMeta(cfg, { probeMode: 'none' }, deps)
+    assert.equal(calls.npm.length, 0, "'none' 不得发起 latest 探测")
+    assert.equal(res.items[0].registryId, 'p-1', 'matching/enablement 不受探测段跳过影响')
+    assert.equal(res.items[0].latestVersion, undefined)
+  })
+
+  it("probeMode 'only'：缓存预热仍强制重探（ttlMin=0 穿透）", async () => {
+    const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
+    let stub = '2.0.0'
+    const probeDeps = {
+      ...deps,
+      npmLatest: async (pkg) => {
+        calls.npm.push(pkg)
+        return { version: stub, integrity: 'sha512-x', tarball: `https://example.com/${pkg}.tgz` }
+      },
+    }
+    await listInstalledWithMeta(cfg, {}, probeDeps)
+    assert.equal(calls.npm.length, 1)
+    stub = '3.0.0'
+    const res = await listInstalledWithMeta(cfg, { probeMode: 'only' }, probeDeps)
+    assert.equal(calls.npm.length, 2, "'only' 应穿透缓存重新探测")
+    assert.equal(res.items[0].latestVersion, '3.0.0')
+  })
+
+  it("缺省 'full'：TTL 内二次调用走缓存", async () => {
+    const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
+    await listInstalledWithMeta(cfg, {}, deps)
+    await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(calls.npm.length, 1, '缺省模式 TTL 内不得重复探测')
+  })
+})
+
 describe('install/upgrade：unavailable 抛业务错误', () => {
   it('installFromRegistry unavailable 时业务报错而不是 TypeError', async () => {
     const { deps } = fakeDeps({

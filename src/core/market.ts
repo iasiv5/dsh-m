@@ -866,7 +866,7 @@ export async function listMarket(
 
 export async function listInstalledWithMeta(
   cfg: RegistryConfig = {},
-  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean; profileDir?: string } = {},
+  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean; profileDir?: string; probeMode?: 'full' | 'none' | 'only' } = {},
   deps: Partial<MarketDeps> = {},
 ): Promise<InstalledResult> {
   const d: MarketDeps = { ...marketDeps(), ...deps }
@@ -918,9 +918,14 @@ export async function listInstalledWithMeta(
   const registryState = stateOf(loaded)
 
   matchInstalled(items, community.merged)
-  // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
-  await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-  await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+  // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
+  // 'only' 面板第二段 ttlMin=0 永远新鲜（readLatestCache(key,0) 先删共享条目再重探：host ns 下浏览页/
+  // 工具的 TTL 命中被刷新为更新值，预算消耗速率上升、上限不变，超限走 latestError 降级）。
+  if ((opts.probeMode ?? 'full') !== 'none') {
+    // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
+    await ensureLatestCacheSwept({ namespace, profile: opts.profile })
+    await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? 0 : Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+  }
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
 }
