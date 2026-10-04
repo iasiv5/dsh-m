@@ -38,6 +38,8 @@ import { webProfileDir } from './env.js'
 import { isSafePkgName, resolvePluginDir } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
 import { npmPackument } from './versions.js'
+import { syncNpmmirrorPackage } from './npm-route.js'
+import { clearAllLatestCache } from './latest-cache.js'
 import {
   assertNpmIntegrity,
   atomicWriteFile,
@@ -97,7 +99,7 @@ export interface HealAction { code: (typeof TX_HEAL_CODES)[number]; note: string
 export const TX_HEAL_CODES = [
   'RANGE_ANCHOR_ACCEPTED', 'B1_MANIFEST_KEYS_RESTORED', 'B1_FROZEN_REVERIFY_FAILED',
   'B2_OVERRIDES_ALIGNED', 'B2_FROZEN_REVERIFY_OK', 'B2_LOCKFILE_REBUILT',
-  'B3_LAG_RETRY', 'B3_PACKUMENT_WARMED', 'BUILDS_ALLOWED',
+  'B3_LAG_RETRY', 'B3_NPMMIRROR_SYNC', 'B3_PACKUMENT_WARMED', 'BUILDS_ALLOWED',
   'ROLLBACK_BYTES_RESTORED', 'ROLLBACK_CONVERGED_FROZEN', 'ROLLBACK_FALLBACK_REMOVED',
   'ROLLBACK_VERIFY_FAILED', 'LIVE_DISABLED', 'LIVE_REENABLED', 'LIVE_REENABLE_FAILED',
   'PATCH_ENTRIES_STRIPPED', 'PATCH_MAPPING_RESTORED',
@@ -117,6 +119,10 @@ export interface TransactionFailure { code: (typeof TX_FAILURE_CODES)[number]; n
 export interface TransactionDeps {
   runner?: (profileDir: string) => PnpmRunner   // 缺省 = makeDshRunner
   warmPackument?: (pkg: string, signal?: AbortSignal) => Promise<void>
+  /** L2②（ADR-0012）：NO_MATCHING_VERSION 来自 npmmirror 时的按需同步（缺省 = npm-route syncNpmmirrorPackage；注入仅为可测试性） */
+  syncNpmmirror?: (pkg: string) => Promise<boolean>
+  /** 同上：sync 受理后作废 latest 探测缓存（缺省 = latest-cache clearAllLatestCache） */
+  clearLatestCache?: () => void
   setLiveDisabled?: (pkg: string, disabled: boolean) => Promise<boolean>
   /** 卸载门的补丁条目摘除（缺省 = dsh-cli removePatchedDependencyEntries）；注入仅为可测试性 */
   stripPatchedEntries?: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
@@ -597,6 +603,8 @@ interface ResolvedDeps {
   profileDir: string
   runner: PnpmRunner
   warmPackument: ((pkg: string, signal?: AbortSignal) => Promise<void>) | undefined
+  syncNpmmirror: (pkg: string) => Promise<boolean>
+  clearLatestCache: () => void
   setLiveDisabled: (pkg: string, disabled: boolean) => Promise<boolean>
   stripPatchedEntries: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
   retryDelaysMs: readonly number[]
@@ -608,6 +616,8 @@ function resolveDeps(deps?: TransactionDeps): Omit<ResolvedDeps, 'runner'> {
   return {
     profileDir,
     warmPackument: deps?.warmPackument,
+    syncNpmmirror: deps?.syncNpmmirror ?? syncNpmmirrorPackage,
+    clearLatestCache: deps?.clearLatestCache ?? clearAllLatestCache,
     setLiveDisabled: deps?.setLiveDisabled ?? setLivePluginDisabled,
     stripPatchedEntries: deps?.stripPatchedEntries ?? removePatchedDependencyEntries,
     retryDelaysMs: deps?.retryDelaysMs ?? [5_000, 15_000],
@@ -632,6 +642,15 @@ async function addWithLagRetry(
   for (;;) {
     const out = await d.runner.add(spec, req.signal)
     if (out.class !== 'retryable-lag') return out
+    // L2②（ADR-0012）：NO_MATCHING_VERSION 且 registry 字段指名 npmmirror → 按需同步镜像后重试；
+    // sync 失败静默（false = 回到既有退避语义）；kill switch（DSHM_MIRROR_SYNC=0）在缺省实现内。
+    if (out.code === PNPM_OUTCOME_CODES.NO_MATCHING_VERSION && out.registry === 'npmmirror') {
+      const synced = await d.syncNpmmirror(req.pkg)
+      if (synced) {
+        d.clearLatestCache()
+        heal.push({ code: 'B3_NPMMIRROR_SYNC', note: 'NO_MATCHING_VERSION 来自 npmmirror，已按需同步镜像后重试（+npmmirror sync）' })
+      }
+    }
     if (attempt >= d.retryDelaysMs.length) return out
     const delay = d.retryDelaysMs[attempt] ?? 0
     attempt += 1

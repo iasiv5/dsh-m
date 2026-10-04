@@ -256,10 +256,14 @@ export const PNPM_OUTCOME_CODES = {
   PUBLIC_HOIST_PATTERN_DIFF: 'ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF',
 } as const
 
+export type PnpmRegistrySource = 'npmmirror' | 'npmjs' | null
+
 export interface RunnerOutcome {
   readonly class: PnpmOutcomeClass
   /** 已知决策 code 取 PNPM_OUTCOME_CODES 的值；hard-fail 可保留其他 ERR_PNPM_* 诊断码 */
   readonly code?: string
+  /** NO_MATCHING_VERSION 时的 registry 源识别——在完整文本上判定、先于截断（ADR-0012 L2；上层零 regex） */
+  readonly registry?: PnpmRegistrySource
   /** ≤800 字符（runner 边界统一截断） */
   readonly output: string
   /** 仅 add·ok：精确放行的包名（未走放行 = []；ADR-0002） */
@@ -277,24 +281,31 @@ export interface BuildApprovalDecision {
 /**
  * 对 pnpm/dsh 原始输出文本做六类归一解释。分类发生在任何文案改写之前；
  * 上层（事务/market）只消费 class + code 常量，永不 regex 原始输出。
+ * registry 识别（ADR-0012 L2）同样只在此处发生：tail-800 截断可能吃掉特征串，
+ * 因此必须在完整文本上判定后随结构化结果上交。
  */
-export function classifyPnpmError(text: string): { class: PnpmOutcomeClass; code?: string } {
+export function classifyPnpmError(text: string): { class: PnpmOutcomeClass; code?: string; registry: PnpmRegistrySource } {
   const raw = String(text ?? '')
+  const registry: PnpmRegistrySource = raw.includes('registry-direct.npmmirror.com') || raw.includes('registry.npmmirror.com')
+    ? 'npmmirror'
+    : raw.includes('registry.npmjs.org')
+      ? 'npmjs'
+      : null
   if (raw.includes(PNPM_OUTCOME_CODES.NO_MATCHING_VERSION)) {
-    return { class: 'retryable-lag', code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION }
+    return { class: 'retryable-lag', code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION, registry }
   }
   if (raw.includes(PNPM_OUTCOME_CODES.CONFIG_MISMATCH)) {
-    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.CONFIG_MISMATCH }
+    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.CONFIG_MISMATCH, registry }
   }
   if (raw.includes(PNPM_OUTCOME_CODES.OUTDATED_LOCKFILE)) {
-    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.OUTDATED_LOCKFILE }
+    return { class: 'config-drift', code: PNPM_OUTCOME_CODES.OUTDATED_LOCKFILE, registry }
   }
   if (raw.includes(PNPM_OUTCOME_CODES.UNUSED_PATCH)) {
-    return { class: 'unused-patch', code: PNPM_OUTCOME_CODES.UNUSED_PATCH }
+    return { class: 'unused-patch', code: PNPM_OUTCOME_CODES.UNUSED_PATCH, registry }
   }
-  if (isPrepareBlocked(raw)) return { class: 'needs-builds' }
+  if (isPrepareBlocked(raw)) return { class: 'needs-builds', registry }
   const m = /(ERR_PNPM_[A-Z0-9_]+)/.exec(raw)
-  return { class: 'hard-fail', code: m?.[1] }
+  return { class: 'hard-fail', code: m?.[1], registry }
 }
 
 /** 统一的命令取消错误形态（runCommand 调用前已取消与运行中取消同款）。 */

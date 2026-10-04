@@ -1921,3 +1921,91 @@ describe('M2 Task 3：compensate-install 补偿事务', () => {
     assert.equal(res.snapshotRestoreVerified, true)
   })
 })
+
+// ---------- B3 npmmirror sync（L2，ADR-0012 T6） ----------
+
+describe('B3 registry-aware npmmirror sync（L2，ADR-0012）', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  function npmmirrorOutcome() {
+    return failWith(`${NO_MATCHING} while fetching it from https://registry.npmmirror.com/`)
+  }
+
+  it('registry=npmmirror → sync 1 次 + 清缓存 + heal 含 B3_NPMMIRROR_SYNC，重试后 committed', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const syncs = []
+    const clears = []
+    const { runner } = mockRunner({
+      add: [
+        npmmirrorOutcome(),
+        async () => {
+          writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+          writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+          return { class: 'ok', output: 'added' }
+        },
+      ],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner, {
+        retryDelaysMs: [0],
+        syncNpmmirror: async (pkg) => {
+          syncs.push(pkg)
+          return true
+        },
+        clearLatestCache: () => {
+          clears.push(1)
+        },
+      }),
+    )
+    assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
+    assert.deepEqual(syncs, ['pkg-a'])
+    assert.equal(clears.length, 1)
+    assert.ok(healCodes(r).includes('B3_NPMMIRROR_SYNC'))
+    const note = r.healActions.find((h) => h.code === 'B3_NPMMIRROR_SYNC')?.note ?? ''
+    assert.ok(note.includes('+npmmirror sync'), note)
+  })
+
+  it('registry=null / sync false（kill switch 缺省实现路径）→ 不 sync 不清缓存，退避重试照旧', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const syncs = []
+    const clears = []
+    const { runner } = mockRunner({
+      add: [
+        failWith(NO_MATCHING),
+        async () => {
+          writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+          writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+          return { class: 'ok', output: 'added' }
+        },
+      ],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+      baseTx(dir, runner, {
+        retryDelaysMs: [0],
+        syncNpmmirror: async (pkg) => {
+          syncs.push(pkg)
+          return false
+        },
+        clearLatestCache: () => {
+          clears.push(1)
+        },
+      }),
+    )
+    assert.equal(r.status, 'committed')
+    assert.equal(syncs.length, 0, 'registry 字段为 null → 不触发 sync')
+    assert.equal(clears.length, 0)
+    assert.equal(healCodes(r).filter((c) => c === 'B3_LAG_RETRY').length, 1, '既有退避重试语义不变')
+    assert.ok(!healCodes(r).includes('B3_NPMMIRROR_SYNC'))
+  })
+})

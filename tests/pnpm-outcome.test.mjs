@@ -48,10 +48,12 @@ describe('classifyPnpmError：六类分类表', () => {
     assert.deepEqual(classifyPnpmError(NO_MATCHING_TEXT), {
       class: 'retryable-lag',
       code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION,
+      registry: 'npmjs',
     })
     assert.deepEqual(classifyPnpmError(UNUSED_PATCH_TEXT), {
       class: 'unused-patch',
       code: PNPM_OUTCOME_CODES.UNUSED_PATCH,
+      registry: null,
     })
   })
 
@@ -286,5 +288,26 @@ describe('makeDshRunner.frozenInstall：生产进程树终止（F1-R/B）', () =
       rmSync(binDir, { recursive: true, force: true })
       rmSync(profileDir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------- registry 源识别（L2，ADR-0012）：完整文本判定、先于截断 ----------
+
+describe('classifyPnpmError registry 源识别（L2，ADR-0012）', () => {
+  it('npmmirror 特征 → npmmirror；npmjs 特征 → npmjs；无关输出 → null', () => {
+    assert.equal(classifyPnpmError(`${NO_MATCHING_TEXT} from https://registry.npmmirror.com/`).registry, 'npmmirror')
+    assert.equal(classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION while fetching it from https://registry-direct.npmmirror.com/').registry, 'npmmirror')
+    assert.equal(classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION while fetching from https://registry.npmjs.org/x').registry, 'npmjs')
+    assert.equal(classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION No matching version found').registry, null)
+    assert.equal(classifyPnpmError(OUTDATED_LOCKFILE_TEXT).registry, null)
+  })
+
+  it('特征串位于 800 字截断线之外仍识别（分类先于截断，评审 R1-3）', () => {
+    const pad = 'x'.repeat(900)
+    const text = `ERR_PNPM_NO_MATCHING_VERSION No matching version found for pkg-a@1.2.8\n${pad}\nfrom https://registry.npmmirror.com/`
+    assert.ok(text.length > 800)
+    const c = classifyPnpmError(text)
+    assert.equal(c.class, 'retryable-lag')
+    assert.equal(c.registry, 'npmmirror')
   })
 })
