@@ -192,7 +192,9 @@ profile 目标（0.9.0）：CLI 恒作用于 web profile；--profile web 为显�
   --profile desktop 会被拒绝——Desktop profile 的插件管理走官方 Desktop 插件管理页。
 
 环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR、
-  DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）
+  DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）、
+  DSHM_NPM_REGISTRY（npm 元数据读取源覆盖，ADR-0012；与 DSHM_REGISTRY_URL 是两回事）、
+  DSHM_MIRROR_SYNC=0（关闭 npmmirror 按需同步自愈）
 `
 
 export async function runCli(argv: string[], deps: CliDeps = {}, io: CliIo = {}): Promise<number> {

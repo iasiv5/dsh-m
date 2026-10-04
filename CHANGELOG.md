@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.32 变更：npm registry 路由自适应——元数据预取换源/镜像自愈（ADR-0012）
+
+- **动机**：2026-10-04 上海 Windows 桌面机实证——元数据预取写死直连 registry.npmjs.org，间歇性超时使升级在委派 pnpm 之前夭折（`fetch failed` / `The operation was aborted due to timeout`，且 `.plugin-manager/logs` 无对应操作日志），而 npmmirror 镜像早已同步目标版本；同期首尔腾讯云机 npmjs 直连良好。两台机器需要零配置各自可用。
+- **读分类路由（L1/L3）**：检测读（`npmLatest` 升级探测 / `npmPackumentTimes` 发布时刻）恒以 npmjs 权威源优先、首腿超时收紧 ≤5s、失败降级生效源；履约读（`npmVersion` 精确版本元数据 / `npmPackument` 预热）走生效源优先。`npmPackument` 的 registry 参数此前被静默忽略，本版修复（显式参数开始生效，测试钉住）。
+- **L0 传输层**：httpx 换 undici 自带 fetch + 自建 dispatcher（`EnvHttpProxyAgent` 显式交接代理解析）——元数据预取开始感知 `HTTP(S)_PROXY` / `npm_config_*` 代理，并规避宿主 undici 全局 dispatcher 污染（dsh-market net.ts #742 同族）；`fetchLimited` 新增 PUT 方法（仅供 sync 原语）；网络失败错误附 `via` 上下文，失败摘要仅在代理路径渲染「（经 <掩码代理>）」。
+- **L2 镜像滞后自愈**：`NO_MATCHING_VERSION` 且 registry 字段指名 npmmirror（分类层结构化识别、完整文本上判定、上层零 regex）→ 按需同步镜像（`registry-direct.npmmirror.com/<pkg>/sync`，PUT）→ 既有退避重试（heal 记 `B3_NPMMIRROR_SYNC`）；`npmVersion` 履约阶梯同步适用（404 → sync → 等待 10s → 同源重试 → npmjs 兜底）；sync 受理后作废 latest 缓存。`DSHM_MIRROR_SYNC=0` 一键关闭。
+- **新模块 `src/core/npm-route.ts`**：`DSHM_NPM_REGISTRY` 源覆盖（最高优先，设了跳过探测）> [.npmrc registry, npmjs, npmmirror]；probe-once（2.5s 共享预算、single-flight、胜者须完整响应带 version）；决策持久化 `<cacheDir>/npm-route.json`（删文件即重探）；全候选失败仅内存回退 npmjs（60s TTL 后重探、不落盘）。生效源切换自动作废 latest / packument 两级缓存。
+- **wire 测试缝隙迁移**：既有 mock `globalThis.fetch` 的测试缝隙迁至 `_setWireFetchForTests`（versions / npm-integrity / registry-check 三文件，断言与计数语义不变）。
+- **测试**：净增 34 例（L0 代理解析/wire 转发/via/PUT、npm-route 12 例、读分类路由、registry 分类字段、B3 sync、L4 摘要）；全量 1121 tests，本机 1096 pass / 15 fail——15 项全部为 Windows 平台既有 symlink 语义用例（与改动前基线集合逐项一致，零回归）；typecheck 零错误。真机验收（上海机 scoped 自研包窗口内升级 + 首尔机 `dshm outdated`）随发版执行。
+
 ### 0.9.31 变更：doctor 支持 desktop profile（CLI 例外开口 + farmChecked 语义修订，ADR-0011）
 
 - **动机**：Windows desktop 机实机报告证实 core 引擎本就 profileDir 参数化无 web 硬编码（desktop 物化布局判 hoisted、farm=0 属常态），但 CLI 全命令一刀切拒绝 `--profile desktop` 把只读体检连坐；desktop-only 机器无 flag 体检还会扫不存在的 web 目录得全 0 报告。
@@ -306,6 +316,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.32 — npm registry route adaptation: metadata prefetch source switching / mirror self-heal (ADR-0012)
+
+- **Motivation**: on 2026-10-04 a Shanghai Windows desktop machine proved the metadata prefetch is hardcoded to registry.npmjs.org; intermittent timeouts aborted upgrades before pnpm was ever invoked (`fetch failed` / `The operation was aborted due to timeout`, with no operation log under `.plugin-manager/logs`), while npmmirror had already synced the target version. A Seoul (Tencent Cloud) box enjoys fast direct npmjs. Both machines must work with zero configuration.
+- **Read-class routing (L1/L3)**: detection reads (`npmLatest` upgrade probe / `npmPackumentTimes` publish times) prefer the authoritative npmjs (first leg timeout tightened to ≤5s) and degrade to the effective source; fulfillment reads (`npmVersion` exact metadata / `npmPackument` warm) prefer the effective source. `npmPackument` previously ignored its registry parameter — fixed this release (explicit parameter now takes effect, pinned by tests).
+- **L0 transport**: httpx now uses undici's own fetch with a self-built dispatcher (`EnvHttpProxyAgent` handed the resolved proxies explicitly) — metadata prefetch honours `HTTP(S)_PROXY` / `npm_config_*` proxies and is immune to host undici global-dispatcher pollution (dsh-market net.ts #742 family); `fetchLimited` gains a PUT method (sync primitive only); network failures carry a `via` context, and the failure digest renders 「(via <masked proxy>)」 only on proxy paths.
+- **L2 mirror-lag self-heal**: on `NO_MATCHING_VERSION` whose registry field names npmmirror (structured recognition in the classification layer, judged on the full text — upper layers never regex) → on-demand mirror sync (`registry-direct.npmmirror.com/<pkg>/sync`, PUT) → the existing backoff retry (heal `B3_NPMMIRROR_SYNC`); the same ladder applies to `npmVersion` (404 → sync → wait 10s → same-source retry → npmjs fallback); latest cache is invalidated after a sync. `DSHM_MIRROR_SYNC=0` switches it all off.
+- **New module `src/core/npm-route.ts`**: `DSHM_NPM_REGISTRY` override (highest priority, skips probing) > [.npmrc registry, npmjs, npmmirror]; probe-once (2.5s shared budget, single-flight, winner must return a complete body with version); decision persisted at `<cacheDir>/npm-route.json` (delete to re-probe); total failure falls back to npmjs in memory only (60s TTL then re-probe, never persisted). Effective-source switches invalidate both latest and packument caches.
+- **Wire test seam migration**: the existing mock-`globalThis.fetch` seam moved to `_setWireFetchForTests` (versions / npm-integrity / registry-check; assertion and counting semantics unchanged).
+- **Tests**: 34 new cases (L0 proxy parsing/wire forwarding/via/PUT, npm-route ×12, read-class routing, registry classification field, B3 sync, L4 digest); full suite 1121 tests — 1096 pass / 15 fail on this machine, all 15 being pre-existing Windows symlink-semantics cases (item-for-item identical to the pre-change baseline: zero regression); typecheck clean. Real-machine acceptance (in-window scoped self-published upgrade on the Shanghai box, `dshm outdated` on Seoul) ships with the release.
 
 ### Added in 0.9.31 — doctor desktop profile support (CLI exception + farmChecked semantics revision, ADR-0011)
 

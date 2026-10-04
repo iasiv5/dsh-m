@@ -121,7 +121,7 @@
   - Test: `tests/httpx.test.mjs`
 - 接口契约
   - Consumes: Task 2 的 undici
-  - Produces: ①导出 `resolveProxyConfig(): { http: string | null; https: string | null }`；②导出 `resetProxyAgentsForTests(): void`（重建两个模块级单例；评审 R1-4）；③`FetchOptions['method']` 联合类型 = `'GET' | 'HEAD' | 'PUT'`；④网络层抛出的 Error 附 `via: string`（`direct` 或掩码代理 URL）；⑤**proxyAgent 以 `resolveProxyConfig()` 结果显式构造**（`new EnvHttpProxyAgent({ httpProxy, httpsProxy })`，评审 R1-5）
+  - Produces: ①导出 `resolveProxyConfig(): { http: string | null; https: string | null }`；②导出 `resetProxyAgentsForTests(): void`（重建两个模块级单例；评审 R1-4）；③`FetchOptions['method']` 联合类型 = `'GET' | 'HEAD' | 'PUT'`；④网络层抛出的 Error 附 `via: string`（`direct` 或掩码代理 URL）；⑤**proxyAgent 以 `resolveProxyConfig()` 结果显式构造**（`new EnvHttpProxyAgent({ httpProxy, httpsProxy })`，评审 R1-5）；⑥**wire 层测试缝隙 `_setWireFetchForTests`（实现期发现，2026-10-05）**：仓库既有 wire 测试缝隙是 mock `globalThis.fetch`（versions 头注原文），httpx 换 undici 包 fetch 后 mock 被绕开 → 新增模块内可替换 fetch 引用，versions/npm-integrity/registry-check 三文件的 mock 迁至该缝隙（断言与计数语义零变化）
 - 验证范围：新增用例绿 + `tests/httpx.test.mjs` 既有用例（真实 loopback server）全绿 = 无回归
 
 - [ ] Step 1: 写失败测试（追加）：
