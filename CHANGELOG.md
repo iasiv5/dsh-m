@@ -8,6 +8,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.31 变更：doctor 支持 desktop profile（CLI 例外开口 + farmChecked 语义修订，ADR-0011）
+
+- **动机**：Windows desktop 机实机报告证实 core 引擎本就 profileDir 参数化无 web 硬编码（desktop 物化布局判 hoisted、farm=0 属常态），但 CLI 全命令一刀切拒绝 `--profile desktop` 把只读体检连坐；desktop-only 机器无 flag 体检还会扫不存在的 web 目录得全 0 报告。
+- **CLI 例外（仅 doctor）**：`dshm doctor --profile desktop` 允许并路由 `desktopProfileDir()`，输出首行加 `[web|desktop]` 标注；HELP 同步；**其余命令对 `--profile desktop` 的拒绝语义逐字不变**（回归钉子测试钉住），desktop 变更管理仍走官方 Desktop 插件页。
+- **空目录提示**：目标 profile 目录不存在时提示「desktop-only 机器请加 --profile desktop」——判据为目录不存在（存在但为空的合法 profile 不误伤）。
+- **宿主 method 零改动**：doctor case 本就 active-profile 无关，desktop 宿主免改生效（新增 desktop-kind 注入钉子测试）；MCP 工具 `dshm_doctor` 维持 ADR-0010 决定 3 缓上；Windows Electron 宿主 runtimeVersion 可能仍降级（物化布局 farm=0，stale 无判定对象，实际影响为零，如实记录）。
+- **farmChecked 语义修订**：「0=遍历空转」判定仅适用于存在符号链农场的形态；物化布局 0 为常态（ADR-0011）。
+- **验证**：新增 7 例（desktop 路由/标注/他命令拒绝/非法值/空提示/正常不提示/method 钉子），更新 1 例旧拒绝样本；全量 1085 pass / 0 fail / 0 skipped；typecheck 零错误。Windows 外机验收清单见实施计划（本机无法执行 Windows E2E）。
+
 ### 0.9.30 变更：修复 bin 符号链接静默 no-op（F2）+ 版本解析 realpath 第三源（F1）
 
 - **根因同源**：pnpm 生态里两类关键入口都是**符号链接**——`node_modules/.bin/dshm`（指向 lib/cli.js）与全局 shim `PNPM_HOME/dsh`（指向真实 bin.js）——而两处代码都在 realpath 之前做了路径身份判定。
@@ -297,6 +306,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.31 — doctor desktop profile support (CLI exception + farmChecked semantics revision, ADR-0011)
+
+- **Motivation**: a Windows desktop machine's report confirmed the core engine is profileDir-parameterized with no web hardcoding (materialized desktop layout detects as hoisted with farm=0 — the norm, not a short-circuit), yet the CLI's blanket `--profile desktop` rejection swept up the read-only doctor; desktop-only machines scanning a nonexistent web dir got an all-zero report.
+- **CLI exception (doctor only)**: `dshm doctor --profile desktop` is allowed and routed to `desktopProfileDir()`, with a `[web|desktop]` tag on the first output line; HELP synced; **every other command's rejection of `--profile desktop` stays byte-identical** (pinned by regression tests) — desktop mutation management remains with the official Desktop plugin page.
+- **Missing-dir hint**: when the target profile dir does not exist, suggest `--profile desktop` (an existing-but-empty legit profile is not flagged).
+- **Host method untouched**: the doctor case was already active-profile agnostic — desktop hosts get it for free (new desktop-kind injection pin test); the `dshm_doctor` MCP tool stays deferred per ADR-0010 decision 3; on Windows Electron hosts runtimeVersion may still degrade (materialized layout means farm=0, so stale has nothing to judge — zero practical impact, recorded honestly).
+- **farmCount semantics revision**: "0 = walk short-circuited" applies only to shapes with a symlink farm; 0 is the norm for materialized layouts (ADR-0011).
+- **Verification**: 7 new cases + 1 updated legacy rejection sample; full suite 1085 pass / 0 fail / 0 skipped; typecheck clean. The Windows on-machine acceptance checklist ships with the implementation plan (no Windows E2E possible on this machine).
 
 ### Fixed in 0.9.30 — bin symlink silent no-op (F2) + realpath third source for version resolution (F1)
 

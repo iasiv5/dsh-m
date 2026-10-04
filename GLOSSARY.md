@@ -133,7 +133,7 @@ profile `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 中一条豁免规�
 `minimumReleaseAge` 窗口，缺省 1440 分钟（pnpm 11.7 实测）；显式设置或 `minimumReleaseAgeStrict` 开启时，点名窗口内新版本会被拒。_Avoid_: 冷却期、隔离期
 
 **体检（Doctor）**:
-对单个 profile 的只读健康检查：纯文件系统分析（无进程、无网络、无写入），首期覆盖农场测活、残留物清点、账实一致三类；产物是结构化报告，永不修复（ADR-0010）。
+对单个 profile 的只读健康检查：纯文件系统分析（无进程、无网络、无写入），首期覆盖农场测活、残留物清点、账实一致三类；产物是结构化报告，永不修复（ADR-0010）。CLI 上唯一允许 `--profile desktop` 的子命令（ADR-0011 例外开口；其余命令恒 web）。
 _Avoid_: 修复器、清理器、诊断修复（体检不做修复）
 
 **三级严重度（Severity Tiers）**:

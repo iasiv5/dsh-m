@@ -28,3 +28,5 @@ dsh-m 至今没有任何诊断能力：profile 出问题时的排查全靠 know-
 - know-how 014 的「升级后重跑农场测活」纪律获得工具化出口：`dshm doctor` 一键替代手工 lstat 遍历。
 - 验收锚点（本机 web profile 首跑）：8 个空 scope 目录与 12 个 `*.bak-*` 以结构化清单呈现、悬空符号链 0 条（014 heal 后）、账实一致或如实报告不一致、双市场并存以信息级出现。
 - 文档连带：GLOSSARY 六词条（体检 / 三级严重度 / unknown≠broken / 账实分裂 / 残留物 / 农场测活）。
+
+> **2026-10-04 修订指针**：决定 6 的「desktop profile 诊断不在 Day1，需要时另议」已由 [ADR-0011](./0011-doctor-desktop-profile.md) 落地——CLI 例外开口（仅 doctor 允许 `--profile desktop`）+ farmChecked 空转判定限定存在农场形态；其余决定不变。
