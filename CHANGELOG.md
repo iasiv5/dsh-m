@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.30 变更：修复 bin 符号链接静默 no-op（F2）+ 版本解析 realpath 第三源（F1）
+
+- **根因同源**：pnpm 生态里两类关键入口都是**符号链接**——`node_modules/.bin/dshm`（指向 lib/cli.js）与全局 shim `PNPM_HOME/dsh`（指向真实 bin.js）——而两处代码都在 realpath 之前做了路径身份判定。
+- **F2（0.9.28 起既有，🔴 bin 入口全命令静默 exit 0）**：cli.ts `invokedDirectly` 比较 `argv[1]`（链接路径）与 `import.meta.url`（node realpath 后的真实路径）永假，`dshm <任何命令>` 无输出直接退出。修复：比较前对 `argv[1]` 同样 realpath。新增 `tests/cli-bin-symlink.test.mjs`（经符号链接调用 --help 与 doctor --json 的复活验证）。
+- **F1（0.9.29 装机验收实证）**：dsh-version.ts `readLauncherPackageVersion` 从 shim 位置直接向上三级找 package.json，落在 pnpm home 目录树上空走——宿主内纯 FS 版本解析在本机拓扑（`node PNPM_HOME/dsh web`）不可得，doctor 的 stale 判定降级、ping chip 被迫吃 spawn 回退。修复：判定 entry 形态后先 realpath 再上溯（本机实测解析得 0.2.0-rc.2）。新增 dsh-version.test.mjs shim 形态用例。
+- **验证**：专项 9/9（含两新用例）；全量 1079 pass / 0 fail / 0 skipped；typecheck 零错误。装机后预期：`dshm doctor`（bin 入口）可用；宿主 method 通路 runtimeVersion=0.2.0-rc.2、stale 判定复活（装机时农场 dsh 链接 0.1.7-rc.2 为现成 stale 形态，heal 后归零）。
+
 ### 0.9.29 变更：profile 体检 Doctor——`dshm doctor` 上线（只读：农场测活 / 残留物清点 / 账实一致）
 
 - **动机**：dsh-m 至今没有诊断能力——know-how 014 的「每次 DSH 升级后重跑农场测活」是唯一现役周期必查项（曾 81 条悬空、230 行手工映射留档），know-how 023 实录「账实分裂」形态；本机实扫另发现 8 个空 scope 目录 + 12 个 `*.bak-*` 累积。学 dsh-market check.ts 的设计纪律（纯 FS 边界、三级严重度、unknown≠broken、误报记账、修复责任外移）落地 Day1 子集，选点裁决与对比详见 ADR-0010 与对比报告（2026-10-04）。
@@ -290,6 +297,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.30 — bin symlink silent no-op (F2) + realpath third source for version resolution (F1)
+
+- **Shared root cause**: two critical pnpm-ecosystem entry points are **symlinks** — `node_modules/.bin/dshm` (→ lib/cli.js) and the global shim `PNPM_HOME/dsh` (→ the real bin.js) — while both code sites made path-identity decisions before realpath.
+- **F2 (present since 0.9.28, 🔴 every command via the bin entry silently exits 0)**: cli.ts `invokedDirectly` compared `argv[1]` (link path) against `import.meta.url` (node's realpath) — never equal, so `dshm <any command>` printed nothing and exited. Fix: realpath `argv[1]` before comparing. New `tests/cli-bin-symlink.test.mjs` (revival via symlinked --help and doctor --json).
+- **F1 (proven at 0.9.29 install acceptance)**: dsh-version.ts `readLauncherPackageVersion` walked up three levels from the shim location, landing in the pnpm home tree — pure-FS version resolution was unreachable under this host topology (`node PNPM_HOME/dsh web`), degrading doctor's stale judgment and forcing the ping chip onto the spawn fallback. Fix: realpath the entry after the shape check, then walk (locally verified resolving 0.2.0-rc.2). New shim-shape case in dsh-version.test.mjs.
+- **Verification**: targeted 9/9 (two new cases); full suite 1079 pass / 0 fail / 0 skipped; typecheck clean. Post-install expectations: `dshm doctor` works via the bin entry; host method path reports runtimeVersion=0.2.0-rc.2 with stale judgment live (the farm's dsh link at 0.1.7-rc.2 is a ready-made stale form until healed).
 
 ### Added in 0.9.29 — profile Doctor: `dshm doctor` (read-only: farm liveness / residue inventory / manifest-reality consistency)
 

@@ -24,6 +24,7 @@ import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
 import { upgradeEffectLine } from './core/activation.js'
 import { pathToFileURL } from 'node:url'
+import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /** 分类中文标签（0.7.0 Task 6；0.9.16 策展五桶）：精选策展桶本地表 + 社区已知标签单一事实源；未知 slug 原样。 */
@@ -514,7 +515,11 @@ const invokedDirectly = (() => {
   const entry = process.argv[1]
   if (!entry) return false
   try {
-    return import.meta.url === pathToFileURL(resolve(entry)).href
+    // F2（0.9.28-0.9.29 实证）：pnpm 的 node_modules/.bin/dshm 是指向 lib/cli.js 的
+    // 符号链接——node 对入口做 realpath，import.meta.url 是真实路径而 argv[1] 仍是
+    // 链接路径，直接比较永假 → bin 入口全命令静默 exit 0。比较前同样 realpath。
+    const realEntry = realpathSync(entry)
+    return import.meta.url === pathToFileURL(realEntry).href
   } catch {
     return false
   }

@@ -11,7 +11,7 @@
  * .pnpm 目录名多版本残留无判据——均不走。
  */
 import { dirname, join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dshArgv } from './dsh-cli.js'
 
@@ -28,9 +28,13 @@ export function parseDshVersionOutput(text: string): string | null {
 export function readLauncherPackageVersion(input: Parameters<typeof dshArgv>[0] = {}): string | null {
   try {
     const argv = dshArgv(input)
-    const entry = argv.args.length > 0 ? argv.args[argv.args.length - 1] : undefined
+    let entry = argv.args.length > 0 ? argv.args[argv.args.length - 1] : undefined
     // 与 dshArgv 同一判定：entry 必须长得像 launcher bin，否则是 CLI/PATH 模式
     if (!entry || !/[\\/](?:bin\.(?:js|ts)|dsh)$/.test(entry)) return null
+    // F1（0.9.29 装机验收实证）：pnpm 全局 shim（如 PNPM_HOME/dsh）是指向真实 bin.js
+    // 的符号链接——realpath 后再向上找 package.json，否则会在 pnpm home 目录树上
+    // 空走三级，宿主内纯 FS 解析落空（ping chip 被迫吃 spawn 回退）。
+    entry = realpathSync(entry)
     let dir = dirname(entry)
     for (let up = 0; up < 3; up++) {
       try {

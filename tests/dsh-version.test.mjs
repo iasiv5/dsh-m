@@ -6,7 +6,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -80,6 +80,23 @@ describe('dsh-version：readLauncherPackageVersion', () => {
       assert.equal(readLauncherPackageVersion({ argv: ['node', join(lib, 'bin.js')] }), null)
     } finally {
       rmSync(lib, { recursive: true, force: true })
+    }
+  })
+
+  it('pnpm 全局 shim 形态（F1，0.9.29 装机验收实证）：argv[1] 是指向真实 bin.js 的符号链接 → realpath 后解析出版本', () => {
+    const { root, lib } = makeTree()
+    try {
+      // 真实包树：@deepseek-ai/dsh/package.json + lib/bin.js
+      writeFileSync(join(root, '@deepseek-ai', 'dsh', 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.2.0-rc.2' }))
+      writeFileSync(join(lib, 'bin.js'), '// launcher entry stub')
+      // pnpm home 里的全局 shim：符号链接（本机实况 ~/.local/share/pnpm/dsh 同形态）
+      const pnpmHome = join(root, 'pnpm-home')
+      mkdirSync(pnpmHome, { recursive: true })
+      symlinkSync(join(lib, 'bin.js'), join(pnpmHome, 'dsh'))
+      const v = readLauncherPackageVersion({ argv: ['node', join(pnpmHome, 'dsh')] })
+      assert.equal(v, '0.2.0-rc.2')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })
