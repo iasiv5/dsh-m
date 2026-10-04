@@ -9,6 +9,17 @@ import assert from 'node:assert/strict'
 import { beforeEach, afterEach, describe, it } from 'node:test'
 import { writeLatestCache, readLatestCache, invalidateLatestCache, ensureLatestCacheSwept, resetLatestCacheForTest, latestCacheKey, latestItemId } from '../lib/core/latest-cache.js'
 
+describe('clearAllLatestCache（L1 路由切换，ADR-0012）', () => {
+  it('写入两条 → clearAll → 读回空', async () => {
+    const { clearAllLatestCache } = await import('../lib/core/latest-cache.js')
+    writeLatestCache('host|k|npm:p', { version: '1' })
+    writeLatestCache('cli|k|npm:q', { version: '2' })
+    clearAllLatestCache()
+    assert.equal(readLatestCache('host|k|npm:p', 60), null)
+    assert.equal(readLatestCache('cli|k|npm:q', 60), null)
+  })
+})
+
 describe('latest-cache 纯内存（ADR-0006）', () => {
   let cacheRoot
   beforeEach(() => {

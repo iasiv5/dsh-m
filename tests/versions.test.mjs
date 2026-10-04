@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { listInstalledWithMeta, installFromRegistry } from '../lib/core/market.js'
+import { npmLatest, npmPackument, npmVersion } from '../lib/core/versions.js'
 import {
   createGithubRequestBudget,
   githubLatestTag,
@@ -452,5 +453,154 @@ describe('M2 Task 1：github apiBase 贯穿与 fallback 解引用', () => {
     const sha = await githubTagSha('o/r', 'v9.9.9', 20_000, undefined, undefined, apiBase)
     assert.equal(sha, SHA)
     assert.ok(hits.some((u) => u.includes('/commits/v9.9.9')))
+  })
+})
+
+// ---------- 读分类路由（ADR-0012 T5）：检测读权威链 / 履约读阶梯 / npmPackument 参数修复 ----------
+
+describe('npmLatest 检测读权威链（L3）', () => {
+  it('npmjs 首腿失败 → 生效源成功；首腿超时收紧 ≤5s', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const calls = []
+      const fetcher = async (url, opts) => {
+        calls.push({ url: String(url), ms: opts?.timeoutMs })
+        if (String(url).startsWith('https://registry.npmjs.org/')) throw new Error('npmjs down')
+        return { version: '2.0.0' }
+      }
+      const latest = await npmLatest('pkg-a', 20_000, undefined, undefined, { fetchJsonLimited: fetcher })
+      assert.equal(latest.version, '2.0.0')
+      assert.equal(calls.length, 2)
+      assert.ok(calls[0].url.startsWith('https://registry.npmjs.org/'))
+      assert.ok(calls[0].ms <= 5000, `权威首腿收紧 5s，实际 ${calls[0].ms}`)
+      assert.ok(calls[1].url.startsWith('https://registry.npmmirror.com/'))
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+
+  it('显式 registry 参数优先且不降级（旧契约不变）', async () => {
+    const calls = []
+    const fetcher = async (url) => {
+      calls.push(String(url))
+      return { version: '3.0.0' }
+    }
+    const latest = await npmLatest('pkg-a', 5000, undefined, 'https://registry.npmmirror.com', { fetchJsonLimited: fetcher })
+    assert.equal(latest.version, '3.0.0')
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0].startsWith('https://registry.npmmirror.com/'))
+  })
+})
+
+describe('npmVersion 履约阶梯（L2①）', () => {
+  it('生效镜像 404 → sync → 等待 10s → 同源重试成功（不到 npmjs）', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      let mirrorCalls = 0
+      const syncs = []
+      const waits = []
+      const fetcher = async (url) => {
+        const u = String(url)
+        if (u.startsWith('https://registry.npmmirror.com/')) {
+          mirrorCalls++
+          if (mirrorCalls === 1) throw new Error('HTTP 404')
+          return { version: '1.2.8', dist: { integrity: 'sha512-x' } }
+        }
+        throw new Error(`不应到 npmjs: ${u}`)
+      }
+      const meta = await npmVersion('pkg-a', '1.2.8', 20_000, undefined, undefined, {
+        fetchJsonLimited: fetcher,
+        syncNpmmirror: async (pkg) => {
+          syncs.push(pkg)
+          return true
+        },
+        wait: async (ms) => {
+          waits.push(ms)
+        },
+      })
+      assert.equal(meta.version, '1.2.8')
+      assert.deepEqual(syncs, ['pkg-a'])
+      assert.deepEqual(waits, [10_000])
+      assert.equal(mirrorCalls, 2)
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+
+  it('阶梯全败 → npmjs 兜底 → 仍败抛首因错误', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const urls = []
+      const fetcher = async (url) => {
+        urls.push(String(url))
+        throw new Error('HTTP 404')
+      }
+      await assert.rejects(
+        npmVersion('pkg-a', '1.2.8', 20_000, undefined, undefined, {
+          fetchJsonLimited: fetcher,
+          syncNpmmirror: async () => true,
+          wait: async () => {},
+        }),
+        /HTTP 404/,
+      )
+      assert.equal(urls.length, 3, '镜像×2（重试）+ npmjs 兜底×1')
+      assert.ok(urls[2].startsWith('https://registry.npmjs.org/'))
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+
+  it('主源即 npmjs：失败不 sync、直接抛（权威源无镜像滞后可言）', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmjs.org'
+    try {
+      const syncs = []
+      const fetcher = async () => {
+        throw new Error('HTTP 500')
+      }
+      await assert.rejects(
+        npmVersion('pkg-a', '1.2.8', 20_000, undefined, undefined, {
+          fetchJsonLimited: fetcher,
+          syncNpmmirror: async (pkg) => {
+            syncs.push(pkg)
+            return true
+          },
+          wait: async () => {},
+        }),
+        /HTTP 500/,
+      )
+      assert.equal(syncs.length, 0)
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+})
+
+describe('npmPackument 履约读（L1，R1-6 参数修复）', () => {
+  it('显式 registry 参数生效（此前被忽略）', async () => {
+    const calls = []
+    const fetcher = async (url) => {
+      calls.push(String(url))
+      return { versions: { '1.0.0': {} } }
+    }
+    const doc = await npmPackument('pkg-a', 5000, undefined, 'https://registry.npmmirror.com', { fetchJsonLimited: fetcher })
+    assert.deepEqual(doc.versions, ['1.0.0'])
+    assert.equal(calls.length, 1)
+    assert.ok(calls[0].startsWith('https://registry.npmmirror.com/'))
+  })
+
+  it('无显式参数 → 生效源（env 直采，不探测）', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const calls = []
+      const fetcher = async (url) => {
+        calls.push(String(url))
+        return { versions: { '2.0.0': {} } }
+      }
+      await npmPackument('pkg-a', 5000, undefined, undefined, { fetchJsonLimited: fetcher })
+      assert.equal(calls.length, 1)
+      assert.ok(calls[0].startsWith('https://registry.npmmirror.com/'))
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
   })
 })

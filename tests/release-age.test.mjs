@@ -17,6 +17,59 @@ import {
   releaseAgePrecheck,
 } from '../lib/core/release-age.js'
 
+describe('npmPackumentTimes 权威链（L3，ADR-0012）', () => {
+  it('npmjs 首腿失败 → 生效镜像源二次成功；首腿超时收紧 ≤5s', async () => {
+    const { npmPackumentTimes } = await import('../lib/core/release-age.js')
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const calls = []
+      const fetcher = async (url, opts) => {
+        calls.push({ url: String(url), ms: opts?.timeoutMs })
+        if (String(url).startsWith('https://registry.npmjs.org/')) throw new Error('npmjs down')
+        return { time: { '1.0.0': '2026-10-04T00:00:00.000Z' } }
+      }
+      const times = await npmPackumentTimes('pkg-a', 20_000, undefined, { fetchJsonLimited: fetcher })
+      assert.equal(times['1.0.0'], '2026-10-04T00:00:00.000Z')
+      assert.equal(calls.length, 2)
+      assert.ok(calls[0].url.startsWith('https://registry.npmjs.org/'))
+      assert.ok(calls[0].ms <= 5000, `权威首腿收紧 5s，实际 ${calls[0].ms}`)
+      assert.ok(calls[1].url.startsWith('https://registry.npmmirror.com/'))
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+      const { _resetReleaseAgeCachesForTests } = await import('../lib/core/release-age.js')
+      _resetReleaseAgeCachesForTests()
+    }
+  })
+
+  it('两腿全败 → null 不抛（fail-open 口径不变）', async () => {
+    const { npmPackumentTimes } = await import('../lib/core/release-age.js')
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const fetcher = async () => {
+        throw new Error('all down')
+      }
+      assert.equal(await npmPackumentTimes('pkg-a', 20_000, undefined, { fetchJsonLimited: fetcher }), null)
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+
+  it('clearPackumentCache 清空进程内缓存（cachedPackumentTimes 再次拉取）', async () => {
+    const { cachedPackumentTimes, clearPackumentCache } = await import('../lib/core/release-age.js')
+    let calls = 0
+    const fetcher = async () => {
+      calls++
+      return { time: { '1.0.0': '2026-10-04T00:00:00.000Z' } }
+    }
+    await cachedPackumentTimes('pkg-c', 12_000, undefined, { fetchJsonLimited: fetcher })
+    await cachedPackumentTimes('pkg-c', 12_000, undefined, { fetchJsonLimited: fetcher })
+    assert.equal(calls, 1, 'TTL 内命中缓存')
+    clearPackumentCache()
+    await cachedPackumentTimes('pkg-c', 12_000, undefined, { fetchJsonLimited: fetcher })
+    assert.equal(calls, 2, '清缓存后重新拉取')
+  })
+})
+
 // 本机 desktop profile 的真实策略文件形态（2026-10-03 00:15 快照，无敏感值）
 const REAL_WORKSPACE_YAML = [
   'packages:',

@@ -17,6 +17,15 @@ import { _setWireFetchForTests } from '../lib/core/httpx.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
 
+// ADR-0012 T5：本文件全部用例把 wire 钉在 npmjs 权威源（stub URL 皆为 npmjs 形态）——
+// 显式钉源让 npmVersion/npmPackument 主源=npmjs，不触发镜像阶梯、不发起真网探测。
+beforeEach(() => {
+  process.env.DSHM_NPM_REGISTRY = 'https://registry.npmjs.org'
+})
+afterEach(() => {
+  delete process.env.DSHM_NPM_REGISTRY
+})
+
 // Task 11：散文正则迁 code 的共用断言器
 const txFailure = (checks) => (err) => {
   assert.ok(err instanceof TransactionError, `应抛 TransactionError（实际 ${err?.constructor?.name}: ${err?.message}）`)

@@ -6,6 +6,7 @@
  */
 import { gt } from 'semver'
 import { fetchJsonLimited, HttpError } from './httpx.js'
+import { DEFAULT_NPM_REGISTRY, NPM_MIRROR, activeNpmRegistry, syncNpmmirrorPackage } from './npm-route.js'
 
 /** GitHub 匿名限额（60 次/小时/IP）用尽时返回可读提示（含重置等待分钟数），否则 null。 */
 function githubRateLimitMessage(err: unknown): string | null {
@@ -49,57 +50,148 @@ export function isExactVersion(version: string): boolean {
 }
 
 /** 读取该精确版本的 dist metadata（不使用 /latest endpoint）；integrity 缺失由调用方拒绝安装。 */
-export async function npmVersion(pkg: string, version: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<NpmVersionDetail> {
+export interface NpmVersionDeps {
+  fetchJsonLimited?: typeof fetchJsonLimited
+  syncNpmmirror?: typeof syncNpmmirrorPackage
+  /** 有界等待（sync 受理 → 镜像可见的窗口，默认 10s、abort-aware）。 */
+  wait?: (ms: number, signal?: AbortSignal) => Promise<void>
+}
+
+function sleepAbortable(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(t)
+      signal?.removeEventListener('abort', done)
+      resolve()
+    }
+    const t = setTimeout(done, ms)
+    signal?.addEventListener('abort', done, { once: true })
+  })
+}
+
+/**
+ * 精确版本元数据（兼容预检/integrity 锚定）。L2① 履约阶梯（ADR-0012）：
+ * 显式 registry 参数 > 生效源 → 失败且生效源为镜像 → sync → 有界等待 10s → 同源重试一次
+ * → 仍败 → npmjs 兜底（sync+重试为尽力而为，npmjs 兜底是主安全网）；
+ * 主源即 npmjs 时失败直接抛（权威源无镜像滞后可言）。
+ */
+export async function npmVersion(
+  pkg: string,
+  version: string,
+  timeoutMs = 20_000,
+  signal?: AbortSignal,
+  registry?: string,
+  deps?: NpmVersionDeps,
+): Promise<NpmVersionDetail> {
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   if (!isExactVersion(version)) throw new Error(`不是精确版本（拒绝 range/tag/前缀）: ${version}`)
-  const data = await fetchJsonLimited<{
-    version?: unknown
-    dist?: { integrity?: unknown; tarball?: unknown }
-    peerDependencies?: unknown
-  }>(`${registryBase(registry)}/${encodeURIComponent(pkg)}/${version}`, { timeoutMs, signal })
-  const resolved = typeof data.version === 'string' ? data.version : ''
-  if (!resolved) throw new Error(`npm 未返回版本: ${pkg}@${version}`)
-  const peers: Record<string, string> = {}
-  if (data.peerDependencies !== null && typeof data.peerDependencies === 'object') {
-    for (const [name, range] of Object.entries(data.peerDependencies as Record<string, unknown>)) {
-      if (typeof range === 'string') peers[name] = range
+  const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
+  const sync = deps?.syncNpmmirror ?? syncNpmmirrorPackage
+  const wait = deps?.wait ?? sleepAbortable
+  const leg = async (base: string): Promise<NpmVersionDetail> => {
+    const data = await fetcher<{
+      version?: unknown
+      dist?: { integrity?: unknown; tarball?: unknown }
+      peerDependencies?: unknown
+    }>(`${registryBase(base)}/${encodeURIComponent(pkg)}/${version}`, { timeoutMs, signal })
+    const resolved = typeof data.version === 'string' ? data.version : ''
+    if (!resolved) throw new Error(`npm 未返回版本: ${pkg}@${version}`)
+    const peers: Record<string, string> = {}
+    if (data.peerDependencies !== null && typeof data.peerDependencies === 'object') {
+      for (const [name, range] of Object.entries(data.peerDependencies as Record<string, unknown>)) {
+        if (typeof range === 'string') peers[name] = range
+      }
+    }
+    return {
+      version: resolved,
+      integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
+      tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
+      peers,
     }
   }
-  return {
-    version: resolved,
-    integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
-    tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
-    peers,
+  const primary = registry?.trim() ? registry.trim() : await activeNpmRegistry()
+  try {
+    return await leg(primary)
+  } catch (firstErr) {
+    if (primary === NPM_MIRROR) {
+      await sync(pkg)
+      await wait(10_000, signal)
+      try {
+        return await leg(primary)
+      } catch {
+        // 同源重试仍败 → npmjs 兜底
+      }
+    }
+    if (primary !== DEFAULT_NPM_REGISTRY) return leg(DEFAULT_NPM_REGISTRY)
+    throw firstErr
   }
 }
 
 /**
  * 拉取完整 packument（NO_MATCHING_VERSION 退避重试前的预热/校验原语）。
  * 返回该包已知的全部版本号；解析不出 versions 时返回空列表（不抛）。
+ * L1（ADR-0012/R1-6）：registry 参数曾被忽略——现「显式参数 > 生效源」。
  */
-export async function npmPackument(pkg: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<{ versions: string[] }> {
+export async function npmPackument(
+  pkg: string,
+  timeoutMs = 20_000,
+  signal?: AbortSignal,
+  registry?: string,
+  deps?: Pick<NpmVersionDeps, 'fetchJsonLimited'>,
+): Promise<{ versions: string[] }> {
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
-  const data = await fetchJsonLimited<{ versions?: unknown }>(
-    `https://registry.npmjs.org/${encodeURIComponent(pkg)}`,
-    { timeoutMs, signal, maxBytes: 8 * 1024 * 1024 },
-  )
+  const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
+  const base = registry?.trim() ? registry.trim() : await activeNpmRegistry()
+  const data = await fetcher<{ versions?: unknown }>(`${registryBase(base)}/${encodeURIComponent(pkg)}`, {
+    timeoutMs,
+    signal,
+    maxBytes: 8 * 1024 * 1024,
+  })
   const versions = data?.versions !== null && typeof data?.versions === 'object' ? Object.keys(data.versions as object) : []
   return { versions }
 }
 
-export async function npmLatest(pkg: string, timeoutMs = 20_000, signal?: AbortSignal, registry?: string): Promise<NpmLatest> {
+export interface NpmLatestDeps {
+  fetchJsonLimited?: typeof fetchJsonLimited
+}
+
+/**
+ * 升级探测（检测读）。L3 权威链（ADR-0012）：新鲜度敏感——npmjs 权威源优先
+ * （首腿超时收紧 `Math.min(timeoutMs, 5_000)`），失败降级生效源（≠npmjs 时）；
+ * 不设 sync 腿（两腿全败属网络型失败，sync 只救镜像滞后）。显式 registry 参数优先。
+ */
+export async function npmLatest(
+  pkg: string,
+  timeoutMs = 20_000,
+  signal?: AbortSignal,
+  registry?: string,
+  deps?: NpmLatestDeps,
+): Promise<NpmLatest> {
   // 允许 scoped 包名：@scope/name（isSafePkgName 同款字符集）
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
-  const data = await fetchJsonLimited<{
-    version?: unknown
-    dist?: { integrity?: unknown; tarball?: unknown }
-  }>(`${registryBase(registry)}/${encodeURIComponent(pkg)}/latest`, { timeoutMs, signal })
-  const version = typeof data.version === 'string' ? data.version : ''
-  if (!version) throw new Error(`npm 未返回版本: ${pkg}`)
-  return {
-    version,
-    integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
-    tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
+  const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
+  const leg = async (base: string, ms: number): Promise<NpmLatest> => {
+    const data = await fetcher<{
+      version?: unknown
+      dist?: { integrity?: unknown; tarball?: unknown }
+    }>(`${registryBase(base)}/${encodeURIComponent(pkg)}/latest`, { timeoutMs: ms, signal })
+    const version = typeof data.version === 'string' ? data.version : ''
+    if (!version) throw new Error(`npm 未返回版本: ${pkg}`)
+    return {
+      version,
+      integrity: typeof data.dist?.integrity === 'string' ? data.dist.integrity : undefined,
+      tarball: typeof data.dist?.tarball === 'string' ? data.dist.tarball : undefined,
+    }
+  }
+  const explicit = registry?.trim()
+  if (explicit) return leg(explicit, timeoutMs)
+  const firstLegMs = Math.min(timeoutMs, 5_000)
+  try {
+    return await leg(DEFAULT_NPM_REGISTRY, firstLegMs)
+  } catch (firstErr) {
+    const alt = await activeNpmRegistry()
+    if (alt === DEFAULT_NPM_REGISTRY) throw firstErr
+    return leg(alt, timeoutMs)
   }
 }
 

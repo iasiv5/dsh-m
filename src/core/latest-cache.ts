@@ -15,6 +15,7 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { WEB_PROFILE, cacheRoot } from './env.js'
 import type { RegistryCacheNamespace, RegistryEntry } from './registry.js'
+import { onRouteSwitch } from './npm-route.js'
 
 export interface LatestValue {
   version?: string
@@ -99,3 +100,9 @@ export function resetLatestCacheForTest(): void {
   latestCache.clear()
   swept.clear()
 }
+
+/** L1（ADR-0012）：npm 生效源切换 → 整体作废 latest 探测缓存（镜像的答案不是官方源的答案）。 */
+export function clearAllLatestCache(): void {
+  latestCache.clear()
+}
+onRouteSwitch(() => clearAllLatestCache())
