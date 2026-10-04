@@ -2009,3 +2009,49 @@ describe('B3 registry-aware npmmirror sync（L2，ADR-0012）', () => {
     assert.ok(!healCodes(r).includes('B3_NPMMIRROR_SYNC'))
   })
 })
+
+// ---------- B3 kill switch 集成（缺省 sync 实现 + DSHM_MIRROR_SYNC=0，评审 R1-6，ADR-0012） ----------
+
+describe('B3 kill switch 集成（评审 R1-6，ADR-0012）', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  const npmmirrorOutcome = () => failWith(`${NO_MATCHING} while fetching it from https://registry.npmmirror.com/`)
+
+  it('npmmirror outcome + 缺省 sync 实现 + kill switch → 零网络、不清缓存、退避重试照旧', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const clears = []
+    process.env.DSHM_MIRROR_SYNC = '0'
+    try {
+      const { runner } = mockRunner({
+        add: [
+          npmmirrorOutcome(),
+          async () => {
+            writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }))
+            writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good'), withOverrides: false }))
+            return { class: 'ok', output: 'added' }
+          },
+        ],
+      })
+      const r = await runProfileTransaction(
+        { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+        baseTx(dir, runner, {
+          retryDelaysMs: [0],
+          clearLatestCache: () => {
+            clears.push(1)
+          },
+        }),
+      )
+      assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
+      assert.ok(!healCodes(r).includes('B3_NPMMIRROR_SYNC'), 'kill switch 下不产生 sync heal')
+      assert.equal(clears.length, 0, 'kill switch 下不清缓存')
+      assert.equal(healCodes(r).filter((c) => c === 'B3_LAG_RETRY').length, 1, '退避重试照旧')
+    } finally {
+      delete process.env.DSHM_MIRROR_SYNC
+    }
+  })
+})

@@ -187,3 +187,13 @@ describe('syncNpmmirrorPackage', () => {
     assert.equal(r, false)
   })
 })
+
+// ---------- env 尾斜杠归一（评审 R1-3，ADR-0012） ----------
+
+describe('DSHM_NPM_REGISTRY 尾斜杠归一（评审 R1-3）', () => {
+  it('candidates 与 decideNpmRoute 对带尾斜杠的 env 值统一去尾斜杠', async () => {
+    process.env.DSHM_NPM_REGISTRY = `${NPM_MIRROR}/`
+    assert.deepEqual(candidates(), [NPM_MIRROR])
+    assert.equal(await decideNpmRoute(), NPM_MIRROR)
+  })
+})

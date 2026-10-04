@@ -42,7 +42,7 @@ export function readNpmrcRegistry(path: string = join(homedir(), '.npmrc')): str
 /** 候选源（env 直采时恒单元素；否则 .npmrc 优先、官方源与镜像兜底，去重保序）。 */
 export function candidates(): string[] {
   const override = process.env.DSHM_NPM_REGISTRY?.trim()
-  if (override) return [override]
+  if (override) return [override.replace(/\/+$/, '')]
   const out: string[] = []
   for (const c of [readNpmrcRegistry(), DEFAULT_NPM_REGISTRY, NPM_MIRROR]) {
     if (c && !out.includes(c)) out.push(c)
@@ -145,11 +145,12 @@ async function probeOnce(cands: string[], probeFetch: (base: string, signal: Abo
 export async function decideNpmRoute(deps?: DecideDeps): Promise<string> {
   if (inflight) return inflight
   inflight = (async () => {
-    // 1) env 最高优先：直采、不探测、不落盘
+    // 1) env 最高优先：直采、不探测、不落盘（去尾斜杠，与镜像/官方源等值判断对齐——评审 R1-3）
     const override = process.env.DSHM_NPM_REGISTRY?.trim()
     if (override) {
-      setEffective(override)
-      return override
+      const normalized = override.replace(/\/+$/, '')
+      setEffective(normalized)
+      return normalized
     }
     // 2) 成功探测的内存决策稳定复用（决策文件才是持久真相）
     if (memBase !== null && !memIsFallback) return memBase

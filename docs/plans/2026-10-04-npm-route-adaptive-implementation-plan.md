@@ -154,7 +154,7 @@
     - `const DEFAULT_NPM_REGISTRY = 'https://registry.npmjs.org'`；`const NPM_MIRROR = 'https://registry.npmmirror.com'`
     - `function readNpmrcRegistry(): string | null`（`~/.npmrc` 顶层 `registry=` 键，ini-lite，去尾斜杠；scope 键 v1 忽略；缺失/解析失败=null）
     - `function candidates(): string[]`（`DSHM_NPM_REGISTRY` 设置时=`[该值]`；否则 dedupe 保序 `[readNpmrcRegistry(), DEFAULT_NPM_REGISTRY, NPM_MIRROR]` 去 null）
-    - `async function decideNpmRoute(deps?: { probeFetch?: (base: string, signal: AbortSignal) => Promise<string> }): Promise<string>`——顺序：内存缓存 → env 直采（不探测不落盘）→ 决策文件 `<cacheDir()>/npm-route.json`（`{ base, decidedAt, candidates }`，读写失败一律当无决策）→ **single-flight probe**（in-flight promise 记忆化；`Promise.any` 探 `<base>/semver/latest`，共享 2500ms AbortController，胜者须 ok+完整 body+JSON 含 string `version`）；生效值变化时逐个触发 listener；**全候选失败 → 内存回退 DEFAULT、不落盘，回退态 TTL 60s 过期后允许重探**（single-flight 仍对并发去重；评审 R1-8 决策 a + R2-3）
+    - `async function decideNpmRoute(deps?: { probeFetch?: (base: string, signal: AbortSignal) => Promise<string> }): Promise<string>`——顺序：**env 直采（最高优先，不探测不落盘）→ 内存决策缓存 → 全败回退态（TTL 内复用）→ 决策文件 → probe（single-flight）**（评审 R1-7 订正：实现 env 先于内存，计划原文顺序表述不准；2026-10-05 修订）；决策文件 `<cacheDir()>/npm-route.json`（`{ base, decidedAt, candidates }`，读写失败一律当无决策）；probe = `Promise.any` 探 `<base>/semver/latest`，共享 2500ms AbortController，胜者须 ok+完整 body+JSON 含 string `version`；生效值变化时逐个触发 listener；**全候选失败 → 内存回退 DEFAULT、不落盘，回退态 TTL 60s 过期后允许重探**（single-flight 仍对并发去重；评审 R1-8 决策 a + R2-3）
     - `async function activeNpmRegistry(deps?): Promise<string>`（decideNpmRoute 薄封装）
     - `function onRouteSwitch(fn: (base: string) => void): void`；`function resetNpmRouteForTests(): void`（同时清 in-flight）
     - `async function syncNpmmirrorPackage(pkg: string, deps?: { fetcher?: typeof fetchLimited; timeoutMs?: number }): Promise<boolean>`——`DSHM_MIRROR_SYNC=0` → false 不发请求；否则 `fetchLimited('https://registry-direct.npmmirror.com/' + encodeURIComponent(pkg) + '/sync?sync_upstream=true', { method: 'PUT', timeoutMs: 默认 8_000 })`；2xx=true，任何失败=false 不抛
@@ -297,7 +297,8 @@
 - Run: `npm run build; node -e "import('./lib/core/npm-route.js').then(m => console.log('route module ok', typeof m.decideNpmRoute, typeof m.syncNpmmirrorPackage))"` → 两个 function
 - 静态锚点核对：
   - Run: `Select-String -Path D:\_dsh-workspace\dsh-m\src\core\httpx.ts -Pattern 'await fetch\('` → 零命中
-  - Run: `Select-String -Path D:\_dsh-workspace\dsh-m\src\core\release-age.ts -Pattern 'registry.npmjs.org'` → 仅权威链首腿一处字面量
+  - Run: `Select-String -Path D:\_dsh-workspace\dsh-m\src\core\release-age.ts -Pattern 'registry.npmjs.org'`
+  - Expected: **0 命中**——权威链改用 `DEFAULT_NPM_REGISTRY` 常量（单一事实源，实现优于计划预期的「一处字面量」；2026-10-05 执行期修订，评审 R1-5）
   - Run: `Select-String -Path D:\_dsh-workspace\dsh-m\src\core\profile-transaction.ts -Pattern 'registry.npmmirror|npmmirror\.com'` → 零命中（分类已下沉 dsh-cli，评审 R1-3）
 - 只升不降核对（audit，不改码）：`Select-String -Path D:\_dsh-workspace\dsh-m\src\core\versions.ts -Pattern 'gt\('` 守卫仍在
 - 真机验收（发布并升级装机后，人工；评审 R1-16 加严）：

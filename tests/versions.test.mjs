@@ -604,3 +604,56 @@ describe('npmPackument 履约读（L1，R1-6 参数修复）', () => {
     }
   })
 })
+
+// ---------- 履约阶梯 kill switch 与 via 消费层钉子（评审 R1-2/R1-4，ADR-0012） ----------
+
+describe('npmVersion 履约阶梯 kill switch 与 via（评审 R1-2/R1-4）', () => {
+  it('sync 返回 false（kill switch 语义）→ 跳过等待与同源重试，直落 npmjs 兜底', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmmirror.com'
+    try {
+      const urls = []
+      const syncs = []
+      const waits = []
+      const fetcher = async (url) => {
+        urls.push(String(url))
+        throw new Error('HTTP 404')
+      }
+      await assert.rejects(
+        npmVersion('pkg-a', '1.2.8', 20_000, undefined, undefined, {
+          fetchJsonLimited: fetcher,
+          syncNpmmirror: async (pkg) => {
+            syncs.push(pkg)
+            return false
+          },
+          wait: async (ms) => {
+            waits.push(ms)
+          },
+        }),
+        /HTTP 404/,
+      )
+      assert.deepEqual(syncs, ['pkg-a'])
+      assert.deepEqual(waits, [], 'kill switch 下不付 10s 等待')
+      assert.equal(urls.length, 2, '镜像×1 + npmjs 兜底×1（无同源重试）')
+      assert.ok(urls[1].startsWith('https://registry.npmjs.org/'))
+    } finally {
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+
+  it('npmVersion 全败抛错带 via（wire 真通路，Task 5 验证清单钉子）', async () => {
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmjs.org'
+    const { _setWireFetchForTests } = await import('../lib/core/httpx.js')
+    _setWireFetchForTests(async () => {
+      throw new TypeError('fetch failed')
+    })
+    try {
+      await assert.rejects(
+        npmVersion('pkg-a', '1.2.8', 5000),
+        (err) => /fetch failed/.test(err.message) && err.via === 'direct',
+      )
+    } finally {
+      _setWireFetchForTests(null)
+      delete process.env.DSHM_NPM_REGISTRY
+    }
+  })
+})

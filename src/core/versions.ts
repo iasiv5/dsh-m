@@ -113,8 +113,9 @@ export async function npmVersion(
   try {
     return await leg(primary)
   } catch (firstErr) {
-    if (primary === NPM_MIRROR) {
-      await sync(pkg)
+    // L2①（ADR-0012）：仅 sync 真正受理（评审 R1-2：kill switch / 同步失败返回 false 时
+    // 不付 10s 等待成本、不发必 404 的同源重试——「风险与回退」承诺的行为回到现状）才重试镜像。
+    if (primary === NPM_MIRROR && (await sync(pkg))) {
       await wait(10_000, signal)
       try {
         return await leg(primary)
