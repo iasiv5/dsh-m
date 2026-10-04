@@ -153,5 +153,5 @@ profile 内陈旧但「可见而非清理」的对象：残留目录（无 packa
 _Avoid_: 垃圾文件（暗示可自动清理）、临时文件（过窄）
 
 **农场测活（Farm Liveness）**:
-对 profile 可见范围内 `@deepseek-ai/*` 符号链接的存活与指向检查：目标悬空为 error；指向非当前运行时版本的 store 目录为提示级（know-how 014：DSH 升级后唯一现役周期必查项，曾 81 条悬空）。
+对 profile 可见范围内 `@deepseek-ai/*` 符号链接的存活与指向检查：目标悬空为 error；指向非当前运行时版本的 store 目录为提示级（know-how 014：DSH 升级后唯一现役周期必查项，曾 81 条悬空）。farmChecked=0 的「空转」判定仅适用于存在符号链农场的形态；物化布局（典型 desktop）0 为常态（ADR-0011）。
 _Avoid_: 符号链接检查（过泛）、农场修复（体检不修复）

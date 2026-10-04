@@ -58,8 +58,10 @@
 
 ## Windows 验收清单（外机执行，随交付物发出）
 
+0. （本轮动机场景，评审 G5.1 补）默认 `dshm doctor`（无 flag，web 目录不存在）：输出「目标 profile 目录不存在（…）；desktop-only 机器请加 --profile desktop」提示行且 exit 0——desktop-only 机是空提示的唯一真实舞台。
+0b. （前置条件）宿主 method 验证前需先在该机 desktop profile 安装 dsh-m ≥0.9.31（method 随插件注册）。
 1. `dshm doctor --profile desktop`：profileDir=~/.dsh/profiles/desktop、`[desktop]` 标注、layout=hoisted、accountChecked>0 且为真实扫描、errors=0、exit=0。
-2. 宿主 method（desktop 宿主内 POST /dshm {"method":"doctor"}）：ok:true、profileDir=desktop 目录；runtimeVersion 允许为 null（Electron argv 形态，诚实降级）。
+2. 宿主 method（desktop 宿主内 POST /dshm {"method":"doctor"}，前置见 0b）：ok:true、profileDir=desktop 目录；runtimeVersion 允许为 null（Electron argv 形态，诚实降级）。
 3. 零写入零派生：体检前后 profile 目录 mtime 无变化。
 4. `dshm install --profile desktop --id <任意> --yes` 仍被拒绝（语义不变）。
 5. 变更类命令对 web 的既有行为不变。

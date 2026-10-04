@@ -504,7 +504,8 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       }
       for (const u of s.unknowns) out(`ℹ️  ${u}`)
       if (!existsSync(targetDir)) {
-        out(`ℹ️  目标 profile 目录不存在（${targetDir}）；desktop-only 机器请加 --profile desktop。`)
+        // 第二子句只对默认/显式 web 目标出现——显式 --profile desktop 时再建议加 desktop 自相矛盾（评审 G5.2）
+        out(`ℹ️  目标 profile 目录不存在（${targetDir}）${profileName === 'web' ? '；desktop-only 机器请加 --profile desktop' : ''}。`)
       }
       if (report.dualMarket) out(`ℹ️  双市场并存：${report.dualMarket.join(' + ')} 同时在装（写侧互不知晓，排查时留意）。`)
       if (errs.length === 0) out('\n未发现 error 级问题。')

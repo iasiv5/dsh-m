@@ -522,4 +522,31 @@ describe('dshm doctor --profile desktop', () => {
     assert.equal(r.status, 0)
     assert.ok(!r.stdout.includes('--profile desktop'), '正常 profile 不应出 desktop 提示')
   })
+
+  it('显式 --profile desktop 且目录缺失 → 提示不含「请加 --profile desktop」（评审 G5.2 文案矛盾修复）', async () => {
+    const noDeskHome = mkdtempSync(join(tmpdir(), 'dshm-nodesk-'))
+    try {
+      const web = join(noDeskHome, 'profiles', 'web')
+      mkdirSync(web, { recursive: true })
+      writeFileSync(join(web, 'package.json'), JSON.stringify({ dependencies: {} }))
+      const r = runCli(['doctor', '--profile', 'desktop'], noDeskHome)
+      assert.equal(r.status, 0)
+      assert.ok(r.stdout.includes('目标 profile 目录不存在'))
+      assert.ok(!r.stdout.includes('请加 --profile desktop'), '显式 desktop 时不应再建议加 desktop')
+    } finally {
+      rmSync(noDeskHome, { recursive: true, force: true })
+    }
+  })
+
+  it('显式 --profile web → 照常路由 web 目录（评审 G5.3 钉子）', async () => {
+    const web = join(home, 'profiles', 'web')
+    mkdirSync(web, { recursive: true })
+    writeFileSync(join(web, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCli(['doctor', '--profile', 'web', '--json'], home)
+    assert.equal(r.status, 0)
+    const report = JSON.parse(r.stdout)
+    assert.ok(report.profileDir.endsWith(join('profiles', 'web')))
+    const h = runCli(['doctor', '--profile', 'web'], home)
+    assert.ok(h.stdout.includes('[web]'))
+  })
 })

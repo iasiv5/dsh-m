@@ -15,7 +15,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 - **空目录提示**：目标 profile 目录不存在时提示「desktop-only 机器请加 --profile desktop」——判据为目录不存在（存在但为空的合法 profile 不误伤）。
 - **宿主 method 零改动**：doctor case 本就 active-profile 无关，desktop 宿主免改生效（新增 desktop-kind 注入钉子测试）；MCP 工具 `dshm_doctor` 维持 ADR-0010 决定 3 缓上；Windows Electron 宿主 runtimeVersion 可能仍降级（物化布局 farm=0，stale 无判定对象，实际影响为零，如实记录）。
 - **farmChecked 语义修订**：「0=遍历空转」判定仅适用于存在符号链农场的形态；物化布局 0 为常态（ADR-0011）。
-- **验证**：新增 7 例（desktop 路由/标注/他命令拒绝/非法值/空提示/正常不提示/method 钉子），更新 1 例旧拒绝样本；全量 1085 pass / 0 fail / 0 skipped；typecheck 零错误。Windows 外机验收清单见实施计划（本机无法执行 Windows E2E）。
+- **验证**：新增 8 例（desktop 路由/标注、他命令拒绝、非法值、空提示、正常不提示、显式 desktop 不出矛盾文案、显式 web 路由、method 钉子）+ 改写 1 例旧拒绝样本（净增 8，全量 1079→1087）；全量 1087 pass / 0 fail / 0 skipped；typecheck 零错误。Windows 外机验收清单见实施计划（本机无法执行 Windows E2E）。
 
 ### 0.9.30 变更：修复 bin 符号链接静默 no-op（F2）+ 版本解析 realpath 第三源（F1）
 
@@ -314,7 +314,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 - **Missing-dir hint**: when the target profile dir does not exist, suggest `--profile desktop` (an existing-but-empty legit profile is not flagged).
 - **Host method untouched**: the doctor case was already active-profile agnostic — desktop hosts get it for free (new desktop-kind injection pin test); the `dshm_doctor` MCP tool stays deferred per ADR-0010 decision 3; on Windows Electron hosts runtimeVersion may still degrade (materialized layout means farm=0, so stale has nothing to judge — zero practical impact, recorded honestly).
 - **farmCount semantics revision**: "0 = walk short-circuited" applies only to shapes with a symlink farm; 0 is the norm for materialized layouts (ADR-0011).
-- **Verification**: 7 new cases + 1 updated legacy rejection sample; full suite 1085 pass / 0 fail / 0 skipped; typecheck clean. The Windows on-machine acceptance checklist ships with the implementation plan (no Windows E2E possible on this machine).
+- **Verification**: 8 new cases (desktop routing/tag, other-command rejection, invalid value, missing-dir hint, no-hint-on-normal, explicit-desktop no contradictory hint, explicit-web routing, method pin) + 1 rewritten legacy rejection sample (net +8, 1079→1087); full suite 1087 pass / 0 fail / 0 skipped; typecheck clean. The Windows on-machine acceptance checklist ships with the implementation plan (no Windows E2E possible on this machine).
 
 ### Fixed in 0.9.30 — bin symlink silent no-op (F2) + realpath third source for version resolution (F1)
 

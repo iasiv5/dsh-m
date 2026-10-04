@@ -157,7 +157,8 @@ async function readTargetPkgVersion(targetDir: string): Promise<string | null> {
  *
  * - 遍历规则（评审 R1.2 定案）：从 profileDir 逐级向上至 DSH_HOME 边界，扫描每级
  *   `node_modules/@deepseek-ai`——本机实况农场在 profile **父目录**的共享 hoisted 店，
- *   不得以「工作区根」为限（否则 0 命中空转，farmChecked=0 是验收失败信号）。
+ *   不得以「工作区根」为限（否则 0 命中空转——该「farmChecked=0 回炉」判定仅适用于
+ *   存在符号链农场的形态；物化布局（典型 desktop）0 为常态，ADR-0011）。
  * - stale 判定只对 dsh 伞包生效：lockstep 店内各核心包（cordis 4.x、dsh-tools 0.1.x…）
  *   与运行时版本**不在同一命名空间**，逐包比较会把 cordis@4.0.1 误标 stale——误报纪律
  *   （健康档误报代价 > 漏报）禁止；其余包 targetVersion 仅作信息呈现。stale-target 只进
