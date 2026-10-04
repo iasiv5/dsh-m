@@ -270,11 +270,16 @@ export function describeFetchFailure({ label, err, attempts, elapsedMs }: Descri
   } else {
     reason = String(err)
   }
+  // L4（ADR-0012）：仅代理路径渲染「（经 …）」；direct/缺失不渲染（无代理机器零噪音）。
+  const via = err instanceof Error && typeof (err as Error & { via?: unknown }).via === 'string'
+    ? (err as Error & { via: string }).via
+    : null
+  const viaText = via && via !== 'direct' ? `（经 ${maskProxy(via)}）` : ''
   const cost: string[] = []
   if (typeof attempts === 'number' && attempts > 0) cost.push(`${attempts} 次尝试`)
   if (typeof elapsedMs === 'number' && elapsedMs > 0) cost.push(`耗时 ${(elapsedMs / 1000).toFixed(1)}s`)
   const costText = cost.length > 0 ? `（${cost.join('，')}）` : ''
-  return `${label} 失败：${reason}${costText}；可稍后重试或检查网络后重试`
+  return `${label} 失败：${reason}${viaText}${costText}；可稍后重试或检查网络后重试`
 }
 
 /** 字节下载（社区目录正文用）：非 2xx 抛 HttpError；bytes = 完整响应体。 */

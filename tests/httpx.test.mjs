@@ -519,3 +519,28 @@ describe('fetchLimited 经代理转发（L0 ADR-0012）', () => {
     assert.equal(seenMethod, 'PUT')
   })
 })
+
+describe('describeFetchFailure 代理上下文（L4，ADR-0012 T7）', () => {
+  it('via=代理 → 追加（经 <掩码>），凭据不外泄', async () => {
+    const { describeFetchFailure } = await import('../lib/core/httpx.js')
+    const err = Object.assign(new TypeError('fetch failed'), { via: 'http://user:secret@127.0.0.1:7890' })
+    const out = describeFetchFailure({ label: '线路', err })
+    assert.ok(out.includes('经 http://***@127.0.0.1:7890'), out)
+    assert.ok(!out.includes('secret'), out)
+    assert.ok(out.includes('；可稍后重试或检查网络后重试'), out)
+  })
+
+  it('via=direct → 不渲染后缀（R1-13 无噪音）', async () => {
+    const { describeFetchFailure } = await import('../lib/core/httpx.js')
+    const err = Object.assign(new TypeError('fetch failed'), { via: 'direct' })
+    const out = describeFetchFailure({ label: 'L', err })
+    assert.ok(!out.includes('经 '), out)
+    assert.ok(out.startsWith('L 失败：fetch failed'), out)
+  })
+
+  it('无 via → 输出与现状逐字一致', async () => {
+    const { describeFetchFailure } = await import('../lib/core/httpx.js')
+    const out = describeFetchFailure({ label: 'L', err: new Error('boom') })
+    assert.equal(out, 'L 失败：boom；可稍后重试或检查网络后重试')
+  })
+})
