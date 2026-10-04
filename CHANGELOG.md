@@ -13,7 +13,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 - **根因同源**：pnpm 生态里两类关键入口都是**符号链接**——`node_modules/.bin/dshm`（指向 lib/cli.js）与全局 shim `PNPM_HOME/dsh`（指向真实 bin.js）——而两处代码都在 realpath 之前做了路径身份判定。
 - **F2（自 v0.2.0 bin 入口引入以来潜在，本机 0.9.28 装机形态首次踩中并实证；🔴 bin 入口全命令静默 exit 0）**：cli.ts `invokedDirectly` 比较 `argv[1]`（链接路径）与 `import.meta.url`（node realpath 后的真实路径）永假，`dshm <任何命令>` 无输出直接退出。修复：比较前对 `argv[1]` 同样 realpath。新增 `tests/cli-bin-symlink.test.mjs`（经符号链接调用 --help 与 doctor --json 的复活验证，EPERM 环境照仓内先例 skip）。
 - **F1（0.9.29 装机验收实证）**：dsh-version.ts `readLauncherPackageVersion` 从 shim 位置直接向上三级找 package.json，落在 pnpm home 目录树上空走——宿主内纯 FS 版本解析在本机拓扑（`node PNPM_HOME/dsh web`）不可得，doctor 的 stale 判定降级、ping chip 被迫吃 spawn 回退。修复：判定 entry 形态后先 realpath 再上溯（本机实测解析得 0.2.0-rc.2）。新增 dsh-version.test.mjs shim 形态用例。
-- **验证**：专项 9/9（含两新用例）；全量 1079 pass / 0 fail / 0 skipped；typecheck 零错误。装机后预期：`dshm doctor`（bin 入口）可用；宿主 method 通路 runtimeVersion=0.2.0-rc.2、stale 判定复活（装机时农场 dsh 链接 0.1.7-rc.2 为现成 stale 形态，heal 后归零）。
+- **验证**：专项 9/9（含两新用例）；全量 1079 pass / 0 fail / 0 skipped；typecheck 零错误。装机后预期：`dshm doctor`（bin 入口）可用；宿主 method 通路 runtimeVersion=0.2.0-rc.2、stale 判定复活（装机时农场 dsh 链接 0.1.7-rc.2 为现成 stale 形态，heal 后归零）。**装机实测（2026-10-04）**：预期逐项兑现——`.bin/dshm doctor` 经符号链接复活出报告；宿主 method `runtimeVersion=0.2.0-rc.2 / stale=1（dsh→0.1.7-rc.2 现场点名）`；同日按 know-how 014 heal 该链接并清理 20 项残留后，双通路终验 `farm 236 / dangling 0 / stale 0 / residue 0 / errors 0`。
 
 ### 0.9.29 变更：profile 体检 Doctor——`dshm doctor` 上线（只读：农场测活 / 残留物清点 / 账实一致）
 
