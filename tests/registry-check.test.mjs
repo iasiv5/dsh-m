@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 
 import { checkRegistryEntries, defaultRegistryCheckDeps } from '../lib/core/registry-check.js'
 import { validateRegistry } from '../lib/core/registry.js'
+import { _setWireFetchForTests } from '../lib/core/httpx.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -182,16 +183,15 @@ describe('checkRegistryEntries：issue 截断与顺序', () => {
 })
 
 describe('GitHub 限流的可读呈现', () => {
-  const realFetch = globalThis.fetch
   afterEach(() => {
-    globalThis.fetch = realFetch
+    _setWireFetchForTests(null)
   })
 
   it('403 + x-ratelimit-remaining:0 → issue 为限额提示（含等待时间）而非 HTTP 403', async () => {
-    globalThis.fetch = async () => new Response('{}', {
+    _setWireFetchForTests(async () => new Response('{}', {
       status: 403,
       headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) },
-    })
+    }))
     const registry = registryOf([entry({ id: 'gh', source: 'github', npm: undefined, github: 'o/r' })])
     const res = await checkRegistryEntries(registry, { deadlineMs: 10_000 }, defaultRegistryCheckDeps())
     assert.equal(res.failed, 1)

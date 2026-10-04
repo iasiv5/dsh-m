@@ -384,3 +384,138 @@ describe('describeFetchFailure（M2 Task 4）', () => {
     assert.equal(out, 'L 失败：boom；可稍后重试或检查网络后重试')
   })
 })
+
+// ---------- L0：代理感知 dispatcher（ADR-0012 Task 3） ----------
+
+const { request: l0ForwardRequest } = await import('node:http')
+const { default: l0Net } = await import('node:net')
+
+const L0_ENV_KEYS = ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'npm_config_https_proxy', 'npm_config_proxy']
+
+async function withL0Env(overrides, fn) {
+  const saved = new Map()
+  for (const k of L0_ENV_KEYS) saved.set(k, process.env[k])
+  const httpx = await import('../lib/core/httpx.js')
+  try {
+    for (const k of L0_ENV_KEYS) delete process.env[k]
+    for (const [k, v] of Object.entries(overrides)) process.env[k] = v
+    httpx.resetProxyAgentsForTests()
+    return await fn()
+  } finally {
+    for (const [k, v] of saved.entries()) {
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+    httpx.resetProxyAgentsForTests()
+  }
+}
+
+/** CONNECT 中继代理：实证 undici EnvHttpProxyAgent 对一切目标（含 http）走 CONNECT；
+ * 收到 CONNECT 即计数，回 200 后在客户端与目标端口间裸中继字节（真·代理语义）。 */
+async function startForwardProxy() {
+  let hits = 0
+  const server = createServer((req, res) => {
+    hits += 1
+    res.writeHead(405)
+    res.end('unexpected absolute-form request')
+  })
+  server.on('connect', (req, socket, head) => {
+    hits += 1
+    const idx = req.url.lastIndexOf(':')
+    const host = req.url.slice(0, idx)
+    const port = Number(req.url.slice(idx + 1)) || 443
+    const conn = l0Net.connect(port, host, () => {
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+      if (head?.length) conn.write(head)
+      conn.pipe(socket)
+      socket.pipe(conn)
+    })
+    conn.on('error', () => socket.destroy())
+    socket.on('error', () => conn.destroy())
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const handle = { port: server.address().port, hits: () => hits, close: () => new Promise((r) => server.close(r)) }
+  servers.push(handle)
+  return handle
+}
+
+describe('resolveProxyConfig（L0 ADR-0012）', () => {
+  it('HTTPS_PROXY 压过 npm_config_https_proxy；小写拼写可识别（Windows 大小写同键，跨拼写优先级由 undici 语义保证）', async () => {
+    const { resolveProxyConfig } = await import('../lib/core/httpx.js')
+    await withL0Env({ HTTPS_PROXY: 'http://b:1', npm_config_https_proxy: 'http://c:1' }, () => {
+      assert.equal(resolveProxyConfig().https, 'http://b:1')
+    })
+    await withL0Env({ https_proxy: 'http://a:1' }, () => {
+      assert.equal(resolveProxyConfig().https, 'http://a:1')
+    })
+  })
+  it('空串视为未设；无 scheme 补 http://', async () => {
+    const { resolveProxyConfig } = await import('../lib/core/httpx.js')
+    await withL0Env({ https_proxy: '   ' }, () => {
+      assert.equal(resolveProxyConfig().https, null)
+    })
+    await withL0Env({ http_proxy: '127.0.0.1:7890' }, () => {
+      assert.equal(resolveProxyConfig().http, 'http://127.0.0.1:7890')
+    })
+  })
+  it('仅 npm_config_https_proxy 也生效（undici 不读 npm 命名空间，解析层兜底）', async () => {
+    const { resolveProxyConfig } = await import('../lib/core/httpx.js')
+    await withL0Env({ npm_config_https_proxy: 'http://d:2' }, () => {
+      assert.equal(resolveProxyConfig().https, 'http://d:2')
+    })
+  })
+})
+
+describe('fetchLimited 经代理转发（L0 ADR-0012）', () => {
+  it('http_proxy 指向转发代理：请求经代理到达目标，代理命中=1', async () => {
+    const { fetchJsonLimited } = await import('../lib/core/httpx.js')
+    const target = await start((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ via: 'target' }))
+    })
+    const proxy = await startForwardProxy()
+    await withL0Env({ http_proxy: `http://127.0.0.1:${proxy.port}` }, async () => {
+      const data = await fetchJsonLimited(`http://127.0.0.1:${target.port}/x`, { timeoutMs: 5000 })
+      assert.equal(data.via, 'target')
+      assert.equal(proxy.hits(), 1)
+      assert.equal(target.hits(), 1)
+    })
+  })
+
+  it('仅 npm_config_proxy 设置同样走代理（显式交接证据，R1-5）', async () => {
+    const { fetchJsonLimited } = await import('../lib/core/httpx.js')
+    const target = await start((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: 1 }))
+    })
+    const proxy = await startForwardProxy()
+    await withL0Env({ npm_config_proxy: `http://127.0.0.1:${proxy.port}` }, async () => {
+      const data = await fetchJsonLimited(`http://127.0.0.1:${target.port}/y`, { timeoutMs: 5000 })
+      assert.equal(data.ok, 1)
+      assert.equal(proxy.hits(), 1)
+    })
+  })
+
+  it('网络失败错误附 via=掩码代理 URL（Task 3 ④）', async () => {
+    const { fetchLimited } = await import('../lib/core/httpx.js')
+    await withL0Env({ https_proxy: 'http://user:secret@127.0.0.1:1' }, async () => {
+      await assert.rejects(
+        fetchLimited('https://registry.npmmirror.com/semver/latest', { timeoutMs: 5000 }),
+        (err) => err.via === 'http://***@127.0.0.1:1',
+      )
+    })
+  })
+
+  it('PUT 通路（R1-2 扩面契约钉子）', async () => {
+    const { fetchLimited } = await import('../lib/core/httpx.js')
+    let seenMethod = ''
+    const target = await start((req, res) => {
+      seenMethod = req.method
+      res.writeHead(200)
+      res.end('{}')
+    })
+    const res = await fetchLimited(`http://127.0.0.1:${target.port}/sync`, { method: 'PUT', timeoutMs: 5000 })
+    assert.equal(res.status, 200)
+    assert.equal(seenMethod, 'PUT')
+  })
+})

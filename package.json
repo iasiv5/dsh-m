@@ -84,6 +84,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "0.1.7-rc.2",
     "semver": "7.8.5",
+    "undici": "7.30.0",
     "yaml": "2.9.1"
   }
 }

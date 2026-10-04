@@ -13,6 +13,7 @@ import { readPnpmLockIntegrity, assertNpmIntegrity, snapshotFiles, restoreSnapsh
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { installFromRegistry } from '../lib/core/market.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
+import { _setWireFetchForTests } from '../lib/core/httpx.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
 
@@ -68,18 +69,17 @@ packages:
 `
 
 describe('npmVersion：精确版本 metadata', () => {
-  const realFetch = globalThis.fetch
   afterEach(() => {
-    globalThis.fetch = realFetch
+    _setWireFetchForTests(null)
   })
 
   function stubFetch(url, body) {
-    globalThis.fetch = async (got) => {
+    _setWireFetchForTests(async (got) => {
       if (String(got) === url) {
         return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
       }
       throw new Error(`unexpected fetch ${got}`)
-    }
+    })
   }
 
   it('查询该精确版本 endpoint（不是 /latest）', async () => {
@@ -101,9 +101,9 @@ describe('npmVersion：精确版本 metadata', () => {
   })
 
   it('拒绝 v 前缀 / range / tag / 脏尾缀（不发请求）', async () => {
-    globalThis.fetch = async () => {
+    _setWireFetchForTests(async () => {
       throw new Error('不应发起请求')
-    }
+    })
     for (const bad of ['v1.2.3', '^1.2.3', '~1.2.3', '>=1.2.3', 'latest', 'next', '1.2.3evil', '1.2', '1.2.3.4']) {
       await assert.rejects(() => npmVersion('fake-pkg', bad, 1000), (err) => /精确版本/.test(err.message))
     }
@@ -405,11 +405,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
   })
 
   it('user-specified exact version 走精确 endpoint 而不是 /latest', async () => {
-    const realFetch = globalThis.fetch
-    afterEach(() => {
-      globalThis.fetch = realFetch
-    })
-    globalThis.fetch = async (got) => {
+    _setWireFetchForTests(async (got) => {
       const url = String(got)
       if (url === 'https://registry.npmjs.org/pkg-a/1.0.5') {
         return new Response(JSON.stringify({ version: '1.0.5', dist: { integrity: sha512('exact') } }), {
@@ -418,7 +414,7 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
         })
       }
       throw new Error(`不应请求 ${url}`)
-    }
+    })
     const fakeAdd = async () => {
       writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: { 'pkg-a': '1.0.5' } }))
       writeFileSync(join(profile, 'pnpm-lock.yaml'), LOCK_WITH('pkg-a', '1.0.5', sha512('exact')))
@@ -427,6 +423,6 @@ describe('installEntry：integrity fail-closed 与回滚', () => {
     }
     const res = await installFromRegistry('p', {}, { version: '1.0.5' }, baseDeps({ runnerOps: { add: wrapAdd(fakeAdd) } }))
     assert.equal(res.version, '1.0.5')
-    globalThis.fetch = realFetch
+    _setWireFetchForTests(null)
   })
 })

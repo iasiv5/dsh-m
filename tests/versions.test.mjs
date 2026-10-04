@@ -19,6 +19,7 @@ import {
   _backdateGithubHourlyWindowForTests,
   _resetGithubHourlyWindowForTests,
 } from '../lib/core/versions.js'
+import { _setWireFetchForTests } from '../lib/core/httpx.js'
 
 const SHA = 'a'.repeat(40)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -26,14 +27,13 @@ const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 let fetchCalls = []
-let realFetch = null
 function installMockFetch(handler) {
-  realFetch = globalThis.fetch
-  globalThis.fetch = async (input) => {
+  // L0（ADR-0012）：wire 已迁至 undici 包 fetch，mock 走 httpx 测试缝隙（语义不变：每物理请求一次）。
+  _setWireFetchForTests(async (input) => {
     const url = String(input)
     fetchCalls.push(url)
     return handler(url)
-  }
+  })
 }
 
 /** api.github.com 假路由：releases/latest / commits/{ref} / tags。 */
@@ -107,8 +107,7 @@ describe('githubLatestTag 预算接线（wire 层 reserve）', () => {
     fetchCalls = []
   })
   afterEach(() => {
-    if (realFetch) globalThis.fetch = realFetch
-    realFetch = null
+    _setWireFetchForTests(null)
   })
 
   it('release 路径 2 个 wire 请求，budget 恰好 reserve 2 次', async () => {
@@ -164,8 +163,7 @@ describe('同仓库 single-flight（预算策略池分池）', () => {
     fetchCalls = []
   })
   afterEach(() => {
-    if (realFetch) globalThis.fetch = realFetch
-    realFetch = null
+    _setWireFetchForTests(null)
   })
 
   it('同池并发合并：两 waiter 共享一条 flight（releases+commits 各一次）', async () => {
@@ -234,8 +232,7 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
     fetchCalls = []
   })
   afterEach(() => {
-    if (realFetch) globalThis.fetch = realFetch
-    realFetch = null
+    _setWireFetchForTests(null)
   })
 
   it('第 26 个 GitHub wire 请求被拒：超限条目标 latestError，其余条目不受影响', async () => {
