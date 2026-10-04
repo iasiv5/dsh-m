@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 export const WEB_PROFILE = 'web'
+export const DESKTOP_PROFILE = 'desktop'
 
 export function dshHome(): string {
   return process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -10,6 +11,11 @@ export function dshHome(): string {
 
 export function webProfileDir(): string {
   return join(dshHome(), 'profiles', WEB_PROFILE)
+}
+
+/** 0.9.31（ADR-0011）：doctor 只读体检的 desktop 目录解析（其余 CLI 命令仍恒 web）。 */
+export function desktopProfileDir(): string {
+  return join(dshHome(), 'profiles', DESKTOP_PROFILE)
 }
 
 /**

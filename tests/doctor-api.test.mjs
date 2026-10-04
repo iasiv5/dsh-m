@@ -95,4 +95,26 @@ describe('doctor method', () => {
     assert.equal(body.report.summary.errors, 0)
     assert.equal(body.report.dualMarket, null)
   })
+
+  it('desktop-kind active profile：doctor method 免改生效（active-profile 无关钉子，ADR-0011）', async () => {
+    const desk = join(home, 'profiles', 'desktop')
+    mkdirSync(join(desk, 'node_modules', 'some-pkg'), { recursive: true })
+    writeFileSync(join(desk, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\n')
+    writeFileSync(join(desk, 'package.json'), JSON.stringify({ dependencies: { 'some-pkg': '1.0.0' } }))
+    writeFileSync(join(desk, 'node_modules', 'some-pkg', 'package.json'), JSON.stringify({ name: 'some-pkg', version: '1.0.0' }))
+    const dispatcher = createApiDispatcher({
+      controller: createRegistryController({}),
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      profile: { name: 'desktop', kind: 'desktop', dir: desk, source: 'host' },
+      deps: { rejectRequest: () => undefined },
+    })
+    const res = mockRes()
+    await dispatcher(mockReq({ method: 'doctor' }), res)
+    const body = JSON.parse(res.bodyText)
+    assert.equal(res.statusCode, 200)
+    assert.equal(body.ok, true)
+    assert.equal(body.report.profileDir, desk)
+    assert.equal(body.report.layout, 'hoisted')
+    assert.equal(body.report.summary.accountChecked, 1)
+  })
 })

@@ -450,8 +450,8 @@ describe('dshm doctor（CLI 子命令）', () => {
     assert.ok(!r.stdout.includes('⚠️'))
   })
 
-  it('--profile desktop 被拒绝（CLI 恒 web profile）', async () => {
-    const r = runCli(['doctor', '--profile', 'desktop'], home)
+  it('--profile desktop 对 doctor 以外命令被拒绝（0.9.31 前本用例以 doctor 为样本，ADR-0011 后 doctor 为例外）', async () => {
+    const r = runCli(['registry', '--profile', 'desktop'], home)
     assert.equal(r.status, 1)
     assert.ok(r.stderr.includes('desktop'))
   })
@@ -460,5 +460,66 @@ describe('dshm doctor（CLI 子命令）', () => {
     const r = runCli([], home) // 无参 → help
     assert.equal(r.status, 0)
     assert.ok(r.stdout.includes('doctor'))
+  })
+})
+
+// ---------- 0.9.31（ADR-0011）：doctor --profile desktop 例外开口 + 空目录提示 ----------
+
+describe('dshm doctor --profile desktop', () => {
+  let home
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-docdesk-'))
+    const desk = join(home, 'profiles', 'desktop')
+    mkdirSync(join(desk, 'node_modules', 'some-pkg'), { recursive: true })
+    writeFileSync(join(desk, 'pnpm-workspace.yaml'), 'packages:\n  - .\nnodeLinker: hoisted\n')
+    writeFileSync(join(desk, 'package.json'), JSON.stringify({ dependencies: { 'some-pkg': '1.0.0' } }))
+    writeFileSync(join(desk, 'node_modules', 'some-pkg', 'package.json'), JSON.stringify({ name: 'some-pkg', version: '1.0.0' }))
+  })
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+
+  it('--profile desktop 路由到 desktop 目录，[desktop] 标注，真实扫描（物化布局 farm=0 属常态）', async () => {
+    const r = runCli(['doctor', '--profile', 'desktop', '--json'], home)
+    assert.equal(r.status, 0)
+    const report = JSON.parse(r.stdout)
+    assert.ok(report.profileDir.endsWith(join('profiles', 'desktop')))
+    assert.equal(report.layout, 'hoisted')
+    assert.equal(report.summary.accountChecked, 1)
+    assert.equal(report.summary.farmChecked, 0)
+    const h = runCli(['doctor', '--profile', 'desktop'], home)
+    assert.ok(h.stdout.includes('[desktop]'), '人读输出应含 [desktop] 标注')
+  })
+
+  it('其他命令对 --profile desktop 的拒绝语义不变（回归钉子）', async () => {
+    for (const argv of [['list'], ['outdated'], ['install', '--id', 'x', '--yes'], ['uninstall', '--pkg', 'x', '--yes']]) {
+      const r = runCli([...argv, '--profile', 'desktop'], home)
+      assert.equal(r.status, 1, `应拒绝：dshm ${argv.join(' ')} --profile desktop`)
+      assert.ok(r.stderr.includes('desktop'))
+    }
+  })
+
+  it('doctor --profile 非法值（非 web|desktop）仍拒绝', async () => {
+    const r = runCli(['doctor', '--profile', 'foo'], home)
+    assert.equal(r.status, 1)
+    assert.ok(r.stderr.includes('foo'))
+  })
+
+  it('空目录提示：默认 doctor 扫不存在的 web 目录 → 提示加 --profile desktop', async () => {
+    const emptyHome = mkdtempSync(join(tmpdir(), 'dshm-docempty-'))
+    try {
+      const r = runCli(['doctor'], emptyHome)
+      assert.equal(r.status, 0)
+      assert.ok(r.stdout.includes('--profile desktop'), '应输出 desktop 提示行')
+    } finally {
+      rmSync(emptyHome, { recursive: true, force: true })
+    }
+  })
+
+  it('正常 web profile 不出空目录提示（回归钉子）', async () => {
+    const web = join(home, 'profiles', 'web')
+    mkdirSync(web, { recursive: true })
+    writeFileSync(join(web, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCli(['doctor'], home)
+    assert.equal(r.status, 0)
+    assert.ok(!r.stdout.includes('--profile desktop'), '正常 profile 不应出 desktop 提示')
   })
 })

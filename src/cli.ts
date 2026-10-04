@@ -18,13 +18,13 @@ import {
 import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
 import { runDoctor } from './core/doctor.js'
 import { readLauncherPackageVersion } from './core/dsh-version.js'
-import { webProfileDir } from './core/env.js'
+import { webProfileDir, desktopProfileDir } from './core/env.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
 import { upgradeEffectLine } from './core/activation.js'
 import { pathToFileURL } from 'node:url'
-import { realpathSync } from 'node:fs'
+import { realpathSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /** 分类中文标签（0.7.0 Task 6；0.9.16 策展五桶）：精选策展桶本地表 + 社区已知标签单一事实源；未知 slug 原样。 */
@@ -178,7 +178,7 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
-  dshm doctor [--json]               profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1）
+  dshm doctor [--json] [--profile web|desktop]  profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1；--profile desktop 为 doctor 专属例外）
 
 变更命令（必须 --yes）：
   dshm install --id <收录id> [--version 1.2.3] [--force]   （--force：确认兼容风险后跳过预检拦截）
@@ -225,7 +225,10 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
   // 目标恒为 web profile）；--profile desktop / 其他非 web 值显式拒绝并指引官方入口，
   // 绝不隐式回落 web（报告 §5.3「不能从不存在的 Desktop 模式推断」）。
   const profileFlag = typeof flags.profile === 'string' ? flags.profile.trim() : ''
-  if (profileFlag !== '' && profileFlag !== 'web') {
+  // 0.9.31（ADR-0011）：doctor 是纯 FS 只读体检——CLI 上唯一例外允许 --profile desktop；
+  // 其余命令维持「CLI 恒 web profile」拒绝（desktop 的变更类管理仍走官方 Desktop 插件页）。
+  const doctorDesktop = cmd === 'doctor' && profileFlag === 'desktop'
+  if (profileFlag !== '' && profileFlag !== 'web' && !doctorDesktop) {
     err(`错误：dshm CLI 仅作用于 web profile，不支持 --profile ${profileFlag}。`)
     err('Desktop profile 的插件管理请使用官方 Desktop 的插件管理页（Settings → Plugins），或回到 DSH Web 端使用 dsh-m。')
     return 1
@@ -452,13 +455,16 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       // 体检（ADR-0010）：纯 FS 只读、不依赖 registry（清单不可用照常工作）。
       // runtimeVersion 仅用 readLauncherPackageVersion 纯 FS 通路（CLI 进程下通常为 null
       // → stale 判定降级 unknown，绝不 spawn）；errors>0 → exit 1。
-      const report = await runDoctor(webProfileDir(), readLauncherPackageVersion())
+      // 0.9.31（ADR-0011）：--profile desktop 例外开口（只读，不与「desktop 管理走官方页」冲突）。
+      const profileName = profileFlag === 'desktop' ? 'desktop' : 'web'
+      const targetDir = profileName === 'desktop' ? desktopProfileDir() : webProfileDir()
+      const report = await runDoctor(targetDir, readLauncherPackageVersion())
       if (flags.json === true) {
         out(JSON.stringify(report, null, 2))
         return report.summary.errors > 0 ? 1 : 0
       }
       const s = report.summary
-      out(`profile 体检 · ${report.profileDir}`)
+      out(`profile 体检 · [${profileName}] · ${report.profileDir}`)
       out(`布局 ${report.layout} · 运行时 ${report.runtimeVersion ?? '未解析（stale 判定降级 unknown，绝不 spawn）'} · 扫描于 ${report.scannedAt}`)
       out(
         `农场 ${s.farmChecked}（悬空 ${s.farmDangling} · 指旧 ${s.farmStale}${report.runtimeVersion === null ? '（降级：未判定）' : ''}）` +
@@ -497,6 +503,9 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         if (s.residueCount > 3) out('  …')
       }
       for (const u of s.unknowns) out(`ℹ️  ${u}`)
+      if (!existsSync(targetDir)) {
+        out(`ℹ️  目标 profile 目录不存在（${targetDir}）；desktop-only 机器请加 --profile desktop。`)
+      }
       if (report.dualMarket) out(`ℹ️  双市场并存：${report.dualMarket.join(' + ')} 同时在装（写侧互不知晓，排查时留意）。`)
       if (errs.length === 0) out('\n未发现 error 级问题。')
       return errs.length > 0 ? 1 : 0
