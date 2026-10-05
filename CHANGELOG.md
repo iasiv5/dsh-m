@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.33 变更：自研条目元数据 v1.1——`audience`/`decoupled` 两字段与三端标注
+
+- **schema**：registry 条目增补可选 `decoupled?: true`（解耦条目，实操口径判定；与 `verified` 互斥——同条目共存报 error）与 `audience?: 'public' | 'internal'`（缺省 public 不产生键；`'team'` 值集预留未开放）。决策共识与五项裁决记录见 DESIGN §2.7，术语见 GLOSSARY「解耦条目 / 自用条目」。
+- **三端标注**：GUI 卡片与 Modal 头新增「作者自用」「版本无关」徽章＋Modal 受众/适配详情行；`dshm_search` 输出投影携带 `audience`/`decoupled`、条目行加 `[作者自用]` 标，工具描述写明推荐纪律（internal 勿向普通用户主动推荐，点名或内部推广场景除外）；CLI `dshm search` 行内同标（新增 `tests/cli-search.test.mjs`）。已装视图与收藏页不打标——推荐发现链路才是纪律靶面。
+- **CI**：validate-registry 新增软警告——decoupled 条目 description 含「已适配」句式即 warn（copy-guide §4 第四句式「版本无关，详见仓库」，空间不足用紧凑形「版本无关。」）。
+- **registry 数据**：八个自研条目终态——surf / obmc-web / onetree-log 打 `decoupled`＋`audience: internal`，quota-watch 打 `decoupled`；四条 `verified` 数组删除（历史归 git 与各仓库文档），兼容句换第四句式；四条 coupled 条目（dsh-m / dsh-skins / skip-browser-auth / copilot-auth）verified 原样保留。
+- **测试**：净增 9 例（registry 字段校验 5、tools-search 标注 2、cli-search 2）；全量 1133 tests，本机 1108 pass / 15 fail——15 项全部为 Windows 平台既有 symlink 语义用例（与基线集合逐项一致，零回归）；typecheck 零错误。
+
 ### 0.9.32 变更：npm registry 路由自适应——元数据预取换源/镜像自愈（ADR-0012）
 
 - **动机**：2026-10-04 上海 Windows 桌面机实证——元数据预取写死直连 registry.npmjs.org，间歇性超时使升级在委派 pnpm 之前夭折（`fetch failed` / `The operation was aborted due to timeout`，且 `.plugin-manager/logs` 无对应操作日志），而 npmmirror 镜像早已同步目标版本；同期首尔腾讯云机 npmjs 直连良好。两台机器需要零配置各自可用。
@@ -316,6 +324,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.33 — self-dev entry metadata v1.1: `audience`/`decoupled` fields with three-surface marking
+
+- **Schema**: registry entries gain optional `decoupled?: true` (decoupled entries, operational criterion; mutually exclusive with `verified` — co-occurrence is an error) and `audience?: 'public' | 'internal'` (defaults to public, no key emitted; `'team'` reserved, not accepted this release). The decision record and five rulings live in DESIGN §2.7; terms in GLOSSARY (Decoupled Entry / Internal Entry).
+- **Three-surface marking**: GUI cards and the Modal head gain 「作者自用」 (Author's own) and 「版本无关」 (Version-independent) badges plus Modal audience/compat rows; `dshm_search` output projects `audience`/`decoupled` with an inline [作者自用] line marker, and the tool description states the recommendation discipline (never proactively recommend internal entries to general users unless named or for internal rollout); CLI `dshm search` marks lines identically (new `tests/cli-search.test.mjs`). Installed views and favorites stay unmarked — the discovery path is the discipline's target.
+- **CI**: validate-registry gains a soft warning — a decoupled entry whose description contains the 「已适配」 pattern (copy-guide §4 fourth pattern 「版本无关，详见仓库」, compact form 「版本无关。」 when space is tight).
+- **Registry data**: final state for the eight self-dev entries — surf / obmc-web / onetree-log gain `decoupled`＋`audience: internal`, quota-watch gains `decoupled`; the four `verified` arrays are removed (history lives in git and per-repo docs) and compatibility sentences switch to the fourth pattern; the four coupled entries (dsh-m / dsh-skins / skip-browser-auth / copilot-auth) keep verified as-is.
+- **Tests**: 9 net-new cases (registry validation 5, tools-search marking 2, cli-search 2); full suite 1133 tests, locally 1108 pass / 15 fail — all 15 are the pre-existing Windows symlink-semantics baseline (item-for-item identical, zero regression); typecheck clean.
 
 ### Added in 0.9.32 — npm registry route adaptation: metadata prefetch source switching / mirror self-heal (ADR-0012)
 
