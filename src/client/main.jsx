@@ -82,6 +82,7 @@ const ZH = {
   "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
   "pager.jump": "跳转", "pager.jump.ph": "页号",
   "panel.fullscreen": "全屏", "panel.restore": "还原",
+  "confirm.install.title": "确认安装 {name}？", "confirm.trust": "社区条目，安装前请确认来源可信。",
   "filter.title": "筛选", "filter.sortfield": "排序字段", "filter.sortdir": "排列方向", "filter.pagesize": "每页条数",
   "filter.field.downloads": "npm 下载量（近 30 天）", "filter.field.stars": "Star 数", "filter.field.added": "收录日期",
   "filter.dir.desc": "降序", "filter.dir.asc": "升序",
@@ -191,6 +192,7 @@ const EN = {
   "notice.unavailable": "Registry unavailable · check the address in Settings",
   "pager.jump": "Go", "pager.jump.ph": "Page",
   "panel.fullscreen": "Fullscreen", "panel.restore": "Restore",
+  "confirm.install.title": "Install {name}?", "confirm.trust": "Community listing — verify the source before installing.",
   "filter.title": "Filter", "filter.sortfield": "Sort by", "filter.sortdir": "Direction", "filter.pagesize": "Per page",
   "filter.field.downloads": "npm downloads (30-day)", "filter.field.stars": "Stars", "filter.field.added": "Date added",
   "filter.dir.desc": "Descending", "filter.dir.asc": "Ascending",
@@ -396,6 +398,9 @@ const CSS = `
 .dshm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:8px}
 .dsvm-searchmeta{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:2px 0}
 .dsvm-grouphead{grid-column:1/-1;color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;line-height:16px;margin:2px 0 0;font-weight:600;letter-spacing:.02em}
+.dshm-cardfoot{display:flex;align-items:center;gap:6px;margin-top:2px}
+.dshm-cardfoot .dshm-quickinstall{margin-left:auto}
+.dsvm-confirmbox{width:min(460px,100%)}
 
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
@@ -1184,6 +1189,51 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
   );
 }
 
+// ---------- 卡面轻确认安装（0.9.34 ADR-0013）：卡面快装入口的确认弹层；确认后走与详情 Modal 完全相同的 doInstall 链路 ----------
+// peer 兼容预检拦截 → 既有 compatConfirm 确认块（.dshm-compat-overlay）；装后守卫/操作记录/进度线全部不动。
+function InstallConfirmModal({ it, busy, onClose, onConfirm }) {
+  useModalDepth(true);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const shots = safeScreenshots(it);
+  return h(
+    "div",
+    { className: "dsvm-modal", ...backdropCloseHandlers(onClose) },
+    h(
+      "div",
+      { className: "dsvm-modalbox dsvm-confirmbox", onClick: (e) => e.stopPropagation() },
+      h(
+        "div",
+        { className: "dsvm-modalhead" },
+        h(Icon, { entry: it }),
+        h("span", { className: "dshm-name" }, lookup("confirm.install.title", { name: it.name })),
+        it.deprecated === true ? h("span", { className: "dshm-badge warn" }, lookup("badge.deprecated")) : null,
+        it.community === true ? h("span", { className: "dshm-badge info" }, lookup("badge.community")) : null,
+        h("span", { className: "dshm-badge info" }, it.source === "npm" ? "npm" : "github"),
+        h("span", { className: "dshm-spacer" }),
+        h("button", { className: "dshm-xbtn", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
+      ),
+      h("div", { className: "dshm-desc" }, it.description || ""),
+      shots.length
+        ? h("div", { className: "dsvm-shotrow" }, ...shots.slice(0, 3).map((src) => h(Shot, { key: src, src })))
+        : null,
+      it.deprecated === true && it.replacement ? h("div", { className: "dshm-note warn" }, `${lookup("modal.replacement")}: ${it.replacement}`) : null,
+      it.community === true ? h("div", { className: "dshm-note" }, lookup("confirm.trust")) : null,
+      h(
+        "div",
+        { className: "dsvm-modalactions" },
+        h("button", { className: "dshm-btn", onClick: onClose }, lookup("common.cancel")),
+        h("button", { className: "dshm-btn primary", disabled: busy, onClick: () => onConfirm(it) }, busy ? h(Spin) : lookup("action.install")),
+      ),
+    ),
+  );
+}
+
 // ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props；0.7.0 Task 9 三分区 tab 壳） ----------
 const ZONE_TABS = [
   { id: "community", labelKey: "zone.community" },
@@ -1200,6 +1250,9 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   // 0.9.25 跨区搜索态派生：query 非空即搜索（两区通用「搜索=全局、浏览=分区」；收藏区 market=null 时恒 false）
   const searching = Boolean(query && query.query);
   const [detailId, setDetailId] = useState(null);
+  // 卡面轻确认安装（0.9.34 ADR-0013）：{ it } | null——必须在 favorites 早退之前（hooks 规则）
+  const [confirmItem, setConfirmItem] = useState(null);
+  useModalDepth(confirmItem != null);
   // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null——必须在 favorites 早退之前（hooks 规则）
   const [compatConfirm, setCompatConfirm] = useState(null);
   // CompatDialog 也是弹层：打开期间面板级 Esc 不关面板（审计 #4 同族）
@@ -1559,6 +1612,20 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
         it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
       ].filter(Boolean).join(" · "),
       links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
+      // 卡面快装（0.9.34 ADR-0013）：未安装条目 footer「安装」→ 轻确认弹窗；已安装不渲染（manage.hint 在详情层）
+      footer: it.installed
+        ? null
+        : h(
+            "button",
+            {
+              className: "dshm-btn sm dshm-quickinstall",
+              onClick: (e) => {
+                e.stopPropagation();
+                setConfirmItem(it);
+              },
+            },
+            lookup("action.install"),
+          ),
       onToggle: () => setDetailId(it.id),
       topRight: favorites
         ? h("button", {
@@ -1669,6 +1736,17 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           profileKind,
           installRec: activeInstallRec && activeInstallRec.target === detailItem.id ? activeInstallRec : null,
           installNote: installNote && installNote.id === detailItem.id ? installNote : null,
+        })
+      : null,
+    confirmItem
+      ? h(InstallConfirmModal, {
+          it: confirmItem,
+          busy: activeInstallTarget === confirmItem.id,
+          onClose: () => setConfirmItem(null),
+          onConfirm: (it2) => {
+            setConfirmItem(null);
+            doInstall(it2);
+          },
         })
       : null,
   );
@@ -2203,7 +2281,7 @@ function DetailRows(rows) {
 }
 
 // ---------- 卡片（市场/已装共用） ----------
-function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines }) {
+function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines, footer }) {
   return h(
     "div",
     {
@@ -2226,6 +2304,7 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
       h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : clampLines ? { WebkitLineClamp: String(clampLines) } : null }, desc),
       sub ? h("div", { className: "dshm-sub" }, sub) : null,
       links || null,
+      footer ? h("div", { className: "dshm-cardfoot" }, footer) : null,
       open ? h("div", { className: "dshm-detail" }, detail) : null,
       open && actions && actions.length ? h("div", { className: "dshm-actions" }, ...actions) : null,
     ),

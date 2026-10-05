@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal };\n',
   )
   await build({
     entryPoints: [entry],
@@ -213,5 +213,16 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(hint.includes('dshm-hint'), 'hint 中性着色在')
     const running = renderToString(h(components.__DetailModal, { it: entry, ...base, installRec: { kind: 'install', target: entry.id, status: 'running' } }))
     assert.ok(typeof running === 'string' && running.length > 0, 'running record 渲染不抛（进度行 SSR 为 null）')
+  })
+
+  // 0.9.34 ADR-0013：卡面轻确认安装弹层（名称标题/社区信任提示/取消确认按钮）
+  it('InstallConfirmModal：名称标题/社区信任提示/取消确认按钮 + 确认容器类', () => {
+    const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', community: true, source: 'npm', npm: 'demo-pkg' }
+    const html = renderToString(h(components.__InstallConfirmModal, { it: entry, busy: false, onClose: () => {}, onConfirm: () => {} }))
+    assert.ok(html.includes('dsvm-confirmbox'), '轻确认容器在')
+    assert.ok(html.includes('demo'), '名称在')
+    assert.ok(html.includes('确认安装') || html.includes('Install'), '标题在')
+    assert.ok(html.includes('来源可信') || html.includes('verify the source'), '社区信任提示在')
+    assert.ok(html.includes('dshm-btn primary'), '确认按钮在')
   })
 })
