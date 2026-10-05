@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal, __CardShots: CardShots };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal, __CardShots: CardShots, __GalleryCard: GalleryCard };\n',
   )
   await build({
     entryPoints: [entry],
@@ -235,5 +235,23 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(html.includes('dsvm-shotbox'), '复用 shotbox 槽位')
     const empty = renderToString(h(components.__CardShots, { shots: [], onOpen: () => {} }))
     assert.equal(empty, '', '无图返回 null')
+  })
+
+  // 0.9.34 ADR-0013：主题画廊卡（封面 jsDelivr 改写 + 张数角标 + footer；无图 SSR 占位零请求）
+  it('GalleryCard：curated 封面走 jsDelivr 改写 + 张数角标 + footer 操作', () => {
+    const it0 = { id: 'o1--skin', name: 'skin', description: 'd', category: 'theme', community: true, source: 'github', github: 'o1/skin',
+      screenshots: ['https://raw.githubusercontent.com/o1/skin/HEAD/docs/a.png', 'https://raw.githubusercontent.com/o1/skin/HEAD/docs/b.png'] }
+    const html = renderToString(h(components.__GalleryCard, { it: it0, fav: null, onToggleFav: () => {}, onOpenDetail: () => {}, onQuickInstall: () => {}, busy: false, cache: { get: () => undefined, set: () => {}, clear: () => {} } }))
+    assert.ok(html.includes('dshm-gcard'), '画廊卡容器在')
+    assert.ok(html.includes('cdn.jsdelivr.net/gh/o1/skin@HEAD/docs/a.png'), '封面首选 jsDelivr 改写（封面 img 直接渲染，原生 lazy）')
+    assert.ok(html.includes('dshm-gcount'), '张数角标在')
+    assert.ok(html.includes('张预览') || html.includes('preview'), '角标文案在')
+    assert.ok(html.includes('dshm-btn'), 'footer 操作在')
+  })
+  it('GalleryCard：无图无兜底前渲染占位（SSR 不发起 fetch）', () => {
+    const it0 = { id: 'o1--bare', name: 'bare', description: 'd', category: 'theme', community: true, source: 'github', github: 'o1/bare' }
+    const html = renderToString(h(components.__GalleryCard, { it: it0, fav: null, onToggleFav: () => {}, onOpenDetail: () => {}, onQuickInstall: () => {}, busy: false, cache: { get: () => undefined, set: () => {}, clear: () => {} } }))
+    assert.ok(html.includes('dshm-gcover-empty'), '占位在')
+    assert.ok(!html.includes('<img'), 'SSR 零 img')
   })
 })

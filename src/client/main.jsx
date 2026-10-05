@@ -11,7 +11,7 @@ const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf } = require("./market-state.js");
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, THEME_CATEGORY, pageLimitForCategory } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { createMarkdown } = require("./markdown.js");
@@ -87,6 +87,7 @@ const ZH = {
   "pager.jump": "跳转", "pager.jump.ph": "页号",
   "panel.fullscreen": "全屏", "panel.restore": "还原",
   "confirm.install.title": "确认安装 {name}？", "confirm.trust": "社区条目，安装前请确认来源可信。",
+  "gallery.finding": "正在查找预览… ", "gallery.none": "暂无预览", "gallery.count": "{n} 张预览", "gallery.detail": "详情",
   "filter.title": "筛选", "filter.sortfield": "排序字段", "filter.sortdir": "排列方向", "filter.pagesize": "每页条数",
   "filter.field.downloads": "npm 下载量（近 30 天）", "filter.field.stars": "Star 数", "filter.field.added": "收录日期",
   "filter.dir.desc": "降序", "filter.dir.asc": "升序",
@@ -197,6 +198,7 @@ const EN = {
   "pager.jump": "Go", "pager.jump.ph": "Page",
   "panel.fullscreen": "Fullscreen", "panel.restore": "Restore",
   "confirm.install.title": "Install {name}?", "confirm.trust": "Community listing — verify the source before installing.",
+  "gallery.finding": "Looking for previews… ", "gallery.none": "No preview", "gallery.count": "{n} preview(s)", "gallery.detail": "Details",
   "filter.title": "Filter", "filter.sortfield": "Sort by", "filter.sortdir": "Direction", "filter.pagesize": "Per page",
   "filter.field.downloads": "npm downloads (30-day)", "filter.field.stars": "Stars", "filter.field.added": "Date added",
   "filter.dir.desc": "Descending", "filter.dir.asc": "Ascending",
@@ -408,6 +410,16 @@ const CSS = `
 .dshm-shotstrip{display:flex;gap:6px;overflow-x:auto;margin-top:8px}
 .dshm-shotstrip .dsvm-shotbox{min-width:0;width:104px;height:58px;min-height:0}
 .dshm-shotstrip .dsvm-shot{max-width:100%;max-height:100%}
+.dshm-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px;align-items:start}
+.dshm-gcard{display:flex;flex-direction:column;min-width:0;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;overflow:hidden;font:inherit;color:var(--dsw-alias-label-primary,inherit);text-align:left;transition:border-color .16s,background .16s}
+.dshm-gcard:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
+.dshm-gcover{position:relative;display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:16/10;overflow:hidden;padding:0;border:0;border-bottom:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#fff);cursor:zoom-in;color:var(--dsw-alias-label-caption,#6b7280)}
+.dshm-gcover img{display:block;width:100%;height:100%;object-fit:contain}
+.dshm-gcover-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:12px;cursor:default}
+.dshm-gcount{position:absolute;left:8px;bottom:8px;display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:4px;background:rgba(20,24,31,.78);color:#fff;font-size:11px;line-height:16px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.dshm-gbody{display:flex;flex:1;flex-direction:column;gap:6px;padding:10px 12px;min-width:0}
+.dshm-gfoot{display:flex;align-items:center;gap:6px;margin-top:auto;padding-top:4px}
+.dshm-gfoot .dshm-btn.primary{margin-left:auto}
 
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
@@ -1264,6 +1276,150 @@ function InstallConfirmModal({ it, busy, onClose, onConfirm }) {
   );
 }
 
+// ---------- 主题画廊卡（0.9.34 ADR-0013）：16:10 封面 + 张数角标 + 灯箱 + README 兜底；收藏区复用 ----------
+// 封面是主视觉，img 直接渲染（原生 lazy）；README 兜底仅在无人工图时由占位区临视口触发（瘦身版语义）。
+function GalleryCard({ it, fav, onToggleFav, onOpenDetail, onQuickInstall, busy, cache }) {
+  const curated = safeScreenshots(it);
+  const [fallback, setFallback] = useState(null); // string[] | null（null = 未兜底/未触发）
+  const [near, setNear] = useState(false);
+  const [lb, setLb] = useState(null);
+  const [coverTry, setCoverTry] = useState(0);
+  const placeholderRef = useRef(null);
+  const needsFallback = curated.length === 0;
+  useEffect(() => {
+    if (!needsFallback || near || fallback !== null) return;
+    const el = placeholderRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setNear(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [needsFallback, near, fallback]);
+  useEffect(() => {
+    if (!needsFallback || !near || fallback !== null) return;
+    let live = true;
+    fetchReadmeShots(it, { cache }).then((shots) => {
+      if (live) setFallback(shots);
+    });
+    return () => {
+      live = false;
+    };
+  }, [needsFallback, near, fallback, it, cache]);
+  const shots = curated.length ? curated : fallback || [];
+  const coverCandidates = shots.length ? shotSrcCandidates(shots[0]) : [];
+  const coverActive = coverTry < coverCandidates.length ? coverCandidates[coverTry] : null;
+  useEffect(() => {
+    setCoverTry(0);
+  }, [shots.length, shots[0]]);
+  useModalDepth(lb !== null);
+  useEffect(() => {
+    if (!lb) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setLb(null);
+      if (lb.shots.length > 1) {
+        if (e.key === "ArrowLeft") setLb((s) => (s ? { shots: s.shots, index: (s.index - 1 + s.shots.length) % s.shots.length } : s));
+        if (e.key === "ArrowRight") setLb((s) => (s ? { shots: s.shots, index: (s.index + 1) % s.shots.length } : s));
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [lb]);
+  return h(
+    "article",
+    { className: "dshm-gcard" },
+    shots.length
+      ? h(
+          "button",
+          { className: "dshm-gcover", onClick: () => setLb({ shots, index: 0 }) },
+          h("img", {
+            src: coverActive,
+            alt: "",
+            loading: "lazy",
+            referrerPolicy: "no-referrer",
+            fetchPriority: "low",
+            onError: () => setCoverTry((t) => t + 1),
+          }),
+          shots.length > 1 ? h("span", { className: "dshm-gcount" }, lookup("gallery.count", { n: shots.length })) : null,
+        )
+      : h(
+          "div",
+          { className: "dshm-gcover dshm-gcover-empty", ref: placeholderRef },
+          fallback === null
+            ? h(React.Fragment, null, Spin(), h("span", null, lookup("gallery.finding")))
+            : h("span", null, lookup("gallery.none")),
+        ),
+    h(
+      "div",
+      { className: "dshm-gbody" },
+      h(
+        "div",
+        { className: "dshm-top" },
+        h("span", { className: "dshm-name", title: it.name }, it.name),
+        it.deprecated === true ? h("span", { className: "dshm-badge warn" }, lookup("badge.deprecated")) : null,
+        it.community === true ? h("span", { className: "dshm-badge info" }, lookup("badge.community")) : null,
+        it.installed ? h("span", { className: "dshm-badge" }, lookup("badge.installed")) : null,
+      ),
+      it.community === true && (it.owner || typeof it.downloads === "number" || typeof it.stars === "number")
+        ? h(
+            "div",
+            { className: "dsvm-byline" },
+            it.owner ? h("span", null, `by ${it.owner}`) : null,
+            typeof it.downloads === "number" ? h("span", { title: String(it.downloads) }, `${compactCount(it.downloads)} ↓`) : null,
+            typeof it.stars === "number" ? h("span", { title: String(it.stars) }, `${compactCount(it.stars)} ★`) : null,
+          )
+        : null,
+      h("div", { className: "dshm-desc" }, it.description || ""),
+      h(
+        "div",
+        { className: "dshm-gfoot" },
+        onToggleFav
+          ? h(
+              "button",
+              {
+                className: `dsvm-favbtn${fav ? " on" : ""}`,
+                title: fav ? lookup("fav.remove") : lookup("fav.add"),
+                onClick: (e) => {
+                  e.stopPropagation();
+                  onToggleFav();
+                },
+              },
+              fav ? "★" : "☆",
+            )
+          : null,
+        onOpenDetail ? h("button", { className: "dshm-btn sm", onClick: onOpenDetail }, lookup("gallery.detail")) : null,
+        it.installed
+          ? h("span", { className: "dshm-hint", style: { marginLeft: "auto" } }, lookup("manage.hint"))
+          : onQuickInstall
+            ? h(
+                "button",
+                {
+                  className: "dshm-btn sm primary",
+                  style: { marginLeft: "auto" },
+                  disabled: busy,
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    onQuickInstall(it);
+                  },
+                },
+                busy ? h(Spin) : lookup("action.install"),
+              )
+            : null,
+      ),
+    ),
+    lb ? h(Lightbox, { shots: lb.shots, index: lb.index, onNav: (i) => setLb({ shots: lb.shots, index: i }), onClose: () => setLb(null) }) : null,
+  );
+}
+
 // ---------- 市场页（数据由 MarketPanel 唯一持有，本组件只消费 props；0.7.0 Task 9 三分区 tab 壳） ----------
 const ZONE_TABS = [
   { id: "community", labelKey: "zone.community" },
@@ -1279,6 +1435,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   const { data, loading, error, reload, query, updateQuery } = market || {};
   // 0.9.25 跨区搜索态派生：query 非空即搜索（两区通用「搜索=全局、浏览=分区」；收藏区 market=null 时恒 false）
   const searching = Boolean(query && query.query);
+  // 画廊视图派生（0.9.34 ADR-0013）：社区区浏览态主题分类 → 画廊卡网格；搜索态/精选区不出现画廊
+  const galleryMode = zone === "community" && !searching && query.category === THEME_CATEGORY;
   const [detailId, setDetailId] = useState(null);
   // 卡面轻确认安装（0.9.34 ADR-0013）：{ it } | null——必须在 favorites 早退之前（hooks 规则）
   const [confirmItem, setConfirmItem] = useState(null);
@@ -1389,7 +1547,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     ? h(
         "div",
         { className: "dsvm-searchrow" },
-        h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery(v ? { query: v, category: null } : { query: v }) }),
+        h(SearchBox, { key: zone, placeholder: lookup("search.ph"), initial: query.query, onCommit: (v) => updateQuery(v ? { query: v, category: null, limit: pageLimitForCategory(zone, null) } : { query: v, limit: pageLimitForCategory(zone, null) }) }),
       )
     : null;
   const zoneBar = zoneChips;
@@ -1567,15 +1725,19 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
                   optRow(lookup(key), curSortDir === d, () => updateQuery({ sort: { field: curSortField, dir: d } }))),
               ),
             ]),
-        h(
-          "div",
-          { className: "dsvm-filtergroup" },
-          h("div", { className: "dsvm-filtergt" }, lookup("filter.pagesize")),
-          ...MARKET_PAGE_SIZES.map((n) =>
-            optRow(String(n), limit === n, () => updateQuery({ limit: n, offset: 0 }))),
-        ),
-      )
-    : null;
+        // 画廊态页大小固定 16（评审澄清 Q2 定案）：筛选页大小组仅非画廊态渲染，离开画廊自动恢复
+        ...(galleryMode
+          ? []
+          : [
+              h(
+                "div",
+                { className: "dsvm-filtergroup" },
+                h("div", { className: "dsvm-filtergt" }, lookup("filter.pagesize")),
+                ...MARKET_PAGE_SIZES.map((n) =>
+                  optRow(String(n), limit === n, () => updateQuery({ limit: n, offset: 0 }))),
+              ),
+            ]),
+      )    : null;
   const filterTrigger = zone === "community"
     ? h(
         "div",
@@ -1722,7 +1884,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           counts,
           labels: communityLabels(data),
           active: query.category,
-          onPick: (id) => updateQuery({ category: id, offset: 0 }),
+          onPick: (id) => updateQuery({ category: id, offset: 0, limit: pageLimitForCategory(zone, id) }),
           trailing: filterTrigger,
         }),
     // 0.9.15：安装目标条目的详情 Modal 打开时，进度行入 Modal、底层行让位（避免隔着遮罩双重透出）；
@@ -1739,11 +1901,28 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           : h(
               React.Fragment,
               null,
-              h(
-                "div",
-                { className: "dshm-cards" },
-                ...marketCards,
-              ),
+              galleryMode
+                ? h(
+                    "div",
+                    { className: "dshm-gallery" },
+                    ...items.map((it2) =>
+                      h(GalleryCard, {
+                        key: it2.id,
+                        it: it2,
+                        fav: favorites.list.some((f) => f.id === it2.id) || null,
+                        onToggleFav: () => favorites.toggle(snapshotOf(it2)),
+                        onOpenDetail: () => setDetailId(it2.id),
+                        onQuickInstall: it2.installed ? null : (target) => setConfirmItem(target),
+                        busy: activeInstallTarget === it2.id,
+                        cache: readmeShotCache,
+                      }),
+                    ),
+                  )
+                : h(
+                    "div",
+                    { className: "dshm-cards" },
+                    ...marketCards,
+                  ),
               pages > 1
                 ? h(
                     "div",
