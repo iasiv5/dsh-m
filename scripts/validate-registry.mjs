@@ -149,6 +149,10 @@ for (const entry of parsed.registry?.plugins || []) {
       await reachable(url)
       console.log(`✓ ${where} ${key} 可达`)
     }
+    for (const [i, shotUrl] of (entry.screenshots || []).entries()) {
+      await reachable(shotUrl)
+      console.log(`✓ ${where} screenshots[${i}] 可达`)
+    }
   } catch (err) {
     failed = true
     console.error(`✗ ${where} ${err instanceof Error ? err.message : err}`)
