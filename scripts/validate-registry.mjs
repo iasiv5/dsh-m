@@ -49,6 +49,10 @@ for (const entry of parsed.registry?.plugins || []) {
       console.warn(`⚠ ${where} tag「${tag}」是依赖关系词——关系应写在 description 句式里（需 …/可选集成 …），见 registry-copy-guide §4/§5`)
     }
   }
+  if (entry.decoupled === true && /已适配/.test(desc)) {
+    warned = true
+    console.warn(`⚠ ${where} 解耦条目 description 含「已适配」句式——应为「版本无关，详见仓库」（registry-copy-guide §4 第四句式）`)
+  }
   const tail = desc.match(/（[^（）]*(?:适配|需|依赖|推荐)[^（）]*）/)
   if (tail) {
     warned = true
