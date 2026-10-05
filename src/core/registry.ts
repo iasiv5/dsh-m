@@ -60,6 +60,10 @@ export interface RegistryEntry {
    *  （如 better-sidebar 主桶 essentials + 次桶 cui-picks）。值 ∈ CATEGORIES、
    *  不得含主 category、去重；主桶仍决定详情页分类标签与展示位。 */
   alsoCategories?: Category[]
+  /** 预览图（0.9.34 / ADR-0013 / GLOSSARY「预览图」）：产品截图 URL 数组，≤8 项，
+   *  GitHub 图床白名单（github.com / *.githubusercontent.com）与客户端消费端
+   *  safeScreenshots 同语义；允许空数组（不产生键）。 */
+  screenshots?: string[]
 }
 
 export interface Registry {
@@ -218,7 +222,10 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
 // ---------- 严格 v1 校验 ----------
 
 const TOP_LEVEL_KEYS = new Set(['version', 'plugins'])
-const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories', 'decoupled', 'audience'])
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories', 'decoupled', 'audience', 'screenshots'])
+
+/** screenshots 数组上限（0.9.34 ADR-0013）：与客户端消费端 safeScreenshots 的 8 张对齐。 */
+const MAX_SCREENSHOTS = 8
 
 /** 精确 semver 判定（与 versions.ts EXACT_VERSION_RE 同语义；接受 prerelease/build，拒绝 range/前缀）。 */
 const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -403,6 +410,48 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       }
     }
 
+    // screenshots（0.9.34，ADR-0013）：可选预览图数组——GitHub 图床白名单与客户端
+    // 消费端 safeScreenshots 同语义；≤8 项、去重、每项 httpsUrlError；空数组 = 无图（不产生键）
+    let entryScreenshots: string[] | undefined
+    if (e.screenshots !== undefined) {
+      if (!Array.isArray(e.screenshots)) {
+        errors.push(`${where}.screenshots: 必须是字符串数组`)
+      } else {
+        if (e.screenshots.length > MAX_SCREENSHOTS) errors.push(`${where}.screenshots: 超过 ${MAX_SCREENSHOTS} 张`)
+        const seenShots = new Set<string>()
+        const shots: string[] = []
+        e.screenshots.forEach((s, si) => {
+          const sv = typeof s === 'string' ? s.trim() : ''
+          if (sv === '') {
+            errors.push(`${where}.screenshots[${si}]: 必须是非空字符串`)
+            return
+          }
+          const problem = httpsUrlError(sv)
+          if (problem) {
+            errors.push(`${where}.screenshots[${si}]: ${problem}`)
+            return
+          }
+          let host = ''
+          try {
+            host = new URL(sv).hostname
+          } catch {
+            host = ''
+          }
+          if (host !== 'github.com' && !host.endsWith('.githubusercontent.com')) {
+            errors.push(`${where}.screenshots[${si}]: 图床仅允许 github.com 或 *.githubusercontent.com`)
+            return
+          }
+          if (seenShots.has(sv)) {
+            errors.push(`${where}.screenshots[${si}]: 重复 ${sv}`)
+            return
+          }
+          seenShots.add(sv)
+          shots.push(sv)
+        })
+        if (shots.length > 0) entryScreenshots = shots
+      }
+    }
+
     // decoupled（自研元数据 v1.1）：只声明 true；与 verified 互斥（GLOSSARY「解耦条目」）
     let entryDecoupled: true | undefined
     if (e.decoupled !== undefined) {
@@ -432,6 +481,7 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       ...(entryIcon !== undefined ? { icon: entryIcon } : {}),
       ...(verified !== undefined ? { verified } : {}),
       ...(alsoCategories !== undefined ? { alsoCategories } : {}),
+      ...(entryScreenshots !== undefined ? { screenshots: entryScreenshots } : {}),
       ...(entryDecoupled === true ? { decoupled: true as true } : {}),
       ...(entryAudience !== undefined ? { audience: entryAudience } : {}),
     })

@@ -1093,3 +1093,41 @@ describe('alsoCategories 次级策展桶（0.9.17）', () => {
     assert.equal('alsoCategories' in empty.registry.plugins[0], false, '空数组不产生键')
   })
 })
+
+// ---------- 0.9.34：screenshots 可选预览图字段（ADR-0013） ----------
+
+describe('screenshots 字段（0.9.34 ADR-0013）', () => {
+  it('合法数组通过并原样回传', () => {
+    const shot = 'https://raw.githubusercontent.com/o1/demo/HEAD/docs/shot.png'
+    const r = validateRegistry(reg([{ ...entry({ id: 'o1--demo', npm: 'demo-pkg' }), screenshots: [shot] }]))
+    assert.equal(r.ok, true)
+    assert.deepEqual(r.registry.plugins[0].screenshots, [shot])
+  })
+
+  it('空数组与缺省合法', () => {
+    const missing = validateRegistry(reg([entry()]))
+    assert.equal(missing.ok, true)
+    assert.equal('screenshots' in missing.registry.plugins[0], false, '缺省不产生键')
+    const empty = validateRegistry(reg([{ ...entry(), screenshots: [] }]))
+    assert.equal(empty.ok, true)
+  })
+
+  it('非数组 / 非法项 / 超限 / 非 GitHub 图床 / 重复 → 拒绝', () => {
+    const shot = 'https://raw.githubusercontent.com/o1/demo/HEAD/s.png'
+    const cases = [
+      { screenshots: 'x' },
+      { screenshots: [42] },
+      { screenshots: [''] },
+      { screenshots: ['http://raw.githubusercontent.com/o1/demo/s.png'] },
+      { screenshots: ['https://cdn.example.com/s.png'] },
+      { screenshots: [`https://raw.githubusercontent.com/o1/demo/HEAD/${'a'.repeat(2100)}.png`] },
+      { screenshots: Array(9).fill(shot) },
+      { screenshots: [shot, shot] },
+    ]
+    for (const p of cases) {
+      const r = validateRegistry(reg([{ ...entry(), ...p }]))
+      assert.equal(r.ok, false, `应拒绝：${JSON.stringify(p).slice(0, 80)}`)
+      assert.ok(r.errors.some((e) => e.includes('screenshots')), `错误信息应指向 screenshots：${r.errors.join(' | ')}`)
+    }
+  })
+})
