@@ -2557,7 +2557,7 @@ function snapshotOf(it) {
     categoryLabel: it.categoryLabel,
     source: it.source,
   };
-  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated"]) {
+  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated", "screenshots"]) {
     if (it[k] !== undefined && it[k] !== null) s[k] = it[k];
   }
   return s;
@@ -2566,6 +2566,21 @@ function snapshotOf(it) {
 function FavoriteZone({ favorites, onOpen }) {
   const list = favorites.list;
   const [check, setCheck] = useState(null); // { staleIds: string[] } | null
+  // 缩略条灯箱（0.9.34 ADR-0013）：非主题收藏文字卡的缩略条点击开灯箱
+  const [stripLb, setStripLb] = useState(null);
+  useModalDepth(stripLb != null);
+  useEffect(() => {
+    if (!stripLb) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setStripLb(null);
+      if (stripLb.shots.length > 1) {
+        if (e.key === "ArrowLeft") setStripLb((s) => (s ? { shots: s.shots, index: (s.index - 1 + s.shots.length) % s.shots.length } : s));
+        if (e.key === "ArrowRight") setStripLb((s) => (s ? { shots: s.shots, index: (s.index + 1) % s.shots.length } : s));
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [stripLb]);
   useEffect(() => {
     let live = true;
     setCheck(null);
@@ -2616,6 +2631,21 @@ function FavoriteZone({ favorites, onOpen }) {
       ...list.map((fav) => {
         const s = fav.snapshot;
         const isStale = staleSet.has(fav.id);
+        // 主题收藏走画廊卡（0.9.34 ADR-0013，评审澄清 Q1 定案：收藏画廊同属画廊，README 兜底适用）；
+        // ★ = 取消收藏（favorites.toggle 按 id 翻转）；已下架（stale）标注暂不在画廊卡呈现（详情层可见）
+        if (s.category === THEME_CATEGORY) {
+          return h(GalleryCard, {
+            key: fav.id,
+            it: { ...s, community: s.owner ? true : undefined },
+            fav: true,
+            onToggleFav: () => favorites.toggle(s),
+            onOpenDetail: () => onOpen && onOpen(fav),
+            onQuickInstall: null,
+            busy: false,
+            cache: readmeShotCache,
+          });
+        }
+        const shots = safeScreenshots(s);
         return Card({
           key: fav.id,
           icon: h(Icon, { entry: s }),
@@ -2636,6 +2666,7 @@ function FavoriteZone({ favorites, onOpen }) {
           desc: s.description,
           clampLines: 5,
           links: h(LinksRow, { npm: s.npm, github: s.github, homepage: s.homepage }),
+          shotStrip: shots.length ? h(CardShots, { shots, onOpen: (arr, i) => setStripLb({ shots: arr, index: i }) }) : null,
           // 0.7.2 修复：收藏卡点击开详情（此前无 onToggle，点击无响应）；
           // 解析在 onOpen 内做（内存/API/快照三级），★ 移除按钮 stopPropagation 不受影响
           onToggle: () => {
@@ -2652,6 +2683,7 @@ function FavoriteZone({ favorites, onOpen }) {
         });
       }),
     ),
+    stripLb ? h(Lightbox, { shots: stripLb.shots, index: stripLb.index, onNav: (i) => setStripLb({ shots: stripLb.shots, index: i }), onClose: () => setStripLb(null) }) : null,
   );
 }
 

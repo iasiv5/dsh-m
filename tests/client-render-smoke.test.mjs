@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal, __CardShots: CardShots, __GalleryCard: GalleryCard };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal, __CardShots: CardShots, __GalleryCard: GalleryCard, __snapshotOf: snapshotOf };\n',
   )
   await build({
     entryPoints: [entry],
@@ -109,10 +109,11 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
   })
 
   it('FavoriteZone 带一条收藏快照渲染不抛（卡片路径）', () => {
+    // 0.9.34 起 theme 分类收藏走画廊卡（见下方用例）；本用例守护非主题文字卡路径的可点击语义
     const fav = {
       id: 'o1--demo',
       savedAt: 1,
-      snapshot: { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg', owner: 'o1', downloads: 5, stars: 2 },
+      snapshot: { id: 'o1--demo', name: 'demo', description: 'd', category: 'ui', source: 'npm', npm: 'demo-pkg', owner: 'o1', downloads: 5, stars: 2 },
     }
     const html = renderToString(h(components.__FavoriteZone, { favorites: { list: [fav], toggle: () => {}, removeIds: () => {} }, onOpen: () => {} }))
     assert.ok(html.includes('demo'))
@@ -253,5 +254,20 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     const html = renderToString(h(components.__GalleryCard, { it: it0, fav: null, onToggleFav: () => {}, onOpenDetail: () => {}, onQuickInstall: () => {}, busy: false, cache: { get: () => undefined, set: () => {}, clear: () => {} } }))
     assert.ok(html.includes('dshm-gcover-empty'), '占位在')
     assert.ok(!html.includes('<img'), 'SSR 零 img')
+  })
+
+  // 0.9.34 ADR-0013：收藏区——主题收藏画廊卡、非主题文字卡（含缩略条）；snapshotOf 断链回归门
+  it('FavoriteZone：主题收藏渲染画廊卡，非主题维持文字卡', () => {
+    const favs = { list: [
+      { id: 'o1--skin', savedAt: 1, snapshot: { id: 'o1--skin', name: 'skin', description: 'd', category: 'theme', source: 'github', github: 'o1/skin', screenshots: ['https://raw.githubusercontent.com/o1/skin/HEAD/a.png'] } },
+      { id: 'o1--tool', savedAt: 2, snapshot: { id: 'o1--tool', name: 'tool', description: 'd', category: 'ui', source: 'npm', npm: 'tool' } },
+    ], toggle: () => {}, removeIds: () => {} }
+    const html = renderToString(h(components.__FavoriteZone, { favorites: favs, onOpen: () => {} }))
+    assert.ok(html.includes('dshm-gcard'), '主题条目走画廊卡')
+    assert.ok(html.includes('dshm-card'), '非主题维持文字卡')
+  })
+  it('snapshotOf 保留 screenshots（收藏快照断链回归门）', () => {
+    const snap = components.__snapshotOf({ id: 'o1--x', name: 'x', description: 'd', category: 'theme', source: 'github', github: 'o1/x', screenshots: ['https://raw.githubusercontent.com/o1/x/HEAD/a.png'] })
+    assert.deepEqual(snap.screenshots, ['https://raw.githubusercontent.com/o1/x/HEAD/a.png'])
   })
 })
