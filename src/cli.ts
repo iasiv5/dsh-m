@@ -281,7 +281,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       for (const it of result.items) {
         const inst = it.installed ? ` [已安装 v${it.installedVersion || '?'}]` : ''
         const zone = it.community === true ? '[社区] ' : ''
-        out(`• ${it.name} (${it.id})${zone}· ${categoryLabelOf(it.category)} · ${it.source}${inst}`)
+        out(`• ${it.name} (${it.id})${zone}${it.audience === 'internal' ? '[作者自用] ' : ''}· ${categoryLabelOf(it.category)} · ${it.source}${inst}`)
         out(`  ${it.description}`)
       }
       const shown = result.items.length
