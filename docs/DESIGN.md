@@ -18,7 +18,7 @@
 - **默认源**获取顺序：raw.githubusercontent `@main` → jsDelivr `@main` → 默认 TTL 缓存 → npm 包内快照兜底。jsDelivr 是 GitHub 内容的免费 CDN 镜像，仅作 raw 拉取失败时的**备用线路**（覆盖大陆可达性与 GitHub 故障；CDN 缓存可能滞后数小时，可用 purge.jsdelivr.net 手动清理）。收录更新与插件发版**解耦**。
 - **自定义覆盖源（单一地址，整体覆盖，不合并）**：`registryUrl` 为空 = 官方默认清单；非空 = 一个 HTTPS URL（或 loopback HTTP，仅本机管理员信任边界，不承诺 DNS rebinding 防护）或 DSH Web 主机上的本地普通文件（绝对路径 / `file://`，`realpath` + `O_NOFOLLOW` 同 fd 读取与复核，严格 UTF-8，2 MiB 原始字节上限）。自定义源失败只回退**该源自己的缓存**，绝不静默改用官方清单；无可缓存数据时返回空清单 + 不可用状态。
 - **「新增插件」流程**：设置页下载默认 `registry.json` → 用户自行编辑副本 → 填入副本地址「校验并应用」。副本是独立快照，不自动同步官方新条目。
-- **严格 v1 schema**：顶层只允许 `version/plugins`，条目只允许 `id/name/description/category/tags/source/npm/github/homepage/icon`；未知字段、非法 ID/npm/GitHub/URL、重复 ID/tag、字段超限、`plugins` 超过 1,000 条均拒绝整份清单（不截断、不部分加载）；超过 200 条提示性能边界。
+- **严格 v1 schema**：顶层只允许 `version/plugins`，条目只允许 `id/name/description/category/tags/source/npm/github/homepage/icon`（v1.1 增补可选 `verified`、`alsoCategories`、`decoupled`、`audience`，见 §2.7）；未知字段、非法 ID/npm/GitHub/URL、重复 ID/tag、字段超限、`plugins` 超过 1,000 条均拒绝整份清单（不截断、不部分加载）；超过 200 条提示性能边界。
 - **缓存模型**：cache 按 namespace 分目录（Host 与 Agent tools 用 `host/`，独立 CLI 用 `cli/`，互不删除），按带算法版本的 cacheKey 分文件（`CacheFile v2`：原子临时文件 + fsync + rename，0700/0600，symlink 拒写，同 key 进程内写锁）。**候选验证只写候选 cache，绝不 prune 旧源**；settings 写入成功后才 `commitActiveSource`：先原子写 accepted-source metadata（`host/active-source.json`，仅 Host），再清理非当前 custom cache；metadata 失败不 prune、prune 失败保留旧 cache，均只降级为 warning，不撤销已生效的配置。切换后只保留默认缓存与当前 custom 缓存。
 - **统一安全 HTTP**：所有 JSON/text/HEAD 请求共享同一 primitive——手动重定向（每跳校验协议、最多 3 跳、循环检测、signal 传播、返回最终 URL）+ 响应大小上限 + 超时。
 - **秒开缓存语义（0.9.14 SWR）**：`loadRegistry` 与社区获取链的 TTL 过期不再同步等网络——磁盘缓存存在即**先回 stale**（registry `source='default-cache'`、社区 `status='stale'` 既有契约；stale 状态由设置页社区卡承接，市场页不提示临时缓存状态——0.9.15 修订），后台**单飞**刷新写回 cache（同 key 进行中复用；不接调用者 signal，后台自愈不被请求 abort 腰斩；`force`/candidate/显式下载三路径不经 SWR）。默认双线路**粘性**：`loadDefaultChain` 读 cache 记录的上次成功 `source` 排序线路（稳定排序，cache 缺失 = 原序，force 同样生效）。社区 bg 自愈是 force flight——**不走同版本短路**（`if (!opts.force)` 守卫），每 TTL 至多全量重拉一次正文（同步路径的短路优化保留）。页条目 latest 探测缓存为 `latest-cache.ts` 的**纯内存 Map + TTL**（0.9.20 ADR-0006，推翻 0.9.14 的「磁盘信封 write-through + 懒 seed、跨服务重启存活」——2026-10-03 事故实证发版窗口内重启/重开面板全吃陈旧值，重启即失效回归为特性；install/upgrade/uninstall 成功点由 market.ts 按 itemId 定向作废该条目全部 registryKey 变体，只失效不回写；0.9.14 遗留 `<cacheRoot>/latest/<ns>.json` 惰性文件由探测段一次性 best-effort 清扫，`latest/` 在 nsDir 之外、不受 `pruneCaches` 清扫的不变量不变）。客户端默认首页响应存 localStorage（10min TTL、双 zone 分键、读侧再过 normalize 收敛）——面板打开先渲染快照后 background 换新。已装面板第二段探测为 TTL=0 例外（ADR-0008）。
@@ -37,11 +37,13 @@
   "version": 1,
   "plugins": [
     {
-      "id": "dsh-skins",              // slug，唯一
-      "name": "DSH Skins",
+      "id": "dsh-example",            // slug，唯一（schema 示例载体，非真实条目）
+      "name": "Example Plugin",
       "description": "中文描述",        // v1 只有中文
       "category": "essentials",      // 策展五桶：essentials|cui-picks|self-dev|tencent-lighthouse|watchlist 五选一（0.9.16 策展分类法；旧功能五分类退役）
       "tags": ["主题"],
+      "decoupled": true,             // 可选；解耦条目（实操口径），与 verified 互斥
+      "audience": "internal",        // 可选 public|internal；缺省 public；'team' 预留未开放
       "source": "github",             // npm|github
       "npm": "可选；source=npm 时必填",
       "github": "owner/repo",         // source=github 时必填；npm 条目也可附
@@ -95,6 +97,15 @@
 - **agent/CLI 契约（允许破坏性变更）**：`dshm_search` 参数改为 `query / category / source('primary'|'community'|'all'，默认 all，与 GUI 分区对齐) / limit(默认 10，clamp 1–80) / offset(真翻页)`；`primary_only` 删除。输出补 `community` 标记与 `downloads/stars`；社区分类直出中文标签（不再回退英文 slug）；工具描述整体重写（真实规模 + 翻页语义，删「registry is curated & small」）。CLI 对齐 `--source / --offset / --limit`，默认 10 条。
 - **技术默认件**：图片三层懒加载（IntersectionObserver + `loading=lazy` + `fetchPriority=low`；缩略图本机直连原图，不引第三方代理服务）；移除客户端重复排序（服务端单一排序源）；`total>200` 性能提示随分区退役；host-api limit 上限对齐新页大小；空状态逐分区定制；错误态带具体原因 + 重试。
 - **Backlog（明确不做）**：UI 完整双语字典、时间窗过滤、浏览层宿主兼容徽章/过滤、组管理、个人备注、giscus 评论、静态官网。
+
+### 2.7 自研条目元数据：受众与解耦（grilling 定稿 2026-10-05）
+
+registry 条目增补两个可选字段（schema v1.1，同一次变更上线；发布纪律：**先发 dsh-m 新版、再推 registry @main**，旧客户端拒收新清单回落缓存属「例行过渡」，0.9.17 alsoCategories 先例）：
+
+- `decoupled?: true`——**解耦条目**，实操口径判定（DSH 升级后大概率无需跟着发适配新版，价值源多在 DSH 之外）；与 `verified` **互斥**（同条目共存报 error），不携带实测数组，展示层以「版本无关」徽章呈现，兼容声明用「版本无关，详见仓库」句式（copy-guide §4 第四句式）。
+- `audience?: 'public' | 'internal'`——**受众标记**；缺省 `public` 不产生键；`internal` = 作者自用（GLOSSARY「自用条目」）；`'team'` 值集预留未开放。
+
+五项裁决：①双具名字段（否决 `hostCoupling` 单值枚举——主观评级违背实测声明文化，与 `flags` 旗帜数组——弱类型难校验）；②受众两档起步（否决三档，扩档是兼容变更）；③载体为字段、策展五桶不动（否决拆 self-dev 桶与移出主清单——`alsoCategories` 先例：多维归属用字段不建桶；撤出主清单反致社区清单浮升）；④三端照常返回与展示、**只标注不过滤**，推荐纪律走 `dshm_search` 工具描述约束（否决 agent 通道机械过滤——内部推广也依赖搜索）；⑤decoupled 条目**删除** `verified` 数组、渲染「版本无关」徽章（否决保留数组改渲染——缺号不再构成负面信号才是病根）。标注落点：GUI 卡片/Modal 头「作者自用」「版本无关」徽章＋Modal 详情行；agent 工具与 CLI 搜索输出 `[作者自用]` 行标；已装视图与收藏页不打标（推荐发现链路才是纪律靶面）。registry 数据侧：surf / obmc-web / onetree-log / quota-watch 四条 decoupled（前三者兼 internal），verified 删除、兼容句换第四句式。
 
 ## 3. 安装 / 卸载 / 升级 / 重启
 

@@ -54,8 +54,16 @@ _Avoid_: 状态（过载词）、健康度
 _Avoid_: 兼容层（与 settings 兼容层混淆）、版本分支
 
 **实测版本清单（Verified Runtimes）**:
-收录条目中记录实测通过的历史运行时版本数组；是实测声明而非预测声明，只用于展示与收录质量提示，不做安装拦截依据。
+收录条目中记录实测通过的历史运行时版本数组；是实测声明而非预测声明，只用于展示与收录质量提示，不做安装拦截依据。解耦条目不携带本数组（见「解耦条目」）。
 _Avoid_: 兼容范围（semver range 才是范围声明）、compat
+
+**解耦条目（Decoupled Entry）**:
+按实操口径判定的收录条目：DSH 升级后大概率无需跟着发适配新版（价值源多在 DSH 之外——自建容器、BMC、外部工具链）。以 `decoupled: true` 显式声明，缺省即常规跟版条目；不携带 verified 数组，缺失版本号不构成负面信号，展示层以「版本无关」徽章呈现，兼容声明用「版本无关，详见仓库」句式。
+_Avoid_: 版本无关插件（绝对化——宿主大改仍可能波及）、hostCoupling 枚举（单值枚举已裁决不采用）
+
+**自用条目（Internal Entry）**:
+`audience: 'internal'` 的收录条目：作者自用及内部推广场景，不向大众主动推荐；npm 包依然公开，标记只影响展示与推荐语义，不构成访问控制。三端照常返回与展示，卡片、详情与工具输出带「作者自用」标注；agent 侧由工具描述约束「点名或内部场景除外，勿主动推荐」。
+_Avoid_: 私有插件（npm 是公开的）、隐藏条目（不过滤，只标注）
 
 **主清单（Primary Registry）**:
 dsh-m 手工策展的收录清单层：包内 registry.json（默认清单）或 registryUrl 自定义覆盖源，二选一整体替换；verified 实测与收录文案标准的载体。UI 可见名「精选清单」（设置页卡片题与市场「精选」分区同名；0.7 前旧称「收录清单」）。
@@ -74,7 +82,7 @@ _Avoid_: 混合清单、全量列表、合并视图（展示层已分区）
 _Avoid_: schema 转换器、normalize 层
 
 **精选分类（Primary Categories）**:
-主清单使用的五个一级分类（market/tools/ui/search/other），主清单 schema 严格校验维持不变；分区制下与社区分类彻底解耦，仅作用于精选区。
+主清单使用的五个一级分类（essentials/cui-picks/self-dev/tencent-lighthouse/watchlist，0.9.16 策展五桶），主清单 schema 严格校验维持不变；分区制下与社区分类彻底解耦，仅作用于精选区。
 _Avoid_: 原生分类、旧分类
 
 **社区分类（Community Categories）**:
