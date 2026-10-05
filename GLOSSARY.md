@@ -163,3 +163,23 @@ _Avoid_: 垃圾文件（暗示可自动清理）、临时文件（过窄）
 **农场测活（Farm Liveness）**:
 对 profile 可见范围内 `@deepseek-ai/*` 符号链接的存活与指向检查：目标悬空为 error；指向非当前运行时版本的 store 目录为提示级（know-how 014：DSH 升级后唯一现役周期必查项，曾 81 条悬空）。farmChecked=0 的「空转」判定仅适用于存在符号链农场的形态；物化布局（典型 desktop）0 为常态（ADR-0011）。
 _Avoid_: 符号链接检查（过泛）、农场修复（体检不修复）
+
+**预览图（Screenshot/Preview）**:
+收录条目可选携带的产品界面截图 URL 数组（`screenshots`，≤8 项，GitHub 图床白名单）；社区条目来自上游目录旁路透传，精选条目手工策展。是「看图决策」的主信息，区别于 40px 的 icon 头像（ADR-0013）。
+_Avoid_: 缩略图（指某一种展示形态时）、icon（两个字段两个概念）、封面（封面是预览图的第一张在画廊卡的呈现）
+
+**缩略条（Card Shots Strip）**:
+文字卡上有预览图的条目显示的 ≤3 张横向小图条；无预览图的卡片不出现该条、外观不变。点击进灯箱看原图。
+_Avoid_: 轮播（禁自动轮播）、封面（大图画廊专用词）
+
+**画廊视图（Gallery View）**:
+社区区「主题与外观」分类浏览态的卡片形态：整网格切换为 16:10 大封面卡（首页/兜底图 + 张数角标 + 灯箱），页大小固定 16；搜索态与精选区不出现画廊（检索密度优先）。
+_Avoid_: 主题页（dsh-market 的叫法）、图片模式
+
+**轻确认安装（Quick-Install Confirm）**:
+从卡片 footer 直接发起安装时经过的轻量确认弹窗（名称/描述/截图条/确认取消）；确认后走与详情 Modal 完全相同的安装链路。卡片本体点击仍开全量详情。
+_Avoid_: 一键安装（有确认步，不是一键）、直装（零确认形态已裁决不做）
+
+**线路改写（jsDelivr Rewrite）**:
+图片与 README 抓取的 URL 首选线路：`raw.githubusercontent.com` 仓库路径改写为 `cdn.jsdelivr.net/gh/<owner>/<repo>@HEAD/<path>`，onError 回退原 URL；不经第三方图像处理代理（ADR-0013）。
+_Avoid_: 图片代理（否决的 weserv 形态）、镜像下载（registry 链的 jsDelivr 备用线路是同一 CDN 的另一用途）

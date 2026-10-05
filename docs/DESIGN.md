@@ -18,7 +18,7 @@
 - **默认源**获取顺序：raw.githubusercontent `@main` → jsDelivr `@main` → 默认 TTL 缓存 → npm 包内快照兜底。jsDelivr 是 GitHub 内容的免费 CDN 镜像，仅作 raw 拉取失败时的**备用线路**（覆盖大陆可达性与 GitHub 故障；CDN 缓存可能滞后数小时，可用 purge.jsdelivr.net 手动清理）。收录更新与插件发版**解耦**。
 - **自定义覆盖源（单一地址，整体覆盖，不合并）**：`registryUrl` 为空 = 官方默认清单；非空 = 一个 HTTPS URL（或 loopback HTTP，仅本机管理员信任边界，不承诺 DNS rebinding 防护）或 DSH Web 主机上的本地普通文件（绝对路径 / `file://`，`realpath` + `O_NOFOLLOW` 同 fd 读取与复核，严格 UTF-8，2 MiB 原始字节上限）。自定义源失败只回退**该源自己的缓存**，绝不静默改用官方清单；无可缓存数据时返回空清单 + 不可用状态。
 - **「新增插件」流程**：设置页下载默认 `registry.json` → 用户自行编辑副本 → 填入副本地址「校验并应用」。副本是独立快照，不自动同步官方新条目。
-- **严格 v1 schema**：顶层只允许 `version/plugins`，条目只允许 `id/name/description/category/tags/source/npm/github/homepage/icon`（v1.1 增补可选 `verified`、`alsoCategories`、`decoupled`、`audience`，见 §2.7）；未知字段、非法 ID/npm/GitHub/URL、重复 ID/tag、字段超限、`plugins` 超过 1,000 条均拒绝整份清单（不截断、不部分加载）；超过 200 条提示性能边界。
+- **严格 v1 schema**：顶层只允许 `version/plugins`，条目只允许 `id/name/description/category/tags/source/npm/github/homepage/icon`（v1.1 增补可选 `verified`、`alsoCategories`、`decoupled`、`audience`，0.9.34 再增 `screenshots`，见 §2.7）；未知字段、非法 ID/npm/GitHub/URL、重复 ID/tag、字段超限、`plugins` 超过 1,000 条均拒绝整份清单（不截断、不部分加载）；超过 200 条提示性能边界。
 - **缓存模型**：cache 按 namespace 分目录（Host 与 Agent tools 用 `host/`，独立 CLI 用 `cli/`，互不删除），按带算法版本的 cacheKey 分文件（`CacheFile v2`：原子临时文件 + fsync + rename，0700/0600，symlink 拒写，同 key 进程内写锁）。**候选验证只写候选 cache，绝不 prune 旧源**；settings 写入成功后才 `commitActiveSource`：先原子写 accepted-source metadata（`host/active-source.json`，仅 Host），再清理非当前 custom cache；metadata 失败不 prune、prune 失败保留旧 cache，均只降级为 warning，不撤销已生效的配置。切换后只保留默认缓存与当前 custom 缓存。
 - **统一安全 HTTP**：所有 JSON/text/HEAD 请求共享同一 primitive——手动重定向（每跳校验协议、最多 3 跳、循环检测、signal 传播、返回最终 URL）+ 响应大小上限 + 超时。
 - **秒开缓存语义（0.9.14 SWR）**：`loadRegistry` 与社区获取链的 TTL 过期不再同步等网络——磁盘缓存存在即**先回 stale**（registry `source='default-cache'`、社区 `status='stale'` 既有契约；stale 状态由设置页社区卡承接，市场页不提示临时缓存状态——0.9.15 修订），后台**单飞**刷新写回 cache（同 key 进行中复用；不接调用者 signal，后台自愈不被请求 abort 腰斩；`force`/candidate/显式下载三路径不经 SWR）。默认双线路**粘性**：`loadDefaultChain` 读 cache 记录的上次成功 `source` 排序线路（稳定排序，cache 缺失 = 原序，force 同样生效）。社区 bg 自愈是 force flight——**不走同版本短路**（`if (!opts.force)` 守卫），每 TTL 至多全量重拉一次正文（同步路径的短路优化保留）。页条目 latest 探测缓存为 `latest-cache.ts` 的**纯内存 Map + TTL**（0.9.20 ADR-0006，推翻 0.9.14 的「磁盘信封 write-through + 懒 seed、跨服务重启存活」——2026-10-03 事故实证发版窗口内重启/重开面板全吃陈旧值，重启即失效回归为特性；install/upgrade/uninstall 成功点由 market.ts 按 itemId 定向作废该条目全部 registryKey 变体，只失效不回写；0.9.14 遗留 `<cacheRoot>/latest/<ns>.json` 惰性文件由探测段一次性 best-effort 清扫，`latest/` 在 nsDir 之外、不受 `pruneCaches` 清扫的不变量不变）。客户端默认首页响应存 localStorage（10min TTL、双 zone 分键、读侧再过 normalize 收敛）——面板打开先渲染快照后 background 换新。已装面板第二段探测为 TTL=0 例外（ADR-0008）。
@@ -31,6 +31,7 @@
 - `name` ≤100、`description` ≤500、`tags` ≤10 个且单个 ≤30 字符、tag 不重复；超限拒绝，不截断；
 - npm 包名：标准 scoped/unscoped 形状（≤214 字符，不接受版本/range/URL/空白）；GitHub：`owner/repo`（owner ≤39、repo ≤100）；
 - `homepage`/`icon`：HTTPS、≤2,048 字符、无 userinfo；
+- `screenshots`（0.9.34，[ADR-0013](./adr/0013-card-previews-and-theme-gallery.md)）：可选字符串数组，≤8 项；每项 HTTPS、≤2,048 字符、无 userinfo，且 host 为 `github.com` 或 `*.githubusercontent.com`（与客户端消费端白名单同语义）；允许空数组；URL 去重。
 - registry 地址规范化：trim 外层空白、拒控制字符与 userinfo、去 fragment 留 query、拒绝已知凭据 query key（`token`/`access_token`/`api_key`/`password`/`secret`）。
 ```jsonc
 {
@@ -48,7 +49,8 @@
       "npm": "可选；source=npm 时必填",
       "github": "owner/repo",         // source=github 时必填；npm 条目也可附
       "homepage": "https://...",
-      "icon": "可选；覆盖自动头像"
+      "icon": "可选；覆盖自动头像",
+      "screenshots": ["可选；产品截图 URL，≤8 项，GitHub 图床"]
     }
   ]
 }
@@ -59,7 +61,7 @@
 1. `npm run build`（TypeScript + esbuild + bundle marker，含 `lib/cli.js`）；
 2. `npm test`（Node 内置 test runner 全量契约测试）；
 3. schema 合法（复用 `lib/core/registry.js` 的严格 `validateRegistry`，与运行时同一套规则）；
-4. npm 条目可查；GitHub 条目 repo 存在；`icon`/`homepage` URL 可达（icon 允许为空）。
+4. npm 条目可查；GitHub 条目 repo 存在；`icon`/`homepage` URL 可达（icon 允许为空）；`screenshots` 逐 URL 可达（允许为空/缺省，0.9.34 [ADR-0013](./adr/0013-card-previews-and-theme-gallery.md)）。
 自定义 registry 不经过官方 CI——设置页对自定义源展示未校验信任提示。
 
 ### 2.4 收录文案（registry-copy-guide 定稿）
@@ -76,7 +78,7 @@
 - **分类（Q40）**：精选分类（5 个，主清单 schema 不变）∪ 社区分类（开放集）。已知 20 个社区分类带中文标签进筛选栏「社区」组；`ui`/`tools`/`market` 三 id 与精选同名、共享过滤桶；上游新增的未知分类原样渲染进「社区·新分类」临时组，发版收录标签。
 - **降级语义（Q42）**：主清单 unavailable + 社区可用 → 显示社区条目 + 顶部错误横幅 + 安装不禁用；社区 unavailable → 主清单照常 + 静默 notice；探测失败时回落 `<ns>/awesome/` **运行时缓存**并显式标注 stale（绝不冒充 ready）——运行时缓存语义与主清单自定义源一致，被禁止的只是**包内快照**；社区**绝不**回退主清单伪装。（**0.9.15 修订**：SWR 常态化后市场页不再显示「缓存快照」临时横幅——stale 标注移至设置页社区卡，「绝不冒充 ready / 过期可被观察到」的诚实约束不变。）
 - **开关与缓存**：`communityCatalog`（默认 true，volatile live 生效）+ `communityCatalogPin`（可选锁 npm 版本）；CLI 用 `DSHM_COMMUNITY_CATALOG=0` 退出。社区缓存放 `<namespace>/awesome/` 子目录（不参与 `pruneCaches` 的顶层 `*.json` 清理），正文按版本文件缓存，`fetchedAt`/版本号/线路进设置页展示；TTL 复用 `cacheTtlMin`（只约束 dist-tags 探测频率）。
-- **市场行为（Q45/Q46）**：默认排序主清单置顶（组内维持原顺序）+ 社区按 30 天下载量降序（无数据按名称）；搜索同时匹配中英文描述；「只看主清单」chip 常驻筛选栏首位。**探测边界**：市场浏览页对社区 npm 条目做 latest 探测（registry 无配额限制）；社区 github 条目**不做**浏览页 REST 探测（GitHub 匿名 60 次/小时在 50 条/页 × 2 调用下不可控），更新检查收敛到详情/安装时的按需解析——配额耗尽时已有可读提示（versions.ts `githubRateLimitMessage`）。**已装页豁免**：探测对象受已装数量天然约束，继续探测；计量在**真实 GitHub HTTP 请求层**（一次 `githubLatestTag` ≈ 1–3 个请求：release 路径 1–2 个、fallback 路径 releases→tags→commits 最多 3 个）：单请求 ≤25 次、宿主进程滚动 1 小时 ≤50 次（**仅作用于被动探测**——用户主动 install/upgrade/诊断不经此预算）、同仓库 in-flight single-flight、超限标 `latestError` 不阻塞列表——否则用户装的社区 github 插件永远没有更新徽标。独立 CLI 进程不共享宿主内预算，文档如实标注 best-effort（并发场景不承诺 60/h 绝不耗尽）。能力披露（capabilities/红线）只在详情折叠区展示（缺省 = 未扫描 ≠ 未检出），卡片不打标（Q44，防警告疲劳）；截图仅详情层加载（GitHub 图床白名单由上游保证）。
+- **市场行为（Q45/Q46）**：默认排序主清单置顶（组内维持原顺序）+ 社区按 30 天下载量降序（无数据按名称）；搜索同时匹配中英文描述；「只看主清单」chip 常驻筛选栏首位。**探测边界**：市场浏览页对社区 npm 条目做 latest 探测（registry 无配额限制）；社区 github 条目**不做**浏览页 REST 探测（GitHub 匿名 60 次/小时在 50 条/页 × 2 调用下不可控），更新检查收敛到详情/安装时的按需解析——配额耗尽时已有可读提示（versions.ts `githubRateLimitMessage`）。**已装页豁免**：探测对象受已装数量天然约束，继续探测；计量在**真实 GitHub HTTP 请求层**（一次 `githubLatestTag` ≈ 1–3 个请求：release 路径 1–2 个、fallback 路径 releases→tags→commits 最多 3 个）：单请求 ≤25 次、宿主进程滚动 1 小时 ≤50 次（**仅作用于被动探测**——用户主动 install/upgrade/诊断不经此预算）、同仓库 in-flight single-flight、超限标 `latestError` 不阻塞列表——否则用户装的社区 github 插件永远没有更新徽标。独立 CLI 进程不共享宿主内预算，文档如实标注 best-effort（并发场景不承诺 60/h 绝不耗尽）。能力披露（capabilities/红线）只在详情折叠区展示（缺省 = 未扫描 ≠ 未检出），卡片不打标（Q44，防警告疲劳）；截图仅详情层加载（GitHub 图床白名单由上游保证；0.9.34 起截图按 [ADR-0013](./adr/0013-card-previews-and-theme-gallery.md) 上卡片——主题画廊与缩略条，能力披露仍仅详情层）。
 
 ### 2.6 双清单分区市场与交互升级（0.7.0 grilling 定稿 2026-09-29）
 
@@ -91,16 +93,16 @@
   - 分页：页码窗口化（`1 … n-1 n n+1 … total`，≤7 页全显）+ 页大小 32/64/96 + 筛选变化重置页 1 + 翻页回顶；仅 prev/next 的旧分页退役。
   - 搜索：相关性加权管线——NFKC 归一化 + 中西文边界插空格 + 字段权重（name/npm > owner > 描述 > 分类）+ 命中类型加分 + 按条目缓存归一化结果；输入 250ms debounce + IME composition 全程处理 + draft/已提交 query 分离。**0.9.25 起搜索跨区全局**（两分区搜索框同语义）：摘要行报两分区精确命中数（`sourceCounts`），结果页内按精选段置顶分组，分类 chips 搜索态隐藏、「筛选」按钮随摘要行保留（页大小组）。**0.9.26 补充**：GUI 跨区搜索通道精选命中稳定前置（`curatedFirst`，分区内相关序不变；tools/CLI 不传，三端同序不变）——摘要行全局计数与首页所见一致，弱命中精选不被 downloads tie-break 埋进后页。
   - 描述 5 行钳制（真实溢出才显示展开钮）；**数据层双语**——描述按 UI 语言取 zh/en（数据现成），UI 完整双语字典列 backlog。
-- **详情 = Modal 且为卡片超集**（「detail 显示少于摘要就是倒退」）：byline / 分类 / 收录日期 / 下载量窗口三要素（计数 + 窗口 + 核对时间）/ 描述全文 / 截图灯箱（←→/Esc、**禁自动轮播**）/ 能力披露 + 红线（**默认收起**）/ 安装命令折叠行（0.9.14 起按上下文显隐：desktop 上下文与已安装条目整行隐藏——命令两来源恒为 `--profile web` 语义，desktop 装机走弹窗内安装按钮）/ deprecated 替代链接；精选条目超集另加 verified 与 tags。**安装确认走 Modal**。安装信息就地显示（0.9.15）：进行中进度行与终态结果行挂 Modal 内、底层同源进度行让位——展示派生自全局操作记录，§2.6「状态不挂卡片」所有权模型不变。卡片瘦身：能力披露、截图、安装命令全部迁出卡片（Q44 精神「只在详情层、默认收起」不变，载体升级）。
+- **详情 = Modal 且为卡片超集**（「detail 显示少于摘要就是倒退」）：byline / 分类 / 收录日期 / 下载量窗口三要素（计数 + 窗口 + 核对时间）/ 描述全文 / 截图灯箱（←→/Esc、**禁自动轮播**）/ 能力披露 + 红线（**默认收起**）/ 安装命令折叠行（0.9.14 起按上下文显隐：desktop 上下文与已安装条目整行隐藏——命令两来源恒为 `--profile web` 语义，desktop 装机走弹窗内安装按钮）/ deprecated 替代链接；精选条目超集另加 verified 与 tags。**安装确认走 Modal**。安装信息就地显示（0.9.15）：进行中进度行与终态结果行挂 Modal 内、底层同源进度行让位——展示派生自全局操作记录，§2.6「状态不挂卡片」所有权模型不变。卡片瘦身：能力披露、安装命令全部迁出卡片（Q44 精神「只在详情层、默认收起」不变，载体升级）；截图原随 Q44 迁出，0.9.34 起按 [ADR-0013](./adr/0013-card-previews-and-theme-gallery.md) 以主题画廊封面与缩略条形态回归卡片（能力披露与安装命令仍在详情层，卡面新增轻确认安装入口）。
 - **全局操作记录**：每个变更操作一条 record（`queued / running / input=冲突待决 / done / warned / failed`），**状态不挂卡片**——翻页、搜索、切 tab 不丢；**localStorage 持久化队列**，宿主重载恢复时逐条校验「此刻仍成立才执行，否则报告」；覆盖安装、升级、卸载、开关。已装侧跟随一致化：「全部更新 (N)」批量入口 + tab 更新红点 + 卡片视觉与发现侧同体系；组管理、个人备注列 backlog。
 - **收藏**：浏览器 localStorage 本地收藏（不进 profile、不进服务端）；收藏区 stale 条目（目录中已下架）单独提示 + 一键清理。
 - **agent/CLI 契约（允许破坏性变更）**：`dshm_search` 参数改为 `query / category / source('primary'|'community'|'all'，默认 all，与 GUI 分区对齐) / limit(默认 10，clamp 1–80) / offset(真翻页)`；`primary_only` 删除。输出补 `community` 标记与 `downloads/stars`；社区分类直出中文标签（不再回退英文 slug）；工具描述整体重写（真实规模 + 翻页语义，删「registry is curated & small」）。CLI 对齐 `--source / --offset / --limit`，默认 10 条。
-- **技术默认件**：图片三层懒加载（IntersectionObserver + `loading=lazy` + `fetchPriority=low`；缩略图本机直连原图，不引第三方代理服务）；移除客户端重复排序（服务端单一排序源）；`total>200` 性能提示随分区退役；host-api limit 上限对齐新页大小；空状态逐分区定制；错误态带具体原因 + 重试。
+- **技术默认件**：图片三层懒加载（IntersectionObserver + `loading=lazy` + `fetchPriority=low`；缩略图线路 0.9.34 起为多线路回退——jsDelivr 改写优先、raw 直连兜底，不经第三方图像处理代理服务，[ADR-0013](./adr/0013-card-previews-and-theme-gallery.md)）；移除客户端重复排序（服务端单一排序源）；`total>200` 性能提示随分区退役；host-api limit 上限对齐新页大小；空状态逐分区定制；错误态带具体原因 + 重试。
 - **Backlog（明确不做）**：UI 完整双语字典、时间窗过滤、浏览层宿主兼容徽章/过滤、组管理、个人备注、giscus 评论、静态官网。
 
 ### 2.7 自研条目元数据：受众与解耦（grilling 定稿 2026-10-05）
 
-registry 条目增补两个可选字段（schema v1.1，同一次变更上线；发布纪律：**先发 dsh-m 新版、再推 registry @main**，旧客户端拒收新清单回落缓存属「例行过渡」，0.9.17 alsoCategories 先例）：
+registry 条目增补两个可选字段（schema v1.1，同一次变更上线；0.9.34 又按 [ADR-0013](./adr/0013-card-previews-and-theme-gallery.md) 增补第三个可选字段 `screenshots`，发布纪律同下：**先发 dsh-m 新版、再推 registry @main**，旧客户端拒收新清单回落缓存属「例行过渡」，0.9.17 alsoCategories 先例）：
 
 - `decoupled?: true`——**解耦条目**，实操口径判定（DSH 升级后大概率无需跟着发适配新版，价值源多在 DSH 之外）；与 `verified` **互斥**（同条目共存报 error），不携带实测数组，展示层以「版本无关」徽章呈现，兼容声明用「版本无关，详见仓库」句式（copy-guide §4 第四句式）。
 - `audience?: 'public' | 'internal'`——**受众标记**；缺省 `public` 不产生键；`internal` = 作者自用（GLOSSARY「自用条目」）；`'team'` 值集预留未开放。
@@ -264,7 +266,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 | Q41 | 合并语义 | 去重键 npm 包名 → owner/repo → 合成 id；主清单恒优先；被让位条目计数进 warnings；`registryUrl` 替换只作用于主清单层，社区叠加与其无关 |
 | Q42 | 降级 | 主 unavailable + 社区可用 → 显示社区 + 错误横幅 + 不禁装；社区失败 → 主照常 + 静默 notice；社区绝不伪装/不做包内快照 |
 | Q43 | 容量与卫生 | 社区 32 MiB / 30,000 条超限整份拒收；条目层宽松（脏条目跳过计数）；无 npm 的子包条目跳过计数；tarball-only 按 github 收录 |
-| Q44 | 能力披露 | capabilities/红线只进详情折叠区（缺省=未扫描≠未检出）；卡片不打标；截图仅详情层 |
+| Q44 | 能力披露 | capabilities/红线只进详情折叠区（缺省=未扫描≠未检出）；卡片不打标；截图仅详情层（0.9.34 起截图按 [ADR-0013](./adr/0013-card-previews-and-theme-gallery.md) 上卡，能力披露红线仍仅详情层） |
 | Q45 | 排序与筛选 | 主清单置顶（原顺序）+ 社区按 30 天下载量降序；筛选栏「精选｜社区」分组 + 常驻「只看主清单」 |
 | Q46 | 探测边界 | 市场浏览页：社区 npm 条目探测、社区 github 条目不探测（60/h 配额），详情/安装时按需解析；已装页豁免但按**真实 GitHub HTTP 请求数**计量：单请求 ≤25 次 + 宿主进程滚动 1 小时 ≤50 次（仅被动探测；主动安装/升级/诊断不受限）+ 同仓库 in-flight single-flight（`githubLatestTag` 一次调用 ≈ 1–3 个 HTTP 请求，fallback 路径最多 3 个）；独立 CLI 进程不共享宿主预算——文档如实标注 best-effort |
 
