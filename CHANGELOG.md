@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.34 变更：卡片预览图上卡——主题画廊 + 缩略条 + 卡面轻确认安装（ADR-0013）
+
+- **schema**：registry 条目增补可选 `screenshots?: string[]`（≤8 项、每项 HTTPS ≤2048 无 userinfo、GitHub 图床白名单 `github.com`/`*.githubusercontent.com`、去重、允许空数组）。这是对 Q44「截图仅详情层」裁决的显式修订（能力披露/红线仍仅详情层），决策全文见 ADR-0013 与 DESIGN §2.2/§2.6；发布纪律不变——**先发 dsh-m 新版、再推 registry @main**。registry.json 数据暂未补截图（由主人后续手工填充，走 validate + 合并前确认）。
+- **画廊视图**：社区区「主题与外观」分类浏览态整网格切换为 16:10 封面卡（首图封面、多图张数角标、灯箱 ←→/Esc、禁自动轮播），页大小固定 16/页且画廊态隐藏筛选「每页条数」组（离开画廊自动恢复）；无人工图的主题卡临视口自动抓仓库 README 抽图兜底（语义打分剔除 badge/logo、256KB 边读边限、8s 超时、每条目会话缓存、失败静默显示「暂无预览」）。搜索态恒文字卡。
+- **缩略条**：其余条目文字卡在有 `screenshots` 时显示 ≤3 张横向小图（懒加载 + jsDelivr 改写优先、onError 回退原图），点击进灯箱；无图卡片外观零变化。收藏区主题条目用画廊卡、非主题文字卡同规则；`snapshotOf` 收藏快照白名单补 `screenshots`（旧快照自然降级 README 兜底）。
+- **卡面轻确认安装**：未安装条目的卡片 footer 新增「安装」按钮 → 轻确认弹窗（名称/描述/截图条/社区来源提示/弃用警告）→ 确认后走与详情 Modal 完全相同的安装链路（peer 兼容确认 compatConfirm、装后守卫、操作记录与进度展示全部不变）；点卡片本体仍开全量详情 Modal。
+- **图片线路**：新增 `src/client/screenshots.js` 纯逻辑模块——`raw.githubusercontent.com` 仓库路径图优先改写 `cdn.jsdelivr.net/gh/<o>/<r>@HEAD/<p>`，onError 逐候选回退原图；README 文本抓取同链路。不经第三方图像处理代理（修订原「缩略图直连原图、不引第三方代理」条款为「多线路回退、不经第三方图像处理代理」）。
+- **CI**：validate-registry 对 `screenshots` 逐 URL 可达性检查（允许为空/缺省；与本机 GitHub API 配额无关的 fixture 验证通过）。
+- **测试**：净增 30 例（registry screenshots 校验 3、screenshots 纯模块 18——含 chunked 截断/缓存短路/多候选回退、market-state 页大小 3、SSR 冒烟 6——InstallConfirmModal/CardShots/GalleryCard×2/FavoriteZone 混排/snapshotOf 断链回归门）；全量 1168 tests，1143 pass / 15 fail / 10 skipped——15 项失败与既有 Windows symlink 环境性基线同形（计数与集合零漂移）；typecheck 零错误。
+
 ### 0.9.33 变更：自研条目元数据 v1.1——`audience`/`decoupled` 两字段与三端标注
 
 - **schema**：registry 条目增补可选 `decoupled?: true`（解耦条目，实操口径判定；与 `verified` 互斥——同条目共存报 error）与 `audience?: 'public' | 'internal'`（缺省 public 不产生键；`'team'` 值集预留未开放）。决策共识与五项裁决记录见 DESIGN §2.7，术语见 GLOSSARY「解耦条目 / 自用条目」。
@@ -324,6 +334,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.34 — card previews: theme gallery + shot strips + quick-install confirm (ADR-0013)
+
+- **Schema**: registry entries gain optional `screenshots?: string[]` (≤8 items, HTTPS ≤2048 without userinfo, GitHub image-host allowlist `github.com`/`*.githubusercontent.com`, dedup, empty array allowed). This explicitly revises the Q44 "screenshots only in the detail layer" ruling (capability disclosure/red lines stay detail-only); full decision in ADR-0013 and DESIGN §2.2/§2.6. Release discipline unchanged — **ship the new dsh-m version first, then push registry @main**. registry.json carries no screenshot data yet (to be curated manually by the owner).
+- **Gallery view**: browsing the 「主题与外观」(theme) category in the Community zone switches the whole grid to 16:10 cover cards (first-image cover, multi-image count badge, ←→/Esc lightbox, no auto-carousel), fixed 16 per page with the filter's page-size group hidden in gallery mode (restores on exit); theme cards without curated shots lazily fetch the repo README as a fallback gallery source (semantic scoring, 256KB capped streaming read, 8s timeout, per-entry session cache, silent "no preview" on failure). Search results stay text cards.
+- **Shot strips**: other text cards show ≤3 inline thumbnails when `screenshots` exist (lazy-loaded, jsDelivr rewrite preferred with onError fallback to the original URL), opening the lightbox on click; imageless cards are unchanged. Favorited theme entries render as gallery cards, other favorites keep text cards; the `snapshotOf` favorites snapshot allowlist now carries `screenshots` (older snapshots degrade to the README fallback naturally).
+- **Quick-install confirm**: uninstalled cards gain an 「安装」 (Install) button in the footer → a light confirm dialog (name/description/shot strip/community-source notice/deprecation warning) → confirming runs the exact same install path as the detail Modal (peer-compat compatConfirm, post-install guard, operation records and progress all unchanged); tapping the card body still opens the full detail Modal.
+- **Image routing**: new `src/client/screenshots.js` pure module — `raw.githubusercontent.com` repo-path images prefer the `cdn.jsdelivr.net/gh/<o>/<r>@HEAD/<p>` rewrite with onError fallback to the original; README text fetches use the same chain. No third-party image-processing proxy (the old "direct-connect, no proxy" clause is revised to "multi-route fallback, no third-party image-processing proxy").
+- **CI**: validate-registry now checks each `screenshots` URL for reachability (empty/absent allowed; fixture-based verification independent of this machine's GitHub API quota).
+- **Tests**: 30 net-new cases (registry screenshots validation 3, screenshots pure module 18 — incl. chunked truncation/cache short-circuit/multi-candidate fallback, market-state page size 3, SSR smoke 6 — InstallConfirmModal/CardShots/GalleryCard×2/FavoriteZone mix/snapshotOf regression gate); full suite 1168 tests, 1143 pass / 15 fail / 10 skipped — the 15 failures match the pre-existing Windows symlink environmental baseline exactly (count and set unchanged); typecheck clean.
 
 ### Added in 0.9.33 — self-dev entry metadata v1.1: `audience`/`decoupled` fields with three-surface marking
 
