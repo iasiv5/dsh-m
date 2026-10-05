@@ -391,10 +391,12 @@ const CSS = `
 .dsvm-favbtn:hover{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dsvm-favbtn.on{color:#e0a33c}
 .dsvm-reddot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dsw-alias-state-error-primary,#ef4444);margin-left:5px;vertical-align:middle}
-.dshm-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+/* 依卡片容器宽度自动决定列数：N=max(1,floor((W+8)/(360+8)))，单卡宽度均分剩余空间。
+   普通窗口、全屏和窄屏都走同一规则；min(100%,360px) 保证极窄容器不横向溢出。 */
+.dshm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:8px}
 .dsvm-searchmeta{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:2px 0}
 .dsvm-grouphead{grid-column:1/-1;color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;line-height:16px;margin:2px 0 0;font-weight:600;letter-spacing:.02em}
-@media (max-width:680px){.dshm-cards{grid-template-columns:1fr}}
+
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
 .dshm-icon{width:40px;height:40px;border-radius:10px;object-fit:cover;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);flex-shrink:0;background:linear-gradient(135deg,#c7d2fe,#fbcfe8);display:grid;place-items:center;font-weight:700;font-size:16px;color:#374151}
@@ -1573,7 +1575,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
 
   // 搜索态页内分组：精选命中置顶成段；两个段头各自仅在对应段非空时渲染（三组合全覆盖，不渲染悬空段头）；
   // 段头是 .dshm-cards 容器内独立 DOM 元素（非 items 数组插桩），跨列占满由 .dsvm-grouphead 的
-  // grid-column:1/-1 保证（.dshm-cards 为两列 grid，main.jsx 内嵌样式表）
+  // grid-column:1/-1 保证（.dshm-cards 按容器宽度自适应列数，main.jsx 内嵌样式表）
   const curatedHits = searching ? items.filter((it) => it.community !== true) : [];
   const communityHits = searching ? items.filter((it) => it.community === true) : [];
   const marketCards =

@@ -74,6 +74,11 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(!html.includes('来源为本地缓存'), '「来源为本地缓存」横幅已退役')
   })
 
+  it('插件卡片列数按容器宽度自适应，不受固定两列或视口断点限制', () => {
+    assert.match(src, /\.dshm-cards\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,360px\),1fr\)\);gap:8px\}/, '按 360px 最小卡宽与 8px 间距自动填列，并均分剩余宽度')
+    assert.doesNotMatch(src, /@media\s*\(\s*max-width\s*:\s*680px\s*\)\s*\{\s*\.dshm-cards\s*\{[^}]*1fr/, '不再用视口断点覆盖容器实际宽度（含空白/等价写法形态）')
+  })
+
   // 0.9.4 Windows Desktop 全屏修复（实机回归：全屏后面板头部 tab/还原键落在壳 40px
   // -webkit-app-region:drag 拖拽带内——拖拽带按布局吞点击、无视 z-index/绘制顺序；右上角
   // 还有 titleBarOverlay 系统绘制的 — □ ✕ 悬浮于一切之上。对策与壳自家 overlay 同款：
