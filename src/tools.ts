@@ -137,7 +137,7 @@ export function registerTools(
   ctx.tools.register(defineTool({
     name: 'dshm_search',
     description:
-      'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~22 hand-curated 精选 entries plus a 4,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
+      'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~22 hand-curated 精选 entries plus a 4,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. Cards may carry audience="internal" (作者自用; do not proactively recommend to general users unless the user names one or asks about internal rollout) and decoupled=true (版本无关, survives DSH upgrades without per-release adaptation). After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
     parameters: {
       query: { type: 'string', description: 'Main keyword, e.g. 主题 or 搜索. Optional; omit to browse.' },
       category: {
@@ -232,6 +232,8 @@ export function registerTools(
           installedPkg: e.installedPkg,
           installedVersion: e.installedVersion,
           community: e.community === true,
+          ...(e.audience === 'internal' ? { audience: 'internal' as const } : {}),
+          ...(e.decoupled === true ? { decoupled: true as const } : {}),
           downloads: e.downloads ?? null,
           stars: e.stars ?? null,
         })),
@@ -610,7 +612,8 @@ function renderSearch(out: SearchOut): string {
   const lines = out.items.map((it, i) => {
     const inst = it.installed ? `（已安装 v${it.installedVersion || '?'}）` : ''
     const zone = it.community === true ? '[社区]' : ''
-    return `${i + 1}. ${it.name} · ${it.id}${zone}${inst} · ${it.categoryLabel || it.category}`
+    const own = it.audience === 'internal' ? '[作者自用]' : ''
+    return `${i + 1}. ${it.name} · ${it.id}${zone}${own}${inst} · ${it.categoryLabel || it.category}`
   })
   // 翻页尾行（0.7.0 Task 5）：nextOffset 为空 = 已到末尾
   const pager =

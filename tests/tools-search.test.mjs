@@ -126,3 +126,22 @@ describe('dshm_search 新契约（0.7.0 Task 5）', () => {
     assert.ok(text2.includes('已到末尾'))
   })
 })
+
+describe('audience/decoupled 标注（自研元数据 v1.1）', () => {
+  it('internal 条目：投影携带 audience=internal，renderSearch 行含 [作者自用]', async () => {
+    const search = await loadSearch(() => resultOf([primaryItem({ audience: 'internal' })], { total: 1 }))
+    const out = await search.execute({ query: 'x' })
+    assert.equal(out.items[0].audience, 'internal')
+    const text = renderTextOf(search, out)
+    assert.ok(text.includes('[作者自用]'), 'internal 条目行带作者自用标')
+  })
+
+  it('decoupled 条目（audience 缺省）：投影携带 decoupled=true，行不含作者自用标', async () => {
+    const search = await loadSearch(() => resultOf([primaryItem({ decoupled: true })], { total: 1 }))
+    const out = await search.execute({ query: 'x' })
+    assert.equal(out.items[0].decoupled, true)
+    assert.equal(out.items[0].audience, undefined)
+    const text = renderTextOf(search, out)
+    assert.ok(!text.includes('[作者自用]'), 'audience 缺省不加作者自用标')
+  })
+})
