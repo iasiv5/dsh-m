@@ -831,6 +831,48 @@ describe('verifiedPollution（know-how 022：verified 只记 DSH 运行时版本
   })
 })
 
+// 自带 base fixture（不依赖其他 describe 的作用域；字段为最小合法条目）
+const base = { id: 'test-plugin', name: 'Test Plugin', description: '测试条目', category: 'self-dev', tags: ['测试'], source: 'npm', npm: 'test-plugin' }
+
+describe('audience/decoupled 字段（自研元数据 v1.1，2026-10-05）', () => {
+  it('decoupled: true 合法且透传', () => {
+    const r = validateRegistry({ version: 1, plugins: [{ ...base, decoupled: true }] })
+    assert.equal(r.ok, true)
+    assert.equal(r.registry.plugins[0].decoupled, true)
+  })
+  it('decoupled 非 true 值（false / "true"）拒绝', () => {
+    for (const decoupled of [false, 'true', 1]) {
+      const r = validateRegistry({ version: 1, plugins: [{ ...base, decoupled }] })
+      assert.equal(r.ok, false, JSON.stringify(decoupled))
+      assert.ok(r.errors.some((e) => e.includes('decoupled')), JSON.stringify(decoupled))
+    }
+  })
+  it('audience internal/public 合法；缺省不产生键', () => {
+    const r1 = validateRegistry({ version: 1, plugins: [{ ...base, audience: 'internal' }] })
+    assert.equal(r1.ok, true)
+    assert.equal(r1.registry.plugins[0].audience, 'internal')
+    const r2 = validateRegistry({ version: 1, plugins: [{ ...base, audience: 'public' }] })
+    assert.equal(r2.ok, true)
+    assert.equal(r2.registry.plugins[0].audience, undefined)
+    const r3 = validateRegistry({ version: 1, plugins: [{ ...base }] })
+    assert.equal(r3.ok, true)
+    assert.equal(r3.registry.plugins[0].audience, undefined)
+    assert.equal(r3.registry.plugins[0].decoupled, undefined)
+  })
+  it('audience 非法值（team 未开放 / 大写 / 其他字符串）拒绝', () => {
+    for (const audience of ['team', 'Public', 'self']) {
+      const r = validateRegistry({ version: 1, plugins: [{ ...base, audience }] })
+      assert.equal(r.ok, false, JSON.stringify(audience))
+      assert.ok(r.errors.some((e) => e.includes('audience')), JSON.stringify(audience))
+    }
+  })
+  it('decoupled 与 verified 同存 → error（语义互斥）', () => {
+    const r = validateRegistry({ version: 1, plugins: [{ ...base, decoupled: true, verified: ['0.2.0-rc.2'] }] })
+    assert.equal(r.ok, false)
+    assert.ok(r.errors.some((e) => e.includes('decoupled') && e.includes('verified')))
+  })
+})
+
 // ---------- M2 Task 4：loadRegistryCandidate 全失败 → errors 三要素 ----------
 
 describe('M2 Task 4：registry 全失败三要素文案', () => {

@@ -51,6 +51,11 @@ export interface RegistryEntry {
   /** 实测版本清单（0.4.0 / GLOSSARY.md 术语）：实测声明而非预测声明——只展示与收录
    *  质量提示，不做安装拦截依据。每项必须精确 semver（禁 range/前缀）。 */
   verified?: string[]
+  /** 解耦条目（GLOSSARY）：实操口径判定——DSH 升级后大概率无需跟着发适配新版。
+   *  只声明 true；与 verified 互斥（validateRegistry 报 error）。 */
+  decoupled?: true
+  /** 受众标记：internal = 作者自用（GLOSSARY「自用条目」）；缺省 public 不产生键。 */
+  audience?: 'public' | 'internal'
   /** 次级策展桶（0.9.17）：跨桶归属——条目同时计入这些桶的 chips 计数与过滤
    *  （如 better-sidebar 主桶 essentials + 次桶 cui-picks）。值 ∈ CATEGORIES、
    *  不得含主 category、去重；主桶仍决定详情页分类标签与展示位。 */
@@ -213,7 +218,7 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
 // ---------- 严格 v1 校验 ----------
 
 const TOP_LEVEL_KEYS = new Set(['version', 'plugins'])
-const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories'])
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories', 'decoupled', 'audience'])
 
 /** 精确 semver 判定（与 versions.ts EXACT_VERSION_RE 同语义；接受 prerelease/build，拒绝 range/前缀）。 */
 const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -398,6 +403,22 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       }
     }
 
+    // decoupled（自研元数据 v1.1）：只声明 true；与 verified 互斥（GLOSSARY「解耦条目」）
+    let entryDecoupled: true | undefined
+    if (e.decoupled !== undefined) {
+      if (e.decoupled !== true) errors.push(`${where}.decoupled: 只允许 true 或缺省`)
+      else entryDecoupled = true
+    }
+    // audience：'public' 为缺省不产生键；'team' 值集预留但本期不接受
+    let entryAudience: 'internal' | undefined
+    if (e.audience !== undefined) {
+      if (e.audience === 'internal') entryAudience = 'internal'
+      else if (e.audience !== 'public') errors.push(`${where}.audience: 只允许 public/internal`)
+    }
+    if (entryDecoupled === true && verified !== undefined) {
+      errors.push(`${where}.decoupled 与 verified 互斥：解耦条目不携带实测版本数组（GLOSSARY「解耦条目」）`)
+    }
+
     plugins.push({
       id,
       name,
@@ -411,6 +432,8 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       ...(entryIcon !== undefined ? { icon: entryIcon } : {}),
       ...(verified !== undefined ? { verified } : {}),
       ...(alsoCategories !== undefined ? { alsoCategories } : {}),
+      ...(entryDecoupled === true ? { decoupled: true as true } : {}),
+      ...(entryAudience !== undefined ? { audience: entryAudience } : {}),
     })
   })
 
