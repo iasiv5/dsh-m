@@ -10,6 +10,20 @@
 export const MARKET_PAGE_SIZES = [32, 64, 96]
 export const DEFAULT_PAGE_SIZE = 32
 
+/** 画廊分类 slug（0.9.34 ADR-0013）：社区目录「主题与外观」。 */
+export const THEME_CATEGORY = 'theme'
+/** 画廊视图页大小（图卡重，主人定案 16/页）。 */
+export const GALLERY_PAGE_SIZE = 16
+
+/** 页大小随分类联动（0.9.34 ADR-0013）：社区区主题画廊 16/页；社区区其余 32；精选区恒 96
+ *  （与 createZoneState 的单页直出一致）。未知 zone 兜底社区缺省；返回值始终落在
+ *  normalizeMarketQuery 的 clamp（1..96）内。 */
+export function pageLimitForCategory(zone, category) {
+  if (zone === 'primary') return 96
+  if (zone === 'community' && category === THEME_CATEGORY) return GALLERY_PAGE_SIZE
+  return DEFAULT_PAGE_SIZE
+}
+
 /** 策展五桶（0.9.16 策展分类法替换功能五分类）：chips 顺序即桶序，腾讯轻量云专区按主人要求垫后。 */
 const CURATED_ORDER = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist']
 const CURATED_LABELS = {

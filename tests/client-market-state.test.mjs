@@ -228,3 +228,27 @@ describe('registryNotice / marketNotice（0.7.1：信息性来源横幅退役）
     assert.equal(silent.notice, undefined)
   })
 })
+
+// ---------- 0.9.34：画廊页大小随分类切换（ADR-0013） ----------
+
+describe('画廊页大小 pageLimitForCategory（0.9.34 ADR-0013）', () => {
+  it('community + theme → 16（GALLERY_PAGE_SIZE）', () => {
+    assert.equal(ms.THEME_CATEGORY, 'theme')
+    assert.equal(ms.GALLERY_PAGE_SIZE, 16)
+    assert.equal(ms.pageLimitForCategory('community', ms.THEME_CATEGORY), 16)
+  })
+  it('community 其他分类/全部 → 32；primary 恒 96；未知 zone → 32', () => {
+    assert.equal(ms.pageLimitForCategory('community', null), 32)
+    assert.equal(ms.pageLimitForCategory('community', 'ui'), 32)
+    assert.equal(ms.pageLimitForCategory('primary', 'essentials'), 96)
+    assert.equal(ms.pageLimitForCategory('favorites', ms.THEME_CATEGORY), 32)
+  })
+  it('返回值都在 normalizeMarketQuery 的合法 clamp 范围内（1..96）', () => {
+    for (const zone of ['community', 'primary']) {
+      for (const category of [null, ms.THEME_CATEGORY, 'ui']) {
+        const n = ms.pageLimitForCategory(zone, category)
+        assert.ok(n >= 1 && n <= 96 && Number.isInteger(n))
+      }
+    }
+  })
+})
