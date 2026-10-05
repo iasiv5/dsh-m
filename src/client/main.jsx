@@ -26,6 +26,10 @@ const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMI
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 const { shouldShowInstallCmd } = require("./install-cmd.js");
+const { isSafeShotUrl, shotSrcCandidates, createReadmeShotCache, fetchReadmeShots, CARD_SHOT_LIMIT } = require("./screenshots.js");
+
+// README 兜底结果缓存（0.9.34 ADR-0013）：画廊卡与收藏画廊共用，面板会话内有效（catalog 代际清理不做——面板生命周期即会话）。
+const readmeShotCache = createReadmeShotCache();
 
 // ---------- i18n（skillhub 同款：host locale.register + client lookup + {param} 插值） ----------
 const ZH = {
@@ -401,6 +405,9 @@ const CSS = `
 .dshm-cardfoot{display:flex;align-items:center;gap:6px;margin-top:2px}
 .dshm-cardfoot .dshm-quickinstall{margin-left:auto}
 .dsvm-confirmbox{width:min(460px,100%)}
+.dshm-shotstrip{display:flex;gap:6px;overflow-x:auto;margin-top:8px}
+.dshm-shotstrip .dsvm-shotbox{min-width:0;width:104px;height:58px;min-height:0}
+.dshm-shotstrip .dsvm-shot{max-width:100%;max-height:100%}
 
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
@@ -973,7 +980,10 @@ function compactCount(n) {
 }
 
 // ---------- 截图三层懒加载（0.7.0 Task 12：IO 200px 挂 src + loading=lazy + fetchPriority=low） ----------
-function Shot({ src, onClick }) {
+// 0.9.34 ADR-0013：srcs 候选回退——jsDelivr 改写优先，onError 逐候选回退；全部失效渲染空框。
+function Shot({ srcs, src, onClick }) {
+  const candidates = (Array.isArray(srcs) && srcs.length ? srcs : src ? [src] : []).filter(Boolean);
+  const [idx, setIdx] = useState(0);
   const [show, setShow] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -994,12 +1004,32 @@ function Shot({ src, onClick }) {
     io.observe(el);
     return () => io.disconnect();
   }, []);
+  const active = idx < candidates.length ? candidates[idx] : null;
   return h(
     "div",
     { ref, className: "dsvm-shotbox", onClick, role: "button", tabIndex: 0 },
-    show
-      ? h("img", { className: "dsvm-shot", src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", fetchPriority: "low" })
+    show && active
+      ? h("img", {
+          className: "dsvm-shot",
+          src: active,
+          alt: "",
+          loading: "lazy",
+          referrerPolicy: "no-referrer",
+          fetchPriority: "low",
+          onError: () => setIdx((i) => i + 1),
+        })
       : null,
+  );
+}
+
+// ---------- 文字卡缩略条（0.9.34 ADR-0013）：有 screenshots 才渲染，≤CARD_SHOT_LIMIT 张，点击开灯箱 ----------
+function CardShots({ shots, onOpen }) {
+  const visible = (Array.isArray(shots) ? shots : []).slice(0, CARD_SHOT_LIMIT);
+  if (!visible.length) return null;
+  return h(
+    "div",
+    { className: "dshm-shotstrip" },
+    ...visible.map((url, i) => h(Shot, { key: url, srcs: shotSrcCandidates(url), onClick: () => onOpen && onOpen(visible, i) })),
   );
 }
 
@@ -1253,6 +1283,21 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   // 卡面轻确认安装（0.9.34 ADR-0013）：{ it } | null——必须在 favorites 早退之前（hooks 规则）
   const [confirmItem, setConfirmItem] = useState(null);
   useModalDepth(confirmItem != null);
+  // 缩略条灯箱（0.9.34 ADR-0013）：{ shots, index } | null——Esc 关闭、←→ 换图（与 DetailModal 同款键盘语义）
+  const [stripLb, setStripLb] = useState(null);
+  useModalDepth(stripLb != null);
+  useEffect(() => {
+    if (!stripLb) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setStripLb(null);
+      if (stripLb.shots.length > 1) {
+        if (e.key === "ArrowLeft") setStripLb((s) => (s ? { shots: s.shots, index: (s.index - 1 + s.shots.length) % s.shots.length } : s));
+        if (e.key === "ArrowRight") setStripLb((s) => (s ? { shots: s.shots, index: (s.index + 1) % s.shots.length } : s));
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [stripLb]);
   // 兼容确认弹窗状态（Task 18）：{ it, version, issue } | null——必须在 favorites 早退之前（hooks 规则）
   const [compatConfirm, setCompatConfirm] = useState(null);
   // CompatDialog 也是弹层：打开期间面板级 Esc 不关面板（审计 #4 同族）
@@ -1611,8 +1656,11 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
         it.installedVersion ? lookup("sub.installed", { v: it.installedVersion }) : null,
         it.latestError ? (it.version ? lookup("sub.snapshot", { v: it.version }) : lookup("version.failed")) : null,
       ].filter(Boolean).join(" · "),
+      shotStrip: h(CardShots, {
+        shots: safeScreenshots(it),
+        onOpen: (arr, i) => setStripLb({ shots: arr, index: i }),
+      }),
       links: h(LinksRow, { npm: it.npm, github: it.github, homepage: it.homepage }),
-      // 卡面快装（0.9.34 ADR-0013）：未安装条目 footer「安装」→ 轻确认弹窗；已安装不渲染（manage.hint 在详情层）
       footer: it.installed
         ? null
         : h(
@@ -1747,6 +1795,14 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
             setConfirmItem(null);
             doInstall(it2);
           },
+        })
+      : null,
+    stripLb
+      ? h(Lightbox, {
+          shots: stripLb.shots,
+          index: stripLb.index,
+          onNav: (i) => setStripLb({ shots: stripLb.shots, index: i }),
+          onClose: () => setStripLb(null),
         })
       : null,
   );
@@ -2281,7 +2337,7 @@ function DetailRows(rows) {
 }
 
 // ---------- 卡片（市场/已装共用） ----------
-function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines, footer }) {
+function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines, footer, shotStrip }) {
   return h(
     "div",
     {
@@ -2304,6 +2360,7 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
       h("div", { className: "dshm-desc", style: open ? { WebkitLineClamp: "unset" } : clampLines ? { WebkitLineClamp: String(clampLines) } : null }, desc),
       sub ? h("div", { className: "dshm-sub" }, sub) : null,
       links || null,
+      shotStrip || null,
       footer ? h("div", { className: "dshm-cardfoot" }, footer) : null,
       open ? h("div", { className: "dshm-detail" }, detail) : null,
       open && actions && actions.length ? h("div", { className: "dshm-actions" }, ...actions) : null,

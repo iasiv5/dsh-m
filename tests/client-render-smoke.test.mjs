@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __InstallConfirmModal: InstallConfirmModal, __CardShots: CardShots };\n',
   )
   await build({
     entryPoints: [entry],
@@ -224,5 +224,16 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(html.includes('确认安装') || html.includes('Install'), '标题在')
     assert.ok(html.includes('来源可信') || html.includes('verify the source'), '社区信任提示在')
     assert.ok(html.includes('dshm-btn primary'), '确认按钮在')
+  })
+
+  // 0.9.34 ADR-0013：文字卡缩略条（有 screenshots 才渲染，≤3 张，SSR 懒加载空壳）
+  it('CardShots：≤3 张、SSR 懒加载空壳、复用 shotbox', () => {
+    const shots = ['https://raw.githubusercontent.com/o1/r1/HEAD/docs/a.png', 'https://raw.githubusercontent.com/o1/r1/HEAD/docs/b.png']
+    const html = renderToString(h(components.__CardShots, { shots, onOpen: () => {} }))
+    assert.ok(html.includes('dshm-shotstrip'), '缩略条容器在')
+    assert.ok(!html.includes('<img'), 'SSR 不带 img（IO 挂 src 后才有）')
+    assert.ok(html.includes('dsvm-shotbox'), '复用 shotbox 槽位')
+    const empty = renderToString(h(components.__CardShots, { shots: [], onOpen: () => {} }))
+    assert.equal(empty, '', '无图返回 null')
   })
 })
