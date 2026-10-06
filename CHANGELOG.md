@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.46 变更：双语 README 精简重构＋实拍 WebP 截图集（文档版）
+
+- **README×2 重构**：中文 17.5KB → 8.3KB、英文 18.1KB → 9.4KB——以用户任务动线重组（30 秒上手 → 浏览/搜索/安装 → 已装与设置 → Agent 工具与 CLI → 兼容与 FAQ）；获取线路、缓存语义等实现细节不再展开，统一移交 [`docs/DESIGN.md`](docs/DESIGN.md) 与 ADR 承接；运行相位/生效时机表述与激活分桶语义对齐（不硬承诺「一定重启/一定刷新」，以操作返回为准）。
+- **截图集（`docs/images/`，8 张 WebP ≈248KB）**：市场首页、社区分类条、精选分类条、跨区搜索（精选置顶＋社区分组）、插件详情（未装态安装入口）、已装管理、设置页全部换为当前实机实拍；官方安装对话框图沿用。已装图对宿主本机 profile 绝对路径做脱敏改写。
+- **新增 `scripts/capture-readme.mjs`（开发用，不入 npm 包——`assert-pack` 的 scripts/ 禁带清单继续兜底）**：playwright 只读驱动当前 Web 实例复现整套截图（`npm run capture:readme`）；不执行安装/升级/开关/删除，仅浏览态与弹窗；每张截图前断言面板内无未脱敏的 profile 绝对路径。新增 devDependency `playwright-core@1.62.1`（锁官方 registry 解析）。
+- **验证**：typecheck 零错误；全量测试 1165/1165（首轮 1 项进程树终止时序断言在并发负载下偶发，单跑与全量重跑均通过，未改运行时代码）；`npm pack --dry-run` + `assert-pack` 白名单通过；双语 README 各 8 处 WebP 引用与文件一一对应、无缺失无冗余。
+
 ### 0.9.45 变更：市场页两段加载 + 强制刷新穿透探测 + 精选页动线批
 
 - **市场页两段加载（[ADR-0013](docs/adr/0013-market-two-phase-probe.md)）**：浏览态 market 查询拆两段——第一段 `probeMode:'cache-only'` 只回 TTL 内缓存命中、零网络瞬时回页，有缺口（`latestComplete=false`，豁免社区 github 条目——Q46 永久缺口不构成第二段理由）才自动发起第二段既有探测语义就地补徽标；重启后首开不再被全页重探阻塞（弱网 8–16s → 恒秒开 + 徽标异步补全）。`mergeLatestFields` 纯函数保证会话内切换筛选态时徽标不回退；快照只在终态写入。服务端 latest 缓存保持纯内存不动（ADR-0006 不翻案）；tools/CLI 的 `withLatest:false` 通路零变化。
@@ -341,6 +348,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.46 — bilingual README restructure + live-captured WebP screenshot set (docs release)
+
+- **README×2 restructured**: zh-CN 17.5KB → 8.3KB, en 18.1KB → 9.4KB — reorganized around the user's task flow (quick start → browse/search/install → installed & settings → agent tools & CLI → compatibility & FAQ). Fetch-chain and cache-semantics details no longer live here; they are delegated to [`docs/DESIGN.md`](docs/DESIGN.md) and the ADRs. Runtime-phase / takes-effect wording now matches the activation-bucket semantics (no hard promises of "always restart" or "always refresh" — follow the operation result).
+- **Screenshot set (`docs/images/`, 8 WebP ≈248KB)**: marketplace home, community category strip, curated category strip, cross-catalog search (curated hits first, community grouped), plugin detail (not-installed state with install action), installed management, and settings are all re-captured from the current live Web instance; the official install-dialog shot is retained. The installed shot redacts the host's absolute profile path.
+- **New `scripts/capture-readme.mjs` (development-only, not shipped in the npm package — `assert-pack`'s scripts/ deny-list keeps enforcing that)**: drives the running Web instance read-only via playwright to reproduce the full set (`npm run capture:readme`); performs no install/upgrade/toggle/uninstall — browsing and modals only; every shot first asserts no unredacted absolute profile path inside the panel. New devDependency `playwright-core@1.62.1` (pinned to the official registry resolution).
+- **Verification**: typecheck clean; full suite 1165/1165 (one process-tree termination timing assertion flaked once under concurrent load; passed both in isolation and on a full rerun, with no runtime code changes); `npm pack --dry-run` + `assert-pack` allowlist green; each README's 8 WebP references match files one-to-one — nothing missing, nothing unreferenced.
 
 ### Added in 0.9.45 — market two-phase loading + force probe passthrough + curated-zone motion batch
 

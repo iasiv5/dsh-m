@@ -1,6 +1,6 @@
 {
   "name": "dsh-m",
-  "version": "0.9.45",
+  "version": "0.9.46",
   "description": "可自定义收录清单的 DSH 插件市场：收录、安装、卸载、升级一站完成，附 agent 工具与 dshm CLI。",
   "license": "MIT",
   "type": "module",
@@ -47,7 +47,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test tests/*.test.mjs",
     "pretest": "npm run build",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "capture:readme": "node scripts/capture-readme.mjs"
   },
   "dsh": {
     "bundle": {
@@ -77,6 +78,7 @@
     "@types/react-dom": "^18.3.0",
     "@types/semver": "7.8.0",
     "esbuild": "^0.25.0",
+    "playwright-core": "1.62.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.6.0"
