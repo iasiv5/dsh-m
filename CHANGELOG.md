@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.44 变更：插件卡片网格按容器宽度自适应列数（全屏显出更多卡片）
+
+- **自适应网格**：市场/已装/收藏三视图共用的卡片网格从固定两列改为按容器实际可用宽度自适应——`grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))`。列数 ≈ `max(1, floor((W+8)/368))`（最小卡宽 360px、列距 8px，剩余宽度各列均分）：浮动态（~920px 面板）保持 2 列零回归；全屏 1920 宽约 5 列、1280 宽 3 列，显著显出更多插件卡片。
+- **删视口断点**：移除 `@media (max-width:680px)` 的单列覆盖——视口宽度不代表面板实际可用宽度；极窄容器由 `min(100%,360px)` 兜底自动单列，不横向溢出。
+- **范围与边界**：搜索分组段头（`.dsvm-grouphead`）仍以 `grid-column:1/-1` 跨满整行；纯客户端变更，刷新页面即生效。
+- **测试**：新增 SSR 冒烟回归 1 例（锁定自适应网格规则与断点删除）；typecheck 零错误。
+
 ### 0.9.33 变更：自研条目元数据 v1.1——`audience`/`decoupled` 两字段与三端标注
 
 - **schema**：registry 条目增补可选 `decoupled?: true`（解耦条目，实操口径判定；与 `verified` 互斥——同条目共存报 error）与 `audience?: 'public' | 'internal'`（缺省 public 不产生键；`'team'` 值集预留未开放）。决策共识与五项裁决记录见 DESIGN §2.7，术语见 GLOSSARY「解耦条目 / 自用条目」。
@@ -324,6 +331,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.44 — plugin card grid adapts column count to available width (more cards in fullscreen)
+
+- **Adaptive grid**: the card grid shared by the Market / Installed / Favorites views switches from a fixed two-column layout to container-width adaptation — `grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))`. Column count ≈ `max(1, floor((W+8)/368))` (360px min card width, 8px gap, remaining width split evenly): the floating panel (~920px) keeps its 2 columns with zero regression; fullscreen at 1920px shows ~5 columns and 1280px shows 3 — noticeably more plugin cards on screen.
+- **Viewport breakpoint removed**: the `@media (max-width:680px)` single-column override is gone — viewport width does not describe the width actually available to the panel; very narrow containers fall back to a single column via `min(100%,360px)` without horizontal overflow.
+- **Scope and edges**: search group headers (`.dsvm-grouphead`) still span the full row via `grid-column:1/-1`; client-only change — refresh the page to take effect.
+- **Tests**: 1 new SSR smoke regression case (locks the adaptive grid rule and the breakpoint removal); typecheck clean.
 
 ### Added in 0.9.33 — self-dev entry metadata v1.1: `audience`/`decoupled` fields with three-surface marking
 
