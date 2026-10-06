@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { listInstalledWithMeta, installFromRegistry } from '../lib/core/market.js'
-import { npmLatest, npmPackument, npmVersion } from '../lib/core/versions.js'
+import { npmLatest, npmPackument, npmPackumentReadme, npmVersion } from '../lib/core/versions.js'
 import {
   createGithubRequestBudget,
   githubLatestTag,
@@ -346,6 +346,51 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
 
 import { createServer } from 'node:http'
 import { isNewerVersion } from '../lib/core/versions.js'
+
+// ---------- 0.9.45 U10b：npmPackumentReadme（未安装条目 README 兜底） ----------
+
+describe('npmPackumentReadme（0.9.45 U10b：未安装条目 README 兜底）', () => {
+  afterEach(() => _setWireFetchForTests(null))
+
+  it('提取 packument 顶层 readme；显式 registry 参数优先（L1）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      assert.ok(url.startsWith('https://registry.example.com/pkg-x'), '显式 registry 参数优先')
+      return jsonResponse({ versions: {}, readme: '# hello' })
+    })
+    const res = await npmPackumentReadme('pkg-x', 20_000, undefined, 'https://registry.example.com')
+    assert.equal(res.readme, '# hello')
+  })
+
+  it('缺省走生效源（https，形态断言不写死线路——ADR-0012 路由自适应）', async () => {
+    fetchCalls = []
+    installMockFetch(async () => jsonResponse({ readme: '# hi' }))
+    const res = await npmPackumentReadme('pkg-default')
+    assert.equal(res.readme, '# hi')
+    assert.match(fetchCalls[0], /\/pkg-default$/)
+    assert.ok(fetchCalls[0].startsWith('https://'), '安全基线 HTTPS')
+  })
+
+  it('readme 字段缺失/空白 → 返回空串不抛（客户端显示「没有 README」）', async () => {
+    installMockFetch(async () => jsonResponse({ versions: {} }))
+    assert.equal((await npmPackumentReadme('pkg-y')).readme, '')
+    installMockFetch(async () => jsonResponse({ versions: {}, readme: '   ' }))
+    assert.equal((await npmPackumentReadme('pkg-y')).readme, '')
+  })
+
+  it('非法包名抛错（与 npmLatest 同款字符集守卫）', async () => {
+    await assert.rejects(() => npmPackumentReadme('has space'), /无效 npm 包名/)
+    await assert.rejects(() => npmPackumentReadme('pkg$'), /无效 npm 包名/)
+  })
+
+  it('scoped 包名编码进 URL', async () => {
+    fetchCalls = []
+    installMockFetch(async () => jsonResponse({ readme: 'x' }))
+    await npmPackumentReadme('@iasiv5/dsh-skins')
+    // fetchCalls 里可能混入 npm-route probe-once 请求——存在编码命中即可（@ → %40）
+    assert.ok(fetchCalls.some((u) => u.includes('%40iasiv5%2Fdsh-skins')), 'scoped 包名编码进 URL')
+  })
+})
 
 function localGithubServer(handler) {
   return new Promise((resolve) => {

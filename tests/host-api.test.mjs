@@ -291,6 +291,35 @@ describe('host-api：method 响应', () => {
     assert.equal(bad.status, 400)
   })
 
+  it('readme：未安装条目回源 npm packument readme；兜底失败抛原始本地错误（0.9.45 U10b 修复）', async () => {
+    const notInstalled = async () => { throw new Error('web profile 未安装该插件: billion-context') }
+    // ① 未安装 + npm 兜底有 readme → 200，payload.readme = 兜底内容
+    const ok = setup({
+      readInstalledPluginReadme: notInstalled,
+      npmPackumentReadme: async () => ({ readme: '# demo readme' }),
+    })
+    const r1 = await callApi(ok.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'billion-context' } })
+    assert.equal(r1.status, 200)
+    assert.equal(r1.body.readme, '# demo readme')
+    assert.equal(r1.body.pkg, 'billion-context')
+    // ② 未安装 + 兜底也失败（离线等）→ 500，错误为原始本地错误（不冒充）
+    const off = setup({
+      readInstalledPluginReadme: notInstalled,
+      npmPackumentReadme: async () => { throw new Error('offline') },
+    })
+    const r2 = await callApi(off.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'billion-context' } })
+    assert.equal(r2.status, 500)
+    assert.ok(r2.body.error.includes('未安装该插件'), '抛原始本地错误而非 offline')
+    // ③ 已装 → 本地读取，不走兜底
+    const local = setup({
+      readInstalledPluginReadme: async () => ({ pkg: 'p', name: 'p', readme: 'local md', truncated: false }),
+      npmPackumentReadme: async () => { throw new Error('不应调用') },
+    })
+    const r3 = await callApi(local.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'p' } })
+    assert.equal(r3.status, 200)
+    assert.equal(r3.body.readme, 'local md')
+  })
+
   it('installed 转发 host namespace', async () => {
     const { dispatcher, calls } = setup()
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed' } })

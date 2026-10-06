@@ -152,6 +152,31 @@ export async function npmPackument(
   return { versions }
 }
 
+/**
+ * npm packument readme 兜底（0.9.45 U10b 修复）：市场/收藏详情 Modal 的 README 折叠页对
+ * 「未安装」条目无法走本地 profile 读取——回源 packument 顶层 readme 字段（publish 管线
+ * 对多数包写入）。安全基线同 npmPackument：HTTPS、8MB 上限、超时；无 readme 字段返回空串
+ * （不抛，客户端显示「没有 README」）；L1（ADR-0012）：显式 registry 参数 > 生效源。
+ */
+export async function npmPackumentReadme(
+  pkg: string,
+  timeoutMs = 20_000,
+  signal?: AbortSignal,
+  registry?: string,
+  deps?: Pick<NpmVersionDeps, 'fetchJsonLimited'>,
+): Promise<{ readme: string }> {
+  if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
+  const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
+  const base = registry?.trim() ? registry.trim() : await activeNpmRegistry()
+  const data = await fetcher<{ readme?: unknown }>(`${registryBase(base)}/${encodeURIComponent(pkg)}`, {
+    timeoutMs,
+    signal,
+    maxBytes: 8 * 1024 * 1024,
+  })
+  const readme = typeof data?.readme === 'string' && data.readme.trim() !== '' ? data.readme : ''
+  return { readme }
+}
+
 export interface NpmLatestDeps {
   fetchJsonLimited?: typeof fetchJsonLimited
 }

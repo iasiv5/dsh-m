@@ -20,8 +20,8 @@ import {
   InstallGuardError,
 } from './market.js'
 import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
-import { readInstalledPluginReadme } from './installed.js'
-import { isNewerVersion, npmLatest } from './versions.js'
+import { readInstalledPluginReadme, type PluginReadme } from './installed.js'
+import { isNewerVersion, npmLatest, npmPackumentReadme } from './versions.js'
 import { getCommunitySummary } from './community.js'
 import type { RegistryController, RegistryControllerSnapshot } from './registry-controller.js'
 import { RegistryConfigError } from './registry-controller.js'
@@ -58,6 +58,9 @@ export interface HostApiOverrides {
   selfUpgrade?: typeof selfUpgrade
   checkRegistryEntries?: typeof checkRegistryEntries
   npmLatest?: typeof npmLatest
+  /** 0.9.45 U10b：README 本地读取与 npm 兜底（测试注入；缺省 = 真实现）。 */
+  readInstalledPluginReadme?: typeof readInstalledPluginReadme
+  npmPackumentReadme?: typeof npmPackumentReadme
   /** registry 分支社区 summary 数据源（M1 Task 6；测试注入 cache-first 模拟） */
   getCommunitySummary?: typeof getCommunitySummary
   /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
@@ -274,6 +277,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     selfUpgrade: ctx.deps?.selfUpgrade ?? selfUpgrade,
     checkRegistryEntries: ctx.deps?.checkRegistryEntries ?? checkRegistryEntries,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
+    readInstalledPluginReadme: ctx.deps?.readInstalledPluginReadme ?? readInstalledPluginReadme,
+    npmPackumentReadme: ctx.deps?.npmPackumentReadme ?? npmPackumentReadme,
     getCommunitySummary: ctx.deps?.getCommunitySummary ?? getCommunitySummary,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
@@ -500,8 +505,21 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'readme': {
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
-          // 0.9.0 双 profile：README 只读当前 profile 的 node_modules
-          const result = await readInstalledPluginReadme(target, profile.dir)
+          // 0.9.0 双 profile：README 优先只读当前 profile 的 node_modules；
+          // 0.9.45 U10b 修复：市场/收藏详情 Modal 的 README 折叠页对「未安装」条目也会发起读取
+          // （装前决策场景）——本地未装时回源 npm packument 顶层 readme 字段兜底；
+          // 兜底也失败（离线等）则抛原始本地错误，不冒充成功。
+          let result: PluginReadme
+          try {
+            result = await d.readInstalledPluginReadme(target, profile.dir)
+          } catch (localErr) {
+            try {
+              const fallback = await d.npmPackumentReadme(target)
+              result = { pkg: target, name: target, readme: fallback.readme, truncated: false }
+            } catch {
+              throw localErr
+            }
+          }
           payload = { ...result }
           break
         }
