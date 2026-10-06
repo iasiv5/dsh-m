@@ -13,7 +13,8 @@ export const FAV_STORAGE_KEY = 'dshm-favorites'
  * @property {number} savedAt
  * @property {{ id: string, name: string, description: string, descriptionEn?: string, category: string,
  *              categoryLabel?: string, source: string, npm?: string, github?: string, homepage?: string,
- *              owner?: string, downloads?: number, stars?: number, added?: string, deprecated?: boolean }} snapshot
+ *              owner?: string, downloads?: number, stars?: number, added?: string, deprecated?: boolean,
+ *              verified?: string[], audience?: 'public' | 'internal', decoupled?: boolean }} snapshot
  */
 
 function safeParse(raw) {

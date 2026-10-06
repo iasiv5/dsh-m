@@ -424,6 +424,11 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
               throw new ApiProtocolError(400, '非法 sort: 需 { field: downloads|stars|added, dir: asc|desc }')
             }
           }
+          // probeMode 两态（0.9.45 市场页两段加载，ADR-0013）：GUI 两段式自带；非法值 400（与 source/sort 同款不静默吞）
+          const probeModeRaw = typeof body.probeMode === 'string' ? body.probeMode : undefined
+          if (probeModeRaw !== undefined && probeModeRaw !== 'full' && probeModeRaw !== 'cache-only') {
+            throw new ApiProtocolError(400, `非法 probeMode: ${probeModeRaw}（需 full/cache-only）`)
+          }
           const result = await d.listMarket(cfg(), {
             query: strArg(body, 'query'),
             category,
@@ -436,6 +441,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             limit,
             force: boolArg(body.force),
             withLatest: true,
+            probeMode: probeModeRaw,
             namespace: 'host',
             // 0.9.5 双 profile 读路径接线（实机回归 2026-10-01）：desktop 下市场「已安装」
             // 徽标此前漏传 profile → listMarket 内部落回 webProfileDir，已装徽标恒空。

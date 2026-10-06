@@ -276,3 +276,32 @@ export function marketNotice(registryState, community) {
   if (notice) out.notice = notice
   return out
 }
+
+const LATEST_MERGE_FIELDS = ['latestVersion', 'latestTag', 'latestSha', 'latestError', 'latestErrorCode', 'outdated']
+
+/**
+ * 会话内徽标不回退（0.9.45 市场页两段加载，ADR-0013）：prev = 会话内上一轮响应（上一筛选态 /
+ * 已 merge 的第二段结果；快照不含 latest 族字段，重启场景天然无徽标可保）。next 响应缺 latest
+ * 族字段而 prev 有 → 按 id 叠加。next 已有值一律不覆盖（探测结果权威）；latestError 族参与叠加
+ * （失败态也是状态）。返回新数组（不可变）；无可叠加项时原样返回 nextItems（引用相等，调用方可省一次 setState）。
+ */
+export function mergeLatestFields(nextItems, prevItems) {
+  if (!Array.isArray(nextItems) || !Array.isArray(prevItems) || prevItems.length === 0) return nextItems
+  const prevById = new Map(prevItems.map((it) => [it && it.id, it]))
+  let touched = false
+  const out = nextItems.map((it) => {
+    if (!it || typeof it !== 'object') return it
+    const hasLatest = it.latestVersion !== undefined || it.latestTag !== undefined || it.latestSha !== undefined || it.latestError !== undefined
+    if (hasLatest) return it
+    const prev = prevById.get(it.id)
+    if (!prev) return it
+    const patch = {}
+    for (const k of LATEST_MERGE_FIELDS) {
+      if (it[k] === undefined && prev[k] !== undefined) patch[k] = prev[k]
+    }
+    if (Object.keys(patch).length === 0) return it
+    touched = true
+    return { ...it, ...patch }
+  })
+  return touched ? out : nextItems
+}

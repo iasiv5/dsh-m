@@ -46,7 +46,7 @@ import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './searc
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
 import { HttpError } from './httpx.js'
-import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
+import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
 import { readPnpmLockIntegrity } from './npm-integrity.js'
 import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
@@ -158,6 +158,12 @@ export interface MarketQuery extends RegistryRuntimeOptions {
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
   force?: boolean
+  /** 探测两态（0.9.45 市场页两段加载，ADR-0013）：缺省 'full' 行为不变（缓存新鲜直用 + 未命中/
+   *  过期 inline 探测）；'cache-only' 只回 TTL 内缓存命中、零网络，有缺口 → latestComplete=false
+   *  （缺口判定豁免社区 github 条目——Q46 永久缺口不构成第二段理由）。
+   *  force（非 cache-only 模式）：peek 旧值兜底 + 全页重探——不走 ttlMin=0（ADR-0006 在案约束：
+   *  先删后探失败会丢旧值）；重探成功覆盖缓存，失败保留旧值 + latestError。 */
+  probeMode?: 'full' | 'cache-only'
   /** default 60_000；测试注入短 deadline */
   deadlineMs?: number
 }
@@ -807,51 +813,68 @@ export async function listMarket(
   if (withLatest && items.length > 0) {
     // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
     await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-    // 先吃 cache 命中
+    // 0.9.45 探测两态（ADR-0013）：'full'（缺省，行为不变）| 'cache-only'（两段加载第一段：零网络）
+    const mode = opts.probeMode ?? 'full'
+    // force（P2，ADR-0013）：peek 旧值兜底 + 全页重探——不走 ttlMin=0（ADR-0006 在案约束：
+    // 先删后探失败会丢旧值）；重探成功覆盖缓存，失败保留旧值 + latestError，无空徽标窗口
+    const forceProbe = mode !== 'cache-only' && opts.force === true
     const ttlMin = Math.max(0, cfg.cacheTtlMin ?? 60)
+    // 先吃 cache 命中（force 用 peek：不判 TTL、不删除）
     for (const item of items) {
-      const cached = readLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), ttlMin)
+      const key = latestCacheKey(namespace, loaded.configuredAddress, item)
+      const cached = forceProbe ? peekLatestCache(key) : readLatestCache(key, ttlMin)
       if (cached) applyProbe(item, cached)
     }
-    const todo = items.filter(
-      (it) =>
-        it.latestVersion === undefined &&
-        it.latestTag === undefined &&
-        it.latestSha === undefined &&
-        // Q46 探测边界：社区 github 条目不做浏览页 REST 探测（配额不可控）；社区 npm 条目照常
-        !(it.community === true && it.source === 'github'),
-    )
-    if (todo.length > 0) {
-      const budget = remaining()
-      if (budget <= 0) {
-        for (const item of todo) {
-          item.latestError = '更新检查未完成：时间预算已用尽'
-          item.latestErrorCode = 'timeout'
-        }
-        latestComplete = false
-        latestTimedOut = true
-      } else {
-        await mapWithConcurrency(todo, LATEST_WORKERS, async (item) => {
-          const perBudget = Math.max(1, remaining())
-          const task = probeTask(item, d, Math.min(cfg.timeoutMs ?? 20_000, perBudget), signal)
-          const outcome = await probeWithBudget(task, perBudget, signal)
-          if (outcome.ok && outcome.value) {
-            applyProbe(item, outcome.value)
-            writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value)
-          } else if (outcome.timeout) {
-            item.latestError = '更新检查未完成：超时'
+    if (mode === 'cache-only') {
+      // 两段加载第一段：零网络；缺口判定镜像 todo 豁免（社区 github 永不探测 → 不构成第二段理由，Q46）
+      const gap = items.some(
+        (it) =>
+          it.latestVersion === undefined &&
+          it.latestTag === undefined &&
+          it.latestSha === undefined &&
+          !(it.community === true && it.source === 'github'),
+      )
+      latestComplete = !gap
+    } else {
+      const todo = items.filter(
+        (it) =>
+          // Q46 探测边界：社区 github 条目不做浏览页 REST 探测（配额不可控）；社区 npm 条目照常
+          !(it.community === true && it.source === 'github') &&
+          // force：全页重探（缓存内旧值仅作兜底展示）；常态：仅未命中条目
+          (forceProbe || (it.latestVersion === undefined && it.latestTag === undefined && it.latestSha === undefined)),
+      )
+      if (todo.length > 0) {
+        const budget = remaining()
+        if (budget <= 0) {
+          for (const item of todo) {
+            item.latestError = '更新检查未完成：时间预算已用尽'
             item.latestErrorCode = 'timeout'
-            latestComplete = false
-            latestTimedOut = true
-          } else if (outcome.error !== undefined) {
-            if (signal?.aborted) throw abortError()
-            item.latestError = outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
-            item.latestErrorCode = classifyLatestError(outcome.error)
           }
-        })
+          latestComplete = false
+          latestTimedOut = true
+        } else {
+          await mapWithConcurrency(todo, LATEST_WORKERS, async (item) => {
+            const perBudget = Math.max(1, remaining())
+            const task = probeTask(item, d, Math.min(cfg.timeoutMs ?? 20_000, perBudget), signal)
+            const outcome = await probeWithBudget(task, perBudget, signal)
+            if (outcome.ok && outcome.value) {
+              applyProbe(item, outcome.value)
+              writeLatestCache(latestCacheKey(namespace, loaded.configuredAddress, item), outcome.value)
+            } else if (outcome.timeout) {
+              item.latestError = '更新检查未完成：超时'
+              item.latestErrorCode = 'timeout'
+              latestComplete = false
+              latestTimedOut = true
+            } else if (outcome.error !== undefined) {
+              if (signal?.aborted) throw abortError()
+              item.latestError = outcome.error instanceof Error ? outcome.error.message : String(outcome.error)
+              item.latestErrorCode = classifyLatestError(outcome.error)
+            }
+          })
+        }
       }
     }
-    // outdated 判定统一在 probe 后进行
+    // outdated 判定统一在 probe 后进行（0.9.45：cache-only 也执行——暖缓存不丢「可升级」徽标）
     for (const item of items) {
       const inst = item.installedPkg !== undefined ? installedItems.find((i) => i.pkg === item.installedPkg) : undefined
       if (!inst) continue

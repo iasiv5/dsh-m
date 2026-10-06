@@ -2208,3 +2208,86 @@ describe('0.9.20 mutation → latest 缓存定向失效', () => {
     assert.equal(existsSync(join(marketTestCacheRoot, 'latest', 'host.json')), false)
   })
 })
+
+// ---------- 0.9.45 市场页两段加载（ADR-0013）：probeMode 两态 + force peek 重探 ----------
+
+describe('market probeMode 与 force 探测（0.9.45 两段加载，ADR-0013）', () => {
+  beforeEach(() => resetLatestCacheForTest())
+  const oneEntry = (id, npm) => [{ id, name: id.toUpperCase(), description: 'd', category: 'tools', tags: [], source: 'npm', npm }]
+
+  it('cache-only：缓存命中直用、零网络、无缺口 latestComplete=true', async () => {
+    const { deps, calls } = fakeDeps({ loadRegistry: async () => readyLoaded(oneEntry('a', 'pkg-a'), { configuredAddress: 'reg-co-warm' }) })
+    await listMarket({}, { source: 'primary', limit: 32 }, deps) // 暖缓存（full 缺省）
+    assert.equal(calls.npm.length, 1)
+    const res = await listMarket({}, { source: 'primary', limit: 32, probeMode: 'cache-only' }, deps)
+    assert.equal(calls.npm.length, 1, 'cache-only 零网络')
+    assert.equal(res.items[0].latestVersion, '2.0.0', '缓存命中直用')
+    assert.equal(res.latestComplete, true, '无缺口不需要第二段')
+  })
+
+  it('cache-only：冷缓存有缺口 → latestComplete=false 且零网络（客户端据此发起第二段）', async () => {
+    const { deps, calls } = fakeDeps({ loadRegistry: async () => readyLoaded(oneEntry('b', 'pkg-b'), { configuredAddress: 'reg-co-cold' }) })
+    const res = await listMarket({}, { source: 'primary', limit: 32, probeMode: 'cache-only' }, deps)
+    assert.equal(calls.npm.length, 0)
+    assert.equal(res.latestComplete, false)
+    assert.equal(res.items[0].latestVersion, undefined)
+  })
+
+  it('cache-only：缺口判定豁免社区 github 条目（Q46）——github 缺口不构成第二段理由', async () => {
+    // 构造镜像本文件既有 ⑥ 用例（R13：catalog 键为 plugins、条目无显式 id——适配层派生
+    // `${owner}--${name}`；github 条目 npm 置 null；withCommunity 签名以文件内既有用例为准）
+    // R16：withCommunity 返回 { deps, ccalls }——npm 捕获在 fakeDeps 的 base.calls.npm
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(oneEntry('g', 'pkg-g'), { configuredAddress: 'reg-gh' }) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('gh-only', 'o9', { npm: null, tarball: 'https://example.com/gh-only.tgz', category: 'c-gh' }),
+    ]))
+    await listMarket({}, { source: 'all', limit: 32 }, deps) // 暖缓存（npm 探测 1 次）
+    assert.equal(base.calls.npm.length, 1)
+    const res = await listMarket({}, { source: 'all', limit: 32, probeMode: 'cache-only' }, deps)
+    assert.equal(base.calls.npm.length, 1, '第二段零网络（github 缺口被豁免）')
+    assert.equal(res.latestComplete, true, 'github 条目不构成缺口（Q46 永久缺口，R5）')
+  })
+
+  it('cache-only：已装条目照常计算 outdated（暖缓存不丢「可升级」徽标，R3）', async () => {
+    const { deps } = fakeDeps({
+      loadRegistry: async () => readyLoaded(oneEntry('h', 'pkg-h'), { configuredAddress: 'reg-co-out' }),
+      listInstalledPlugins: async () => ({ items: [{ pkg: 'pkg-h', name: 'H', version: '1.0.0', source: 'npm', spec: 'npm:pkg-h' }], others: 0, complete: true, profileDir: '/tmp/profile' }),
+    })
+    await listMarket({}, { source: 'primary', limit: 32 }, deps) // 暖缓存
+    const res = await listMarket({}, { source: 'primary', limit: 32, probeMode: 'cache-only' }, deps)
+    assert.equal(res.items[0].latestVersion, '2.0.0')
+    assert.equal(res.items[0].outdated, true, 'cache-only 也产出 outdated')
+  })
+
+  it('force：peek 旧值兜底 + 全页重探，成功覆盖旧值（不走 ttlMin=0）', async () => {
+    let n = 0
+    const { deps, calls } = fakeDeps({
+      loadRegistry: async () => readyLoaded(oneEntry('i', 'pkg-i'), { configuredAddress: 'reg-force-ok' }),
+      npmLatest: async (pkg) => { n += 1; calls.npm.push(pkg); return { version: n === 1 ? '2.0.0' : '3.0.0' } },
+    })
+    await listMarket({}, { source: 'primary', limit: 32 }, deps) // 暖缓存 2.0.0
+    const res = await listMarket({}, { source: 'primary', limit: 32, force: true }, deps)
+    assert.equal(calls.npm.length, 2, 'TTL 内也全页重探')
+    assert.equal(res.items[0].latestVersion, '3.0.0')
+    assert.equal(res.latestComplete, true)
+  })
+
+  it('force：重探失败保留旧值 + latestError（peek 不删除，ADR-0006 在案约束，R6）', async () => {
+    const { deps, calls } = fakeDeps({
+      loadRegistry: async () => readyLoaded(oneEntry('j', 'pkg-j'), { configuredAddress: 'reg-force-fail' }),
+      npmLatest: async (pkg) => { calls.npm.push(pkg); if (calls.npm.length === 1) return { version: '2.0.0' }; throw new Error('boom') },
+    })
+    await listMarket({}, { source: 'primary', limit: 32 }, deps) // 暖缓存 2.0.0
+    const res = await listMarket({}, { source: 'primary', limit: 32, force: true }, deps)
+    assert.equal(calls.npm.length, 2)
+    assert.equal(res.items[0].latestVersion, '2.0.0', '旧值兜底未被删除')
+    assert.ok(res.items[0].latestError, '探测失败如实标注')
+  })
+
+  it('withLatest=false：probeMode/force 均不生效（tools/CLI 契约不变）', async () => {
+    const { deps, calls } = fakeDeps({ loadRegistry: async () => readyLoaded(oneEntry('k', 'pkg-k'), { configuredAddress: 'reg-wl' }) })
+    const res = await listMarket({}, { source: 'primary', limit: 32, withLatest: false, probeMode: 'cache-only', force: true }, deps)
+    assert.equal(calls.npm.length, 0)
+    assert.equal(res.latestComplete, true, '未进探测段，维持既有 true 契约')
+  })
+})

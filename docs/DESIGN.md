@@ -97,6 +97,7 @@
 - **agent/CLI 契约（允许破坏性变更）**：`dshm_search` 参数改为 `query / category / source('primary'|'community'|'all'，默认 all，与 GUI 分区对齐) / limit(默认 10，clamp 1–80) / offset(真翻页)`；`primary_only` 删除。输出补 `community` 标记与 `downloads/stars`；社区分类直出中文标签（不再回退英文 slug）；工具描述整体重写（真实规模 + 翻页语义，删「registry is curated & small」）。CLI 对齐 `--source / --offset / --limit`，默认 10 条。
 - **技术默认件**：图片三层懒加载（IntersectionObserver + `loading=lazy` + `fetchPriority=low`；缩略图本机直连原图，不引第三方代理服务）；移除客户端重复排序（服务端单一排序源）；`total>200` 性能提示随分区退役；host-api limit 上限对齐新页大小；空状态逐分区定制；错误态带具体原因 + 重试。
 - **Backlog（明确不做）**：UI 完整双语字典、时间窗过滤、浏览层宿主兼容徽章/过滤、组管理、个人备注、giscus 评论、静态官网。
+- **修订（2026-10-06，0.9.45，[ADR-0013](./adr/0013-market-two-phase-probe.md)）**：市场页两段加载——浏览态第一段 `probeMode:'cache-only'` 零网络回页（缺口 → latestComplete=false，豁免社区 github，Q46），第二段既有探测语义就地补徽标；force 语义 = peek 旧值兜底 + 全页重探（ADR-0006「peek 不删除」约束落实，重开其暂缓裁决），设置页「强制刷新」经 onForceMarket → marketReloadAll(true) 全链路接通。同批动线：详情 Modal 对已装且可升级条目提供「升级」主按钮（record.target=安装包名；市场区与收藏区两挂载点）+ README 折叠页（展开才拉取）+ 收录日期 fmtDate 本地化；错误行内联「重试」+ 空态三分支（unavailable 主文案 / 分类空桶 / 通用）；收藏快照补 verified/audience/decoupled 三字段（只存不标——§2.7 裁决⑤不动），收藏区补「精选」身份徽标与「已实测」；0 计数桶显式渲染「0」+ 降透明 + 跨桶 title 说明；Modal 可达性子集（role=dialog/aria-modal/初始聚焦关闭钮/截图键盘开灯箱，Tab 圈闭不做）。
 
 ### 2.7 自研条目元数据：受众与解耦（grilling 定稿 2026-10-05）
 

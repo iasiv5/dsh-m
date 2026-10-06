@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.45 变更：市场页两段加载 + 强制刷新穿透探测 + 精选页动线批
+
+- **市场页两段加载（[ADR-0013](docs/adr/0013-market-two-phase-probe.md)）**：浏览态 market 查询拆两段——第一段 `probeMode:'cache-only'` 只回 TTL 内缓存命中、零网络瞬时回页，有缺口（`latestComplete=false`，豁免社区 github 条目——Q46 永久缺口不构成第二段理由）才自动发起第二段既有探测语义就地补徽标；重启后首开不再被全页重探阻塞（弱网 8–16s → 恒秒开 + 徽标异步补全）。`mergeLatestFields` 纯函数保证会话内切换筛选态时徽标不回退；快照只在终态写入。服务端 latest 缓存保持纯内存不动（ADR-0006 不翻案）；tools/CLI 的 `withLatest:false` 通路零变化。
+- **force 探测穿透（重开 ADR-0006 暂缓裁决）**：设置页「强制刷新」新链路 onForceMarket → marketReloadAll(true) → core「peek 旧值兜底 + 全页重探」——严格落实 ADR-0006 在案约束「peek 不删除语义而非 ttlMin=0 先删后探」，重探失败保留旧值 + latestError，不产生空徽标窗口；强刷后精选清单与「有更新」徽标同时刷新。市场页 probeMode 只有 full/cache-only 两态（不设 'only'）。
+- **详情 Modal 升级动线（U10）**：已装且可升级条目的 Modal 动作区新增「升级」主按钮（市场区与收藏区两挂载点；record.target=安装包名，走 ops 泵与 0.9.22 生效判定分流文案，guard/opSuperseded/普通失败三分支对齐已装页）；新增 README 折叠页（展开才拉取，收起态零请求）；「收录日期」走 fmtDate 本地化。
+- **错误恢复与空态（U9）**：错误行内联「重试」按钮（此前只能关开面板或绕道设置页）；空态三分支——registry unavailable 主文案 / 分类空桶专用文案 / 通用文案。
+- **收藏身份（U12）**：收藏快照增补 verified/audience/decoupled 三字段（只存不标——§2.7 裁决⑤「收藏页不打标」不动）；收藏区为精选条目补「精选」身份徽标与「已实测」质量徽标（此前精选条目进收藏区连「精选」标识都丢失）。
+- **可达性与杂项（U8/U3/U7）**：详情 Modal 补 role=dialog/aria-modal/aria-label 与打开时聚焦关闭钮，截图缩放支持键盘 Enter/Space（Tab 圈闭明确不做）；精选区 0 计数桶显式渲染「0」+ 降透明；跨桶条目使分类计数之和大于总数时 chips 行容器给出 title 说明。
+- **测试**：market/host-api/client-market-state/client-render-smoke 净增用例与断言（probeMode 两态与 force peek 语义、缺口豁免、cache-only outdated、mergeLatestFields、两段与强刷接线、Modal 升级/README/可达性、收藏徽标、0 计数桶）；全量测试 Windows 本机除既有 symlink 族基线 15 项外零新增失败；typecheck 零错误。
+
 ### 0.9.44 变更：插件卡片网格按容器宽度自适应列数（全屏显出更多卡片）
 
 - **自适应网格**：市场/已装/收藏三视图共用的卡片网格从固定两列改为按容器实际可用宽度自适应——`grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr))`。列数 ≈ `max(1, floor((W+8)/368))`（最小卡宽 360px、列距 8px，剩余宽度各列均分）：浮动态（~920px 面板）保持 2 列零回归；全屏 1920 宽约 5 列、1280 宽 3 列，显著显出更多插件卡片。
@@ -331,6 +341,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.45 — market two-phase loading + force probe passthrough + curated-zone motion batch
+
+- **Market two-phase loading ([ADR-0013](docs/adr/0013-market-two-phase-probe.md))**: browsing market queries split into two phases — phase 1 sends `probeMode:'cache-only'` (TTL-fresh cache hits only, zero network, instant page), and only when gaps exist (`latestComplete=false`, community github entries exempt — a Q46 permanent gap is never a phase-2 reason) does phase 2 run the existing probe semantics to patch badges in place. First open after a DSH restart is no longer blocked by a full-page re-probe (8–16s on weak networks → always instant page + async badge completion). `mergeLatestFields` keeps badges from regressing during in-session filter switches; snapshots are written at terminal states only. The server-side latest cache stays memory-only (ADR-0006 untouched); the tools/CLI `withLatest:false` path is unchanged.
+- **Force probe passthrough (reopens ADR-0006's deferred ruling)**: the settings-page "Force refresh" gains the onForceMarket → marketReloadAll(true) → core "peek old values as fallback + full-page re-probe" chain — strictly honoring ADR-0006's on-record constraint ("peek without delete, not ttlMin=0 delete-then-probe"); a failed re-probe keeps old values + latestError with no empty-badge window, and one click now refreshes both the curated list and the update badges. Market probeMode has exactly two values (full/cache-only) — no 'only'.
+- **Detail Modal upgrade motion (U10)**: installed-and-outdated entries get a primary "Upgrade" button in the Modal actions (both the market and favorites mount points; record.target = installed package name, routed through the ops pump with 0.9.22 activation-based messaging; guard/opSuperseded/generic failure branches aligned with the Installed tab); a README fold (fetched on expand, zero requests while collapsed); "Added" date localized via fmtDate.
+- **Error recovery & empty states (U9)**: inline "Retry" button on the error row (previously only panel reopen or a detour to Settings); three-way empty copy — registry-unavailable primary message / curated-bucket-specific message / generic.
+- **Favorites identity (U12)**: favorite snapshots store verified/audience/decoupled (stored but not labeled — DESIGN §2.7 ruling ⑤ "favorites stay unmarked" untouched); curated entries in Favorites regain a "Curated" identity badge plus the "Verified" quality badge (previously they lost even the Curated marker).
+- **Accessibility & misc (U8/U3/U7)**: Detail Modal gains role=dialog/aria-modal/aria-label and initial focus on the close button; screenshot lightboxes open via keyboard Enter/Space (focus trap explicitly out of scope); zero-count curated buckets render an explicit "0" at reduced opacity; the chips row gets a title explanation whenever cross-bucket double counting pushes Σchip counts above the total.
+- **Tests**: new cases and assertions across market / host-api / client-market-state / client-render-smoke (two-state probeMode and force peek semantics, gap exemption, cache-only outdated, mergeLatestFields, two-phase and force-refresh wiring, Modal upgrade/README/a11y, favorites badges, zero-count chips); on this Windows machine the full suite has zero new failures beyond the 15 pre-existing symlink-family baseline cases; typecheck clean.
 
 ### Added in 0.9.44 — plugin card grid adapts column count to available width (more cards in fullscreen)
 

@@ -51,6 +51,15 @@ export function readLatestCache(key: string, ttlMin: number): LatestValue | null
   return entry.value
 }
 
+/**
+ * peek 读取（0.9.45，ADR-0013）：不判 TTL、不删除——供 force 全页重探时旧值兜底展示。
+ * 落实 ADR-0006 在案约束：「force 穿透须用 peek 不删除语义，而非 ttlMin=0 先删后探（失败时旧值丢失）」；
+ * force 重探成功覆盖缓存，失败保留旧值 + latestError，不产生空徽标窗口。
+ */
+export function peekLatestCache(key: string): LatestValue | null {
+  return latestCache.get(key)?.value ?? null
+}
+
 /** 内存 set（超上限淘汰最旧）；纯内存，无任何落盘。 */
 export function writeLatestCache(key: string, value: LatestValue): void {
   if (latestCache.size >= LATEST_CACHE_MAX) {

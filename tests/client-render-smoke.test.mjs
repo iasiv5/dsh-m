@@ -215,3 +215,76 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(typeof running === 'string' && running.length > 0, 'running record 渲染不抛（进度行 SSR 为 null）')
   })
 })
+
+// ---------- 0.9.45 市场页两段加载（ADR-0013）+ P2 设置页强刷接线 ----------
+
+describe('0.9.45 两段加载接线（源码断言）', () => {
+  it('市场页两段加载接线（0.9.45 ADR-0013，R2 修正断言形态）', () => {
+    assert.match(src, /probeMode = "cache-only"/, '第一段默认 cache-only（默认参数形态）')
+    assert.match(src, /latestComplete === false/, '以 latestComplete 缺口判定发起第二段')
+    assert.match(src, /return fetchPage\(nextQuery, force, true, "full"\)/, '第二段 background 换新（force 走入参，core peek 重探）')
+    assert.match(src, /mergeLatestFields\(/, '徽标不回退 merge 接线')
+  })
+
+  it('P2 接线：设置页强刷 → 市场区 force 重取（R4）', () => {
+    assert.match(src, /onForceMarket/, 'SettingsTab 新增强刷回调 prop')
+    assert.match(src, /marketReloadAll\(true\)/, '强刷回调以 force 重取两区')
+    assert.match(src, /refresh = async \(\) => \{[\s\S]{0,600}onForceMarket\?\.\(\)/, 'refresh 成功路径触发市场强取')
+  })
+
+  it('详情 Modal：已装且可升级 → 「升级」主按钮；已装未过期 → 仅 manage 提示（0.9.45 U10）', () => {
+    const base = { id: 'x', name: 'X', description: 'd', source: 'npm', npm: 'pkg-x', installed: true, installedPkg: 'pkg-x', installedVersion: '1.0.0', category: 'tools', tags: [] }
+    const up = renderToString(h(components.__DetailModal, { it: { ...base, outdated: true }, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: false, profileKind: 'web' }))
+    assert.match(up, /dsvm-modalactions[\s\S]*?dshm-btn primary/, 'outdated → 动作区主按钮在（语言无关）')
+    const ok = renderToString(h(components.__DetailModal, { it: base, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: false, profileKind: 'web' }))
+    assert.doesNotMatch(ok, /dsvm-modalactions[\s\S]*?dshm-btn primary/, '非 outdated → 动作区无主按钮')
+    assert.match(src, /ops\.runOp\("upgrade", it\.installedPkg/, 'record.target = 安装包名（R1：upgrade record 语义是 pkg）')
+    assert.match(src, /activeUpgradeRec\.target === detailItem\.installedPkg/, '进度行比对走 installedPkg（R1）')
+  })
+
+  it('详情 Modal：README 折叠页（npm 条目）与收录日期 fmtDate（0.9.45 U10b）', () => {
+    const it = { id: 'r', name: 'R', description: 'd', source: 'npm', npm: 'pkg-r', category: 'tools', tags: [], added: '2026-09-28T00:00:00.000Z' }
+    const html = renderToString(h(components.__DetailModal, { it, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }))
+    assert.ok(html.includes('dsvm-fold'), 'README 折叠容器在')
+    assert.ok(html.includes('📖 README'), '折叠摘要用既有 readme.show 文案（emoji 语言无关）')
+    assert.ok(!html.includes('2026-09-28T00:00:00.000Z'), '收录日期不再裸 ISO（语言无关）')
+    assert.match(src, /kv\(lookup\("modal\.added"\), fmtDate\(it\.added\)\)/, 'added 走 fmtDate（R9 源码断言替代文案断言）')
+  })
+
+  it('U9：错误重试按钮 + 空态三分支键（ZH/EN 成对）', () => {
+    assert.match(src, /lookup\("failed\.load", \{ err: error \}\)[\s\S]{0,200}lookup\("market\.retry"\)/, '错误行内联重试')
+    assert.match(src, /market\.empty\.unavailable/, 'unavailable 主文案分支')
+    assert.match(src, /market\.empty\.category/, '分类空桶文案分支')
+    for (const k of ['market.retry', 'market.empty.category', 'market.empty.unavailable']) {
+      assert.ok(new RegExp(`"${k}":`).test(src), `键 ${k} 存在`)
+      assert.equal(src.split(`"${k}":`).length - 1, 2, `键 ${k} ZH/EN 各一次`)
+    }
+  })
+
+  it('U12：精选条目收藏卡恢复身份（精选徽标）与质量徽标（已实测）；受众/解耦不打标（§2.7 裁决⑤，R7）', () => {
+    const favs = { list: [{ id: 'p', snapshot: { id: 'p', name: 'P', description: 'd', source: 'npm', npm: 'pkg-p', verified: ['0.2.0-rc.2'] }, addedAt: 1 }], toggle: () => {}, removeIds: () => {} }
+    const html = renderToString(h(components.__FavoriteZone, { favorites: favs, onOpen: () => {} }))
+    assert.ok(html.includes('精选') || html.includes('Curated'), '无 owner 快照 → 精选徽标（R9 双语兜底）')
+    assert.ok(html.includes('title="0.2.0-rc.2"'), 'verified 徽标经 title 属性呈现（语言无关）')
+    assert.ok(html.includes('已实测') || html.includes('Verified'), 'verified 徽标文案（R9 双语兜底）')
+    assert.ok(!html.includes('作者自用') && !html.includes("Author's own"), '收藏区不打受众标（R7）')
+    assert.ok(!html.includes('版本无关') && !html.includes('Version-independent'), '收藏区不打解耦标（R7）')
+  })
+
+  it('U8：Modal role=dialog/aria-modal/初始聚焦 + Shot 键盘（子集，无焦点圈闭）', () => {
+    const html = renderToString(h(components.__DetailModal, { it: { id: 'a', name: 'A', description: 'd', source: 'npm', npm: 'p', category: 'tools', tags: [] }, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }))
+    assert.ok(html.includes('role="dialog"'), 'role=dialog')
+    assert.ok(html.includes('aria-modal="true"'), 'aria-modal')
+    assert.match(src, /role: "dialog"/, '容器接线')
+    assert.match(src, /closeRef\.current\.focus\(\)/, '初始聚焦关闭钮')
+    assert.match(src, /role: "button", tabIndex: 0[\s\S]{0,400}onKeyDown: \(e\) => \{\s*if \(\(e\.key === "Enter" \|\| e\.key === " "\)/, 'Shot Enter/Space（含既有 role/tabIndex 锚段）')
+    assert.doesNotMatch(src, /focus-trap|focusTrap/, '不做焦点圈闭（Q5 边界）')
+  })
+
+  it('U3/U7：0 计数桶显式 0 + zero 样式 + 跨桶 title 说明', () => {
+    const html = renderToString(h(components.__ZoneChips, { zone: 'primary', counts: { essentials: 4, 'cui-picks': 0, 'self-dev': 8, 'tencent-lighthouse': 3, watchlist: 3 }, labels: null, active: null, onPick: () => {} }))
+    assert.ok(html.includes('zero'), '0 计数桶带 zero 类')
+    assert.match(src, /\.dshm-chip\.zero\{opacity/, 'zero 降透明 CSS 在')
+    assert.match(src, /chips\.crossbucket\.tip/, '跨桶说明键存在')
+  })
+})

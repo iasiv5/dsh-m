@@ -20,6 +20,7 @@ const {
   zoneChips,
   pageItems,
   searchSourceOf,
+  mergeLatestFields,
 } = ms
 
 describe('旧混排导出已删除（0.7.0 Task 8）', () => {
@@ -226,5 +227,38 @@ describe('registryNotice / marketNotice（0.7.1：信息性来源横幅退役）
     assert.notEqual(silent.communityStale, true)
     assert.notEqual(silent.communityFallback, true)
     assert.equal(silent.notice, undefined)
+  })
+})
+
+// ---------- 0.9.45 两段加载（ADR-0013）：会话内徽标不回退 ----------
+
+describe('mergeLatestFields（0.9.45 两段加载：会话内徽标不回退）', () => {
+  const full = { id: 'a', latestVersion: '2.0.0', outdated: true }
+  it('next 缺 latest 族而 prev 有 → 按 id 叠加', () => {
+    const out = mergeLatestFields([{ id: 'a', name: 'A' }], [full])
+    assert.equal(out[0].latestVersion, '2.0.0')
+    assert.equal(out[0].outdated, true)
+  })
+  it('next 已有值的一律不覆盖（探测结果权威）', () => {
+    const out = mergeLatestFields([{ id: 'a', latestVersion: '3.0.0' }], [full])
+    assert.equal(out[0].latestVersion, '3.0.0')
+  })
+  it('latestError 族字段参与叠加；prev 无值不产出键', () => {
+    const out = mergeLatestFields([{ id: 'b' }], [{ id: 'b', latestError: '超时', latestErrorCode: 'timeout' }])
+    assert.equal(out[0].latestError, '超时')
+    assert.equal(out[0].latestErrorCode, 'timeout')
+    assert.equal('latestVersion' in out[0], false)
+  })
+  it('无可叠加 → 返回原引用；非数组/空 prev 入参原样返回', () => {
+    const next = [{ id: 'a', latestVersion: '1.0.0' }]
+    assert.equal(mergeLatestFields(next, [full]), next)
+    assert.equal(mergeLatestFields(null, [full]), null)
+    const next2 = [{ id: 'x' }]
+    assert.equal(mergeLatestFields(next2, []), next2, '空 prev 直接返回 next 引用')
+  })
+  it('不可变：不改动入参对象', () => {
+    const nextItem = { id: 'a' }
+    mergeLatestFields([nextItem], [full])
+    assert.equal(nextItem.latestVersion, undefined)
   })
 })

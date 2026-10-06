@@ -276,6 +276,21 @@ describe('host-api：method 响应', () => {
     assert.equal(calls.listMarket[1].limit, 32)
   })
 
+  it('market 透传 probeMode 两态，非法值 400，缺省不下传（0.9.45 两段加载，ADR-0013）', async () => {
+    const { dispatcher, calls } = setup()
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', probeMode: 'cache-only' } })
+    assert.equal(calls.listMarket.at(-1).probeMode, 'cache-only')
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', probeMode: 'full' } })
+    assert.equal(calls.listMarket.at(-1).probeMode, 'full')
+    await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(calls.listMarket.at(-1).probeMode, undefined, '缺省不下传')
+    const badOnly = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', probeMode: 'only' } })
+    assert.equal(badOnly.status, 400, '市场页不设 only（force 走标志位，R6）')
+    assert.ok(badOnly.body.error.includes('非法 probeMode'))
+    const bad = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market', probeMode: 'fast' } })
+    assert.equal(bad.status, 400)
+  })
+
   it('installed 转发 host namespace', async () => {
     const { dispatcher, calls } = setup()
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installed' } })

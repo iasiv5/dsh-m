@@ -11,7 +11,7 @@ const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf } = require("./market-state.js");
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { createMarkdown } = require("./markdown.js");
@@ -48,6 +48,8 @@ const ZH = {
   "search.ph": "搜索名称 / 描述 / 标签（社区 + 精选）…",
   "common.refresh": "刷新", "common.close": "关闭", "common.later": "稍后", "common.ok": "知道了", "common.none": "—",
   "market.loading": "加载收录清单中… ", "market.empty": "无匹配插件，试试其他关键词或分类",
+  "market.retry": "重试", "market.empty.category": "该分类暂无收录，换个桶或清空筛选看看", "market.empty.unavailable": "收录清单不可用，暂时无法列出插件",
+  "chips.crossbucket.tip": "跨桶条目会在多个分类重复计数，故分类计数之和大于总数",
   "installed.loading": "读取已装列表中… ", "installed.empty": "当前 profile 尚未安装任何 dsh 插件", "installed.none": "未安装",
   "installed.others": "另有 {n} 个非 dsh 依赖（未识别为插件），已默认折叠。",
   "installed.upgradeAll": "全部更新 ({n})",
@@ -157,6 +159,8 @@ const EN = {
   "search.ph": "Search all plugins — name, description, tags…",
   "common.refresh": "Refresh", "common.close": "Close", "common.later": "Later", "common.ok": "OK", "common.none": "—",
   "market.loading": "Loading listings… ", "market.empty": "No matching plugins — try another keyword or category",
+  "market.retry": "Retry", "market.empty.category": "Nothing curated in this category yet — try another bucket or clear the filter", "market.empty.unavailable": "Registry unavailable — listings are temporarily down",
+  "chips.crossbucket.tip": "Cross-bucket entries count in every bucket, so chip counts add up above the total",
   "installed.loading": "Reading installed list… ", "installed.empty": "No DSH plugins installed in this profile", "installed.none": "Not installed",
   "installed.others": "{n} non-DSH dependencies (not recognized as plugins) are collapsed.",
   "installed.upgradeAll": "Update all ({n})",
@@ -335,6 +339,7 @@ const CSS = `
 .dsvm-filteropt.on{color:var(--dsw-alias-state-business-primary,#4d6bfe);font-weight:600}
 .dsvm-filtercheck{font-size:11px}
 .dshm-chip{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:2px 10px;font:inherit;font-size:11px;cursor:pointer}
+.dshm-chip.zero{opacity:.55}
 .dshm-chip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-chip.on{background:var(--dsw-specific-sidebar-nav-item-active,rgba(38,49,72,.08));border-color:transparent;color:var(--dsw-alias-label-primary,inherit);font-weight:500}
 .dsvm-chipswrap{position:sticky;top:-14px;z-index:5;background:var(--dsw-alias-bg-base,#fff);padding:8px 0;margin:-8px 0;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.14))}
@@ -586,7 +591,7 @@ function useMarketData(zone = "community") {
   const dataRef = useRef(boot.data);
   const storage = () => (typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
 
-  const fetchPage = useCallback((nextQuery, force, background = false) => {
+  const fetchPage = useCallback((nextQuery, force, background = false, probeMode = "cache-only") => {
     const gen = ++genRef.current;
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -604,21 +609,32 @@ function useMarketData(zone = "community") {
       ...(nextQuery.sort ? { sort: nextQuery.sort } : {}),
       offset: nextQuery.offset,
       limit: nextQuery.limit,
+      // 0.9.45 两段加载（ADR-0013）：第一段 cache-only 零网络回页；'full' 为终态语义不下传（core 缺省等价）
+      ...(probeMode !== "full" ? { probeMode } : {}),
       ...(force ? { force: true } : {}),
     };
     return api("market", params, ac.signal)
       .then((raw) => {
         if (genRef.current !== gen || ac.signal.aborted) return;
         const next = normalizeMarketResponse(raw);
-        dataRef.current = next;
-        setData(next);
+        // 会话内徽标不回退：上一轮响应有 latest 族值而本响应缺 → 按 id 叠加（快照不含 latest 族字段）
+        const prevItems = dataRef.current && Array.isArray(dataRef.current.items) ? dataRef.current.items : null;
+        const mergedItems = mergeLatestFields(next.items, prevItems);
+        const merged = mergedItems === next.items ? next : { ...next, items: mergedItems };
+        dataRef.current = merged;
+        setData(merged);
         setLoading(false);
-        // 0.9.14：默认首页成功响应写快照（force 刷新也写——快照永远取最新成功数据）
-        if (isDefaultFirstPageQuery(nextQuery, zone)) writeMarketSnapshot(storage(), { zone, response: next });
+        // 第二段：仅 cache-only 首段有缺口时发起（'full' 恒为终态——防 latestTimedOut 死循环）；
+        // force 由 params 传递 → core peek 旧值兜底 + 全页重探（P2）
+        if (probeMode === "cache-only" && next.latestComplete === false) {
+          return fetchPage(nextQuery, force, true, "full");
+        }
+        // 快照只在终态写（第一段无缺口，或第二段 merge 完成）——首段缺口 intermediate 态不写，防快照质量降级
+        if (isDefaultFirstPageQuery(nextQuery, zone)) writeMarketSnapshot(storage(), { zone, response: merged });
       })
       .catch((e) => {
         if (genRef.current !== gen || ac.signal.aborted) return;
-        if (background && dataRef.current) return;   // background 失败静默保留旧数据
+        if (background && dataRef.current) return;   // 第二段失败静默保留（Q11②）
         setError(String((e && e.message) || e));
         setLoading(false);
       });
@@ -631,7 +647,8 @@ function useMarketData(zone = "community") {
     if (opts.fetch !== false) fetchPage(next, opts.force);
   }, [fetchPage]);
 
-  const reload = useCallback((force) => fetchPage(queryRef.current, force), [fetchPage]);
+  // 0.9.45：reload（mutation 后 refreshViews / 显式刷新）直发终态语义 full；force 走 params → core peek 旧值兜底 + 全页重探
+  const reload = useCallback((force) => fetchPage(queryRef.current, force, false, "full"), [fetchPage]);
 
   useEffect(() => {
     fetchPage(queryRef.current, false, boot.has);
@@ -876,7 +893,7 @@ function SearchBox({ placeholder, initial, onCommit }) {
 
 // ---------- 分区分类 chips（0.7.0 Task 10：两行折叠 + 实测裁剪 + 吸顶自动收缩；0.7.2 尾部挂筛选触发器；
 //            0.7.9 退役「激活置前」换序——顺序恒定，激活分类会被裁掉时改为自动展开整行） ----------
-function ZoneChips({ zone, counts, labels, active, onPick, trailing }) {
+function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }) {
   const chips = useMemo(() => zoneChips(counts, labels, zone), [counts, labels, zone]);
   const [expanded, setExpanded] = useState(false);
   const [stuck, setStuck] = useState(false);
@@ -932,8 +949,9 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing }) {
   const btn = (c) =>
     h(
       "button",
-      { key: c.id, "data-chip": "1", className: `dshm-chip${active === c.id ? " on" : ""}`, onClick: () => onPick(active === c.id ? null : c.id) },
-      `${c.labelKey ? lookup(c.labelKey) : c.label}${c.count ? ` ${c.count}` : ""}`,
+      { key: c.id, "data-chip": "1", className: `dshm-chip${active === c.id ? " on" : ""}${c.count === 0 ? " zero" : ""}`, onClick: () => onPick(active === c.id ? null : c.id) },
+      // 0.9.45 U3/U7：0 计数桶显式渲染「0」+ 降透明（社区区 chip 计数恒 >0，行为不变）
+      `${c.labelKey ? lookup(c.labelKey) : c.label} ${c.count || 0}`,
     );
   return h(
     React.Fragment,
@@ -944,7 +962,7 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing }) {
       { className: "dsvm-chipswrap" },
       h(
         "div",
-        { ref: wrapRef, className: "dshm-chips" },
+        { ref: wrapRef, className: "dshm-chips", title: wrapTitle || undefined },
         h("button", { "data-chip": "1", className: `dshm-chip${active == null ? " on" : ""}`, onClick: () => onPick(null) }, lookup("cat.all")),
         ...shown.map(btn),
         hidden > 0
@@ -991,7 +1009,18 @@ function Shot({ src, onClick }) {
   }, []);
   return h(
     "div",
-    { ref, className: "dsvm-shotbox", onClick, role: "button", tabIndex: 0 },
+    {
+      ref,
+      className: "dsvm-shotbox",
+      onClick, role: "button", tabIndex: 0,
+      // 0.9.45 U8：键盘可达（此前 role=button 但键盘无法开灯箱）
+      onKeyDown: (e) => {
+        if ((e.key === "Enter" || e.key === " ") && !e.isComposing) {
+          e.preventDefault();
+          onClick();
+        }
+      },
+    },
     show
       ? h("img", { className: "dsvm-shot", src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", fetchPriority: "low" })
       : null,
@@ -1033,11 +1062,18 @@ function useModalDepth(active) {
   }, [active]);
 }
 
-function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, installRec, installNote }) {
+function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeBusy, upgradeRec, profileKind, installRec, installNote }) {
   useModalDepth(true);
   const shots = it.community === true ? safeScreenshots(it) : [];
   const [lb, setLb] = useState(null);
   const [copied, setCopied] = useState(false);
+  // 0.9.45 U10b：README 折叠页——展开才拉取（收起态零请求）
+  const [rmOpen, setRmOpen] = useState(false);
+  // 0.9.45 U8：初始聚焦关闭钮（role/aria 语义 + 键盘入口；Tab 圈闭与焦点还原不在本批边界内）
+  const closeRef = useRef(null);
+  useEffect(() => {
+    if (closeRef.current) closeRef.current.focus();
+  }, []);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -1080,7 +1116,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
     { className: "dsvm-modal", ...backdropCloseHandlers(onClose) },
     h(
       "div",
-      { className: "dsvm-modalbox", onClick: (e) => e.stopPropagation() },
+      { className: "dsvm-modalbox", role: "dialog", "aria-modal": "true", "aria-label": it.name, onClick: (e) => e.stopPropagation() },
       h(
         "div",
         { className: "dsvm-modalhead" },
@@ -1094,7 +1130,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
         it.community === true ? h("span", { className: "dshm-badge info" }, lookup("badge.community")) : null,
         h("span", { className: "dshm-badge info" }, it.source === "npm" ? "npm" : "github"),
         h("span", { className: "dshm-spacer" }),
-        h("button", { className: "dshm-xbtn", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
+        h("button", { ref: closeRef, className: "dshm-xbtn", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
       ),
       it.community === true
         ? h(
@@ -1110,7 +1146,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
         "dl",
         { className: "dsvm-kv" },
         kv(lookup("modal.category"), catLabel),
-        it.added ? kv(lookup("modal.added"), it.added) : null,
+        it.added ? kv(lookup("modal.added"), fmtDate(it.added)) : null,
         it.community === true
           ? kv(
               lookup("modal.dlwindow"),
@@ -1128,6 +1164,14 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
         it.deprecated === true && it.replacement ? kv(lookup("modal.replacement"), it.replacement) : null,
       ),
       h("div", { className: "dshm-desc", style: { WebkitLineClamp: "unset" } }, descFull),
+      it.npm
+        ? h(
+            "details",
+            { className: "dsvm-fold", onToggle: (e) => { if (e.target.open) setRmOpen(true); } },
+            h("summary", null, lookup("readme.show")),
+            rmOpen ? h(ReadmeBlock, { pkg: it.npm }) : h("div", { className: "dshm-hint" }, lookup("readme.loading")),
+          )
+        : null,
       shots.length
         ? h(
             "div",
@@ -1166,6 +1210,9 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
       installRec && (installRec.status === "running" || installRec.status === "queued")
         ? h(ProgressLine, { key: "opprog" })
         : null,
+      upgradeRec && (upgradeRec.status === "running" || upgradeRec.status === "queued")
+        ? h(ProgressLine, { key: "upprog" })
+        : null,
       installNote
         ? h("div", { key: "opnote", className: installNote.kind === "err" ? "dshm-err" : installNote.kind === "hint" ? "dshm-hint" : "dshm-ok" }, installNote.text)
         : null,
@@ -1176,7 +1223,14 @@ function DetailModal({ it, labels, busy, onClose, onInstall, profileKind, instal
         "div",
         { className: "dsvm-modalactions" },
         it.installed
-          ? h("span", { className: "dshm-hint" }, lookup("manage.hint"))
+          ? h(
+              React.Fragment,
+              null,
+              it.outdated
+                ? h("button", { className: "dshm-btn primary", disabled: upgradeBusy, onClick: () => onUpgrade(it) }, upgradeBusy ? h(Spin) : lookup("action.upgrade"))
+                : null,
+              h("span", { className: "dshm-hint" }, lookup("manage.hint")),
+            )
           : h("button", { className: "dshm-btn primary", disabled: busy, onClick: () => onInstall(it) }, busy ? h(Spin) : lookup("action.install")),
       ),
     ),
@@ -1224,6 +1278,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
   // 0.9.15：保留完整 record——详情 Modal 内嵌进度行的数据源（展示仍是记录的派生，所有权不变）
   const activeInstallRec = ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || null;
   const activeInstallTarget = activeInstallRec ? activeInstallRec.target : null;
+  // 0.9.45 U10：升级操作记录派生（与 install 同款「状态不挂卡片」所有权模型）；record.target = 安装包名（R1）
+  const activeUpgradeRec = ops.records.find((r) => r.kind === "upgrade" && (r.status === "running" || r.status === "queued" || r.status === "input")) || null;
   // 0.9.15：安装终态的 Modal 内摘要（{ id, kind: "ok"|"err"|"hint", text }）——Modal 是安装入口，
   // 终态也应就地可见；与底层 toast/横幅并行不冲突，仅在该条目自己的 Modal 内显示
   const [installNote, setInstallNote] = useState(null);
@@ -1344,6 +1400,42 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     }
   };
 
+  // 0.9.45 U10：市场/收藏详情 Modal 内升级（动线修复——此前已装条目只能去已装页操作）。
+  // record.target = 安装包名（R1：opAppliesTo 以 x.pkg === rec.target 判定前提，收录 id ≠ 包名会被误判 superseded）
+  const doUpgrade = async (it) => {
+    try {
+      const res = await ops.runOp("upgrade", it.installedPkg, () => api("upgrade", { pkg: it.installedPkg }));
+      const note = upgradeNotify(res.activation); // 0.9.22 生效判定三态分流（client-only 不弹重启横幅）
+      const text = lookup("notify.upgraded", { pkg: res.pkg, from: res.fromVersion ? `v${res.fromVersion}` : "—", to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest" })
+        + (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "")
+        + (note.suffixKey ? lookup(note.suffixKey) : "");
+      notify({ kind: "ok", needsRestart: note.needsRestart, text });
+      setInstallNote({ id: it.id, kind: "ok", text });
+      await (onMutation ? onMutation() : undefined);
+    } catch (e) {
+      if (e && e.opSuperseded) {
+        const sup = lookup("op.superseded.note", { target: it.installedPkg });
+        notify({ kind: "ok", text: sup });
+        setInstallNote({ id: it.id, kind: "hint", text: sup });
+      } else if (e && e.guard) {
+        // 装后守卫拦截（与已装页同款文案链；无 force 通道，一键重启只读 restartSafe）
+        const guardText = [
+          lookup("guard.blocked"),
+          `${lookup("guard.compstatus")}: ${e.guard.compensation?.status || "—"}（${e.guard.compensation?.note || ""}）`,
+          e.guard.repairBasis ? `${lookup("guard.repairbasis")}: ${e.guard.repairBasis}` : null,
+          lookup("guard.noforce"),
+          e.guard.restartSafe ? lookup("guard.restartsafenow") : lookup("guard.restartunsafe"),
+        ].filter(Boolean).join(" | ");
+        notify({ kind: "err", text: guardText });
+        setInstallNote({ id: it.id, kind: "err", text: guardText });
+      } else {
+        const failText = lookup("failed.upgrade", { err: (e && e.message) || e });
+        notify({ kind: "err", text: failText });
+        setInstallNote({ id: it.id, kind: "err", text: failText });
+      }
+    }
+  };
+
   const CompatDialog = compatConfirm
     ? h(
         "div",
@@ -1427,6 +1519,9 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
             busy: activeInstallTarget === favDetailItem.id,
             onClose: () => setFavDetailItem(null),
             onInstall: (it2) => doInstall(it2),
+            onUpgrade: (it2) => doUpgrade(it2),
+            upgradeBusy: activeUpgradeRec != null,
+            upgradeRec: activeUpgradeRec && activeUpgradeRec.target === favDetailItem.installedPkg ? activeUpgradeRec : null,
             profileKind,
             installRec: activeInstallRec && activeInstallRec.target === favDetailItem.id ? activeInstallRec : null,
             installNote: installNote && installNote.id === favDetailItem.id ? installNote : null,
@@ -1609,6 +1704,13 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           active: query.category,
           onPick: (id) => updateQuery({ category: id, offset: 0 }),
           trailing: filterTrigger,
+          // 0.9.45 U3：跨桶条目在每桶双计（alsoCategories）→ Σchips 可大于总数；有跨桶时给容器 title 说明
+          wrapTitle:
+            zone === "primary" && data
+              ? Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0) > ((data.registryState && data.registryState.count) || 0)
+                ? lookup("chips.crossbucket.tip")
+                : undefined
+              : undefined,
         }),
     // 0.9.15：安装目标条目的详情 Modal 打开时，进度行入 Modal、底层行让位（避免隔着遮罩双重透出）；
     // Modal 关闭后底层行照常回归（关闭弹窗的安装仍可见）
@@ -1618,9 +1720,25 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
     loading && !data
       ? h("div", { className: "dshm-empty" }, lookup("market.loading"), Spin())
       : error
-        ? h("div", { className: "dshm-err" }, lookup("failed.load", { err: error }))
+        ? h(
+            "div",
+            { className: "dshm-err" },
+            lookup("failed.load", { err: error }), " ",
+            // 0.9.45 U9：错误就地恢复出口（此前只能关开面板或绕道设置页）
+            h("button", { className: "dshm-btn sm", onClick: () => reload(false) }, lookup("market.retry")),
+          )
         : items.length === 0
-          ? h("div", { className: "dshm-empty" }, lookup("market.empty"))
+          ? h(
+              "div",
+              { className: "dshm-empty" },
+              lookup(
+                data && data.registryState.status === "unavailable" && !query.query && !query.category
+                  ? "market.empty.unavailable"
+                  : query.category
+                    ? "market.empty.category"
+                    : "market.empty",
+              ),
+            )
           : h(
               React.Fragment,
               null,
@@ -1666,6 +1784,9 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
           busy: activeInstallTarget === detailItem.id,
           onClose: () => setDetailId(null),
           onInstall: (it2) => doInstall(it2),
+          onUpgrade: (it2) => doUpgrade(it2),
+          upgradeBusy: activeUpgradeRec != null,
+          upgradeRec: activeUpgradeRec && activeUpgradeRec.target === detailItem.installedPkg ? activeUpgradeRec : null,
           profileKind,
           installRec: activeInstallRec && activeInstallRec.target === detailItem.id ? activeInstallRec : null,
           installNote: installNote && installNote.id === detailItem.id ? installNote : null,
@@ -1950,7 +2071,7 @@ function configStatusLabel(status) {
   return lookup(`settings.status.${status || "loading"}` || "settings.status.loading");
 }
 
-function SettingsTab({ notify, onRegistryChanged }) {
+function SettingsTab({ notify, onRegistryChanged, onForceMarket }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
   const cfgState = useAsync(() => api("registry-config"), []);
   const [busy, setBusy] = useState(false);
@@ -1979,6 +2100,8 @@ function SettingsTab({ notify, onRegistryChanged }) {
       // 「toast 已强制刷新、来源/更新时间/条目数纹丝不动」的假死（实机 2026-10-03 实证）。
       // force 已更新 controller 内存快照，这里零成本取新值。
       await reloadRegistryState().catch(() => undefined);
+      // 0.9.45 P2（ADR-0013）：强刷穿透探测缓存——市场两区以 force 重取（core peek 旧值兜底 + 全页重探）
+      onForceMarket?.();
       notify({ kind: "ok", text: lookup("registry.refreshed"), needsRestart: false });
     } finally {
       setBusy(false);
@@ -2242,7 +2365,7 @@ function snapshotOf(it) {
     categoryLabel: it.categoryLabel,
     source: it.source,
   };
-  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated"]) {
+  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated", "verified", "audience", "decoupled"]) {
     if (it[k] !== undefined && it[k] !== null) s[k] = it[k];
   }
   return s;
@@ -2307,7 +2430,12 @@ function FavoriteZone({ favorites, onOpen }) {
           name: s.name,
           badges: [
             s.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,
-            s.owner ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
+            // 0.9.45 U12（R7 收窄）：无 owner = 精选条目——补「精选」身份徽标；verified 质量徽标恢复；
+            // 受众/解耦徽标不进收藏区（DESIGN §2.7 裁决⑤「已装视图与收藏页不打标」），快照仅存字段
+            s.owner
+              ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community"))
+              : h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")),
+            Array.isArray(s.verified) && s.verified.length && s.community !== true ? h("span", { className: "dshm-badge", key: "v", title: s.verified.join("、") }, lookup("badge.verified")) : null,
             h("span", { className: "dshm-badge info", key: "s" }, s.source === "npm" ? "npm" : "github"),
             isStale ? h("span", { className: "dshm-badge warn", key: "st" }, lookup("favorites.stalebadge")) : null,
           ],
@@ -2741,7 +2869,7 @@ function MarketPanel({ onClose }) {
         { className: "dshm-body" },
         tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, updates, onMutation: refreshViews, ops }) : null,
-        tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged }) : null,
+        tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged, onForceMarket: () => marketReloadAll(true) }) : null,
         h(OperationsPanel, {
           records: opRecords,
           onClearFinished: () => {
