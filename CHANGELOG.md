@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.51 变更：社区条目 github 字段补全（图标覆盖 45.6% → 100%）
+
+- **动机**：社区区 npm 源条目卡片恒为首字母色块——适配层 npm 分支只产出 `npm` 字段即定源，上游目录 `url` 里的 GitHub repo 映射只被降级进 homepage，`github` 字段恒缺，客户端 Icon 的 owner 头像兜底（`github.com/<owner>.png?size=64`）无从触发。实测 `dsh-plugin-catalog@2026.1007.4837`：4,226 条可收录条目中 npm 源 2,298 条 **100% 带 github.com url**，纯数据丢弃，非上游缺失。
+- **改动（单点）**：适配层 npm 分支补派生 `github = githubFromUrl(url)`（子包 `/tree/` 取 repo 根、原样大小写；派生失败不产出键、不跳过条目，条目层宽松 Q43）。`source` 语义不变；客户端零改动——Icon 兜底、详情行「GitHub · npm」、已装 `registryGithub`（README 基址三级兜底第一级）既有链路自动生效。
+- **语义激活（已在案接受）**：①合并层 github 碰撞分支开始作用于社区 npm 条目（同 repo 让位精选恒优先）——全量真实目录模拟新增让位 0 条（4,215 → 4,215）；②GitHub 源手装的插件可被社区 npm 条目匹配，升级走 npm 源（与精选双源条目既有语义一致）。性能面零回归：宿主侧零新增网络请求、latest 探测路径与缓存键不变、Q46 社区 github 探测豁免与 GithubBudget 不触及。
+- **测试**：适配层翻转 1 断言 + 净增 4 例（github url 派生与原样大小写、非 github 域、无 url、非法形状），既有子包用例补 1 断言（取 repo 根）；合并层净增 2 例（github 碰撞让位、GitHub 源手装匹配，均红→绿）；全量与基线对照零新增失败、typecheck 零错误。
+
 ### 0.9.50 变更：README 兜底 /latest 两腿阶梯 + 未装文案 profile-aware + 兜底失败摘要
 
 - **动机（上海 Windows 桌面机实机实证）**：desktop profile（生效源 npmmirror）打开 billion-context（705k 周下载）详情 Modal 的 README 折叠页恒报「web profile 未安装该插件」——npmmirror packument 实测 8,586,604 字节，超过 npmPackumentReadme 的 8MB（8,388,608）上限被 readCapped 拒（`502 响应超过上限`），兜底腿必失败后按 0.9.45 语义如实重抛原始本地错误；同期 npmjs packument 8,195,089 字节恰低于帽、readme 为空，web 侧显示「没有 README」只是帽下侥幸——该包高频发版，npmjs 超帽只是时间问题。
@@ -378,6 +385,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.51 — community entries gain a derived github field (icon coverage 45.6% → 100%)
+
+- **Motivation**: community npm-source cards always fell back to the initial letter — the adapter's npm branch only produced the `npm` field and discarded the GitHub repo mapping inside the upstream `url` (demoted to `homepage` only), so `github` stayed unset and the client Icon owner-avatar fallback (`github.com/<owner>.png?size=64`) never fired. Measured against `dsh-plugin-catalog@2026.1007.4837`: 2,298 of 2,298 npm-source entries among 4,226 adaptable ones (**100%**) carry a github.com url — pure data discarding, not an upstream gap.
+- **Change (single point)**: the adapter npm branch now derives `github = githubFromUrl(url)` (`/tree/` subpaths resolve to the repo root; original casing preserved; derivation failure produces no key and never skips the entry — lenient entry semantics, Q43). `source` semantics unchanged; zero client changes — Icon fallback, the details row gaining "GitHub · npm", and installed-view `registryGithub` (first tier of the README base-URL fallback) all light up through existing pipelines.
+- **Activated semantics (accepted on record)**: ① the merge layer's github-collision branch now applies to community npm entries (same-repo entries yield to curated, curated always wins) — full real-catalog simulation shows zero new displacements (4,215 → 4,215); ② plugins installed from GitHub source can now match community npm entries, upgrading via the npm source (same semantics curated dual-source entries already had). Zero performance regression: no new host-side network requests, latest-probe path and cache keys unchanged, the Q46 community-github probe exemption and GithubBudget untouched.
+- **Tests**: adapter flips 1 assertion + nets 4 cases (github url derivation with original casing, non-github host, missing url, invalid shape), plus 1 added assertion in the existing subpath case (repo root); merge layer nets 2 cases (github-collision displacement, GitHub-source installed matching; both red → green); full suite shows zero new failures against the captured baseline and zero typecheck errors.
 
 ### Added in 0.9.50 — two-leg /latest README fallback ladder + profile-aware not-installed copy + fallback failure summary
 
