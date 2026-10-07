@@ -347,38 +347,127 @@ describe('listInstalledWithMeta 预算集成（request-scoped ≤25）', () => {
 import { createServer } from 'node:http'
 import { isNewerVersion } from '../lib/core/versions.js'
 
-// ---------- 0.9.45 U10b：npmPackumentReadme（未安装条目 README 兜底） ----------
+// ---------- 0.9.45 U10b：npmPackumentReadme（未安装条目 README 兜底）＋ 0.9.50 /latest 两腿阶梯 ----------
 
-describe('npmPackumentReadme（0.9.45 U10b：未安装条目 README 兜底）', () => {
+describe('npmPackumentReadme（0.9.45 U10b 兜底 + 0.9.50 /latest 阶梯）', () => {
   afterEach(() => _setWireFetchForTests(null))
 
-  it('提取 packument 顶层 readme；显式 registry 参数优先（L1）', async () => {
+  it('显式 registry 贯穿两腿（L1：显式参数 > 生效源）', async () => {
     fetchCalls = []
     installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-x/latest')) return jsonResponse({ version: '1.0.0' })
       assert.ok(url.startsWith('https://registry.example.com/pkg-x'), '显式 registry 参数优先')
       return jsonResponse({ versions: {}, readme: '# hello' })
     })
     const res = await npmPackumentReadme('pkg-x', 20_000, undefined, 'https://registry.example.com')
     assert.equal(res.readme, '# hello')
+    assert.ok(fetchCalls.every((u) => u.startsWith('https://registry.example.com/')), '显式 registry 贯穿两腿')
   })
 
-  it('缺省走生效源（https，形态断言不写死线路——ADR-0012 路由自适应）', async () => {
+  it('缺省走生效源贯穿两腿（形态断言不写死线路——ADR-0012 路由自适应；不做索引断言，probe-once 可能混入）', async () => {
     fetchCalls = []
-    installMockFetch(async () => jsonResponse({ readme: '# hi' }))
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-default/latest')) return jsonResponse({ version: '1.0.0' })
+      return jsonResponse({ readme: '# hi' })
+    })
     const res = await npmPackumentReadme('pkg-default')
     assert.equal(res.readme, '# hi')
-    assert.match(fetchCalls[0], /\/pkg-default$/)
-    assert.ok(fetchCalls[0].startsWith('https://'), '安全基线 HTTPS')
+    assert.ok(fetchCalls.some((u) => u.endsWith('/pkg-default/latest')), '首腿 /latest')
+    assert.ok(fetchCalls.some((u) => /\/pkg-default$/.test(u)), '兜底腿 packument')
+    assert.ok(fetchCalls.every((u) => u.startsWith('https://')), '安全基线 HTTPS')
   })
 
-  it('readme 字段缺失/空白 → 返回空串不抛（客户端显示「没有 README」）', async () => {
+  it('0.9.50 阶梯：latest 命中 readme 即短路，不再请求 packument（显式 registry）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-l/latest')) {
+        return jsonResponse({ version: '1.0.0', readme: '# latest readme', repository: 'git+https://github.com/o/r.git' })
+      }
+      throw new Error('不应到达 packument: ' + url)
+    })
+    const res = await npmPackumentReadme('pkg-l', 20_000, undefined, 'https://registry.example.com')
+    assert.equal(res.readme, '# latest readme')
+    assert.equal(res.repo, 'o/r')
+    assert.equal(fetchCalls.length, 1)
+  })
+
+  it('0.9.50 阶梯：latest 空 readme → 落 packument，repo 以 packument 为准（显式 registry）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-4/latest')) return jsonResponse({ version: '1.0.0', repository: 'git+https://github.com/o1/r1.git' })
+      return jsonResponse({ readme: '# packument readme', repository: { type: 'git', url: 'git@github.com:o2/r2.git' } })
+    })
+    const res = await npmPackumentReadme('pkg-4', 20_000, undefined, 'https://registry.example.com')
+    assert.equal(res.readme, '# packument readme')
+    assert.equal(res.repo, 'o2/r2')
+    assert.ok(fetchCalls[0].endsWith('/pkg-4/latest'))
+    assert.ok(!fetchCalls[1].endsWith('/latest'))
+  })
+
+  it('0.9.50 阶梯：latest 腿失败（404）→ packument 腿兜住（显式 registry）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-5/latest')) return jsonResponse('not found', 404)
+      return jsonResponse({ readme: '# from packument' })
+    })
+    const res = await npmPackumentReadme('pkg-5', 20_000, undefined, 'https://registry.example.com')
+    assert.equal(res.readme, '# from packument')
+  })
+
+  it('0.9.50 阶梯：latest 空白 readme（trim 判空）+ packument 失败 → 降级空 README 不抛（显式 registry）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-6/latest')) {
+        return jsonResponse({ version: '1.0.0', readme: '   ', repository: 'git+https://github.com/o/r.git' })
+      }
+      return jsonResponse('too big', 502)
+    })
+    const res = await npmPackumentReadme('pkg-6', 20_000, undefined, 'https://registry.example.com')
+    assert.equal(res.readme, '')
+    assert.equal(res.repo, 'o/r')
+  })
+
+  it('0.9.50 阶梯：两腿全败 → 抛终末腿（packument）错误（显式 registry）', async () => {
+    fetchCalls = []
+    installMockFetch(async (url) => {
+      if (url.endsWith('/pkg-7/latest')) throw new Error('latest down')
+      throw new Error('packument leg boom')
+    })
+    await assert.rejects(
+      () => npmPackumentReadme('pkg-7', 20_000, undefined, 'https://registry.example.com'),
+      /packument leg boom/,
+    )
+  })
+
+  it('readme 字段缺失/空白 → 返回空串不抛（客户端显示「没有 README」；两腿都发且都空）', async () => {
+    fetchCalls = []
     installMockFetch(async () => jsonResponse({ versions: {} }))
-    assert.equal((await npmPackumentReadme('pkg-y')).readme, '')
+    assert.equal((await npmPackumentReadme('pkg-y', 20_000, undefined, 'https://registry.example.com')).readme, '')
+    assert.equal(fetchCalls.length, 2)
+    fetchCalls = []
     installMockFetch(async () => jsonResponse({ versions: {}, readme: '   ' }))
-    assert.equal((await npmPackumentReadme('pkg-y')).readme, '')
+    assert.equal((await npmPackumentReadme('pkg-y', 20_000, undefined, 'https://registry.example.com')).readme, '')
+    assert.equal(fetchCalls.length, 2)
   })
 
-  it('repo：packument repository 归一为 owner/repo（0.9.48，字符串与对象两形态）', async () => {
+  it('0.9.50 阶梯：腿1 超时收紧 Math.min(timeoutMs, 5_000)，腿2 满额（deps.fetchJsonLimited spy，免疫 probe 混入）', async () => {
+    const calls = []
+    const spyFetch = async (url, opts) => {
+      calls.push({ url: String(url), timeoutMs: opts.timeoutMs })
+      return {}
+    }
+    await npmPackumentReadme('pkg-9', undefined, undefined, 'https://registry.example.com', { fetchJsonLimited: spyFetch })
+    assert.equal(calls.length, 2)
+    assert.ok(calls[0].url.endsWith('/pkg-9/latest'))
+    assert.equal(calls[0].timeoutMs, 5_000)
+    assert.ok(!calls[1].url.endsWith('/latest'))
+    assert.equal(calls[1].timeoutMs, 20_000)
+    calls.length = 0
+    await npmPackumentReadme('pkg-9', 3_000, undefined, 'https://registry.example.com', { fetchJsonLimited: spyFetch })
+    assert.equal(calls[0].timeoutMs, 3_000)
+  })
+
+  it('repo：repository 归一为 owner/repo（0.9.48，字符串与对象两形态；0.9.50 阶梯下 leg1 同体命中短路，repo 取 latest 文档 repository，断言值不变）', async () => {
     installMockFetch(async () => jsonResponse({ readme: 'x', repository: 'git+https://github.com/owner/repo.git' }))
     assert.equal((await npmPackumentReadme('pkg-a')).repo, 'owner/repo')
     installMockFetch(async () => jsonResponse({ readme: 'x', repository: { type: 'git', url: 'git@github.com:a.b/c-d.git' } }))

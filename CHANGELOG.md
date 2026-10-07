@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.50 变更：README 兜底 /latest 两腿阶梯 + 未装文案 profile-aware + 兜底失败摘要
+
+- **动机（上海 Windows 桌面机实机实证）**：desktop profile（生效源 npmmirror）打开 billion-context（705k 周下载）详情 Modal 的 README 折叠页恒报「web profile 未安装该插件」——npmmirror packument 实测 8,586,604 字节，超过 npmPackumentReadme 的 8MB（8,388,608）上限被 readCapped 拒（`502 响应超过上限`），兜底腿必失败后按 0.9.45 语义如实重抛原始本地错误；同期 npmjs packument 8,195,089 字节恰低于帽、readme 为空，web 侧显示「没有 README」只是帽下侥幸——该包高频发版，npmjs 超帽只是时间问题。
+- **README 兜底两腿阶梯**：`npmPackumentReadme` 内部改两腿（对外签名与返回形状 `{readme, repo}` 不变）——腿1 `GET <生效源>/<pkg>/latest` 版本文档优先（KB 级小载荷、packument 超帽免疫；URL 拼法同 npmLatest 先例；**超时收紧 `Math.min(timeoutMs, 5_000)`**，同 npmLatest 首腿先例——生效源不可达时兜底最坏时延 40s→25s），readme 命中即短路；空/失败落腿2 packument（20s 满额，行为同 0.9.45）。任一腿成功即成功：readme 空渲染「没有 README」（含 latest 空白 readme + packument 失败的降级，不抛）；两腿全败抛终末腿（packument）错误。两腿均在生效源（ADR-0012），**不跨源**；两腿 readme 判空同一 trim 规则；repo 随到达的腿取 repository（packument 到达时以 packument 为准）。
+- **未装文案 profile-aware**：`readInstalledPluginReadme` 新增第三参 profileName（缺省 'web'），host-api readme 分支传 `profile.name`——desktop profile 报「desktop profile 未安装该插件: X」（形态对齐 profile-ops 先例）；market/toggle/profile-transaction 等 web 事务专用路径的「web profile」文案不变（desktop 走官方 pluginManager 委派，到不了那些代码）。
+- **兜底失败摘要（0.9.45「兜底失败如实抛原始错误」的语义修订）**：两腿全败时抛 `<本地未装错误>（npm README 兜底失败: <终末腿原因>）`——真实死因（如「响应超过上限 8388608 字节」）不再被吞，红字自解释；`cause` 保留原始本地错误。
+- **测试**：versions.test.mjs describe 重写为阶梯用例组（显式 registry 贯穿两腿、缺省生效源形态断言、latest 命中短路、空落 packument、latest 失败兜住、空白 readme 降级、终末腿错误、两腿都空、超时收紧 deps spy、repo 归一语义注记），红→绿全程断言（红集合 {2,3,4,6,8,9} 与计划推演逐条吻合）；installed.test.mjs 增 profileName 用例；host-api.test.mjs readme 用例改断言 + 增 profile.name 传递与合成错误形态两用例。全量测试零新增失败（Windows 本机 symlink 族既有基线豁免）；typecheck 零错误。
+
 ### 0.9.49 变更：已装 README 基址贯通 + 链接归一三件（0.9.48 深入分析跟进）
 
 - **已装视图基址贯通（P0，主缺口）**：0.9.48 已装详情挂载点误传不存在的 `it.github`，而已装插件走本地读取路径（`repo` 字段只在 npm 兜底路径附带）→ 已装 README 相对链接全部归 `#`。现改传 `vm.githubRepo`——installed-view 视图模型现成的三级兜底（registry 匹配 `registryGithub` → 已装包 package.json `repository` 解析 → 安装 spec `github:o/r` 解析），图标与 LinksRow 早就在用。装机浏览场景的相对链接/图片自此全部可锚定。
@@ -370,6 +378,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.50 — two-leg /latest README fallback ladder + profile-aware not-installed copy + fallback failure summary
+
+- **Motivation (verified on the Shanghai Windows desktop)**: on the desktop profile (effective registry npmmirror), the README fold for billion-context (705k weekly downloads) always failed with "web profile 未安装该插件" — npmmirror's packument measures 8,586,604 bytes, above dsh-m's 8MB (8,388,608) maxBytes cap (readCapped throws a 502 "response over limit"), so the fallback leg always failed and the original local error was rethrown per the 0.9.45 contract; npmjs's packument (8,195,089 bytes) merely happens to sit under the cap with an empty readme field — the web profile's "(no README)" was luck, and this fast-releasing package will outgrow the cap on npmjs too.
+- **Two-leg fallback ladder**: `npmPackumentReadme` now tries `/latest` internally (public signature and `{readme, repo}` shape unchanged) — leg 1 fetches the KB-sized version document (immune to oversized packuments; URL shape per the npmLatest precedent; **timeout tightened to `Math.min(timeoutMs, 5_000)`** like npmLatest's first leg — worst-case fallback latency drops from 40s to 25s) and short-circuits on a non-empty readme; empty/failed falls through to the packument leg (full 20s, unchanged 0.9.45 behavior). Any successful leg wins: an empty readme renders "no README" (including the degraded blank-latest + failed-packument case, no throw); both legs failing throws the terminal (packument) error. Both legs hit the effective registry (ADR-0012), never cross-source; both legs share the same trim-based emptiness rule; repo follows whichever leg was reached (packument wins when it responds).
+- **Profile-aware not-installed copy**: `readInstalledPluginReadme` gains a third parameter profileName (default 'web'), and the host-api readme branch passes `profile.name` — the desktop profile now reports "desktop profile 未安装该插件: X" (shape aligned with the profile-ops precedent); the "web profile" copy in web-transaction-only paths (market/toggle/profile-transaction) is intentionally unchanged (desktop delegates to the official pluginManager and never reaches them).
+- **Fallback failure summary (semantic revision of 0.9.45's "rethrow the original local error")**: when both legs fail, the error becomes `<local error>（npm README 兜底失败: <terminal leg reason>）` — the real cause (e.g. the over-cap 502) is no longer swallowed; the original local error is preserved as `cause`.
+- **Testing**: versions.test.mjs describe rewritten as a ladder suite (explicit registry across both legs, default-registry shape assertions, latest short-circuit, empty-readme fallthrough, latest-failure recovery, blank-readme degradation, terminal-leg error, both-empty, tightened-timeout deps spy, repo-normalization note), asserted red→green throughout (red set {2,3,4,6,8,9} matched the plan case by case); installed.test.mjs adds a profileName case; host-api.test.mjs extends the readme case and adds profile.name pass-through plus composed-error shape cases. Full suite shows zero new failures (existing Windows symlink-family baseline exempt); typecheck clean.
 
 ### Added in 0.9.49 — installed-view repo base + three link normalizations (follow-up to the 0.9.48 deep-dive)
 

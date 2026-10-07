@@ -280,10 +280,11 @@ async function readTextLimited(path: string, limit: number): Promise<{ text: str
   }
 }
 
-/** 读取单个已安装插件的 README（UTF-8，≤64KB，超限截断）。pkg 必须来自 profile 依赖。 */
+/** 读取单个已安装插件的 README（UTF-8，≤64KB，超限截断）。pkg 必须来自 profile 依赖。profileName 仅用于错误文案（0.9.50：desktop 等 profile 不再误报「web profile」，形态对齐 profile-ops 先例）。 */
 export async function readInstalledPluginReadme(
   pkg: string,
   profileDir: string = webProfileDir(),
+  profileName: string = 'web',
 ): Promise<PluginReadme> {
   const key = String(pkg || '').trim()
   if (!isSafePkgName(key)) throw new Error(`无效插件包名: ${pkg}`)
@@ -292,7 +293,7 @@ export async function readInstalledPluginReadme(
   // 授权边界必须用 own-property 判定：`in` 会沿原型链命中继承属性（如 'constructor'），
   // 绕过「pkg 必须来自 profile dependencies」的成员约束
   if (!Object.hasOwn(deps, key)) {
-    throw new Error(`web profile 未安装该插件: ${key}`)
+    throw new Error(`${profileName} profile 未安装该插件: ${key}`)
   }
   const dir = resolvePluginDir(root, key, deps[key])
   if (!dir) throw new Error(`无法解析插件目录: ${key}`)

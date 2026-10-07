@@ -291,7 +291,7 @@ describe('host-api：method 响应', () => {
     assert.equal(bad.status, 400)
   })
 
-  it('readme：未安装条目回源 npm packument readme；兜底失败抛原始本地错误（0.9.45 U10b 修复）', async () => {
+  it('readme：未安装条目回源 npm 两腿兜底；兜底失败抛本地错误并附摘要（0.9.50 语义修订）', async () => {
     const notInstalled = async () => { throw new Error('web profile 未安装该插件: billion-context') }
     // ① 未安装 + npm 兜底有 readme → 200，payload.readme = 兜底内容
     const ok = setup({
@@ -302,14 +302,16 @@ describe('host-api：method 响应', () => {
     assert.equal(r1.status, 200)
     assert.equal(r1.body.readme, '# demo readme')
     assert.equal(r1.body.pkg, 'billion-context')
-    // ② 未安装 + 兜底也失败（离线等）→ 500，错误为原始本地错误（不冒充）
+    // ② 未安装 + 兜底也失败（离线等）→ 500，本地错误为主语、附兜底失败摘要（0.9.50：不再吞真实死因）
     const off = setup({
       readInstalledPluginReadme: notInstalled,
       npmPackumentReadme: async () => { throw new Error('offline') },
     })
     const r2 = await callApi(off.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'billion-context' } })
     assert.equal(r2.status, 500)
-    assert.ok(r2.body.error.includes('未安装该插件'), '抛原始本地错误而非 offline')
+    assert.ok(r2.body.error.includes('未安装该插件'), '本地错误为主语')
+    assert.ok(r2.body.error.includes('npm README 兜底失败'), '附兜底失败摘要')
+    assert.ok(r2.body.error.includes('offline'), '摘要含终末腿原因')
     // ③ 已装 → 本地读取，不走兜底
     const local = setup({
       readInstalledPluginReadme: async () => ({ pkg: 'p', name: 'p', readme: 'local md', truncated: false }),
@@ -318,6 +320,35 @@ describe('host-api：method 响应', () => {
     const r3 = await callApi(local.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'p' } })
     assert.equal(r3.status, 200)
     assert.equal(r3.body.readme, 'local md')
+  })
+
+  it('readme：profile.name 传入本地读取第三参（0.9.50 profile-aware 文案）', async () => {
+    const seen = []
+    const s = setup({
+      readInstalledPluginReadme: async (...args) => {
+        seen.push(args)
+        return { pkg: 'p', name: 'p', readme: 'r', truncated: false }
+      },
+    })
+    const res = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'p' } })
+    assert.equal(res.status, 200)
+    assert.equal(seen.length, 1)
+    assert.equal(seen[0][0], 'p')
+    assert.equal(seen[0][1], '/tmp/profile')
+    assert.equal(seen[0][2], 'web', '第三参 = setup 缺省 profile.name')
+  })
+
+  it('readme：兜底失败合成错误形态——本地错误（npm README 兜底失败: 终末腿原因）', async () => {
+    const s = setup({
+      readInstalledPluginReadme: async () => { throw new Error('desktop profile 未安装该插件: x') },
+      npmPackumentReadme: async () => { throw new Error('响应超过上限 8388608 字节') },
+    })
+    const res = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'readme', pkg: 'x' } })
+    assert.equal(res.status, 500)
+    assert.equal(
+      res.body.error,
+      'desktop profile 未安装该插件: x（npm README 兜底失败: 响应超过上限 8388608 字节）',
+    )
   })
 
   it('installed 转发 host namespace', async () => {

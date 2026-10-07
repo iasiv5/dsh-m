@@ -507,17 +507,20 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
           // 0.9.0 双 profile：README 优先只读当前 profile 的 node_modules；
           // 0.9.45 U10b 修复：市场/收藏详情 Modal 的 README 折叠页对「未安装」条目也会发起读取
-          // （装前决策场景）——本地未装时回源 npm packument 顶层 readme 字段兜底；
-          // 兜底也失败（离线等）则抛原始本地错误，不冒充成功。
+          // （装前决策场景）——本地未装时回源 npm 兜底（0.9.50 起为 /latest + packument 两腿阶梯）；
+          // 0.9.50 语义修订：兜底两腿全败不再只抛原始本地错误——本地错误为主语、附「npm README
+          // 兜底失败: <终末腿原因>」摘要，真实死因（如响应超帽）不再被吞。
           let result: PluginReadme
           try {
-            result = await d.readInstalledPluginReadme(target, profile.dir)
+            result = await d.readInstalledPluginReadme(target, profile.dir, profile.name)
           } catch (localErr) {
             try {
               const fallback = await d.npmPackumentReadme(target)
               result = { pkg: target, name: target, readme: fallback.readme, truncated: false, repo: fallback.repo || undefined }
-            } catch {
-              throw localErr
+            } catch (fallbackErr) {
+              const localMsg = localErr instanceof Error ? localErr.message : String(localErr)
+              const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
+              throw new Error(`${localMsg}（npm README 兜底失败: ${fallbackMsg}）`, { cause: localErr })
             }
           }
           payload = { ...result }

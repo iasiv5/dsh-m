@@ -170,11 +170,17 @@ export function extractGithubRepo(v: unknown): string {
 
 /**
  * npm packument readme 兜底（0.9.45 U10b 修复）：市场/收藏详情 Modal 的 README 折叠页对
- * 「未安装」条目无法走本地 profile 读取——回源 packument 顶层 readme 字段（publish 管线
- * 对多数包写入）。安全基线同 npmPackument：HTTPS、8MB 上限、超时；无 readme 字段返回空串
- * （不抛，客户端显示「没有 README」）；L1（ADR-0012）：显式 registry 参数 > 生效源。
- * 0.9.48：随附 repo（packument repository 归一为 owner/repo，仅 GitHub），供 README
- * 相对链接/图片锚定仓库基址；无 repository 或非 GitHub 时为空串。
+ * 「未安装」条目无法走本地 profile 读取——回源 npm 兜底。安全基线同 npmPackument：HTTPS、
+ * 8MB 上限；无 readme 字段返回空串（不抛，客户端显示「没有 README」）；L1（ADR-0012）：
+ * 显式 registry 参数 > 生效源。
+ * 0.9.48：随附 repo（repository 归一为 owner/repo，仅 GitHub），供 README 相对链接/图片
+ * 锚定仓库基址；无 repository 或非 GitHub 时为空串。
+ * 0.9.50：两腿阶梯——腿1 `/latest` 版本文档优先（KB 级小载荷，超大 packument 超帽免疫；
+ * 超时收紧 `Math.min(timeoutMs, 5_000)`，同 npmLatest 首腿先例），readme 命中即短路；空或
+ * 腿失败落腿2 packument（20s 满额，行为同 0.9.45）。任一腿成功即成功——readme 空渲染
+ * 「没有 README」（含 latest 空白 readme + packument 失败的降级，不抛）；两腿全败抛终末腿
+ * （packument）错误。两腿均在生效源，不跨源；两腿 readme 判空同一 trim 规则。repo 随到达
+ * 的腿取 repository（packument 到达时以 packument 为准）。
  */
 export async function npmPackumentReadme(
   pkg: string,
@@ -186,13 +192,35 @@ export async function npmPackumentReadme(
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
   const base = registry?.trim() ? registry.trim() : await activeNpmRegistry()
-  const data = await fetcher<{ readme?: unknown; repository?: unknown }>(`${registryBase(base)}/${encodeURIComponent(pkg)}`, {
-    timeoutMs,
-    signal,
-    maxBytes: 8 * 1024 * 1024,
-  })
-  const readme = typeof data?.readme === 'string' && data.readme.trim() !== '' ? data.readme : ''
-  return { readme, repo: extractGithubRepo(data?.repository) }
+  const extractReadme = (data: { readme?: unknown } | undefined | null): string =>
+    typeof data?.readme === 'string' && data.readme.trim() !== '' ? data.readme : ''
+  // 腿1：/latest 版本文档（小载荷；超时收紧同 npmLatest 首腿先例）
+  let latestOk = false
+  let latestRepo = ''
+  try {
+    const latestDoc = await fetcher<{ readme?: unknown; repository?: unknown }>(
+      `${registryBase(base)}/${encodeURIComponent(pkg)}/latest`,
+      { timeoutMs: Math.min(timeoutMs, 5_000), signal, maxBytes: 8 * 1024 * 1024 },
+    )
+    latestOk = true
+    latestRepo = extractGithubRepo(latestDoc?.repository)
+    const latestReadme = extractReadme(latestDoc)
+    if (latestReadme) return { readme: latestReadme, repo: latestRepo }
+  } catch {
+    // latest 腿失败 → 落 packument 腿（终末腿语义见下）
+  }
+  // 腿2：packument（0.9.45 U10b 原兜底腿，行为不变）
+  try {
+    const data = await fetcher<{ readme?: unknown; repository?: unknown }>(
+      `${registryBase(base)}/${encodeURIComponent(pkg)}`,
+      { timeoutMs, signal, maxBytes: 8 * 1024 * 1024 },
+    )
+    return { readme: extractReadme(data), repo: extractGithubRepo(data?.repository) }
+  } catch (packumentErr) {
+    // latest 腿已成功证明包在而无有效 readme → 降级成功（空 readme），不冒充失败
+    if (latestOk) return { readme: '', repo: latestRepo }
+    throw packumentErr
+  }
 }
 
 export interface NpmLatestDeps {

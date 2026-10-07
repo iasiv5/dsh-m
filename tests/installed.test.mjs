@@ -223,6 +223,14 @@ describe('listInstalledPlugins/readProfileDeps：partial 语义与特殊 key', (
     const readme = await readInstalledPluginReadme('constructor', dir)
     assert.ok(readme.readme.includes('# legit'))
   })
+
+  it('profileName 参数改写未装文案，缺省仍为 web（0.9.50）', async () => {
+    manifest({})
+    await assert.rejects(
+      () => readInstalledPluginReadme('missing', dir, 'desktop'),
+      /desktop profile 未安装该插件/,
+    )
+  })
 })
 
 describe('githubRepoFromRepository（0.9.49 尾部放宽）', () => {
