@@ -130,3 +130,10 @@
   合并写法 + deps 含 `expanded` 时，无激活分类下点 `+N` 展开的瞬间会被「!active 重置」回滚
   （S6 无头探针暴露，V5 expandWorks 红→绿）。探针另发现：挂载容器包装会改变 sticky 包含块，
   行为验证必须保持 ZoneChips 为 `.dshm-body` 直接子元素（与真实面板同构）。
+- **v3.2（2026-10-08，执行结果评审 R1 后）**：采纳 R1-Q1/Q4/Q6——
+  Q1 确定性重测 deps 以 `chips` 引用替代 `chips.length` 并叠加 `active`（同长度内容变化/激活加粗
+  均确定性重测，消除「RO 因 max-height 钳制失聪」的陈旧 geom 盲区，D7 精神内补全）；
+  Q4 overlay 组垂直居中改按 rowHeight 计算 bottom 偏移（28px 组盒在 22px 行上居中）；
+  Q6 `⌃` 手动收起无条件记录 autoRef（激活分类存在时）——「手动收起」全路径被尊重，
+  消除「展开态 geom 陈旧 → 收起重测 → 越界弹回」的边缘漂移；Q3 主题抽查并入真机 e2e；
+  Q5（registry.json 计划外改动混入 tag）按主人规则仅记录不实施。

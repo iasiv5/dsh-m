@@ -953,10 +953,13 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
     if (d.record) autoRef.current = active;
     if (d.expand) setExpanded(true);
   }, [active, activeIdx, expanded, geom]);
-  // 确定性重测主路径（D7③）：数据/业务态/吸顶/行高变化即重测（expanded 早退在 measure 内）
+  // 确定性重测主路径（D7③）：数据/业务态/吸顶/行高变化即重测（expanded 早退在 measure 内）。
+  // 评审 R1-Q1：deps 用 `chips` 引用（useMemo 随 counts/labels 重算）替代 `chips.length`，并叠加
+  // `active`（.dshm-chip.on 加粗变宽可重排）——同长度内容变化（计数刷新/加粗）也有确定性重测，
+  // 消除「RO 因 max-height 钳制失聪」的陈旧 geom 盲区。
   useLayoutEffect(() => {
     if (!expanded) measure();
-  }, [chips.length, expanded, zone, stuck, rowHeight, measure]);
+  }, [chips, active, expanded, zone, stuck, rowHeight, measure]);
   // RO 兜底（D7①）：宽度变化 / 字体重排 / max-height 变化（stuck 切换）触发；rAF 节流 + 幂等。
   // feature-detect 降级：无 RO 时仅靠 deps 主路径（先例 :947 IO 守卫）。
   useEffect(() => {
@@ -1037,7 +1040,17 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
         ...chips.map((c, i) => btn(c, i)),
         expanded
           ? [
-              h("button", { key: "collapse", "data-chip": "1", className: "dshm-chip", onClick: () => setExpanded(false) }, "⌃"),
+              h("button", {
+                key: "collapse",
+                "data-chip": "1",
+                className: "dshm-chip",
+                // 评审 R1-Q6：手动收起即记录 autoRef——展开态下激活的分类若真实越界（geom 陈旧或
+                // 收起重测后越界），决策 effect 不得立即弹回，「手动收起」无条件被尊重。
+                onClick: () => {
+                  if (active) autoRef.current = active;
+                  setExpanded(false);
+                },
+              }, "⌃"),
               trailing || null,
             ]
           : null,
@@ -1048,7 +1061,11 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
       clip && overlay
         ? h(
             "div",
-            { className: "dsvm-chipmore" },
+            {
+              className: "dsvm-chipmore",
+              // 评审 R1-Q4：按行高垂直居中于末可见行（28px 组盒在 22px 行高上居中 → bottom 补偿 -3px）
+              style: { bottom: `${8 + ((rowHeight || 22) - 28) / 2}px` },
+            },
             trailing || null,
             hiddenCount > 0
               ? h("button", { className: "dshm-chip", onClick: () => setExpanded(true) }, `+${hiddenCount}`)
