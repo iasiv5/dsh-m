@@ -1096,6 +1096,20 @@ describe('M1 Task 5：合并市场', () => {
     assert.equal(ccalls.n, 1)
   })
 
+  it('①-b 0.9.51 补全：社区 npm 条目经 github 碰撞让位（npm 名不撞、repo 撞）', async () => {
+    const primary = [
+      { id: 'p-g', name: 'G', description: 'dg', category: 'tools', tags: [], source: 'npm', npm: 'pkg-g', github: 'own/g-repo' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('g-repo', 'own', { npm: 'fresh-npm' }), // npm 名不撞；url 默认 github.com/own/g-repo → 撞主条目 github
+      communityRaw('other', 'o2'),                         // 无撞 → 收录
+    ]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), ['p-g', 'o2--other'])
+    assert.equal(res.community.displaced, 1)
+  })
+
   it('② 排序：主清单置顶组内原顺序，社区按 downloads 降序、无数据按名称', async () => {
     const primary = [
       { id: 'p-1', name: 'B', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-1' },
@@ -1370,6 +1384,23 @@ describe('M1 Task 5：合并市场', () => {
     assert.equal(res.items[0].community, true)
     assert.equal(res.community.status, 'ready')
     assert.equal(res.community.acceptedCount, 1)
+  })
+
+  it('⑩-b 0.9.51 补全：GitHub 源手装可被社区 npm 条目匹配（Q5 钉子）', async () => {
+    const installed = {
+      items: [{
+        pkg: 'g-repo', name: 'G', version: '0.0.0', description: '', homepage: '',
+        spec: `github:own/g-repo#${'a'.repeat(40)}`, source: 'github', dsh: true, path: '/tmp/node_modules/g-repo',
+      }],
+      others: 0,
+      complete: true,
+      profileDir: '/tmp/profile',
+    }
+    const base = fakeDeps({ listInstalledPlugins: async () => installed })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('g-repo', 'own', { npm: 'fresh-npm' })]))
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(res.items[0].registryId, 'own--g-repo', 'github 分支命中社区 npm 条目（改动前无 github 字段 → 红）')
+    assert.equal(res.items[0].registryGithub, 'own/g-repo')
   })
 
   it('⑪ 端到端 deadline：主慢 + 社区慢 → deadline 收敛，community 标超时；社区 waiter abort 传播', async () => {
