@@ -63,22 +63,23 @@ jobs:
           set -o pipefail
           npm publish --provenance --access public 2>&1 | tee publish.log
 
-      # 2026-10-07 事故钉子：v0.9.52 首次 tag run 全步 success 但 registry 上没有版本
-      # （历史四个版本的 registry 写入时间全部落在 run 结束后 1–4 分钟，即均为手动发布）。
-      # 此步把「静默 no-op」变成显式失败：发布后 2 分钟内在 registry 查不到即 fail。
+      # 2026-10-07 事故钉子：v0.9.52 首跑全步 success 但 registry 上迟迟查不到版本——
+      # 实测 npmjs packument 提交是异步的（PUT 在 run 内完成，版本条目 8 分钟后才可见；
+      # 历史版本滞后 1–4 分钟）。 publish 并未失败，是可见性延迟。此步防的是「真静默
+      # no-op」：10 分钟内仍查不到才 fail（窗口须大于实测最大延迟）。
       - name: Verify version is live (fail on silent no-op)
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           PKG_NAME=$(node -p "require('./package.json').name")
-          for i in $(seq 1 24); do
+          for i in $(seq 1 60); do
             if npm view "$PKG_NAME@$PKG_VERSION" version 2>/dev/null; then
               echo "$PKG_NAME@$PKG_VERSION is live on the registry."
               exit 0
             fi
-            echo "attempt $i/24: not visible yet, waiting 5s…"
-            sleep 5
+            echo "attempt $i/60: not visible yet, waiting 10s…"
+            sleep 10
           done
-          echo "::error::$PKG_NAME@$PKG_VERSION did NOT appear on the registry within 120s — publish was a silent no-op."
+          echo "::error::$PKG_NAME@$PKG_VERSION did NOT appear on the registry within 10 min — publish was a silent no-op."
           exit 1
 
       - name: Publish diagnostics (always)
