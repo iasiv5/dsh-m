@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.47 变更：README 预览内嵌 HTML 子集渲染（GitHub 风 README 不再满屏标签）
+
+- **问题**：市场/收藏/已装详情 Modal 的 README 折叠页，遇到 GitHub 风重度内嵌 HTML 的 README（`<p align="center">` 徽章墙、`<img>` Logo、`<details>` 折叠等——npm packument 兜底与本地读取都常见）会把标签按字面整屏显示，观感如「乱码」。根因是渲染端自研 markdown 渲染器此前完全不解析 HTML 标签（原始内容本身没有问题，GitHub 上渲染正常）。
+- **渲染子集（`src/client/markdown.js`）**：块级包裹标签（`p/div/center/blockquote/details/ul/ol/li/table/thead/tbody/tr/td/th/h1-6/figure/section/dl` 等）剥壳后按完整 markdown 递归渲染，内部标题/列表/表格/围栏结构全保留；行内标签（`a/img/strong/em/del/code/kbd/mark/sub/sup/u/small/span/br/hr` 等）token 化构造元素；`align` 属性映射 `textAlign`，`<img width/height>` 映射显式尺寸并放开徽章 20px 高度帽（无 width 的徽章仍走小图帽）；`<details>/<summary>` 原生折叠；文本含标签的普通段落/标题/表格单元格也走行内 token 流（`Press <kbd>Ctrl</kbd>` 类可渲染）。
+- **安全模型（不变式）**：绝不向 DOM 注入原始 HTML 字符串——只解析出白名单标签与白名单属性，全部经 `h()` 构造 React 元素，URL 一律过 `safeUrl` 闸门（`javascript:` 等归 `#`）；未知标签剥壳留文本，`script/style/svg/iframe` 等容器连同内容整体丢弃；递归深度护栏（>8 层降级纯文本）。无 `dangerouslySetInnerHTML`，不存在 XSS 注入面。
+- **已知边界**：npm packument 兜底的 README 不携带仓库基址，相对路径图片（如 `docs/assets/logo.svg`）按 safeUrl 归 `#` 后由 onError 隐藏（徽章等外链图片不受影响）；`<picture><source>` 的 source 分支丢弃、保 `img` 回退。
+- **测试**：`client-markdown.test.mjs` 净增 10 例（块级剥壳递归、徽章行连排、行内混排、script 丢弃与 javascript: 归化、未知标签剥壳、details/summary、整篇 div 包裹、HTML 表格、HTML 标题与行内元素、未闭合标签降级与深度护栏）；真实 dsh-TUI README（25926 字符）渲染验证零标签泄漏、64 个徽章链接正常构造；全量测试 1175/1175，typecheck 零错误。纯客户端变更，刷新页面即生效。
+
 ### 0.9.46 变更：双语 README 精简重构＋实拍 WebP 截图集（文档版）
 
 - **README×2 重构**：中文 17.5KB → 8.3KB、英文 18.1KB → 9.4KB——以用户任务动线重组（30 秒上手 → 浏览/搜索/安装 → 已装与设置 → Agent 工具与 CLI → 兼容与 FAQ）；获取线路、缓存语义等实现细节不再展开，统一移交 [`docs/DESIGN.md`](docs/DESIGN.md) 与 ADR 承接；运行相位/生效时机表述与激活分桶语义对齐（不硬承诺「一定重启/一定刷新」，以操作返回为准）。
@@ -348,6 +356,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.47 — embedded-HTML subset rendering for the README preview (GitHub-style READMEs no longer show raw tags)
+
+- **Problem**: the README fold in the detail Modal (market/curated/installed) showed GitHub-style HTML-heavy READMEs (`<p align="center">` badge walls, `<img>` logos, `<details>` blocks — common in both the npm packument fallback and local reads) with every tag rendered literally, looking like mojibake. Root cause: the in-house markdown renderer never parsed HTML tags at all. The source content itself was fine — GitHub renders it normally.
+- **Rendering subset (`src/client/markdown.js`)**: block-level wrapper tags (`p/div/center/blockquote/details/ul/ol/li/table/thead/tbody/tr/td/th/h1-6/figure/section/dl` etc.) are unwrapped and their inner content re-rendered as full markdown, preserving headings/lists/tables/fences; inline tags (`a/img/strong/em/del/code/kbd/mark/sub/sup/u/small/span/br/hr` etc.) are tokenized into React elements; `align` maps to `textAlign`; `<img width/height>` maps to explicit size and lifts the 20px badge height cap (badges without width keep the small-image cap); `<details>/<summary>` render as native disclosure; ordinary paragraphs/headings/table cells whose text contains tags also go through the inline token stream (`Press <kbd>Ctrl</kbd>` renders properly).
+- **Security model (invariant)**: raw HTML is never injected into the DOM — only whitelisted tags with whitelisted attributes are parsed, everything is built via `h()` React elements, and URLs pass the `safeUrl` gate (`javascript:` etc. collapse to `#`); unknown tags are unwrapped keeping their text, `script/style/svg/iframe` containers are dropped together with their content, and a recursion depth guard (>8) degrades to plain text. No `dangerouslySetInnerHTML` — no XSS surface.
+- **Known limits**: the npm packument fallback carries no repository base URL, so relative-path images (e.g. `docs/assets/logo.svg`) collapse to `#` via safeUrl and hide on error (externally hosted badge images are unaffected); inside `<picture><source>` the source branch is dropped and the `img` fallback kept.
+- **Testing**: 10 new cases in `client-markdown.test.mjs` (block unwrap recursion, badge rows, inline mix, script dropping + `javascript:` neutralization, unknown-tag unwrap, details/summary, whole-document div wrapper, HTML tables, HTML headings + inline elements, unclosed-tag degradation + depth guard); the real dsh-TUI README (25,926 chars) renders with zero tag leaks and 64 badge links constructed; full suite 1175/1175, typecheck clean. Client-only change — a page refresh takes effect.
 
 ### Added in 0.9.46 — bilingual README restructure + live-captured WebP screenshot set (docs release)
 

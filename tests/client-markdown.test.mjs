@@ -143,3 +143,120 @@ describe('createMarkdown(h) 渲染结构', () => {
     assert.deepEqual(crlf[0].children, ['a b'])
   })
 })
+
+describe('0.9.47 内嵌 HTML 子集', () => {
+  const md = createMarkdown(h)
+
+  it('块级包裹：<p align> 剥壳递归，<img> 走白名单尺寸样式', () => {
+    const nodes = md.renderMarkdown('<p align="center">\n  <img src="https://i.a/logo.svg" alt="logo" width="560">\n</p>')
+    assert.equal(nodes.length, 1)
+    const p = nodes[0]
+    assert.equal(p.type, 'p')
+    assert.deepEqual(p.props.style, { textAlign: 'center' })
+    const img = p.children[0]
+    assert.equal(img.type, 'img')
+    assert.equal(img.props.src, 'https://i.a/logo.svg')
+    assert.equal(img.props.alt, 'logo')
+    assert.deepEqual(img.props.style, { width: 560, maxWidth: '100%', height: 'auto', maxHeight: 'none' })
+  })
+
+  it('徽章行：<a><img></a> 连排且间隙保留；无 width 的徽章不吃样式帽', () => {
+    const nodes = md.renderMarkdown('<p align="center">\n<a href="https://x"><img alt="npm" src="https://i.a/n.svg"></a> <a href="https://y"><img alt="ci" src="https://i.a/c.svg"></a>\n</p>')
+    const a1 = nodes[0].children[0]
+    assert.equal(a1.type, 'a')
+    assert.equal(a1.props.href, 'https://x')
+    assert.equal(a1.children[0].type, 'img')
+    assert.equal(a1.children[0].props.style, undefined)
+    assert.equal(nodes[0].children[1], ' ')
+    const a2 = nodes[0].children[2]
+    assert.equal(a2.type, 'a')
+    assert.equal(a2.props.href, 'https://y')
+    assert.equal(a2.children[0].type, 'img')
+  })
+
+  it('行内混排：<strong>/<a>/<br> 与文本', () => {
+    const nodes = md.renderMarkdown('<p align="center">\n  <strong>English</strong> | <a href="README_ZH.md">简体中文</a>\n</p>')
+    const kids = nodes[0].children
+    assert.equal(kids[0].type, 'strong')
+    assert.deepEqual(kids[0].children, ['English'])
+    assert.equal(kids[1], ' | ')
+    assert.equal(kids[2].type, 'a')
+    assert.equal(kids[2].props.href, '#') // 相对路径走 safeUrl 归 #
+    assert.deepEqual(kids[2].children, ['简体中文'])
+    const br = md.renderMarkdown('<p>a<br>b</p>')
+    assert.equal(br[0].children[0].children.filter((x) => x && x.type === 'br').length, 1)
+  })
+
+  it('安全：script 连同内容丢弃，javascript: 链接归 #，文本节点不注入', () => {
+    const nodes = md.renderMarkdown('<p>x</p>\n<script>alert(1)</script>\n<a href="javascript:alert(1)">bad</a>')
+    const json = JSON.stringify(nodes)
+    assert.ok(!json.includes('alert'), `不应出现脚本内容: ${json}`)
+    assert.ok(json.includes('bad')) // 剥壳留文本，React 转义兜底
+    const style = md.renderMarkdown('<style>p{color:red}</style>\n# T')
+    assert.equal(style.length, 1)
+    assert.equal(style[0].type, 'h1')
+  })
+
+  it('未知标签剥壳留内容，结构标签补分隔', () => {
+    const nodes = md.renderMarkdown('<p align="center">\n<foo>bar</foo> tail\n</p>')
+    const json = JSON.stringify(nodes)
+    assert.ok(json.includes('bar'))
+    assert.ok(!json.includes('foo'))
+  })
+
+  it('details/summary：摘要行内渲染 + 内部 markdown 保结构', () => {
+    const nodes = md.renderMarkdown('<details>\n<summary>FAQ</summary>\n\n- a\n- b\n\n</details>')
+    assert.equal(nodes[0].type, 'details')
+    const sum = nodes[0].children[0]
+    assert.equal(sum.type, 'summary')
+    assert.deepEqual(sum.children, ['FAQ'])
+    const ul = nodes[0].children[1]
+    assert.equal(ul.type, 'ul')
+    assert.equal(ul.children.length, 2)
+  })
+
+  it('整篇 div 包裹（GitHub 常见）：markdown 结构全保留，收尾内容不受吞块影响', () => {
+    const nodes = md.renderMarkdown('<div align="center">\n\n## Features\n\ntext here\n\n</div>\n\nafter')
+    const div = nodes[0]
+    assert.equal(div.type, 'div')
+    assert.deepEqual(div.props.style, { textAlign: 'center' })
+    assert.equal(div.children[0].type, 'h2')
+    assert.deepEqual(div.children[0].children, ['Features'])
+    assert.equal(div.children[1].type, 'p')
+    assert.equal(nodes[1].type, 'p')
+    assert.deepEqual(nodes[1].children, ['after'])
+  })
+
+  it('HTML 表格：table/tr/td 真实表格结构', () => {
+    const nodes = md.renderMarkdown('<table>\n<tr>\n<td>a</td>\n<td>b</td>\n</tr>\n</table>')
+    assert.equal(nodes[0].type, 'table')
+    const tr = nodes[0].children[0]
+    assert.equal(tr.type, 'tr')
+    assert.equal(tr.children[0].type, 'td')
+    assert.equal(tr.children[0].children[0].type, 'p')
+    assert.deepEqual(tr.children[0].children[0].children, ['a'])
+    assert.deepEqual(tr.children[1].children[0].children, ['b'])
+  })
+
+  it('HTML 标题与 mark/kbd 等行内元素', () => {
+    const h2 = md.renderMarkdown('<h2 align="center">Title</h2>')
+    assert.equal(h2[0].type, 'h2')
+    assert.deepEqual(h2[0].props.style, { textAlign: 'center' })
+    assert.deepEqual(h2[0].children, ['Title'])
+    const mixed = md.renderMarkdown('<p>Press <kbd>Ctrl</kbd> and <mark>hi</mark></p>')
+    const kids = mixed[0].children[0].children // wrapper <p> 剥壳递归 → 内层 p
+    assert.equal(kids.filter((x) => x && x.type === 'kbd').length, 1)
+    assert.equal(kids.filter((x) => x && x.type === 'mark').length, 1)
+  })
+
+  it('未闭合包裹标签降级行内流，不吞全文；深度护栏兜底', () => {
+    const unclosed = md.renderMarkdown('<p align="center">\n\n## T\n\nbody')
+    // p 不跨空行寻闭合 → 止于空行 → 剥壳失败降级，后续 markdown 照常
+    assert.ok(unclosed.some((x) => x && x.type === 'h2'))
+    const deep = md.renderMarkdown('<div>'.repeat(12) + 'core' + '</div>'.repeat(12))
+    const json = JSON.stringify(deep)
+    assert.ok(json.includes('core'))
+    // 深度护栏降级为纯文本（React 转义），不产生 12 层嵌套结构
+    assert.ok(deep.length < 5, `嵌套应被护栏截断: ${deep.length}`)
+  })
+})

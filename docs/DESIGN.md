@@ -182,6 +182,8 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 技术：`src/client.js` 经 **esbuild** 打包为 `lib/client.js`；`window.__ModuleLoader__.load({ id: "dsh-m", factory })` 注册；**React 从 module loader require**（零额外运行时依赖）；manifest 注入 `@deepseek-ai/dsh-client-runtime`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-settings`。
 图标：GitHub 来源自动用 `https://github.com/<owner>.png?size=64`；`icon` 字段可覆盖；npm-only 条目首字母色块回退。
 
+**README 预览渲染（`src/client/markdown.js`，0.9.47 起）**：自研轻量渲染器，安全模型 = 「白名单标签 + 白名单属性 + safeUrl 闸门 → 全部经 `h()` 构造 React 元素」，**绝不注入原始 HTML 字符串**（无 `dangerouslySetInnerHTML`，文本节点 React 转义兜底）。markdown 侧支持标题/列表/表格/围栏/引用/徽章链接等；HTML 侧支持 GitHub 风 README 常见内嵌子集——块级包裹标签（`p/div/center/details/table/tr/td/li/ul/ol/h1-6` 等）剥壳后按 markdown 递归（保内部结构），行内标签（`a/img/strong/em/code/kbd/mark/br/sub/sup` 等）token 化渲染，`align` 属性映射 `textAlign`、`<img width/height>` 映射显式尺寸（放开徽章 20px 高度帽）；未知标签剥壳留文本，`script/style/svg/iframe` 等容器连同内容丢弃，`javascript:` 等危险 URL 归 `#`。已知边界：npm packument 兜底的 README 不携带仓库基址，相对路径图片（如 `docs/assets/x.svg`）按 safeUrl 归 `#` 后由 onError 隐藏；行内文本含标签的解析粒度到段落级（`Press <kbd>Ctrl</kbd>` 类可渲染）。数据源：已装条目读 profile 本地 `README.md`（≤64KB 截断）；未装条目回源 npm packument 顶层 `readme` 字段（0.9.45 U10b）。
+
 ## 5. Agent 工具（host）与 CLI
 
 - 工具前缀 `dshm_`，共 7 个：`dshm_search` / `dshm_list` / `dshm_install` / `dshm_uninstall` / `dshm_outdated` / `dshm_upgrade` / `dshm_restart`。Agent tools 运行于 Host 进程，与 Web GUI **共用 `host` namespace 缓存与 active config**；`dshm_search` 走服务端过滤（metadata-only，`withLatest=false`、limit ≤80），返回不含本地路径的短 summary。

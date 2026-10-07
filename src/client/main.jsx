@@ -455,6 +455,12 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-readme.md th{background:var(--dsw-alias-bg-layer-2,rgba(127,127,127,.1))}
 .dshm-readme.md hr{border:0;border-top:1px solid var(--dsw-alias-border-l2,#cbd5e1);margin:8px 0}
 .dshm-readme.md .dshm-md-note{margin-top:8px;padding-top:6px;border-top:1px dashed var(--dsw-alias-border-l2,#cbd5e1);color:var(--dsw-alias-label-caption,#9ca3af);font-size:11px}
+/* 0.9.47 HTML 子集：details/summary/kbd/mark 与 li·td 内层 p 间距收敛 */
+.dshm-readme.md details{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;padding:4px 10px;margin:6px 0}
+.dshm-readme.md summary{cursor:pointer;font-weight:600;margin:2px 0}
+.dshm-readme.md kbd{background:rgba(127,127,127,.16);border:1px solid var(--dsw-alias-border-l2,#cbd5e1);border-bottom-width:2px;border-radius:4px;padding:0 4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.dshm-readme.md mark{background:rgba(255,213,0,.35);color:inherit;border-radius:2px;padding:0 2px}
+.dshm-readme.md li>p,.dshm-readme.md td>p,.dshm-readme.md th>p,.dshm-readme.md summary>p,.dshm-readme.md p>p{margin:2px 0}
 .dshm-links{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
 .dshm-links-k,.dshm-links-sep{color:var(--dsw-alias-label-caption,#9ca3af)}
 .dshm-links a{color:var(--dsw-alias-state-business-primary,#4d6bfe);text-decoration:none;font-weight:500}
