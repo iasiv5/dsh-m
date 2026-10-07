@@ -108,6 +108,16 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     renderToString(h(components.__FavoriteZone, { favorites: { list: [], toggle: () => {}, removeIds: () => {} }, onOpen: () => {} }))
   })
 
+  it('ZoneChips 全量渲染（0.9.53 方案A）：每颗分类 chip 均在 HTML 中（无 slice 折叠）', () => {
+    const labels = { theme: '主题与外观', tools: '工具与能力', market: '用量与计费' }
+    const html = renderToString(h(components.__ZoneChips, { zone: 'community', counts: { theme: 2, tools: 3, market: 4 }, labels, active: null, onPick: () => {}, trailing: null }))
+    // 「全部」按钮文案走 i18n（zh=全部/en=All，随环境 locale），断言用 locale 无关的结构计数：
+    // data-chip 元素 = 1「全部」+ 3 分类 = 4（方案A 全量渲染，绝不 slice）
+    const chipCount = (html.match(/data-chip="1"/g) || []).length
+    assert.equal(chipCount, 4, `data-chip 元素应为 4（全部+3 分类），实际 ${chipCount}`)
+    for (const label of Object.values(labels)) assert.ok(html.includes(label), `缺少分类 chip：${label}`)
+  })
+
   it('FavoriteZone 带一条收藏快照渲染不抛（卡片路径）', () => {
     const fav = {
       id: 'o1--demo',

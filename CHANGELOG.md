@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.53 变更：ZoneChips 方案A「隐身全量测量」——冷挂载分类行错误折叠根除 + 行容量即时重测
+
+- **动机（0.9.52 端到端验证发现）**：新浏览器 profile（无 localStorage 快照）首开面板时，市场数据未到 → `fit` 在空列表上测量 → 数据到达后重测面对的是按陈旧预算折叠的 DOM（只渲染 1 颗 + 「+N」）→ 棘轮式冻结在「3 颗 + +20」单行折叠。暖会话（快照命中）首挂载即全量数据、一次测准，故 0.7.0 以来从未暴露。姊妹问题：测量 effect 不监听宽度变化，窗口缩放后 `+N` 与实际容量脱节。完整根因链与无头实证见 `docs/plans/2026-10-08-zonechips-visual-clip-requirements.md`。
+- **方案（方案A「隐身全量测量」，经独立评审三轮 11 条意见收敛，评审记录见计划文档修订记录）**：废除 slice 预算，分类 chips **全量渲染**，折叠改为 `.dshm-chips` 上的 `max-height`（实测行高 × 行数）+ `overflow:hidden` 视觉裁剪；越界 chip 逐颗 `visibility:hidden`（与现状「未渲染不进 tab 序」对齐）；`+N`/`⌃` 改右侧 overlay 组（水平并排、钉末可见行右端，gutter `--dshm-clip-gutter:132px` 几何保证与 chip 零相交）；筛选触发器折叠态钉 overlay、展开态维持 in-flow；重测钩子 = deps（`chips.length/expanded/zone/stuck/rowHeight`）+ `ResizeObserver`（rAF 节流）+ `document.fonts.ready`，均 feature-detect 降级（先例 `:947`）。测量纯函数（`chipRows/countBeyondRows/clipTopOf/autoExpandDecision`）下沉 `market-state.js`，20 例 Node 单测直测。
+- **语义保持**：吸顶收一行/回滚两行（0.9.52 哨兵链路不动，裁剪宿主为 `.dshm-chips`、严禁 wrap 裁剪——wrap 裁剪会剪掉哨兵致 stuck 永久误判，评审 Q1 阻断项）；`+N` 展开/`⌃` 收起；激活分类越界自动展开 + autoRef「手动收起后不弹回」（实现拆分为重置/决策两 effect，评审 Q3）；0 计数降透明。行为改进一处：折叠态筛选由「行尾第 3 行 in-flow」改为「末可见行右端 overlay 常驻」。
+- **测试**：新增 `client-zonechips-clip.test.mjs` 20 例 + smoke 全量渲染断言 1 例，全量 1221 例零失败、typecheck 零错误；无头探针 V1–V6 矩阵实证（冷数据到达两行折叠正确 / 三档宽度即时重算 / 精选区不预留 gutter / 吸顶一行重算且回滚恢复 / 筛选与 +N 零遮挡均可点 / 自动展开与 autoRef 不弹回），探针不入库（0.9.52 惯例）。
+
 ### 0.9.52 变更：头部行距统一——吸顶哨兵移出 flex 流，消除搜索框与分类行间 25px 空带
 
 - **动机（主人截图发现）**：市场头部「搜索框行 → 分类 chips 行」间距实测 25px（12 gap + 1px 哨兵 + 12 gap），是「分区 chips → 搜索框行」12px 节奏的两倍余，社区/精选两区一致，视觉上是一条全宽无内容死带；搜索态下 ZoneChips 连带哨兵整体卸载、空带自动消失——证明是布局副作用而非设计节奏。
@@ -392,6 +399,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.53 — ZoneChips Plan A "invisible full-list measurement": cold-mount mis-collapse eradicated + live row-capacity re-measurement
+
+- **Motivation (found during 0.9.52 end-to-end verification)**: with a fresh browser profile (no localStorage snapshot), the market data had not arrived when the panel first mounted, so the old `fit` measurement ran on an EMPTY list; when data arrived the re-measure faced a DOM already collapsed by the stale budget (1 chip + "+N") and ratcheted to a frozen "3 chips + +20" single row. Warm sessions hit the snapshot on first mount and measured correctly — which is why this 0.7.0-era defect never surfaced. Sister issue: the measure effect ignores width changes, so `+N` drifts from real capacity after window resizes. Full causal chain with headless evidence: `docs/plans/2026-10-08-zonechips-visual-clip-requirements.md`.
+- **Change (Plan A "invisible full-list measurement", converged through an independent 3-round review with 11 findings)**: the slice-budget is gone — category chips **always render in full**; collapsing is a `max-height` (measured row-height × rows) + `overflow:hidden` visual clip on `.dshm-chips`; chips beyond the clip get per-chip `visibility:hidden` (parity with today's "unrendered = not in tab order"); `+N`/`⌃` become a right-side overlay group (horizontal pair pinned to the last visible row, gutter `--dshm-clip-gutter:132px` geometrically guarantees zero chip intersection); the filter trigger is pinned as an overlay while collapsed and stays in-flow when expanded; re-measure hooks = deps (`chips.length/expanded/zone/stuck/rowHeight`) + `ResizeObserver` (rAF-throttled) + `document.fonts.ready`, all feature-detected with graceful degradation (precedent `:947`). Measurement pure functions (`chipRows/countBeyondRows/clipTopOf/autoExpandDecision`) moved to `market-state.js` with 20 direct Node unit tests.
+- **Semantics preserved**: sticky collapse to one row / restore on scroll-up (the 0.9.52 sentinel chain untouched; the clip host is `.dshm-chips` and clipping the wrap is forbidden — it would clip the sentinel and permanently mis-set stuck, review blocker Q1); `+N` expand / `⌃` collapse; auto-expand when the active category falls beyond the clip + autoRef "manual collapse is respected" (implemented as split reset/decision effects, review Q3); zero-count dimming. One intentional behavior improvement: while collapsed, the filter trigger moved from "third in-flow row end" to a persistent overlay at the last visible row's right end.
+- **Tests**: new `client-zonechips-clip.test.mjs` (20 cases) + 1 full-render smoke assertion; full suite 1221 cases zero failures, typecheck clean; headless probe matrix V1–V6 verified (cold data arrival collapses correctly at two rows / three-width live recompute / curated zone reserves no gutter / sticky one-row recompute and restore / filter & +N zero-overlap and clickable / auto-expand & autoRef no-bounce); probes not committed (0.9.52 convention).
 
 ### Changed in 0.9.52 — uniform header rhythm: sticky sentinel leaves the flex flow, killing the 25px dead band between search row and category chips
 
