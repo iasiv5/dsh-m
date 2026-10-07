@@ -87,7 +87,7 @@
     {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
-      "description": "替换官方 Connection 跳过 BrowserAuth，免 Token；已适配七个已审计精确版本对，详见仓库。仅支持 web profile；desktop profile（存在 dsh-desktop-host 的环境）自动休眠，属设计行为。",
+      "description": "替换官方 Connection 跳过 BrowserAuth，免 Token；已适配七个已审计精确版本对，详见仓库。仅支持 web profile；desktop 宿主一律自动休眠（多进程树判别）；desktop 用户请升级最新版后使用（旧版在 desktop 有已知缺陷）。",
       "category": "self-dev",
       "tags": ["BrowserAuth", "连接", "安全", "工具"],
       "verified": ["0.1.2-rc.1", "0.1.5-rc.1", "0.1.5-rc.2", "0.1.7-rc.1", "0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2"],
