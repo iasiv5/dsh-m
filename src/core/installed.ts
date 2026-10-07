@@ -254,6 +254,8 @@ export interface PluginReadme {
   name: string
   readme: string
   truncated: boolean
+  /** 0.9.48：npm packument 兜底时随附的仓库 owner/repo（仅 GitHub），供 README 相对路径锚定；本地读取无此信息 */
+  repo?: string
 }
 
 /** 限量读取文本文件：只读前 limit 字节，超限标记 truncated。 */

@@ -515,7 +515,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           } catch (localErr) {
             try {
               const fallback = await d.npmPackumentReadme(target)
-              result = { pkg: target, name: target, readme: fallback.readme, truncated: false }
+              result = { pkg: target, name: target, readme: fallback.readme, truncated: false, repo: fallback.repo || undefined }
             } catch {
               throw localErr
             }

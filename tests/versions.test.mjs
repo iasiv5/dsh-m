@@ -378,6 +378,17 @@ describe('npmPackumentReadme（0.9.45 U10b：未安装条目 README 兜底）', 
     assert.equal((await npmPackumentReadme('pkg-y')).readme, '')
   })
 
+  it('repo：packument repository 归一为 owner/repo（0.9.48，字符串与对象两形态）', async () => {
+    installMockFetch(async () => jsonResponse({ readme: 'x', repository: 'git+https://github.com/owner/repo.git' }))
+    assert.equal((await npmPackumentReadme('pkg-a')).repo, 'owner/repo')
+    installMockFetch(async () => jsonResponse({ readme: 'x', repository: { type: 'git', url: 'git@github.com:a.b/c-d.git' } }))
+    assert.equal((await npmPackumentReadme('pkg-a')).repo, 'a.b/c-d')
+    installMockFetch(async () => jsonResponse({ readme: 'x', repository: 'https://gitlab.com/g/p' }))
+    assert.equal((await npmPackumentReadme('pkg-a')).repo, '', '非 GitHub 归空串')
+    installMockFetch(async () => jsonResponse({ readme: 'x', versions: {} }))
+    assert.equal((await npmPackumentReadme('pkg-a')).repo, '', '缺 repository 归空串')
+  })
+
   it('非法包名抛错（与 npmLatest 同款字符集守卫）', async () => {
     await assert.rejects(() => npmPackumentReadme('has space'), /无效 npm 包名/)
     await assert.rejects(() => npmPackumentReadme('pkg$'), /无效 npm 包名/)

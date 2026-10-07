@@ -184,7 +184,7 @@ describe('0.9.47 内嵌 HTML 子集', () => {
     assert.equal(kids[2].props.href, '#') // 相对路径走 safeUrl 归 #
     assert.deepEqual(kids[2].children, ['简体中文'])
     const br = md.renderMarkdown('<p>a<br>b</p>')
-    assert.equal(br[0].children[0].children.filter((x) => x && x.type === 'br').length, 1)
+    assert.equal(br[0].children.filter((x) => x && x.type === 'br').length, 1) // 0.9.48 行内优先：<p>a<br>b</p> 平铺
   })
 
   it('安全：script 连同内容丢弃，javascript: 链接归 #，文本节点不注入', () => {
@@ -227,15 +227,14 @@ describe('0.9.47 内嵌 HTML 子集', () => {
     assert.deepEqual(nodes[1].children, ['after'])
   })
 
-  it('HTML 表格：table/tr/td 真实表格结构', () => {
+  it('HTML 表格：table/tr/td 真实表格结构（td 内容行内平铺）', () => {
     const nodes = md.renderMarkdown('<table>\n<tr>\n<td>a</td>\n<td>b</td>\n</tr>\n</table>')
     assert.equal(nodes[0].type, 'table')
     const tr = nodes[0].children[0]
     assert.equal(tr.type, 'tr')
     assert.equal(tr.children[0].type, 'td')
-    assert.equal(tr.children[0].children[0].type, 'p')
-    assert.deepEqual(tr.children[0].children[0].children, ['a'])
-    assert.deepEqual(tr.children[1].children[0].children, ['b'])
+    assert.deepEqual(tr.children[0].children, ['a'])
+    assert.deepEqual(tr.children[1].children, ['b'])
   })
 
   it('HTML 标题与 mark/kbd 等行内元素', () => {
@@ -244,7 +243,7 @@ describe('0.9.47 内嵌 HTML 子集', () => {
     assert.deepEqual(h2[0].props.style, { textAlign: 'center' })
     assert.deepEqual(h2[0].children, ['Title'])
     const mixed = md.renderMarkdown('<p>Press <kbd>Ctrl</kbd> and <mark>hi</mark></p>')
-    const kids = mixed[0].children[0].children // wrapper <p> 剥壳递归 → 内层 p
+    const kids = mixed[0].children // 0.9.48 行内优先：wrapper <p> 内容平铺（无内层 p）
     assert.equal(kids.filter((x) => x && x.type === 'kbd').length, 1)
     assert.equal(kids.filter((x) => x && x.type === 'mark').length, 1)
   })
@@ -258,5 +257,55 @@ describe('0.9.47 内嵌 HTML 子集', () => {
     assert.ok(json.includes('core'))
     // 深度护栏降级为纯文本（React 转义），不产生 12 层嵌套结构
     assert.ok(deep.length < 5, `嵌套应被护栏截断: ${deep.length}`)
+  })
+})
+
+describe('0.9.48 实体解码与仓库基址锚定', () => {
+  const md = createMarkdown(h)
+
+  it('命名/数字实体解码；未知实体与裸 & 原样保留；单趟不回炉', () => {
+    const t = md.renderMarkdown('a&nbsp;b &amp; &lt;x&gt; &#65; &#x42; &foobar; &')
+    assert.deepEqual(t[0].children, ['a\u00a0b & <x> A B &foobar; &'])
+    const twice = md.renderMarkdown('&amp;lt;')
+    assert.deepEqual(twice[0].children, ['&lt;'])
+  })
+
+  it('徽章行独立 &nbsp; 解码为间隙，不再漏出实体文本', () => {
+    const nodes = md.renderMarkdown('<p align="center">\n<img src="https://i.a/1.svg" alt="1">\n&nbsp;\n<img src="https://i.a/2.svg" alt="2">\n</p>')
+    const json = JSON.stringify(nodes)
+    assert.ok(!json.includes('&nbsp'), `不应残留实体: ${json}`)
+    const kids = nodes[0].children
+    assert.equal(kids[0].type, 'img')
+    assert.equal(kids[1], ' ')
+    assert.equal(kids[2].type, 'img')
+  })
+
+  it('code 行内元素不解码实体；HTML 属性值解码（URL &amp; → &）', () => {
+    const c = md.renderMarkdown('`&nbsp;` &amp;')
+    assert.deepEqual(c[0].children[0].children, ['&nbsp;'])
+    assert.equal(c[0].children[1], ' &')
+    const img = md.renderMarkdown('<img src="https://i.a/b?x=1&amp;y=2" alt="a">')
+    assert.equal(img[0].type, 'img')
+    assert.equal(img[0].props.src, 'https://i.a/b?x=1&y=2')
+  })
+
+  it('仓库基址：相对链接锚 blob/HEAD，相对图片锚 raw/HEAD；绝对与锚点不受影响', () => {
+    const link = md.renderMarkdown('[README.md](README.md)', { repo: 'o/r' })
+    assert.equal(link[0].children[0].props.href, 'https://github.com/o/r/blob/HEAD/README.md')
+    const himg = md.renderMarkdown('<p>\n<img src="docs/a.svg" alt="a">\n</p>', { repo: 'o/r' })
+    assert.equal(himg[0].children[0].props.src, 'https://raw.githubusercontent.com/o/r/HEAD/docs/a.svg')
+    const mimg = md.renderMarkdown('![a](docs/b.png)', { repo: 'https://github.com/o/r.git' })
+    assert.equal(mimg[0].children[0].props.src, 'https://raw.githubusercontent.com/o/r/HEAD/docs/b.png')
+    const mixed = md.renderMarkdown('[x](https://a.com) [y](#frag)', { repo: 'o/r' })
+    assert.equal(mixed[0].children[0].props.href, 'https://a.com')
+    assert.equal(mixed[0].children[2].props.href, '#frag')
+    const up = md.renderMarkdown('<img src="../img/a.png">', { repo: 'o/r' })
+    assert.equal(up[0].props.src, 'https://raw.githubusercontent.com/o/r/HEAD/img/a.png')
+  })
+
+  it('无基址时相对链接保持归 #（0.9.47 及以前行为），基址残留不跨渲染泄漏', () => {
+    assert.equal(md.renderMarkdown('[a](b.md)')[0].children[0].props.href, '#')
+    md.renderMarkdown('[a](b.md)', { repo: 'o/r' }) // 带基址渲染后
+    assert.equal(md.renderMarkdown('[a](b.md)')[0].children[0].props.href, '#', 'RENDER_REPO 应在渲染结束恢复')
   })
 })

@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.48 变更：README 实体解码 + 相对路径仓库基址锚定（0.9.47 实装反馈两连修）
+
+- **HTML 实体解码**：0.9.47 解析了标签但未解码实体——dsh-task-board 类 README 徽章间独立成行的 `&nbsp;` 按字面漏出。现命名实体（nbsp/amp/lt/gt/quot/copy/mdash/箭头/分数等 60+ 高频集）与数字实体（十进制/十六进制）均解码；文本段与 HTML 属性值都解（徽章 src 里 `&amp;labelColor` → `&labelColor`，shields 参数不再丢失）；`code`/`pre` 内不解码；未知实体与裸 `&` 原样保留；单趟解码不回炉（`&amp;lt;` → `&lt;` 文本，与浏览器一致），解码结果只作为文本节点、绝不重新参与标签解析，无注入面。
+- **行内优先判定**：包裹标签（`<p align="center">` 等）剥壳后，若内部无空行分段、无 markdown 块结构、且行首标签均为行内/void 标签，则整块按行内 token 流渲染——徽章 + `&nbsp;` 连排在同一居中行（GitHub 语义），不再每行拆成独立段落；含块级结构（`tr/td/ul/li` 开头等）仍走 markdown 递归保结构。
+- **相对路径仓库基址锚定**：`[README.md](README.md)` 这类相对链接此前被 safeUrl 归 `#`（点击无反应——既有安全归化，非 0.9.47 回归）。现 README 预览可携带仓库基址：相对链接锚 `github.com/<o>/<r>/blob/HEAD/<path>`、相对图片锚 `raw.githubusercontent.com/<o>/<r>/HEAD/<path>`（`./`/`../` 前缀归一）；绝对 URL 与页内锚点不受影响；无基址时保持归 `#` 旧行为。数据链路：npm packument 兜底时顺带提取 `repository` 归一为 `owner/repo`（仅 GitHub，git+https/git@/.git 形态归一，host-api 透传 `repo` 字段）；客户端以卡片 `github` 字段兜底；渲染基址为 renderMarkdown 级同步设置、进出恢复，不跨渲染泄漏。
+- **测试**：client-markdown 净增 6 例（实体四类、独立 `&nbsp;` 徽章块、code 不解码与属性解码、基址锚定七断言、无基址回归与跨渲染泄漏）；versions 净增 1 例（repository 两形态归一 + 非 GitHub 归空）；全量 1181/1181、typecheck 零错误；真实数据端到端——dsh-TUI 25926 字符零泄漏零回归、task-board 真实徽章块三徽章一行居中 + `&amp;` 解码、相对链接正确锚 blob/HEAD。纯客户端变更，刷新页面即生效。
+
 ### 0.9.47 变更：README 预览内嵌 HTML 子集渲染（GitHub 风 README 不再满屏标签）
 
 - **问题**：市场/收藏/已装详情 Modal 的 README 折叠页，遇到 GitHub 风重度内嵌 HTML 的 README（`<p align="center">` 徽章墙、`<img>` Logo、`<details>` 折叠等——npm packument 兜底与本地读取都常见）会把标签按字面整屏显示，观感如「乱码」。根因是渲染端自研 markdown 渲染器此前完全不解析 HTML 标签（原始内容本身没有问题，GitHub 上渲染正常）。
@@ -356,6 +363,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.48 — README entity decoding + repo-base anchoring for relative paths (two fixes from 0.9.47 field feedback)
+
+- **HTML entity decoding**: 0.9.47 parsed tags but left entities raw — standalone `&nbsp;` lines between badges (dsh-task-board-style READMEs) leaked literally. Named entities (nbsp/amp/lt/gt/quot/copy/mdash/arrows/fractions — 60+ common set) and numeric entities (decimal/hex) now decode; both text runs and HTML attribute values decode (badge src `&amp;labelColor` → `&labelColor`, shields params no longer dropped); `code`/`pre` content stays literal; unknown entities and bare `&` are preserved; single-pass decoding without re-processing (`&amp;lt;` → `&lt;` as text, matching browsers). Decoded output only ever becomes text nodes — never re-parsed as tags, no injection surface.
+- **Inline-first heuristic**: after unwrapping a block wrapper (`<p align="center">` etc.), if the inner content has no blank-line paragraph breaks, no markdown block structures, and every line starts with an inline/void tag, the whole block renders through the inline token stream — badges + `&nbsp;` flow on one centered line (GitHub semantics) instead of one paragraph per line; content with block structures (lines starting with `tr/td/ul/li` etc.) still goes through the markdown recursion to preserve structure.
+- **Repo-base anchoring for relative paths**: relative links like `[README.md](README.md)` previously collapsed to `#` via safeUrl (inert click — long-standing normalization, not a 0.9.47 regression). The README preview can now carry a repository base: relative links anchor to `github.com/<o>/<r>/blob/HEAD/<path>`, relative images anchor to `raw.githubusercontent.com/<o>/<r>/HEAD/<path>` (`./`/`../` prefixes normalized); absolute URLs and in-page anchors are untouched; without a base the old `#` behavior applies. Data flow: the npm packument fallback now also extracts `repository`, normalized to `owner/repo` (GitHub only; git+https/git@/.git forms normalized) and passed through host-api as `repo`; the client falls back to the card's `github` field; the render base is set per renderMarkdown call and restored on exit — no cross-render leakage.
+- **Testing**: 6 new cases in client-markdown (four entity classes, standalone-`&nbsp;` badge block, code no-decode + attribute decoding, seven anchoring assertions, no-base regression + cross-render leakage); 1 new versions case (repository normalization in both shapes + non-GitHub → empty); full suite 1181/1181, typecheck clean; real-data end-to-end — dsh-TUI 25,926 chars zero leaks zero regression, the real task-board badge block renders three badges on one centered line with `&amp;` decoded, relative links anchor to blob/HEAD correctly. Client-only change — a page refresh takes effect.
 
 ### Added in 0.9.47 — embedded-HTML subset rendering for the README preview (GitHub-style READMEs no longer show raw tags)
 

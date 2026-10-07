@@ -10,12 +10,55 @@
  * script/style/svg 等危险或纯资源容器连同内容一起丢弃（React 对文本节点转义兜底，无注入面）。
  * 自此「逐字搬迁、禁止任何行为改动」仅约束未触及的既有函数；mdBlocks/renderMarkdown/MdImg
  * 的改动见下方各处 0.9.47 注释与 tests/client-markdown.test.mjs。
+ *
+ * 0.9.48 扩展：①HTML 实体解码（&nbsp;/&amp;/&lt;/数字实体等——文本段与属性值都解，
+ * code/pre 内不解；单趟解码不回炉，解码结果只作为文本节点，绝不重新参与标签解析）；
+ * ②仓库基址锚定——renderMarkdown(src, { repo: "owner/repo" }) 后，相对 href/src 锚定到
+ * GitHub blob/HEAD（链接）与 raw.githubusercontent/HEAD（图片），无基址时保持原行为（归 #）。
  */
-export function safeUrl(u) {
+// 渲染级仓库基址（同步渲染：renderMarkdown 进出即设置/恢复，无并发重入问题）
+let RENDER_REPO = ""; // "owner/repo"；空 = 无基址（相对 URL 一律归 #，0.9.47 及以前行为）
+
+// "owner/repo" 或 GitHub 仓库 URL/形态 → "owner/repo"（仅 github.com；其余返回 ""）
+function normalizeRepoInput(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(s)) return s;
+  const m = /github\.com[/:]([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+?)(?:\.git)?(?:[/?#]|$)/i.exec(s);
+  return m ? `${m[1]}/${m[2]}` : "";
+}
+
+export function safeUrl(u, kind) {
   const t = String(u || "").trim();
   if (/^(https?:\/\/|mailto:)/i.test(t)) return t;
-  if (/^[/#]/.test(t)) return t;
+  if (t.startsWith("#")) return t;
+  if (RENDER_REPO && (kind === "img" || kind === "link")) {
+    const path = t.replace(/^(?:\.\/|\.\.\/|\/)+/, "");
+    return kind === "img"
+      ? `https://raw.githubusercontent.com/${RENDER_REPO}/HEAD/${path}`
+      : `https://github.com/${RENDER_REPO}/blob/HEAD/${path}`;
+  }
+  if (t.startsWith("/")) return t;
   return "#";
+}
+
+// ---------- HTML 实体解码（0.9.48） ----------
+// 命名实体取 GitHub README 高频集；数字实体支持十进制/十六进制；单趟解码不回炉
+// （&amp;lt; → "&lt;" 文本，与浏览器一致）；未知实体原样保留。
+const HTML_ENTITIES = { nbsp: "\u00a0", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", copy: "©", reg: "®", trade: "™", mdash: "—", ndash: "–", hellip: "…", middot: "·", laquo: "«", raquo: "»", times: "×", divide: "÷", plusmn: "±", deg: "°", sup2: "²", sup3: "³", frac12: "½", frac14: "¼", frac34: "¾", euro: "€", pound: "£", yen: "¥", cent: "¢", sect: "§", para: "¶", bull: "•", dagger: "†", Dagger: "‡", permil: "‰", prime: "′", Prime: "″", larr: "←", uarr: "↑", rarr: "→", darr: "↓", harr: "↔", minus: "−", infin: "∞", ne: "≠", le: "≤", ge: "≥", asymp: "≈", equiv: "≡", check: "✓", cross: "✗", star: "☆", starf: "★", hearts: "♥", alpha: "α", beta: "β", gamma: "γ", delta: "δ", pi: "π", Omega: "Ω", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’" };
+const HTML_ENTITY_RE = /&(#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g;
+
+export function decodeEntities(s) {
+  const t = String(s || "");
+  if (!t.includes("&")) return t;
+  return t.replace(HTML_ENTITY_RE, (raw, body) => {
+    if (body.startsWith("#")) {
+      const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : raw;
+    }
+    const named = HTML_ENTITIES[body] !== undefined ? HTML_ENTITIES[body] : HTML_ENTITIES[body.toLowerCase()];
+    return named !== undefined ? named : raw;
+  });
 }
 
 // ---------- HTML 子集：模块级纯解析（无 h 依赖） ----------
@@ -39,7 +82,10 @@ function parseHtmlAttrs(s) {
   if (!s) return attrs;
   const re = /([a-zA-Z][a-zA-Z0-9-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
   let m;
-  while ((m = re.exec(s))) attrs[m[1].toLowerCase()] = m[2] !== undefined ? m[2] : m[3] !== undefined ? m[3] : m[4] !== undefined ? m[4] : "";
+  while ((m = re.exec(s))) {
+    const raw = m[2] !== undefined ? m[2] : m[3] !== undefined ? m[3] : m[4] !== undefined ? m[4] : "";
+    attrs[m[1].toLowerCase()] = decodeEntities(raw); // 0.9.48：属性值实体解码（URL 里 &amp; → &）
+  }
   return attrs;
 }
 
@@ -85,6 +131,26 @@ function htmlBlockEnd(lines, i) {
   return lastNonBlank;
 }
 
+// 深度解码文本节点（0.9.48）：code/pre 内不解码；元素递归其 children；
+// 兼容 fake-h（children 在顶层）与 React 元素（children 在 props）两种形态；不改传入节点。
+function decodeTextNodes(nodes) {
+  return nodes.map((n) => {
+    if (typeof n === "string") return decodeEntities(n);
+    if (Array.isArray(n)) return decodeTextNodes(n);
+    if (n && typeof n === "object" && n.type !== "code" && n.type !== "pre") {
+      const cur = n.props && n.props.children !== undefined ? n.props.children : n.children;
+      if (cur !== undefined) {
+        const wasArr = Array.isArray(cur);
+        const decoded = decodeTextNodes(wasArr ? cur : [cur]);
+        const next = wasArr ? decoded : decoded[0];
+        if (n.props && n.props.children !== undefined) return { ...n, props: { ...n.props, children: next } };
+        return { ...n, children: next };
+      }
+    }
+    return n;
+  });
+}
+
 export function createMarkdown(h) {
   // ↓ 以下注释与 5 个函数自 main.jsx 398-556 逐字迁入，禁止任何行为改动
 // 外链统一 target/rel，且阻止冒泡（卡片点击会折叠详情）
@@ -93,7 +159,7 @@ function ExtLink({ href, className, children }) {
     "a",
     {
       className: className || "dshm-md-a",
-      href: safeUrl(href),
+      href: safeUrl(href, "link"),
       target: "_blank",
       rel: "noopener noreferrer",
       onClick: (e) => e.stopPropagation(),
@@ -106,7 +172,7 @@ function ExtLink({ href, className, children }) {
 function MdImg({ src, alt, style, title }) {
   return h("img", {
     className: "dshm-md-img",
-    src: safeUrl(src),
+    src: safeUrl(src, "img"),
     alt: alt || "",
     title: title || undefined,
     style: style || undefined,
@@ -135,7 +201,7 @@ function mdInline(text, kb) {
       const lm = /\]\(([^)]*)\)\s*$/.exec(tok);
       const img = h(MdImg, { src: im && im[2], alt: im && im[1] });
       const href = lm && lm[1];
-      nodes.push(href && safeUrl(href) !== "#" ? h(ExtLink, { key: k, href }, img) : h("span", { key: k }, img));
+      nodes.push(href && safeUrl(href, "link") !== "#" ? h(ExtLink, { key: k, href }, img) : h("span", { key: k }, img));
     } else if (tok.startsWith("![") || tok.startsWith("<![")) {
       const im = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(tok);
       nodes.push(h(MdImg, { key: k, src: im && im[2], alt: im && im[1] }));
@@ -179,7 +245,7 @@ function mdBlocks(lines, kb, depth = 0) {
   const isHtmlBlock = (s) => /^\s*<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*?)?\/?>/.test(s);
   // 0.9.47：行内出口分流——文本含标签时走 HTML token 流（标签内文本仍交 mdInline），
   // 纯 markdown 文本走原路径，零行为变化
-  const inlineOf = (s, key) => (/<[a-zA-Z]/.test(s) ? mdHtmlInline(s, key) : mdInline(s, key));
+  const inlineOf = (s, key) => decodeTextNodes(/<[a-zA-Z]/.test(s) ? mdHtmlInline(s, key) : mdInline(s, key));
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) {
@@ -270,13 +336,14 @@ function mdHtmlInline(src, kb) {
   const cur = () => (stack.length ? stack[stack.length - 1].kids : out);
   const pushText = (t) => {
     if (!t) return;
-    if (!String(t).trim()) {
-      cur().push(" "); // 纯空白段保留一个空隙（徽章行间距靠它）
+    const t2 = decodeEntities(t);
+    if (!t2.trim()) {
+      if (cur().length) cur().push(" "); // 纯空白段保留一个空隙（徽章行间距靠它；&nbsp; 解码后同此）；容器开头则跳过
       return;
     }
-    const parts = String(t).split(/\n[ \t]*\n+/);
+    const parts = t2.split(/\n[ \t]*\n+/);
     parts.forEach((part, idx) => {
-      const nodes = mdInline(part.replace(/\s+/g, " "), `${kb}t${n++}`); // 不 trim：保留标签间原有空隙
+      const nodes = decodeTextNodes(mdInline(part.replace(/\s+/g, " "), `${kb}t${n++}`)); // 不 trim：保留标签间原有空隙
       if (!nodes.length) return;
       if (idx === 0 || stack.length) cur().push(...nodes);
       else out.push(h("p", { key: `${kb}tp${n++}` }, ...nodes));
@@ -340,6 +407,21 @@ function mdHtmlInline(src, kb) {
   return out;
 }
 
+// 包裹标签内部是否「纯行内内容」：无空行分段、无 markdown 块结构、行首标签均为行内/void
+// （tr/td/ul/li 等块级标签开头的行 → 走 markdown 递归保结构）。GitHub 行内语义：img/a/&nbsp;
+// 在 <p> 内连排同一行。剥壳产生的首尾空串不算空行分段。
+function isInlineOnlyHtml(inner) {
+  const lines = String(inner).split("\n");
+  if (lines.some((l) => l !== "" && !l.trim())) return false;
+  return !lines.some((l) => {
+    if (/^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|`|\|)/.test(l)) return true; // markdown 块结构
+    const tm = /^\s*<\/?([a-zA-Z][a-zA-Z0-9-]*)/.exec(l);
+    if (!tm) return false;
+    const name = tm[1].toLowerCase();
+    return !(name === "img" || name === "br" || name === "hr" || HTML_INLINE_MAP[name]);
+  });
+}
+
 // HTML 块入口：包裹标签剥壳后按完整 markdown 递归（保标题/列表/表格结构），否则走行内 token 流
 function mdHtmlBlock(raw, kb, depth) {
   const s = String(raw).trim();
@@ -353,6 +435,7 @@ function mdHtmlBlock(raw, kb, depth) {
   let inner = s.slice(om[0].length, om[0].length + cm.index);
   const attrs = parseHtmlAttrs(om[2] || "");
   const style = htmlAlignStyle(attrs);
+  const inlineKids = () => (isInlineOnlyHtml(inner) ? mdHtmlInline(inner, kb) : renderMarkdown(inner, depth + 1));
   if (tag === "details") {
     const sm = /<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
     let sumNode = null;
@@ -360,16 +443,22 @@ function mdHtmlBlock(raw, kb, depth) {
       inner = inner.slice(0, sm.index) + inner.slice(sm.index + sm[0].length);
       sumNode = h("summary", { key: `${kb}sum` }, ...mdHtmlInline(sm[1], `${kb}sm`));
     }
-    const kids = sumNode ? [sumNode, ...renderMarkdown(inner, depth + 1)] : renderMarkdown(inner, depth + 1);
+    const kids = sumNode ? [sumNode, ...inlineKids()] : inlineKids();
     return [h("details", attrs.open !== undefined ? { key: kb, open: true } : { key: kb }, ...kids)];
   }
   if (/^h[1-6]$/.test(tag)) return [h(tag, style ? { key: kb, style } : { key: kb }, ...mdHtmlInline(inner, kb))];
-  // 其余包裹标签：剥壳递归（li/td 等产生内层 p，CSS 已收敛其间距）
-  return [h(tag, style ? { key: kb, style } : { key: kb }, ...renderMarkdown(inner, depth + 1))];
+  // 其余包裹标签：行内优先（GitHub 行内连排语义），块级内容剥壳递归（内层 p 间距 CSS 已收敛）
+  return [h(tag, style ? { key: kb, style } : { key: kb }, ...inlineKids())];
 }
 
-function renderMarkdown(src, depth = 0) {
-  return mdBlocks(String(src || "").replace(/\r\n?/g, "\n").split("\n"), "md", depth);
+function renderMarkdown(src, opts = {}, depth = 0) {
+  const prev = RENDER_REPO;
+  RENDER_REPO = normalizeRepoInput(opts && opts.repo);
+  try {
+    return mdBlocks(String(src || "").replace(/\r\n?/g, "\n").split("\n"), "md", depth);
+  } finally {
+    RENDER_REPO = prev;
+  }
 }
   return { ExtLink, MdImg, renderMarkdown };
 }

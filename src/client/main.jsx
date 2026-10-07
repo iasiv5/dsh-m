@@ -1175,7 +1175,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
             "details",
             { className: "dsvm-fold", onToggle: (e) => { if (e.target.open) setRmOpen(true); } },
             h("summary", null, lookup("readme.show")),
-            rmOpen ? h(ReadmeBlock, { pkg: it.npm }) : h("div", { className: "dshm-hint" }, lookup("readme.loading")),
+            rmOpen ? h(ReadmeBlock, { pkg: it.npm, repo: it.github }) : h("div", { className: "dshm-hint" }, lookup("readme.loading")),
           )
         : null,
       shots.length
@@ -1837,12 +1837,12 @@ function ProgressLine() {
 }
 
 // ---------- README 预览 ----------
-function ReadmeBlock({ pkg }) {
-  const [state, setState] = useState({ loading: true, text: "", err: "", truncated: false });
+function ReadmeBlock({ pkg, repo }) {
+  const [state, setState] = useState({ loading: true, text: "", err: "", truncated: false, repo: "" });
   useEffect(() => {
     let live = true;
     api("readme", { pkg })
-      .then((d) => live && setState({ loading: false, text: d.readme, err: "", truncated: d.truncated }))
+      .then((d) => live && setState({ loading: false, text: d.readme, err: "", truncated: d.truncated, repo: d.repo || "" }))
       .catch((e) => live && setState({ loading: false, text: "", err: String((e && e.message) || e) }));
     return () => {
       live = false;
@@ -1854,7 +1854,7 @@ function ReadmeBlock({ pkg }) {
   return h(
     "div",
     { className: "dshm-readme md", onClick: (e) => e.stopPropagation() },
-    renderMarkdown(state.text),
+    renderMarkdown(state.text, { repo: state.repo || repo }),
     state.truncated ? h("div", { className: "dshm-md-note" }, lookup("readme.truncated")) : null,
   );
 }
@@ -2021,7 +2021,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
           open: openPkg === it.pkg,
           onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
           detail: readmePkg === it.pkg
-            ? h(ReadmeBlock, { pkg: it.pkg })
+            ? h(ReadmeBlock, { pkg: it.pkg, repo: it.github })
             : DetailRows([
                 [lookup("detail.pkg"), it.pkg],
                 [lookup("detail.spec"), it.spec],

@@ -153,10 +153,28 @@ export async function npmPackument(
 }
 
 /**
+ * packument repository → "owner/repo"（仅 github.com；git+https / git@ / .git / #frag 归一；
+ * 非 GitHub 返回空串——README 相对路径锚定只对 GitHub raw/blob 有意义）。0.9.48。
+ */
+export function extractGithubRepo(v: unknown): string {
+  const url =
+    typeof v === 'string'
+      ? v
+      : v && typeof v === 'object' && typeof (v as { url?: unknown }).url === 'string'
+        ? (v as { url: string }).url
+        : ''
+  if (!url) return ''
+  const m = /github\.com[/:]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#]|$)/i.exec(url)
+  return m ? `${m[1]}/${m[2]}` : ''
+}
+
+/**
  * npm packument readme 兜底（0.9.45 U10b 修复）：市场/收藏详情 Modal 的 README 折叠页对
  * 「未安装」条目无法走本地 profile 读取——回源 packument 顶层 readme 字段（publish 管线
  * 对多数包写入）。安全基线同 npmPackument：HTTPS、8MB 上限、超时；无 readme 字段返回空串
  * （不抛，客户端显示「没有 README」）；L1（ADR-0012）：显式 registry 参数 > 生效源。
+ * 0.9.48：随附 repo（packument repository 归一为 owner/repo，仅 GitHub），供 README
+ * 相对链接/图片锚定仓库基址；无 repository 或非 GitHub 时为空串。
  */
 export async function npmPackumentReadme(
   pkg: string,
@@ -164,17 +182,17 @@ export async function npmPackumentReadme(
   signal?: AbortSignal,
   registry?: string,
   deps?: Pick<NpmVersionDeps, 'fetchJsonLimited'>,
-): Promise<{ readme: string }> {
+): Promise<{ readme: string; repo: string }> {
   if (!/^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/.test(pkg)) throw new Error(`无效 npm 包名: ${pkg}`)
   const fetcher = deps?.fetchJsonLimited ?? fetchJsonLimited
   const base = registry?.trim() ? registry.trim() : await activeNpmRegistry()
-  const data = await fetcher<{ readme?: unknown }>(`${registryBase(base)}/${encodeURIComponent(pkg)}`, {
+  const data = await fetcher<{ readme?: unknown; repository?: unknown }>(`${registryBase(base)}/${encodeURIComponent(pkg)}`, {
     timeoutMs,
     signal,
     maxBytes: 8 * 1024 * 1024,
   })
   const readme = typeof data?.readme === 'string' && data.readme.trim() !== '' ? data.readme : ''
-  return { readme }
+  return { readme, repo: extractGithubRepo(data?.repository) }
 }
 
 export interface NpmLatestDeps {
