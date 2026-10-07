@@ -2021,7 +2021,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
           open: openPkg === it.pkg,
           onToggle: () => setOpenPkg(openPkg === it.pkg ? null : it.pkg),
           detail: readmePkg === it.pkg
-            ? h(ReadmeBlock, { pkg: it.pkg, repo: it.github })
+            ? h(ReadmeBlock, { pkg: it.pkg, repo: vm.githubRepo }) // 0.9.49：已装行走视图模型三级兜底（registryGithub/package.json repository/spec 解析），此前误传不存在的 it.github 导致相对链接全归 #
             : DetailRows([
                 [lookup("detail.pkg"), it.pkg],
                 [lookup("detail.spec"), it.spec],

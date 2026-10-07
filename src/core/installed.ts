@@ -88,7 +88,9 @@ interface PkgJson {
   repository?: unknown
 }
 
-/** 从 repository 字段（字符串或 {url}，git+/ssh/https 形态）提取 github owner/repo。 */
+/** 从 repository 字段（字符串或 {url}，git+/ssh/https 形态）提取 github owner/repo。
+ * 0.9.49：尾部放宽到 [/?#] 或结尾（与 versions.ts extractGithubRepo 同口径）——
+ * 此前 github.com/o/r/（尾斜杠）与更深路径解析不出。 */
 export function githubRepoFromRepository(raw: unknown): string | null {
   let url = ''
   if (typeof raw === 'string') url = raw
@@ -96,7 +98,7 @@ export function githubRepoFromRepository(raw: unknown): string | null {
     const u = (raw as { url?: unknown }).url
     if (typeof u === 'string') url = u
   }
-  const m = /github\.com[/:]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?$/i.exec(url.trim())
+  const m = /github\.com[/:]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/?#]|$)/i.exec(url.trim())
   return m ? `${m[1]}/${m[2]}` : null
 }
 

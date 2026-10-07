@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.49 变更：已装 README 基址贯通 + 链接归一三件（0.9.48 深入分析跟进）
+
+- **已装视图基址贯通（P0，主缺口）**：0.9.48 已装详情挂载点误传不存在的 `it.github`，而已装插件走本地读取路径（`repo` 字段只在 npm 兜底路径附带）→ 已装 README 相对链接全部归 `#`。现改传 `vm.githubRepo`——installed-view 视图模型现成的三级兜底（registry 匹配 `registryGithub` → 已装包 package.json `repository` 解析 → 安装 spec `github:o/r` 解析），图标与 LinksRow 早就在用。装机浏览场景的相对链接/图片自此全部可锚定。
+- **链接归一（P1）**：①协议相对 `//host/x` 补 `https:`——此前有基址时被错剥成仓库内路径、无基址时跳 DSH 站内；②`git@github.com:o/r(.git)` 内联链接归一 https 形态（README 的 clone 指引段落）；③有基址时 `#anchor` 锚 `github.com/<o>/<r>#anchor`（仓库首页 README 同名锚，裸 `#` 与图片 kind 不参与）。
+- **host 侧解析口径统一（P2）**：`githubRepoFromRepository` 尾部从 `$` 放宽到 `[/?#]`——`github.com/o/r/`（尾斜杠）与 `…/tree/main` 等更深路径此前解析不出；与 versions.ts `extractGithubRepo` 同口径。
+- **测试**：client-markdown 净增 4 例（协议相对两态、git@ 两形态、锚点四断言含 img kind 不锚）、installed 净增 1 例（repository 五形态含尾斜杠与子路径）；锚点断言随新行为更新；全量 1185/1185、typecheck 零错误。纯客户端+host 只读字段透传变更，刷新页面即生效。
+
 ### 0.9.48 变更：README 实体解码 + 相对路径仓库基址锚定（0.9.47 实装反馈两连修）
 
 - **HTML 实体解码**：0.9.47 解析了标签但未解码实体——dsh-task-board 类 README 徽章间独立成行的 `&nbsp;` 按字面漏出。现命名实体（nbsp/amp/lt/gt/quot/copy/mdash/箭头/分数等 60+ 高频集）与数字实体（十进制/十六进制）均解码；文本段与 HTML 属性值都解（徽章 src 里 `&amp;labelColor` → `&labelColor`，shields 参数不再丢失）；`code`/`pre` 内不解码；未知实体与裸 `&` 原样保留；单趟解码不回炉（`&amp;lt;` → `&lt;` 文本，与浏览器一致），解码结果只作为文本节点、绝不重新参与标签解析，无注入面。
@@ -363,6 +370,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.49 — installed-view repo base + three link normalizations (follow-up to the 0.9.48 deep-dive)
+
+- **Installed-view base wired through (P0, the main gap)**: the 0.9.48 installed-detail mount passed a non-existent `it.github`, and installed plugins take the local-read path (the `repo` field only rides on the npm fallback) → every relative link in installed READMEs collapsed to `#`. Now passes `vm.githubRepo` — the ready three-level fallback in the installed view model (registry match `registryGithub` → installed package.json `repository` parse → install spec `github:o/r` parse), which the icon and LinksRow already consumed. Relative links and images now anchor in the installed-browsing scenario too.
+- **Link normalizations (P1)**: ① protocol-relative `//host/x` gains `https:` — previously mangled into a repo path with a base, or pointed at the DSH origin without; ② inline `git@github.com:o/r(.git)` links normalize to https form (clone-instruction paragraphs); ③ with a base, `#anchor` anchors to `github.com/<o>/<r>#anchor` (same-name anchor on the repo home README; bare `#` and the img kind do not participate).
+- **Host-side parse alignment (P2)**: `githubRepoFromRepository` tail relaxed from `$` to `[/?#]` — `github.com/o/r/` (trailing slash) and deeper paths like `…/tree/main` previously failed to parse; now aligned with versions.ts `extractGithubRepo`.
+- **Testing**: 4 new cases in client-markdown (protocol-relative both modes, git@ two shapes, four anchor assertions incl. img kind), 1 new installed case (five repository shapes incl. trailing slash and subpath); the anchor assertion updated to the new behavior; full suite 1185/1185, typecheck clean. Client-only plus a read-only host passthrough — a page refresh takes effect.
 
 ### Added in 0.9.48 — README entity decoding + repo-base anchoring for relative paths (two fixes from 0.9.47 field feedback)
 

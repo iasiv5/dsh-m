@@ -29,9 +29,18 @@ function normalizeRepoInput(v) {
 }
 
 export function safeUrl(u, kind) {
-  const t = String(u || "").trim();
+  let t = String(u || "").trim();
+  if (!t) return "#";
+  // 0.9.49：协议相对（//host/x）与 git@ 形态归一为 https（与有无基址无关）
+  if (t.startsWith("//")) t = `https:${t}`;
+  const ghm = /^git@github\.com:([^/\s]+)\/([^\s]+?)(?:\.git)?$/i.exec(t);
+  if (ghm) t = `https://github.com/${ghm[1]}/${ghm[2]}`;
   if (/^(https?:\/\/|mailto:)/i.test(t)) return t;
-  if (t.startsWith("#")) return t;
+  if (t.startsWith("#")) {
+    // 0.9.49：有基址时锚点跳 GitHub 仓库页同名锚（README 折叠区内锚点本就无处可跳）；裸 # 保持原样
+    if (t.length > 1 && RENDER_REPO && kind === "link") return `https://github.com/${RENDER_REPO}#${t.slice(1)}`;
+    return t;
+  }
   if (RENDER_REPO && (kind === "img" || kind === "link")) {
     const path = t.replace(/^(?:\.\/|\.\.\/|\/)+/, "");
     return kind === "img"

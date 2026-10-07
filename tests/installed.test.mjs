@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { listInstalledPlugins, readProfileDeps, readInstalledPluginReadme } from '../lib/core/installed.js'
+import { githubRepoFromRepository } from '../lib/core/installed.js'
 
 let dir
 beforeEach(() => {
@@ -221,5 +222,15 @@ describe('listInstalledPlugins/readProfileDeps：partial 语义与特殊 key', (
     assert.equal(res.items[0].pkg, 'constructor')
     const readme = await readInstalledPluginReadme('constructor', dir)
     assert.ok(readme.readme.includes('# legit'))
+  })
+})
+
+describe('githubRepoFromRepository（0.9.49 尾部放宽）', () => {
+  it('标准/尾斜杠/子路径/.git/git@ 形态归一 owner/repo', () => {
+    assert.equal(githubRepoFromRepository('git+https://github.com/o/r.git'), 'o/r')
+    assert.equal(githubRepoFromRepository('https://github.com/o/r/'), 'o/r')
+    assert.equal(githubRepoFromRepository('https://github.com/o/r/tree/main'), 'o/r')
+    assert.equal(githubRepoFromRepository({ url: 'git@github.com:o/r.git' }), 'o/r')
+    assert.equal(githubRepoFromRepository('https://gitlab.com/g/p'), null)
   })
 })

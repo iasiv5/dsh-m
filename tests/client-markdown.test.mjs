@@ -298,7 +298,7 @@ describe('0.9.48 实体解码与仓库基址锚定', () => {
     assert.equal(mimg[0].children[0].props.src, 'https://raw.githubusercontent.com/o/r/HEAD/docs/b.png')
     const mixed = md.renderMarkdown('[x](https://a.com) [y](#frag)', { repo: 'o/r' })
     assert.equal(mixed[0].children[0].props.href, 'https://a.com')
-    assert.equal(mixed[0].children[2].props.href, '#frag')
+    assert.equal(mixed[0].children[2].props.href, 'https://github.com/o/r#frag') // 0.9.49：锚点跳仓库页同名锚
     const up = md.renderMarkdown('<img src="../img/a.png">', { repo: 'o/r' })
     assert.equal(up[0].props.src, 'https://raw.githubusercontent.com/o/r/HEAD/img/a.png')
   })
@@ -307,5 +307,30 @@ describe('0.9.48 实体解码与仓库基址锚定', () => {
     assert.equal(md.renderMarkdown('[a](b.md)')[0].children[0].props.href, '#')
     md.renderMarkdown('[a](b.md)', { repo: 'o/r' }) // 带基址渲染后
     assert.equal(md.renderMarkdown('[a](b.md)')[0].children[0].props.href, '#', 'RENDER_REPO 应在渲染结束恢复')
+  })
+})
+
+describe('0.9.49 链接归一与已装基址配套', () => {
+  const md = createMarkdown(h)
+
+  it('协议相对 //host/x 归一 https（有无基址一致），不再误入站内或仓库路径', () => {
+    assert.equal(md.renderMarkdown('[c](//cdn.a/x.js)')[0].children[0].props.href, 'https://cdn.a/x.js')
+    assert.equal(md.renderMarkdown('[c](//cdn.a/x.js)', { repo: 'o/r' })[0].children[0].props.href, 'https://cdn.a/x.js')
+  })
+
+  it('git@github.com:o/r.git 内联链接归一 https 形态', () => {
+    const n = md.renderMarkdown('[clone](git@github.com:owner/repo.git)')
+    assert.equal(n[0].children[0].props.href, 'https://github.com/owner/repo')
+    const n2 = md.renderMarkdown('[clone](git@github.com:owner/repo)')
+    assert.equal(n2[0].children[0].props.href, 'https://github.com/owner/repo')
+  })
+
+  it('锚点：有基址跳仓库页同名锚，无基址原地透传，裸 # 恒原样', () => {
+    assert.equal(md.renderMarkdown('[a](#frag)', { repo: 'o/r' })[0].children[0].props.href, 'https://github.com/o/r#frag')
+    assert.equal(md.renderMarkdown('[a](#frag)')[0].children[0].props.href, '#frag')
+    assert.equal(md.renderMarkdown('[a](#)')[0].children[0].props.href, '#')
+    assert.equal(md.renderMarkdown('[a](#)', { repo: 'o/r' })[0].children[0].props.href, '#')
+    const img = md.renderMarkdown('![x](#f)', { repo: 'o/r' }) // img kind 不锚仓库页
+    assert.equal(img[0].children[0].props.src, '#f')
   })
 })
