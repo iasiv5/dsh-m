@@ -962,10 +962,17 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   return h(
     React.Fragment,
     null,
-    h("div", { ref: sentinelRef, style: { height: "1px" } }),
     h(
       "div",
       { className: "dsvm-chipswrap" },
+      // 吸顶检测哨兵（0.9.52）：移入 sticky 容器内绝对定位——sticky 本身即定位上下文，
+      // 哨兵退出 .dshm-body 的 flex 流，不再多吃一份 12px gap（此前哨兵作为兄弟子项在
+      // 搜索框与分类行之间压出 12+1+12=25px 空带，行距节奏破坏）。top:-5px 复刻旧几何
+      // （旧兄弟哨兵顶边恰在 wrap 上沿上方 5px），IO 出视口触发点逐像素等价。
+      h("div", {
+        ref: sentinelRef,
+        style: { position: "absolute", top: "-5px", left: 0, width: "1px", height: "1px", pointerEvents: "none" },
+      }),
       h(
         "div",
         { ref: wrapRef, className: "dshm-chips", title: wrapTitle || undefined },

@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.52 变更：头部行距统一——吸顶哨兵移出 flex 流，消除搜索框与分类行间 25px 空带
+
+- **动机（主人截图发现）**：市场头部「搜索框行 → 分类 chips 行」间距实测 25px（12 gap + 1px 哨兵 + 12 gap），是「分区 chips → 搜索框行」12px 节奏的两倍余，社区/精选两区一致，视觉上是一条全宽无内容死带；搜索态下 ZoneChips 连带哨兵整体卸载、空带自动消失——证明是布局副作用而非设计节奏。
+- **根因**：0.7.0 Task 10 引入的吸顶检测哨兵（1px div，IntersectionObserver 观察其滚出视口 → chips 吸顶自动收一行）是 `.dshm-body`（flex column, gap:12px）的直接子项，多吃一份 gap。哨兵必须在流内才能服务吸顶：直接删除 / `display:contents` / 与 wrap 外包 wrapper 三种朴素方案分别杀死 IO、令收缩永久生效、锁死吸顶行程，均否决。
+- **改动（单点，ZoneChips 渲染尾）**：哨兵移入 `.dsvm-chipswrap` 内部绝对定位（`position:sticky` 本身即定位上下文），`top:-5px` 复刻旧几何——旧兄弟哨兵顶边恰在 wrap 上沿上方 5px，IO 出视口触发点逐像素等价。无头 Chromium 探针实证吸顶链路完整：pin 后 wrapTop=0、哨兵 −5px 出视口、IO `isIntersecting=false`（stuck 触发正常）。行距恢复 `zoneBar |12| searchRow |12| chips`：搜索框→分类行 24.36px→12px，头部净省 ~13px，浏览态与搜索态节奏一致。
+- **测试**：全量 1200 例零失败、typecheck 零错误；几何与吸顶行为以临时无头探针实证后移除（不入正式套件）。
+
 ### 0.9.51 变更：社区条目 github 字段补全（图标覆盖 45.6% → 100%）
 
 - **动机**：社区区 npm 源条目卡片恒为首字母色块——适配层 npm 分支只产出 `npm` 字段即定源，上游目录 `url` 里的 GitHub repo 映射只被降级进 homepage，`github` 字段恒缺，客户端 Icon 的 owner 头像兜底（`github.com/<owner>.png?size=64`）无从触发。实测 `dsh-plugin-catalog@2026.1007.4837`：4,226 条可收录条目中 npm 源 2,298 条 **100% 带 github.com url**，纯数据丢弃，非上游缺失。
@@ -385,6 +392,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.52 — uniform header rhythm: sticky sentinel leaves the flex flow, killing the 25px dead band between search row and category chips
+
+- **Motivation (spotted in the owner's screenshots)**: the market header gap between the search row and the category chips row measures 25px (12 gap + 1px sentinel + 12 gap) — more than double the 12px rhythm between zone chips and the search row, identical in both community and curated zones, visually a full-width empty dead band; in search mode ZoneChips (and its sentinel) unmount entirely and the band disappears — proof it is a layout side effect, not designed rhythm.
+- **Root cause**: the sticky-detection sentinel added in 0.7.0 Task 10 (a 1px div watched by an IntersectionObserver — leaving the viewport means the chips row is pinned → auto-collapse to one row) is a direct flex child of `.dshm-body` (flex column, gap:12px) and consumes an extra gap. The sentinel must stay in-flow to serve stickiness: naive alternatives were all rejected — removing it / `display:contents` kills the observer (permanent one-row state), wrapping sentinel+wrap in a div locks the sticky travel.
+- **Change (single point, ZoneChips render tail)**: the sentinel moves inside `.dsvm-chipswrap` as an absolutely-positioned child (`position:sticky` is itself a positioning context), with `top:-5px` replicating the old geometry — the old sibling sentinel's top edge sat exactly 5px above the wrap's top edge, so the IO exit trigger is pixel-equivalent. A headless-Chromium probe verified the full stuck chain when pinned: wrapTop=0, sentinel at −5px out of viewport, IO `isIntersecting=false`. Spacing returns to `zoneBar |12| searchRow |12| chips`: search→chips 24.36px → 12px, header ~13px shorter, browse-mode rhythm now matches search mode.
+- **Tests**: full suite 1200 cases with zero failures and a clean typecheck; geometry and sticky behavior verified via temporary headless probes, then removed (not added to the formal suite).
 
 ### Added in 0.9.51 — community entries gain a derived github field (icon coverage 45.6% → 100%)
 
