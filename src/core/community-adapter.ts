@@ -182,6 +182,10 @@ export function adaptCommunityCatalog(catalog: CommunityCatalog): AdaptCommunity
     if (npm !== null) {
       source = 'npm'
       npmName = npm
+      // 0.9.51：npm 条目补派生 github（url 为 github.com 形态时取 owner/repo，子包取 repo 根，
+      // 原样大小写）——图标 owner 头像兜底 / 详情 GitHub 链接 / 已装匹配与精选双源条目同语义。
+      // 派生失败不产出键、不跳过条目（条目层宽松，Q43）。
+      github = githubFromUrl(raw.url) ?? undefined
     } else {
       const gh = githubFromUrl(raw.url)
       if (gh === null) {
