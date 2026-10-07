@@ -56,7 +56,7 @@ describe('adaptCommunityCatalog — 入库 fixture 全量', () => {
     assert.ok(e, 'id 应为小写 owner--name 合成')
     assert.equal(e.source, 'npm')
     assert.equal(e.npm, '@anonyjcy/dsh-j-space')
-    assert.equal(e.github, undefined)
+    assert.equal(e.github, 'AnonyJcy/dsh-j-space')
     assert.equal(e.homepage, 'https://github.com/AnonyJcy/dsh-j-space')
     assert.deepEqual(e.tags, [])
     assert.equal(e.name, 'dsh-j-space')
@@ -256,6 +256,7 @@ describe('adaptCommunityCatalog — 合成条目契约', () => {
     assert.equal(r.entries.length, 1)
     assert.equal(r.skippedSubpathNoNpm, 0)
     assert.equal(r.entries[0].source, 'npm')
+    assert.equal(r.entries[0].github, '23swccp/dsh-undo')
   })
 
   it('name 含 # 且无 npm 但 url 干净 → 仍按子包跳过（name 形态优先判定）', () => {
@@ -265,6 +266,31 @@ describe('adaptCommunityCatalog — 合成条目契约', () => {
     assert.equal(r.entries.length, 0)
     assert.equal(r.skippedSubpathNoNpm, 1)
     assert.equal(r.skippedDirty, 0)
+  })
+
+  it('npm 条目 url 为 github.com → 派生 github 原样大小写，homepage 并存（0.9.51）', () => {
+    const r = adaptCommunityCatalog(catalogOf([
+      { name: 'a', owner: 'o', category: 'ui', npm: 'pkg-a', url: 'https://github.com/Oo/Ra-Repo', description: { en: 'a' } },
+    ]))
+    assert.equal(r.entries[0].source, 'npm')
+    assert.equal(r.entries[0].github, 'Oo/Ra-Repo', 'owner/repo 保留 url 原样大小写（Q3）')
+    assert.equal(r.entries[0].homepage, 'https://github.com/Oo/Ra-Repo')
+  })
+  it('npm 条目 url 非 github 域 → 不产生 github 键（0.9.51）', () => {
+    const r = adaptCommunityCatalog(catalogOf([
+      { name: 'b', owner: 'o', category: 'ui', npm: 'pkg-b', url: 'https://gitlab.com/oo/rb', description: { en: 'b' } },
+    ]))
+    assert.equal('github' in r.entries[0], false)
+  })
+  it('npm 条目无 url → 不产生 github 键（0.9.51）', () => {
+    const r = adaptCommunityCatalog(catalogOf([{ name: 'c', owner: 'o', category: 'ui', npm: 'pkg-c', description: { en: 'c' } }]))
+    assert.equal('github' in r.entries[0], false)
+  })
+  it('npm 条目 url 非法 github 形状（仅 owner）→ 不产生 github 键（0.9.51）', () => {
+    const r = adaptCommunityCatalog(catalogOf([
+      { name: 'd', owner: 'o', category: 'ui', npm: 'pkg-d', url: 'https://github.com/only-owner', description: { en: 'd' } },
+    ]))
+    assert.equal('github' in r.entries[0], false)
   })
 })
 
