@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.54 变更：评审修复随版（ZoneChips 重测盲区/⌃ 弹回/overlay 居中）+ dsh-skip-browser-auth 收录文案对账
+
+- **ZoneChips 三处评审修复（执行结果评审 R1，`b2aab5f`）**：① 测量 deps 以 `chips` 引用替代 `chips.length` 并叠加 `active`——同长度内容变化（计数刷新/激活加粗变宽）确定性重测，消除 RO 因 max-height 钳制失聪导致的陈旧 geom 盲区（被裁 chip 保持可聚焦/激活分类越界不自动展开的失效窗口，D4 违背态）；② `⌃` 手动收起无条件记录 autoRef——手动收起全路径被尊重，消除展开态 geom 陈旧时收起被决策 effect 弹回的边缘漂移；③ overlay 组按 rowHeight 垂直居中（bottom 补偿偏移）。
+- **收录文案对账（回应评审 Q5/Q7）**：dsh-skip-browser-auth 描述两轮更新随版生效（`ed6043a` 判别修复说明 + 缺陷警示、`23da0fd` 警示期结束瘦身保留保持最新版提示）；自本版起发版前执行 tag↔CHANGELOG 对账，提交弃用 `git add -A` 改显式定点添加。
+- **测试**：全量 1221 例零失败、typecheck 零错误；定向探针实证 Q1（同长度文案变化 hidden 0→5 即时重算）与 Q6（⌃ 收起后 +500ms 不弹回）；真机 e2e（V1 冷存储/V4 吸顶/V6 筛选/V7 深色）见 0.9.53 证据链。
+
 ### 0.9.53 变更：ZoneChips 方案A「隐身全量测量」——冷挂载分类行错误折叠根除 + 行容量即时重测
 
 - **动机（0.9.52 端到端验证发现）**：新浏览器 profile（无 localStorage 快照）首开面板时，市场数据未到 → `fit` 在空列表上测量 → 数据到达后重测面对的是按陈旧预算折叠的 DOM（只渲染 1 颗 + 「+N」）→ 棘轮式冻结在「3 颗 + +20」单行折叠。暖会话（快照命中）首挂载即全量数据、一次测准，故 0.7.0 以来从未暴露。姊妹问题：测量 effect 不监听宽度变化，窗口缩放后 `+N` 与实际容量脱节。完整根因链与无头实证见 `docs/plans/2026-10-08-zonechips-visual-clip-requirements.md`。
@@ -399,6 +405,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.54 — review fixes ship (ZoneChips stale-geom / ⌃ bounce / overlay centering) + dsh-skip-browser-auth catalog copy reconciliation
+
+- **ZoneChips review fixes (execution-review R1, `b2aab5f`)**: ① measure deps use the `chips` reference instead of `chips.length` plus `active` — same-length content changes (count refresh / active bold reflow) now deterministically re-measure, closing the stale-geom blind window where RO is deafened by the max-height clamp (clipped-but-focusable chips / missed auto-expand, a D4 violation); ② manual `⌃` collapse unconditionally records autoRef — manual collapse is respected on every path, removing the edge drift where a stale-geom decision effect bounced the collapse back; ③ the overlay group is vertically centered per measured row-height (compensated bottom offset).
+- **Catalog copy reconciliation (review Q5/Q7)**: two rounds of dsh-skip-browser-auth description updates ship with this release (`ed6043a` fixed-branch note + defect warning, `23da0fd` warning-period ended, slimmed to keep-latest hint); from this release onward a tag↔CHANGELOG reconciliation runs before publishing, and commits use explicit `git add <files>` instead of `-A`.
+- **Tests**: full suite 1221 cases zero failures, typecheck clean; directed probes verified Q1 (same-length label change: hidden 0→5 live recompute) and Q6 (post-⌃ +500ms stays collapsed); real-panel e2e (V1 cold storage / V4 sticky / V6 filter / V7 dark theme) in the 0.9.53 evidence chain.
 
 ### Changed in 0.9.53 — ZoneChips Plan A "invisible full-list measurement": cold-mount mis-collapse eradicated + live row-capacity re-measurement
 
