@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.58 优化：+N 动态紧跟末可见分类，并与其框高一致
+
+- **位置（`4ade54f`）**：在 0.9.57 的独立安全槽位中，根据末可见分类 chip 的实测右缘设置 `+N` 左缘 = 右缘 + 6px；槽位由 52px 扩为 60px，窄宽时仍不与分类或筛选重叠。精选区没有筛选时不额外预留筛选 gutter；展开态 `⌃` 仍位于列表尾部。
+- **框高（`aeed14c`）**：`+N` 直接采用末可见分类的实测 border-box 高度，并以 inline-flex 居中数字，不再依赖西文数字与中文标签各自的浏览器自动行高。只改 `+N`，不改变分区 chip 的尺寸。
+- **验证**：1224 项测试与 typecheck 全绿；用真实 DSH 目录数据在 880/700/520/420/320px 社区区测得两框同高 21px、顶边差 0、水平间距约 5–6px、相交面积 0；260px 精选区也无重叠，精选↔社区往返正常。
+
 ### 0.9.57 修复：精选切换后面板崩溃/无法重开 + 折叠筛选双框与 +N 重叠
 
 - **根因（0.9.56 真机复现）**：精选区的标签对象可能每次父级重渲染都重建；layout effect 依赖 `chips` 数组引用及自身更新的 `geom`，同步测量反复进入、最终触发 React `Maximum update depth exceeded`（#185）。React 清空面板树但留下 `#dshm-panel-root`，旧入口守卫只检查容器存在，导致点击入口永久无效。叠加折叠筛选定位壳和按钮的双边框、以及 +N 位置夹取/文档流试验在窄宽下压住相邻 chip。
@@ -425,6 +431,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Improved in 0.9.58 — the +N toggle follows the last visible category at matching height
+
+- **Position (`4ade54f`)**: within the 0.9.57 reserved, overlap-free slot, position `+N` from the measured right edge of the last visible category chip plus 6px. The slot grows from 52px to 60px to preserve clearance at narrow widths. Curated rows without a Filter trigger still reserve no unnecessary Filter gutter; expanded `⌃` remains at list end.
+- **Equal height (`aeed14c`)**: use the last visible chip’s measured border-box height for `+N` and center its text with inline-flex, rather than letting Latin-only text and CJK category labels acquire different automatic line heights. Other chips keep their existing dimensions.
+- **Verification**: 1224 tests and typecheck pass. Against the real DSH catalog, community layouts at 880/700/520/420/320px showed equal 21px boxes, 0px top-edge delta, roughly 5–6px horizontal separation, and zero overlap; the 260px curated layout had zero overlap and curated↔community switching remained stable.
 
 ### Fixed in 0.9.57 — curated-zone update loop, dead panel entry, and collapsed filter/overflow overlaps
 
