@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.59 优化：分类行左缘内缩 8px + 全屏下空转 ⌃ 收起钮按行数派生隐藏
+
+- **分类行内缩（`f42e5be`）**：分类 chips 行与搜索框/卡片左缘齐平，小颗粒胶囊贴着大元素左缘视觉憋仄；分类行整体右移 8px 留出呼吸空间。仅作用分类行（ZoneChips），上方分区 chips 行不随动。`offsetLeft` 与 absolute 定位同以 `.dshm-chips` 的 padding 盒为原点 → `+N` 跟随、右侧筛选钉位、`offsetTop` 裁剪几何均不受影响。
+- **⌃ 空转修复（`7cbdf11`）**：全屏等宽容器下分类 chips 可能排进 ≤ maxRows（2）行，展开态 `⌃` 收起钮点击后布局零变化（`hiddenCount=0` 连 `+N` 都不会出现），成死按钮。新增展开态行数测量 `expRows`（复用 `chipRows` 纯函数，measure 展开态分支只写 `expRows` 不动 `geom`），`⌃` 仅当展开行数 > maxRows 时渲染；ResizeObserver 在展开态也挂载——全屏↔窗口切换的宽度变化正是重测触发源，全屏下 `⌃` 自动隐藏、退回窗口自动恢复，行数含 `⌃` 自身故显隐收敛不振荡。
+- **验证**：1224 项测试全绿；真实 DSH Web 实测窗口/全屏两态 `⌃` 显隐与收起行为、分类行 8px 内缩生效。
+
 ### 0.9.58 优化：+N 动态紧跟末可见分类，并与其框高一致
 
 - **位置（`4ade54f`）**：在 0.9.57 的独立安全槽位中，根据末可见分类 chip 的实测右缘设置 `+N` 左缘 = 右缘 + 6px；槽位由 52px 扩为 60px，窄宽时仍不与分类或筛选重叠。精选区没有筛选时不额外预留筛选 gutter；展开态 `⌃` 仍位于列表尾部。
@@ -431,6 +437,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Improved in 0.9.59 — 8px category-row inset and a derived visibility for the no-op collapse toggle
+
+- **Category-row inset (`f42e5be`)**: the category chip row sat flush with the search box and card grid, and small pills hugging large elements felt cramped; the row now starts 8px further right for breathing room. Only the category row (ZoneChips) moves — the zone chip row above stays put. `offsetLeft` and absolute positioning share the `.dshm-chips` padding-box origin, so `+N` tracking, the pinned Filter trigger and `offsetTop`-based clip geometry are all unaffected.
+- **No-op `⌃` fix (`7cbdf11`)**: at fullscreen width all category chips can fit within maxRows (2) rows, where clicking the expanded-state `⌃` collapse toggle changed nothing visually (`hiddenCount=0`, not even a `+N` appears) — a dead button. Added an expanded-state row measurement `expRows` (reusing the pure `chipRows` helper; the expanded measure branch only writes `expRows`, never `geom`), and `⌃` renders only when expanded rows exceed maxRows. The ResizeObserver now also observes while expanded — the width change of fullscreen↔window switches is exactly the remeasure trigger — so `⌃` hides itself in fullscreen and returns back in the window; counting includes `⌃` itself, so visibility converges without oscillation.
+- **Verification**: 1224 tests pass; verified against real DSH Web for `⌃` visibility and collapse behavior in both window and fullscreen, and for the 8px category-row inset.
 
 ### Improved in 0.9.58 — the +N toggle follows the last visible category at matching height
 
