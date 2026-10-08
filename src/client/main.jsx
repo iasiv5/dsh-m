@@ -324,7 +324,7 @@ const CSS = `
 .dshm-chips{display:flex;flex-wrap:wrap;gap:6px;position:relative}
 .dshm-chips-clip{overflow:hidden}
 .dshm-chips-gutter{padding-right:var(--dshm-clip-gutter,96px)}
-.dsvm-chipmore{position:absolute;right:8px;display:flex;align-items:center;gap:8px;min-height:28px;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff));border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));border-radius:999px;padding:2px 8px;box-sizing:border-box}
+.dsvm-chipmore{position:absolute;right:8px}
 .dsvm-searchrow{display:flex;align-items:center;gap:8px}
 .dsvm-searchrow .dshm-search{flex:1;display:flex}
 .dshm-search{position:relative}
