@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.60 修复：截图灯箱窗口态无导航/无法退出——createPortal 逃出面板包含块 + 控件常驻
+
+- **根因**：灯箱 `position:fixed` 是 `.dshm-panel`（`backdrop-filter` + `overflow:hidden`）的后代，面板盒成了它的包含块——图片按视口单位放大（旧 94vw/80vh），在 ≤680px 高的窗口态面板里必然溢出，in-flow 的 ‹›/圆点被裁出屏外，又没有 ✕；全屏态面板恰为视口才「碰巧」可见（即「只有全屏才有导航按钮，窗口态图片占满小屏且无法退出」）。
+- **v2 修复（`b89af18`）**：① 灯箱 `createPortal` 挂 `document.body`——逃出包含块，窗口/全屏/窄屏任何状态都按真实视口定位（SSR/无 document 回退原树，冒烟测试照常渲染）；② 控件全部绝对定位贴边，构造上不可能被图片挤出屏——右上 ✕ 常驻、两侧 ‹› 大热区、底部「计数+圆点+操作提示」pill，图片降为 74vh 给控件留位；③ 退出路径四条：点图即关（zoom-out 光标）、点遮罩关、Esc 关、✕ 关——键盘 ←→/Esc 语义不变（DetailModal 文档级监听不受 portal 影响）；④ 单图不渲染 ‹›/计数/圆点（无死控件），圆点热区 `background-clip:content-box` 扩到 18px，开灯箱即聚焦 ✕（对齐 DetailModal U8 先例）。
+- **配套**：环形步进抽纯函数 `lbStep`（`lightbox.js`，组件与键盘共用，单测覆盖回绕/单图/非有限输入）；新增 `client-lightbox.test.mjs` 结构守卫（portal/✕/点图关/单图收敛/CSS 绝对定位/内联取模退役），SSR 冒烟补灯箱多图/单图结构断言。
+- **验证**：1234 项测试全绿、typecheck 零错误；无头 Chromium 复刻 `.dshm-overlay > .dshm-panel` 真实语境 16/16 断言通过——面板内 fixed 探针盒=面板盒（包含块实证）、灯箱盒=全视口、✕/‹›/pill 全程在视口内、›/圆点/‹/←→ 导航与 Esc/点图关闭正确、全屏态回归、500px 矮窗口控件仍常驻（旧版此处必裁）。
+
 ### 0.9.59 优化：分类行左缘内缩 8px + 全屏下空转 ⌃ 收起钮按行数派生隐藏
 
 - **分类行内缩（`f42e5be`）**：分类 chips 行与搜索框/卡片左缘齐平，小颗粒胶囊贴着大元素左缘视觉憋仄；分类行整体右移 8px 留出呼吸空间。仅作用分类行（ZoneChips），上方分区 chips 行不随动。`offsetLeft` 与 absolute 定位同以 `.dshm-chips` 的 padding 盒为原点 → `+N` 跟随、右侧筛选钉位、`offsetTop` 裁剪几何均不受影响。
@@ -437,6 +444,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.60 — screenshot lightbox unusable when windowed: portal out of the panel containing block + always-visible controls
+
+- **Root cause**: the lightbox was a `position:fixed` descendant of `.dshm-panel` (`backdrop-filter` + `overflow:hidden`), so the panel box became its containing block. The image sized in viewport units (old 94vw/80vh) inevitably overflows the ≤680px-tall windowed panel and the in-flow ‹›/dots row gets clipped off-screen, with no close button at all; fullscreen only worked because the panel then equals the viewport (the reported "nav buttons appear only in fullscreen; windowed fills the small screen and cannot exit").
+- **v2 fix (`b89af18`)**: ① portal the lightbox to `document.body` — it escapes the containing block and is positioned against the real viewport in every panel state (SSR/no-document falls back to the plain tree so the smoke test still renders it); ② every control is absolutely positioned to the edges and can never be pushed off-screen by an image — persistent top-right ✕, large side ‹ › arrows, a bottom counter+dots+hint pill, and the image capped at 74vh; ③ four ways out: click the image (zoom-out cursor), click the backdrop, Esc, or ✕ — keyboard ←→/Esc semantics unchanged (DetailModal document-level listeners are unaffected by the portal); ④ single-image shots hide ‹›/counter/dots (no dead controls), dot hit areas grow to 18px via `background-clip:content-box`, and the close button is focused on open (same pattern as DetailModal U8).
+- **Supporting changes**: the ring step is extracted as the pure `lbStep` helper (`lightbox.js`, shared by the component and the keyboard handler; unit-tested for wrap-around, single image and non-finite input); new `client-lightbox.test.mjs` structural guards (portal/✕/click-image-close/single-image/CSS absolutes/inline-modulo retired); SSR smoke extended with multi- and single-image lightbox assertions.
+- **Verification**: 1234 tests pass and typecheck is clean; a headless Chromium probe reproducing the real `.dshm-overlay > .dshm-panel` context passed 16/16 assertions — a fixed probe inside the panel equals the panel box (containing block proven), the lightbox box equals the viewport, ✕/‹›/pill stay within the viewport at all times, ›/dot/‹/←→ navigation plus Esc/click-image close behave correctly, fullscreen regresses nothing, and controls remain present in a 500px-tall window (always clipped before).
 
 ### Improved in 0.9.59 — 8px category-row inset and a derived visibility for the no-op collapse toggle
 
