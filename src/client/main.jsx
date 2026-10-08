@@ -350,6 +350,10 @@ const CSS = `
 .dshm-chip:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
 .dshm-chip.on{background:var(--dsw-specific-sidebar-nav-item-active,rgba(38,49,72,.08));border-color:transparent;color:var(--dsw-alias-label-primary,inherit);font-weight:500}
 .dsvm-chipswrap{position:sticky;top:-14px;z-index:5;background:var(--dsw-alias-bg-base,#fff);padding:8px 0;margin:-8px 0;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.14))}
+/* 0.9.59 分类行左缘内缩 8px：与搜索框/卡片左缘齐平时胶囊行视觉憋仄，整体右移留出呼吸空间。
+   仅作用分类行（ZoneChips），上方分区 chips 行不随动；offsetLeft 与 absolute 定位同以
+   .dshm-chips 的 padding 盒为原点 → +N 跟随、右侧筛选钉位、offsetTop 裁剪几何均不受影响。 */
+.dsvm-chipswrap .dshm-chips{padding-left:8px}
 .dsvm-pagejump{display:inline-flex;align-items:center;gap:4px;margin-left:8px}
 .dsvm-pagejump-input{width:56px;height:24px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.28));background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:0 10px;font:inherit;font-size:12px;outline:none;text-align:center;transition:border-color .15s,color .15s}
 .dsvm-pagejump-input:hover{color:var(--dsw-alias-label-primary,inherit)}
