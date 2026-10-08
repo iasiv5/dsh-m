@@ -14,6 +14,7 @@ const API = "/dshm";
 const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
+const { lbStep } = require("./lightbox.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -84,6 +85,7 @@ const ZH = {
   "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
   "pager.jump": "跳转", "pager.jump.ph": "页号",
   "panel.fullscreen": "全屏", "panel.restore": "还原",
+  "lb.title": "插件截图预览", "lb.prev": "上一张（←）", "lb.next": "下一张（→）", "lb.hint": "点图或空白处关闭 · ←→ 切换",
   "filter.title": "筛选", "filter.sortfield": "排序字段", "filter.sortdir": "排列方向", "filter.pagesize": "每页条数",
   "filter.field.downloads": "npm 下载量（近 30 天）", "filter.field.stars": "Star 数", "filter.field.added": "收录日期",
   "filter.dir.desc": "降序", "filter.dir.asc": "升序",
@@ -195,6 +197,7 @@ const EN = {
   "notice.unavailable": "Registry unavailable · check the address in Settings",
   "pager.jump": "Go", "pager.jump.ph": "Page",
   "panel.fullscreen": "Fullscreen", "panel.restore": "Restore",
+  "lb.title": "Plugin screenshot preview", "lb.prev": "Previous (←)", "lb.next": "Next (→)", "lb.hint": "Click image or backdrop to close · ←→ to switch",
   "filter.title": "Filter", "filter.sortfield": "Sort by", "filter.sortdir": "Direction", "filter.pagesize": "Per page",
   "filter.field.downloads": "npm downloads (30-day)", "filter.field.stars": "Stars", "filter.field.added": "Date added",
   "filter.dir.desc": "Descending", "filter.dir.asc": "Ascending",
@@ -380,13 +383,23 @@ const CSS = `
 .dsvm-shotrow{display:flex;gap:6px;overflow-x:auto;padding:2px 0}
 .dsvm-shotbox{min-width:120px;min-height:84px;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.08);border-radius:6px;cursor:zoom-in;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
 .dsvm-shot{max-width:220px;max-height:130px;border-radius:6px;display:block}
-.dsvm-lightbox{position:fixed;inset:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
-.dsvm-lightbox img{max-width:94vw;max-height:80vh;border-radius:8px}
-.dsvm-lbnav{display:flex;align-items:center;gap:10px}
-.dsvm-lbcount{color:rgba(255,255,255,.75);font-size:12px}
-.dsvm-lbdots{display:flex;gap:6px}
-.dsvm-lbdot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer}
-.dsvm-lbdot.on{background:#fff}
+/* 灯箱 v2（0.9.60）：组件 createPortal 挂 body（逃出面板 backdrop-filter 包含块），
+   控件全部绝对定位贴视口边——✕ 常驻右上、‹› 两侧居中、底部计数+圆点 pill，
+   任何面板状态/任意图片高度下都不会被挤出屏幕；图片降到 74vh 给底部控件留位。 */
+.dsvm-lightbox{position:fixed;inset:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center}
+.dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh;border-radius:8px;cursor:zoom-out;box-shadow:0 10px 44px rgba(0,0,0,.55);display:block}
+.dsvm-btn:focus-visible{outline:2px solid rgba(255,255,255,.75);outline-offset:2px}
+.dsvm-lbclose{position:absolute;top:12px;right:12px;width:38px;height:38px;padding:0;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.dsvm-lbarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:60px;padding:0;font-size:26px;line-height:1;border-radius:10px}
+.dsvm-lbarrow.prev{left:12px}
+.dsvm-lbarrow.next{right:12px}
+.dsvm-lbbar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;max-width:94vw;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:7px 16px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.dsvm-lbcount{color:rgba(255,255,255,.82);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dsvm-lbhint{color:rgba(255,255,255,.55);font-size:11px;white-space:nowrap}
+.dsvm-lbdots{display:flex;gap:2px}
+.dsvm-lbdot{box-sizing:content-box;width:8px;height:8px;padding:5px;border-radius:50%;background:rgba(255,255,255,.32);background-clip:content-box;cursor:pointer}
+.dsvm-lbdot.on{background:#fff;background-clip:content-box}
+@media (max-width:640px){.dsvm-lbhint{display:none}.dsvm-lbarrow{width:40px;height:54px}}
 .dsvm-card-clickable, .dshm-card{cursor:pointer}
 .dshm-card:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
@@ -1188,25 +1201,42 @@ function Shot({ src, onClick }) {
   );
 }
 
-// ---------- 截图灯箱（←→/Esc 键盘、圆点导航、禁自动轮播——大图必须停住直到观看者主动移动） ----------
+// ---------- 截图灯箱 v2（0.9.60） ----------
+// 根因（窗口态「图片占满、没有导航、无法退出」）：灯箱 position:fixed 是 .dshm-panel
+// （backdrop-filter + overflow:hidden）的后代 → 面板盒成了包含块；图片按视口单位放大
+// （旧 94vw/80vh 在 ≥730px 高的窗口里必然超出 ≤680px 的面板盒），‹›/圆点被裁到屏外，
+// 又没有 ✕，全屏态面板恰为视口才侥幸可见。v2 三层修复：
+// ① createPortal 挂 document.body——逃出包含块，任何面板状态（窗口/全屏/窄屏）都按真实视口定位；
+// ② 控件全部绝对定位贴边（右上 ✕ 常驻、两侧 ‹›、底部计数+圆点 pill）——构造上不可能被图片挤出屏；
+// ③ 点图即关（zoom-out 光标）+ 遮罩点击关 + Esc（DetailModal 文档级）——四条退出路径。
+// 键盘 ←/→ 仍在 DetailModal 文档级监听（portal 不影响）；SSR/无 document 环境回退非 portal 树（冒烟测试可渲染）。
 function Lightbox({ shots, index, onNav, onClose }) {
-  return h(
+  const single = shots.length <= 1;
+  const closeRef = useRef(null);
+  useEffect(() => {
+    // 对齐 DetailModal U8：开灯箱即聚焦关闭钮，键盘用户第一时间可达退出
+    if (closeRef.current) closeRef.current.focus();
+  }, []);
+  const node = h(
     "div",
-    { className: "dsvm-lightbox", ...backdropCloseHandlers(onClose) },
-    h("img", { src: shots[index], alt: "", onClick: (e) => e.stopPropagation(), referrerPolicy: "no-referrer" }),
-    h(
-      "div",
-      { className: "dsvm-lbnav", onClick: (e) => e.stopPropagation() },
-      h("button", { className: "dsvm-btn", onClick: () => onNav((index - 1 + shots.length) % shots.length) }, "‹"),
-      h("span", { className: "dsvm-lbcount" }, `${index + 1} / ${shots.length}`),
-      h("button", { className: "dsvm-btn", onClick: () => onNav((index + 1) % shots.length) }, "›"),
-    ),
-    h(
-      "div",
-      { className: "dsvm-lbdots", onClick: (e) => e.stopPropagation() },
-      ...shots.map((s, i) => h("span", { key: s, className: `dsvm-lbdot${i === index ? " on" : ""}`, onClick: () => onNav(i) })),
-    ),
+    { className: "dsvm-lightbox", role: "dialog", "aria-modal": "true", "aria-label": lookup("lb.title"), ...backdropCloseHandlers(onClose) },
+    h("img", { src: shots[index], alt: "", onClick: onClose, referrerPolicy: "no-referrer" }),
+    h("button", { ref: closeRef, className: "dsvm-btn dsvm-lbclose", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
+    single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow prev", "aria-label": lookup("lb.prev"), title: lookup("lb.prev"), onClick: () => onNav(lbStep(index, -1, shots.length)) }, "‹"),
+    single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow next", "aria-label": lookup("lb.next"), title: lookup("lb.next"), onClick: () => onNav(lbStep(index, 1, shots.length)) }, "›"),
+    single
+      ? null
+      : h(
+          "div",
+          { className: "dsvm-lbbar" },
+          h("span", { className: "dsvm-lbcount" }, `${index + 1} / ${shots.length}`),
+          h("div", { className: "dsvm-lbdots" }, ...shots.map((s, i) => h("span", { key: s, className: `dsvm-lbdot${i === index ? " on" : ""}`, onClick: () => onNav(i) }))),
+          h("span", { className: "dsvm-lbhint" }, lookup("lb.hint")),
+        ),
   );
+  return typeof document !== "undefined" && document.body && typeof rd.createPortal === "function"
+    ? rd.createPortal(node, document.body)
+    : node;
 }
 
 // ---------- 详情 Modal = 卡片超集（0.7.0 Task 12：「detail 显示少于摘要就是倒退」） ----------
@@ -1242,8 +1272,8 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
         else onClose();
       }
       if (lb !== null && shots.length > 1) {
-        if (e.key === "ArrowLeft") setLb((i) => (i - 1 + shots.length) % shots.length);
-        if (e.key === "ArrowRight") setLb((i) => (i + 1) % shots.length);
+        if (e.key === "ArrowLeft") setLb((i) => lbStep(i, -1, shots.length));
+        if (e.key === "ArrowRight") setLb((i) => lbStep(i, 1, shots.length));
       }
     };
     document.addEventListener("keydown", onKey);

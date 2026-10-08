@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __Lightbox: Lightbox };\n',
   )
   await build({
     entryPoints: [entry],
@@ -238,6 +238,23 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(hint.includes('dshm-hint'), 'hint 中性着色在')
     const running = renderToString(h(components.__DetailModal, { it: entry, ...base, installRec: { kind: 'install', target: entry.id, status: 'running' } }))
     assert.ok(typeof running === 'string' && running.length > 0, 'running record 渲染不抛（进度行 SSR 为 null）')
+  })
+
+  // 0.9.60 灯箱 v2：SSR 无 document → 走非 portal 回退树，结构可见可断言；
+  // 浏览器端才走 createPortal 挂 body（逃出面板 backdrop-filter 包含块，结构守卫在 client-lightbox）
+  it('灯箱 v2 多图：✕/‹›/计数/圆点齐备且单图收敛；点图即关语义在 SSR 树可查', () => {
+    const shots = ['a.png', 'b.png', 'c.png']
+    const html = renderToString(h(components.__Lightbox, { shots, index: 0, onNav: () => {}, onClose: () => {} }))
+    assert.ok(html.includes('dsvm-lightbox'), '灯箱根在（SSR 回退树）')
+    assert.ok(html.includes('dsvm-lbclose'), '✕ 常驻')
+    assert.ok(html.includes('dsvm-lbarrow prev') && html.includes('dsvm-lbarrow next'), '‹› 在')
+    assert.ok(html.includes('1 / 3'), '计数在')
+    assert.equal((html.match(/dsvm-lbdot[" ]/g) || []).length, 3, '三张图三颗圆点')
+    assert.ok(html.includes('dsvm-lbhint'), '操作提示在')
+    assert.ok(html.match(/<img[^>]*src="a\.png"/), '当前图渲染')
+    const single = renderToString(h(components.__Lightbox, { shots: ['only.png'], index: 0, onNav: () => {}, onClose: () => {} }))
+    assert.ok(single.includes('dsvm-lbclose'), '单图 ✕ 仍在')
+    assert.ok(!single.includes('dsvm-lbarrow') && !single.includes('dsvm-lbcount') && !single.includes('dsvm-lbdot'), '单图无 ‹›/计数/圆点死控件')
   })
 })
 
