@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.56 变更：ZoneChips +N 重叠根治——in-flow 文档流布局 + 折行减类（主人方案）
+
+- **缺陷（0.9.55 真机复现）**：折叠态 `+N` 采用「绝对定位 + contentW−48 夹取」，当末可见行剩余空间小于徽章宽时，徽章压住末可见 chip（真机：+9 压住「文档与渲染 61」右端计数）。
+- **根治（in-flow 文档流布局）**：`+N` 弃绝对定位，以 in-flow 插在「末可见分类」与「被裁分类」之间——flow 布局与 chip 的重叠在构造上不可能。
+- **折行减类（主人方案）**：被裁分类 `visibility:hidden` → **`display:none`**（不占位，折行减类生效前提）；测量发现 `+N` 顶 > 末可见 chip 行顶（被折出）⇒ `hiddenCount +1`，一枚可见分类退位、`+N` 退回末可见行，同时 `max-height` 扩一行给 `+N` 独占；棘轮单向下行，宽度增大时保守不多显（+N 计数仍真实）。
+- **测试**：全量 1221 例零失败、typecheck 零错误；无头探针实证常宽 880/窄宽 420/展开/收起/Q1 回归全部 `chipOverlapPx = 0`、`+N` 全程可见、展开态 23+⌃+筛选全量、收起后 +N 回归蓝筐位。
+
 ### 0.9.55 变更：ZoneChips 折叠/展开切换钮内联化（对齐 dsh-market 参考设计）+ overlay 叠涂 scrim 强化对比度
 
 - **切换钮内联化（主人提出，dsh-market v1.66.11 参考设计）**：`+N` 从右侧 overlay 组改为**绝对定位内联**——钉在「末可见分类 chip 右侧 +6px」（即末可见行剩余空位），与展开态 `⌃`（列表末尾 in-flow）构成统一位置语义「紧跟当前列表末尾」，只翻方向不挪位；窄宽度放不下时贴内容右缘收口（不侵入筛选槽）。gutter 随 `+N` 移出由 132px 瘦身至 96px（仅承载钉住筛选），同宽度可多显示约 1 颗分类。overlay 组内 `+N` 移除后仅剩钉住筛选，第④类碰撞（R2-N1）自然消解。
@@ -411,6 +418,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.56 — ZoneChips +N overlap eradicated: in-flow document layout + wrap-yield-a-category (owner's design)
+
+- **Defect (reproduced on 0.9.55)**: the collapsed `+N` used "absolute positioning + contentW−48 clamp"; when the last visible row's leftover was narrower than the badge, the badge covered the last visible chip (real panel: +9 covering the tail of 文档与渲染 61).
+- **Fix (in-flow document layout)**: `+N` abandons absolute positioning and flows inline between the last visible category and the clipped categories — chip/badge overlap is impossible by construction.
+- **Wrap-yield-a-category (owner's design)**: clipped categories switch `visibility:hidden` → **`display:none`** (no space — the prerequisite for yielding to work); when the measure finds the `+N` top beyond the last visible chip's row top (wrapped), `hiddenCount +1` — one visible category yields, `+N` pulls back into the last visible row, and `max-height` grows one row to give `+N` its own line; the ratchet is single-direction (down), staying conservative on width growth while the count stays truthful.
+- **Tests**: full suite 1221 cases zero failures, typecheck clean; headless probe verified 880px/420px/expanded/collapsed/Q1-regression all at `chipOverlapPx = 0` with `+N` visible throughout, expanded view showing 23+⌃+filter in full, and `+N` returning to its inline slot after collapse.
 
 ### Changed in 0.9.55 — ZoneChips expand/collapse toggle inline (aligned with the dsh-market reference design) + overlay stacked scrim for contrast
 
