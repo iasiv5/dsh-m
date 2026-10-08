@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.55 变更：ZoneChips 折叠/展开切换钮内联化（对齐 dsh-market 参考设计）+ overlay 叠涂 scrim 强化对比度
+
+- **切换钮内联化（主人提出，dsh-market v1.66.11 参考设计）**：`+N` 从右侧 overlay 组改为**绝对定位内联**——钉在「末可见分类 chip 右侧 +6px」（即末可见行剩余空位），与展开态 `⌃`（列表末尾 in-flow）构成统一位置语义「紧跟当前列表末尾」，只翻方向不挪位；窄宽度放不下时贴内容右缘收口（不侵入筛选槽）。gutter 随 `+N` 移出由 132px 瘦身至 96px（仅承载钉住筛选），同宽度可多显示约 1 颗分类。overlay 组内 `+N` 移除后仅剩钉住筛选，第④类碰撞（R2-N1）自然消解。
+- **overlay 叠涂 scrim（主人提出：浅色主题对比度偏低）**：根因是 `--dsw-alias-bg-base` token 本身 0.55 半透明；overlay 底衬改同 token **三层叠涂**（background-color + 双 linear-gradient 层），有效不透明度 ≈ 1−0.45³ ≈ 91%，深浅主题自适应（深色 rgba(12,26,38,·) / 浅色 rgba(247,250,252,·) 均显著强化），不引入硬编码色值。
+- **测试**：全量 1221 例零失败、typecheck 零错误；无头探针实证：折叠态 `+N` 左缘 = 末可见 chip 右缘 +6px 同行对齐、scrim 双梯度、筛选单钮零碰撞、收起/展开往复位置稳定、Q1 回归（长文案 hidden>0）；真机截图见发版记录。
+
 ### 0.9.54 变更：评审修复随版（ZoneChips 重测盲区/⌃ 弹回/overlay 居中）+ dsh-skip-browser-auth 收录文案对账
 
 - **ZoneChips 三处评审修复（执行结果评审 R1，`b2aab5f`）**：① 测量 deps 以 `chips` 引用替代 `chips.length` 并叠加 `active`——同长度内容变化（计数刷新/激活加粗变宽）确定性重测，消除 RO 因 max-height 钳制失聪导致的陈旧 geom 盲区（被裁 chip 保持可聚焦/激活分类越界不自动展开的失效窗口，D4 违背态）；② `⌃` 手动收起无条件记录 autoRef——手动收起全路径被尊重，消除展开态 geom 陈旧时收起被决策 effect 弹回的边缘漂移；③ overlay 组按 rowHeight 垂直居中（bottom 补偿偏移）。
@@ -405,6 +411,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.55 — ZoneChips expand/collapse toggle inline (aligned with the dsh-market reference design) + overlay stacked scrim for contrast
+
+- **Inline toggle (owner-requested, reference: dsh-market v1.66.11)**: `+N` moves out of the right-side overlay group into an **absolutely-positioned inline slot** pinned at "last visible category chip's right edge + 6px" (the leftover of the last visible row), sharing one position semantic with the expanded `⌃` (in-flow at list end): "hug the current end of the list", flipping direction without relocating; when the leftover is too narrow it clamps to the content right edge without entering the filter gutter. The gutter slims from 132px to 96px (hosting only the pinned filter), showing ~1 more category per width. With `+N` removed, the overlay group hosts only the pinned filter and the R2-N1 4th collision class dissolves naturally.
+- **Overlay stacked scrim (owner-requested: low contrast in light theme)**: root cause is that the `--dsw-alias-bg-base` token itself is 0.55-translucent; the overlay scrim now paints the same token in a **three-layer stack** (background-color + two linear-gradient layers), effective opacity ≈ 1−0.45³ ≈ 91%, theme-adaptive (dark rgba(12,26,38,·) / light rgba(247,250,252,·) both significantly strengthened) with zero hard-coded colors.
+- **Tests**: full suite 1221 cases zero failures, typecheck clean; headless probe verified collapsed-state `+N` left edge = last visible chip right edge + 6px on the same row, double scrim gradients, single-button zero-collision filter, stable toggle position across collapse/expand cycles, and the Q1 regression (long labels: hidden > 0); real-panel screenshots in the release record.
 
 ### Changed in 0.9.54 — review fixes ship (ZoneChips stale-geom / ⌃ bounce / overlay centering) + dsh-skip-browser-auth catalog copy reconciliation
 
