@@ -385,12 +385,16 @@ const CSS = `
 .dsvm-shot{max-width:220px;max-height:130px;border-radius:6px;display:block}
 /* 灯箱 v2（0.9.60）：组件 createPortal 挂 body（逃出面板 backdrop-filter 包含块），
    控件全部绝对定位贴视口边——✕ 常驻右上、‹› 两侧居中、底部计数+圆点 pill，
-   任何面板状态/任意图片高度下都不会被挤出屏幕；图片降到 74vh 给底部控件留位。 */
-.dsvm-lightbox{position:fixed;inset:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center}
+   任何面板状态/任意图片高度下都不会被挤出屏幕；图片降到 74vh 给底部控件留位。
+   评审 R1：✕/‹› 用 .dsvm-btn.dsvm-lb* 复合选择器——基础 .dsvm-btn 规则源顺序靠后
+   （padding:5px 14px/font-size:13px/radius:8px），同特异性下会反杀单类规则（实测字形 13px≠26px）。
+   评审 R2：top 让出 Windows Desktop 拖拽带 var(--dsh-windows-titlebar-height)（0.9.4 先例，
+   壳顶 -webkit-app-region:drag 吞点击、无视 z-index）；Web 无此变量回落 0px 行为不变。 */
+.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center}
 .dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh;border-radius:8px;cursor:zoom-out;box-shadow:0 10px 44px rgba(0,0,0,.55);display:block}
 .dsvm-btn:focus-visible{outline:2px solid rgba(255,255,255,.75);outline-offset:2px}
-.dsvm-lbclose{position:absolute;top:12px;right:12px;width:38px;height:38px;padding:0;border-radius:10px;display:flex;align-items:center;justify-content:center}
-.dsvm-lbarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:60px;padding:0;font-size:26px;line-height:1;border-radius:10px}
+.dsvm-btn.dsvm-lbclose{position:absolute;top:12px;right:12px;width:38px;height:38px;padding:0;border-radius:10px;display:flex;align-items:center;justify-content:center}
+.dsvm-btn.dsvm-lbarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:60px;padding:0;font-size:26px;line-height:1;border-radius:10px}
 .dsvm-lbarrow.prev{left:12px}
 .dsvm-lbarrow.next{right:12px}
 .dsvm-lbbar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;max-width:94vw;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:7px 16px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -399,7 +403,7 @@ const CSS = `
 .dsvm-lbdots{display:flex;gap:2px}
 .dsvm-lbdot{box-sizing:content-box;width:8px;height:8px;padding:5px;border-radius:50%;background:rgba(255,255,255,.32);background-clip:content-box;cursor:pointer}
 .dsvm-lbdot.on{background:#fff;background-clip:content-box}
-@media (max-width:640px){.dsvm-lbhint{display:none}.dsvm-lbarrow{width:40px;height:54px}}
+@media (max-width:640px){.dsvm-lbhint{display:none}.dsvm-btn.dsvm-lbarrow{width:40px;height:54px}}
 .dsvm-card-clickable, .dshm-card{cursor:pointer}
 .dshm-card:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
@@ -1213,6 +1217,16 @@ function Shot({ src, onClick }) {
 function Lightbox({ shots, index, onNav, onClose }) {
   const single = shots.length <= 1;
   const closeRef = useRef(null);
+  const prevFocusRef = useRef(null);
+  useEffect(() => {
+    // 焦点还原（评审 R3）：记录开灯箱前的聚焦元素（截图缩略图），卸载时归还焦点——键盘用户不丢位置。
+    // 捕获必须声明在「聚焦 ✕」effect 之前（effect 按声明序执行），否则捕获到的是 ✕ 自身。
+    prevFocusRef.current = document.activeElement;
+    return () => {
+      const el = prevFocusRef.current;
+      if (el && el.isConnected) el.focus();
+    };
+  }, []);
   useEffect(() => {
     // 对齐 DetailModal U8：开灯箱即聚焦关闭钮，键盘用户第一时间可达退出
     if (closeRef.current) closeRef.current.focus();
@@ -1230,7 +1244,8 @@ function Lightbox({ shots, index, onNav, onClose }) {
           "div",
           { className: "dsvm-lbbar" },
           h("span", { className: "dsvm-lbcount" }, `${index + 1} / ${shots.length}`),
-          h("div", { className: "dsvm-lbdots" }, ...shots.map((s, i) => h("span", { key: s, className: `dsvm-lbdot${i === index ? " on" : ""}`, onClick: () => onNav(i) }))),
+          // 评审 R4：key 用序号而非 URL——safeScreenshots 不去重，同一 URL 两次出现即 key 撞车
+          h("div", { className: "dsvm-lbdots" }, ...shots.map((s, i) => h("span", { key: i, className: `dsvm-lbdot${i === index ? " on" : ""}`, onClick: () => onNav(i) }))),
           h("span", { className: "dsvm-lbhint" }, lookup("lb.hint")),
         ),
   );
@@ -1367,7 +1382,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
         ? h(
             "div",
             { className: "dsvm-shotrow" },
-            ...shots.map((src, i) => h(Shot, { key: src, src, onClick: () => setLb(i) })),
+            ...shots.map((src, i) => h(Shot, { key: `${i}:${src}`, src, onClick: () => setLb(i) })),
           )
         : null,
       it.community === true

@@ -1,10 +1,14 @@
 /**
- * 0.9.60 截图灯箱 v2 回归门。
+ * 0.9.60 截图灯箱 v2 回归门（含评审吸收轮 R1-R4）。
  * 根因：灯箱 position:fixed 原是 .dshm-panel（backdrop-filter + overflow:hidden）的后代，
  * 面板盒成为包含块——窗口态图片按视口单位放大必然超出 ≤680px 面板盒，‹›/圆点被裁出屏外、
  * 又无 ✕（全屏态面板恰为视口才可见）。v2：createPortal 挂 body + 控件绝对定位 + 点图即关。
- * 本文件：lbStep 纯逻辑单测 + main.jsx 结构断言（portal/✕/点图关/单图收敛/CSS 绝对定位）。
- * 渲染结构走 client-render-smoke（SSR 回退树）；运行：npm test 自动发现。
+ * 评审吸收：R1 复合选择器防 .dsvm-btn 级联反杀；R2 top 让出 Windows 拖拽带；
+ * R3 焦点还原；R4 key 用序号防 URL 撞车。
+ * 本文件：lbStep 纯逻辑单测 + main.jsx 结构锚（includes 级，避免整表达式逐字正则——
+ * 那种断言红灯语义是「文本变了」而非「行为变了」）；渲染结构走 client-render-smoke（SSR 回退树），
+ * 行为/计算样式/拖拽带走 scripts/verify-lightbox.mjs（手动跑，需 playwright-core+chromium）。
+ * 运行：npm test 自动发现。
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -37,33 +41,45 @@ describe('lbStep 环形步进（灯箱 ‹›/键盘 ←→ 共用）', () => {
   })
 })
 
-describe('灯箱 v2 结构（0.9.60 根因修复守卫）', () => {
-  it('portal 逃逸 .dshm-panel 包含块：createPortal 挂 document.body，无 document 回退原树', () => {
-    assert.match(src, /return typeof document !== "undefined" && document\.body && typeof rd\.createPortal === "function"\s*\?\s*rd\.createPortal\(node, document\.body\)\s*:\s*node;/, '浏览器走 portal，SSR/无宿主回退非 portal 树')
+describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', () => {
+  it('portal 逃逸 .dshm-panel 包含块：挂 document.body', () => {
+    assert.ok(src.includes('rd.createPortal(node, document.body)'), '浏览器走 createPortal 挂 body')
+    assert.ok(src.includes('typeof document !== "undefined" && document.body'), '无 document（SSR）回退非 portal 树')
   })
-  it('✕ 关闭钮常驻 + 点图即关（img onClick=onClose，不再 stopPropagation 吞点击）', () => {
-    assert.match(src, /h\("img", \{ src: shots\[index\], alt: "", onClick: onClose, referrerPolicy: "no-referrer" \}\)/, '点图即关')
-    assert.match(src, /className: "dsvm-btn dsvm-lbclose"/, '✕ 常驻关闭钮')
-    assert.match(src, /dsvm-lbclose", "aria-label": lookup\("common\.close"\)/, '✕ 走 i18n aria')
+  it('R1：✕/‹› 用复合选择器，防基础 .dsvm-btn 规则（源顺序靠后）级联反杀', () => {
+    assert.ok(src.includes('.dsvm-btn.dsvm-lbclose{position:absolute;top:12px;right:12px'), '✕ 复合选择器在')
+    assert.ok(src.includes('.dsvm-btn.dsvm-lbarrow{position:absolute;top:50%'), '‹› 复合选择器在')
+    assert.ok(src.includes('.dsvm-btn.dsvm-lbarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:60px;padding:0;font-size:26px'), '设计值 padding:0/font-size:26px 随复合选择器生效')
+    assert.ok(!/(?<!\.dsvm-btn)\.dsvm-lbarrow\{position:absolute/.test(src), '单类 .dsvm-lbarrow 规则不得存在（会被反杀成摆设）')
+    assert.ok(!/(?<!\.dsvm-btn)\.dsvm-lbclose\{position:absolute/.test(src), '单类 .dsvm-lbclose 规则不得存在')
   })
-  it('‹› 两侧箭头 + 底部计数/圆点 pill：绝对定位贴视口，构造上不可能被图片挤出屏', () => {
-    assert.match(src, /\.dsvm-lbclose\{position:absolute;top:12px;right:12px/, '✕ 绝对定位右上')
-    assert.match(src, /\.dsvm-lbarrow\{position:absolute;top:50%;transform:translateY\(-50%\)/, '‹› 绝对定位两侧居中')
-    assert.match(src, /\.dsvm-lbbar\{position:absolute;left:50%;bottom:14px/, '底部 pill 绝对定位')
-    assert.match(src, /\.dsvm-lightbox img\{max-width:min\(92vw,1500px\);max-height:74vh/, '图片降位给控件留空间（旧 80vh 在窗口态必然溢出面板盒）')
-    assert.doesNotMatch(src, /\.dsvm-lbnav\{/, '旧 in-flow 导航行退役（被 pill 取代）')
+  it('R2：top 让出 Windows 拖拽带（0.9.4 先例），Web 回落 0px 行为不变', () => {
+    assert.ok(src.includes('.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px)'), '拖拽带避让在')
+    assert.ok(!src.includes('.dsvm-lightbox{position:fixed;inset:0'), 'inset:0 形态退役（会把 ✕ 顶进拖拽带）')
   })
-  it('单图收敛：不渲染 ‹›/计数/圆点（无死控件），✕ 仍在', () => {
-    assert.match(src, /const single = shots\.length <= 1;/, '单图判定')
-    assert.match(src, /single \? null : h\("button", \{ className: "dsvm-btn dsvm-lbarrow prev"/, '单图无 ‹')
-    assert.match(src, /single\s*\?\s*null\s*:\s*h\(\s*"div",\s*\{ className: "dsvm-lbbar" \}/, '单图无底部 pill')
-    assert.doesNotMatch(src, /single \? null : h\("button", \{ ref: closeRef/, '✕ 不受单图收敛影响')
+  it('R3：焦点还原——捕获声明在聚焦 ✕ 之前，卸载归还触发元素', () => {
+    assert.ok(src.includes('prevFocusRef.current = document.activeElement;'), '捕获 activeElement 在')
+    const capture = src.indexOf('prevFocusRef.current = document.activeElement;')
+    const focus = src.indexOf('closeRef.current.focus()')
+    assert.ok(capture > -1 && focus > -1 && capture < focus, '捕获先于聚焦（effect 按声明序执行）')
+    assert.ok(src.includes('if (el && el.isConnected) el.focus();'), '卸载还原且防已卸载元素')
   })
-  it('键盘 ‹› 与组件内联取模统一走 lbStep（纯逻辑单测覆盖）', () => {
-    assert.equal((src.match(/lbStep\(index, -1, shots\.length\)|lbStep\(i, -1, shots\.length\)/g) || []).length >= 2, true, '‹ 与 ← 都走 lbStep')
-    assert.doesNotMatch(src, /\(index - 1 \+ shots\.length\) % shots\.length/, '内联取模退役')
+  it('R4：圆点 key 用序号（URL 重复不撞车）', () => {
+    assert.ok(src.includes('h("span", { key: i, className: `dsvm-lbdot'), '圆点 key=i')
+    assert.ok(!src.includes('key: s, className: `dsvm-lbdot'), '旧 key:s（URL）退役')
   })
-  it('灯箱开箱即聚焦 ✕（键盘用户第一时间可达退出，对齐 DetailModal U8 先例）', () => {
-    assert.match(src, /function Lightbox\(\{ shots, index, onNav, onClose \}\) \{[\s\S]*?closeRef\.current\.focus\(\)/, '开箱聚焦关闭钮')
+  it('✕ 常驻 + 点图即关（img onClick=onClose，不再 stopPropagation 吞点击）', () => {
+    assert.ok(src.includes('h("img", { src: shots[index], alt: "", onClick: onClose, referrerPolicy: "no-referrer" })'), '点图即关')
+    assert.ok(src.includes('className: "dsvm-btn dsvm-lbclose"'), '✕ 走 dsvm-btn 视觉 + dsvm-lbclose 定位')
+  })
+  it('底部 pill 绝对定位 + 图片 74vh 留位（构造上不可能被挤出屏）', () => {
+    assert.ok(src.includes('.dsvm-lbbar{position:absolute;left:50%;bottom:14px'), 'pill 绝对定位')
+    assert.ok(src.includes('.dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh'), '图片降位（旧 80vh 在窗口态必然溢出面板盒）')
+    assert.ok(!src.includes('.dsvm-lbnav{'), '旧 in-flow 导航行退役')
+  })
+  it('键盘 ‹› 与组件统一走 lbStep（内联取模退役）', () => {
+    assert.ok(src.includes('lbStep(index, -1, shots.length)') && src.includes('lbStep(index, 1, shots.length)'), '组件 ‹› 走 lbStep')
+    assert.ok(src.includes('lbStep(i, -1, shots.length)') && src.includes('lbStep(i, 1, shots.length)'), '键盘 ←→ 走 lbStep')
+    assert.ok(!src.includes('(index - 1 + shots.length) % shots.length'), '内联取模退役')
   })
 })

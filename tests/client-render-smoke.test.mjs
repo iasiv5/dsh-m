@@ -246,6 +246,8 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     const shots = ['a.png', 'b.png', 'c.png']
     const html = renderToString(h(components.__Lightbox, { shots, index: 0, onNav: () => {}, onClose: () => {} }))
     assert.ok(html.includes('dsvm-lightbox'), '灯箱根在（SSR 回退树）')
+    assert.ok(html.includes('role="dialog"') && html.includes('aria-modal="true"'), 'dialog 语义在')
+    assert.match(html, /aria-label="[^"]+"/, 'aria-label 在（文案随 locale）')
     assert.ok(html.includes('dsvm-lbclose'), '✕ 常驻')
     assert.ok(html.includes('dsvm-lbarrow prev') && html.includes('dsvm-lbarrow next'), '‹› 在')
     assert.ok(html.includes('1 / 3'), '计数在')
@@ -255,6 +257,9 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     const single = renderToString(h(components.__Lightbox, { shots: ['only.png'], index: 0, onNav: () => {}, onClose: () => {} }))
     assert.ok(single.includes('dsvm-lbclose'), '单图 ✕ 仍在')
     assert.ok(!single.includes('dsvm-lbarrow') && !single.includes('dsvm-lbcount') && !single.includes('dsvm-lbdot'), '单图无 ‹›/计数/圆点死控件')
+    // 评审 R4：重复 URL 不撞 key——圆点数仍 = shots 数（key 用序号）
+    const dup = renderToString(h(components.__Lightbox, { shots: ['a.png', 'a.png', 'b.png'], index: 0, onNav: () => {}, onClose: () => {} }))
+    assert.equal((dup.match(/dsvm-lbdot[" ]/g) || []).length, 3, '重复 URL 三颗圆点全渲染（key=序号）')
   })
 })
 
