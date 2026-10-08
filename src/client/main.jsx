@@ -328,7 +328,7 @@ const CSS = `
 .dshm-chips.dshm-chips-clip.dshm-chips-reserve{padding-right:60px}
 .dshm-chips.dshm-chips-clip.dshm-chips-gutter.dshm-chips-reserve{padding-right:calc(var(--dshm-clip-gutter,96px) + 60px)}
 .dsvm-chipmore{position:absolute;right:8px}
-.dsvm-chipmore-plus{position:absolute;z-index:1;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
+.dsvm-chipmore-plus{position:absolute;z-index:1;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
 .dsvm-searchrow{display:flex;align-items:center;gap:8px}
 .dsvm-searchrow .dshm-search{flex:1;display:flex}
 .dshm-search{position:relative}
@@ -919,7 +919,7 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   const [stuck, setStuck] = useState(false);
   // 折叠态测量快照：{tops: 全部 data-chip 的 offsetTop（含 visibility:hidden 占位者——占位才能稳定测量）,
   // clipTop: 首个被裁剪行行顶, hiddenCount: 裁剪线外分类颗数,
-  // lastVisTop/lastVisRight: 末可见行行顶、最后一颗可见 chip 的右缘}。
+  // lastVisTop/lastVisRight/lastVisHeight: 末可见行行顶、最后一颗可见 chip 的右缘和边框高度}。
   // hiddenCount 为展示布局的纯派生量：宽度变窄自动增长、变宽自动回落（双向自愈，无棘轮无反馈）。
   const [geom, setGeom] = useState(null);
   const [rowHeight, setRowHeight] = useState(0);
@@ -948,12 +948,16 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
       const hiddenCount = countBeyondRows(tops, maxRows);
       const lastVisTop = visibleRowTop(tops, maxRows);
       let lastVisRight = 0;
+      let lastVisHeight = rh;
       for (const k of el.children) {
         if (!(k instanceof HTMLElement) || k.getAttribute("data-chip") !== "1") continue;
-        if (k.offsetTop < clipTopV) lastVisRight = k.offsetLeft + k.offsetWidth;
+        if (k.offsetTop < clipTopV) {
+          lastVisRight = k.offsetLeft + k.offsetWidth;
+          lastVisHeight = k.offsetHeight;
+        }
       }
-      const next = { tops, clipTop: clipTopV, hiddenCount, lastVisTop, lastVisRight };
-      const same = prev && prev.hiddenCount === next.hiddenCount && prev.clipTop === next.clipTop && prev.lastVisTop === next.lastVisTop && prev.lastVisRight === next.lastVisRight && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
+      const next = { tops, clipTop: clipTopV, hiddenCount, lastVisTop, lastVisRight, lastVisHeight };
+      const same = prev && prev.hiddenCount === next.hiddenCount && prev.clipTop === next.clipTop && prev.lastVisTop === next.lastVisTop && prev.lastVisRight === next.lastVisRight && prev.lastVisHeight === next.lastVisHeight && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
       return same ? prev : next;
     });
     setRowHeight((prev) => (Math.abs(prev - rh) <= 0.5 ? prev : rh));
@@ -1028,6 +1032,7 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   const hiddenCount = geom ? geom.hiddenCount : 0;
   const lastVisTop = geom ? geom.lastVisTop : 0;
   const moreLeft = geom ? geom.lastVisRight + 6 : 0;
+  const moreHeight = geom ? geom.lastVisHeight : (rowHeight || 22);
   const btn = (c, i) => {
     const top = geom ? geom.tops[i + 1] : null; // tops[0] = 「全部」
     // 仅折叠态施 visibility（D4）；展开态全量可见
@@ -1075,7 +1080,7 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
               key: "more",
               "data-more": "1",
               className: "dshm-chip dsvm-chipmore-plus",
-              style: { top: `${lastVisTop}px`, left: `${moreLeft}px` },
+              style: { top: `${lastVisTop}px`, left: `${moreLeft}px`, height: `${moreHeight}px` },
               onClick: () => setExpanded(true),
             }, `+${hiddenCount}`)
           : null,

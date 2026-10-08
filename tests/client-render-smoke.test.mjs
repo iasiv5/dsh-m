@@ -129,6 +129,8 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.match(src, /if \(existing\.querySelector\("\.dshm-panel"\)\) return;\s*existing\.remove\(\);/, '崩溃遗留空容器不得永久阻挡重新打开')
     assert.match(src, /\.dshm-chips\.dshm-chips-clip\.dshm-chips-gutter\.dshm-chips-reserve\{padding-right:calc\(var\(--dshm-clip-gutter,96px\) \+ 60px\)\}/, '社区区 +N/筛选右侧槽不被 gutter 覆盖')
     assert.match(src, /const moreLeft = geom \? geom\.lastVisRight \+ 6 : 0;/, '+N 动态紧贴末可见 chip，而非固定在筛选旁')
+    assert.match(src, /const moreHeight = geom \? geom\.lastVisHeight/, '+N 框高来自最后可见分类的实测高度')
+    assert.match(src, /height: `\$\{moreHeight\}px`/, '+N 显式应用与分类相同的边框高度')
   })
 
   it('FavoriteZone 带一条收藏快照渲染不抛（卡片路径）', () => {
