@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { chipRows, countBeyondRows, clipTopOf, autoExpandDecision } from '../src/client/market-state.js'
+import { chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } from '../src/client/market-state.js'
 
 describe('chipRows（offsetTop 去重计数行数）', () => {
   it('空数组 / 非数组 → 0', () => {
@@ -65,6 +65,20 @@ describe('clipTopOf（首个被裁剪行的 offsetTop）', () => {
   it('非法 maxRows → Infinity', () => {
     assert.equal(clipTopOf([0, 28], 0), Infinity)
     assert.equal(clipTopOf([0, 28], -1), Infinity)
+  })
+})
+
+describe('visibleRowTop（第 maxRows 行顶，非第 maxRows 颗 chip）', () => {
+  const tops = [0, 0, 0, 0, 0, 28, 28, 28, 56, 56]
+  it('一行有多颗 chip 时仍按去重行顶取值', () => {
+    assert.equal(visibleRowTop(tops, 1), 0)
+    assert.equal(visibleRowTop(tops, 2), 28)
+    assert.equal(visibleRowTop(tops, 3), 56)
+  })
+  it('行数不足与非法输入安全退化', () => {
+    assert.equal(visibleRowTop(tops, 4), 56)
+    assert.equal(visibleRowTop([], 2), 0)
+    assert.equal(visibleRowTop([0, 28], 0), 0)
   })
 })
 

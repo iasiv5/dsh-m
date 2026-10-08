@@ -11,7 +11,7 @@ const PLUGIN_ID = "dsh-m";
 const API = "/dshm";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, chipRows, countBeyondRows, autoExpandDecision } = require("./market-state.js");
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { createMarkdown } = require("./markdown.js");
@@ -324,7 +324,11 @@ const CSS = `
 .dshm-chips{display:flex;flex-wrap:wrap;gap:6px;position:relative}
 .dshm-chips-clip{overflow:hidden}
 .dshm-chips-gutter{padding-right:var(--dshm-clip-gutter,96px)}
+/* +N/筛选分别占右侧 52/96px，不能让 gutter 同特异性规则覆盖总预留宽度。 */
+.dshm-chips.dshm-chips-clip.dshm-chips-reserve{padding-right:52px}
+.dshm-chips.dshm-chips-clip.dshm-chips-gutter.dshm-chips-reserve{padding-right:calc(var(--dshm-clip-gutter,96px) + 52px)}
 .dsvm-chipmore{position:absolute;right:8px}
+.dsvm-chipmore-plus{position:absolute;right:calc(var(--dshm-clip-gutter,96px) + 6px);z-index:1;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
 .dsvm-searchrow{display:flex;align-items:center;gap:8px}
 .dsvm-searchrow .dshm-search{flex:1;display:flex}
 .dshm-search{position:relative}
@@ -901,16 +905,21 @@ function SearchBox({ placeholder, initial, onCommit }) {
 }
 
 // ---------- 分区分类 chips（0.7.0 Task 10：两行折叠 + 吸顶自动收缩；0.7.2 尾部挂筛选触发器；
-//            0.7.9 顺序恒定；0.9.53 方案A「隐身全量测量」；0.9.55 切换钮内联化（dsh-market 对齐）+
-//            折行减类（主人方案）——+N in-flow 插在末可见分类与被裁分类之间，flow 布局永不重叠；
-//            被裁分类 display:none 不占位，+N 折行时 hiddenCount+1 令其退位、+N 退回末可见行）----------
+//            0.7.9 顺序恒定；0.9.53 方案A「隐身全量测量」（visibility:hidden 占位 + 纯派生 hiddenCount）；
+//            0.9.55/0.9.56 切换钮内联化两次迭代（绝对定位夹取压 chip / in-flow 反馈振荡 #185）均回退
+//            → 0.9.57 终版：被裁分类 visibility:hidden 占位（测量全量稳定、双向自愈），
+//            +N 绝对定位钉在「末可见行右端预留槽」（出流，几何保证零重叠，永不挤压）----------
 function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }) {
   const chips = useMemo(() => zoneChips(counts, labels, zone), [counts, labels, zone]);
+  // 精选区的 labels 可能每次父组件渲染都新建对象；依赖 chips 引用会在 layout effect
+  // setGeom 引发的同步重渲染中无限触发（React #185）。用实际渲染内容作为稳定依赖，
+  // 同时保留计数/标签在长度不变时的确定性重测（评审 R1-Q1）。
+  const chipsSignature = JSON.stringify(chips.map((c) => [c.id, c.labelKey ? lookup(c.labelKey) : c.label, c.count]));
   const [expanded, setExpanded] = useState(false);
   const [stuck, setStuck] = useState(false);
-  // 折叠态测量快照（0.9.55）：{tops: 「展示中」data-chip 的 offsetTop（[全部, ...可见分类]，
-  // display:none 不计）, hiddenCount: display:none 的分类颗数, plusWrapped: +N 是否被折行}。
-  // expanded 期间不重测、沿用快照。
+  // 折叠态测量快照：{tops: 全部 data-chip 的 offsetTop（含 visibility:hidden 占位者——占位才能稳定测量）,
+  // clipTop: 首个被裁剪行行顶, hiddenCount: 裁剪线外分类颗数, lastVisTop: 末可见行行顶}。
+  // hiddenCount 为展示布局的纯派生量：宽度变窄自动增长、变宽自动回落（双向自愈，无棘轮无反馈）。
   const [geom, setGeom] = useState(null);
   const [rowHeight, setRowHeight] = useState(0);
   const wrapRef = useRef(null);
@@ -918,42 +927,27 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   const autoRef = useRef(null);
   const maxRows = stuck ? 1 : 2;
   const activeIdx = active ? chips.findIndex((c) => c.id === active) : -1;
-  const plusWrapped = !!(geom && geom.plusWrapped);
-  const maxRowsEff = maxRows + (plusWrapped ? 1 : 0);
-  const maxH = maxRowsEff * (rowHeight || 22) + (maxRowsEff - 1) * 6;
-  // 测量：只测「展示中」chip（display:none 不占位不计），值比较防抖（幂等不动点）。
-  // +N 折行判定：+N 顶 > 末可见 chip 行顶 ⇒ 折到裁剪线外 ⇒ hiddenCount +1（减少一个显示类型，
-  // 让 +N 退回末可见行——主人方案）；display:none 的被裁分类不占位不计。
+  const maxH = maxRows * (rowHeight || 22) + (maxRows - 1) * 6;
+  // 测量（D7/D9）：全量 DOM offsetTop 分组 → 纯函数 → 快照（值比较防抖，幂等不动点）。
+  // expanded 早退：沿用快照、不施测。chip.offsetHeight 与 max-height 无耦合 → rowHeight 至多校正一次。
   const measure = useCallback(() => {
     const el = wrapRef.current;
     if (!el || expanded) return;
     const tops = [];
     let rh = 0;
-    let plusTopMeas = null;
-    let hiddenMeas = 0;
     for (const k of el.children) {
-      if (!(k instanceof HTMLElement)) continue;
-      if (k.getAttribute("data-more") === "1") {
-        plusTopMeas = k.offsetTop;
-        continue;
-      }
-      if (k.getAttribute("data-chip") !== "1") continue;
-      if (getComputedStyle(k).display === "none") {
-        hiddenMeas += 1;
-        continue;
-      }
+      if (!(k instanceof HTMLElement) || k.getAttribute("data-chip") !== "1") continue;
       tops.push(k.offsetTop);
       if (!rh && k.offsetHeight) rh = k.offsetHeight;
     }
     if (!tops.length) return;
-    const lastRowTop = tops[tops.length - 1];
-    const plusWrappedNow = plusTopMeas != null && plusTopMeas > lastRowTop;
     setGeom((prev) => {
-      // 种子（prev=null，全显示首测）：越界数 = countBeyondRows(全部+分类 tops, maxRows)
-      const prevHC = prev ? prev.hiddenCount : countBeyondRows(tops.slice(1), maxRows);
-      const hiddenCount = plusWrappedNow ? prevHC + 1 : prevHC;
-      const next = { tops, hiddenCount };
-      const same = prev && prev.hiddenCount === next.hiddenCount && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
+      const clipTopV = clipTopOf(tops, maxRows);
+      // 全部也占首行：必须从完整 tops 数行，不能 slice(1) 后误把第二行认作第一行。
+      const hiddenCount = countBeyondRows(tops, maxRows);
+      const lastVisTop = visibleRowTop(tops, maxRows);
+      const next = { tops, clipTop: clipTopV, hiddenCount, lastVisTop };
+      const same = prev && prev.hiddenCount === next.hiddenCount && prev.clipTop === next.clipTop && prev.lastVisTop === next.lastVisTop && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
       return same ? prev : next;
     });
     setRowHeight((prev) => (Math.abs(prev - rh) <= 0.5 ? prev : rh));
@@ -967,23 +961,26 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
       setExpanded(false);
     }
   }, [active]);
-  // ② 决策（D8）：激活分类 display:none（被裁）⇒ 必然越界；可见则按索引与可见数比较。
-  // 传入 (activeIdx, visCats) 与纯函数「值 >= 边界」语义一致；展开态仅记录不施裁（R1-Q3）。
+  // ② 决策（D8）：以折叠快照评估激活分类越界 → 记录 autoRef；越界、未记录且未展开 → 自动展开。
   useEffect(() => {
     if (!active || !geom) return;
-    const visCats = geom.tops.length - 1; // tops[0] = 「全部」
-    const d = autoExpandDecision(activeIdx, visCats, autoRef.current === active, expanded);
+    const activeTop = geom.tops[activeIdx + 1]; // tops[0] = 「全部」
+    const d = autoExpandDecision(activeTop, geom.clipTop, autoRef.current === active, expanded);
     if (d.record) autoRef.current = active;
     if (d.expand) setExpanded(true);
   }, [active, activeIdx, expanded, geom]);
   // 确定性重测主路径（D7③）：数据/业务态/吸顶/行高变化即重测（expanded 早退在 measure 内）。
-  // 评审 R1-Q1：deps 用 `chips` 引用（useMemo 随 counts/labels 重算）替代 `chips.length`，并叠加
-  // `active`（.dshm-chip.on 加粗变宽可重排）——同长度内容变化（计数刷新/加粗）也有确定性重测，
-  // 消除「RO 因 max-height 钳制失聪」的陈旧 geom 盲区。
+  // 内容签名捕捉同长度计数/文案变化，active 捕捉加粗重排；geom 改变预留槽后再测一次。
   useLayoutEffect(() => {
     if (!expanded) measure();
-    // geom 入 deps：+N in-flow 化后，其折行（plusWrapped）会驱动 max-height 扩行，需复测收敛
-  }, [chips, active, expanded, zone, stuck, rowHeight, measure, geom]);
+  }, [chipsSignature, active, expanded, zone, stuck, rowHeight, measure]);
+  // reserve 改变内容宽度时在上一轮状态提交后复测；不可在 layout effect 依赖 geom
+  // 同步自递归，否则分区切换时前一状态尚未提交，会触发 React #185。
+  useEffect(() => {
+    if (expanded || !geom || typeof requestAnimationFrame !== "function") return;
+    const raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  }, [geom, expanded, measure]);
   // RO 兜底（D7①）：宽度变化 / 字体重排 / max-height 变化（stuck 切换）触发；rAF 节流 + 幂等。
   // feature-detect 降级：无 RO 时仅靠 deps 主路径（先例 :947 IO 守卫）。
   useEffect(() => {
@@ -1019,27 +1016,28 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
     return () => io.disconnect();
   }, []);
   const clip = !expanded;
-  // gutter 仅承载钉住的筛选（0.9.55 对齐 dsh-market 参考设计：+N/⌃ 内联化，不再进 overlay 组；
-  // 精选区无 trailing 时不预留——R3-N4 语义保持）
+  // 筛选需要 96px gutter；有隐藏分类时另留 52px 供 +N 独占，精选区不无谓预留筛选槽。
   const filterPinned = clip && trailing != null;
+  const clipTop = geom ? geom.clipTop : Infinity;
   const hiddenCount = geom ? geom.hiddenCount : 0;
-  // 可见分类数 = 总数 − 被裁数；首测前（geom=null）全量渲染
-  const visCount = geom ? Math.max(0, chips.length - hiddenCount) : chips.length;
-  // hide=true ⇒ display:none：不占位、不进 tab 序/无障碍树（与「未渲染」语义一致）；
-  // 测量只统计展示中 chip 的 offsetTop，display:none 元素 offsetTop 无效故必须剔除。
-  const btn = (c, i, hide) =>
-    h(
+  const lastVisTop = geom ? geom.lastVisTop : 0;
+  const btn = (c, i) => {
+    const top = geom ? geom.tops[i + 1] : null; // tops[0] = 「全部」
+    // 仅折叠态施 visibility（D4）；展开态全量可见
+    const clipped = clip && geom && typeof top === "number" && top >= clipTop;
+    return h(
       "button",
       {
         key: c.id,
         "data-chip": "1",
-        style: hide ? { display: "none" } : undefined,
+        style: clipped ? { visibility: "hidden" } : undefined,
         className: `dshm-chip${active === c.id ? " on" : ""}${c.count === 0 ? " zero" : ""}`,
         onClick: () => onPick(active === c.id ? null : c.id),
       },
       // 0.9.45 U3/U7：0 计数桶显式渲染「0」+ 降透明（社区区 chip 计数恒 >0，行为不变）
       `${c.labelKey ? lookup(c.labelKey) : c.label} ${c.count || 0}`,
     );
+  };
   return h(
     React.Fragment,
     null,
@@ -1056,20 +1054,24 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
         "div",
         {
           ref: wrapRef,
-          className: `dshm-chips${clip ? " dshm-chips-clip" : ""}${filterPinned ? " dshm-chips-gutter" : ""}`,
+          className: `dshm-chips${clip ? " dshm-chips-clip" : ""}${filterPinned ? " dshm-chips-gutter" : ""}${clip && hiddenCount > 0 ? " dshm-chips-reserve" : ""}`,
           title: wrapTitle || undefined,
           style: { maxHeight: clip ? `${maxH}px` : "none" },
         },
         h("button", { "data-chip": "1", className: `dshm-chip${active == null ? " on" : ""}`, onClick: () => onPick(null) }, lookup("cat.all")),
-        // 0.9.55 对齐 dsh-market 参考设计：+N 以 in-flow 插在「末可见分类」与「被裁分类」之间——
-        // flow 布局永不与 chip 重叠（绝对定位夹取方案在末行剩余空间不足时会压 chip，真机已复现）；
-        // 被裁分类 display:none 不占位；+N 若被折行（挤不下）则 hiddenCount+1 令其退回末可见行
-        // （主人方案），同时 max-height 扩一行容纳 +N 独占行——两态均无重叠。
-        ...chips.slice(0, visCount).map((c, i) => btn(c, i, false)),
-        clip && chips.length > 0 && hiddenCount > 0
-          ? h("button", { key: "more", "data-more": "1", className: "dshm-chip", onClick: () => setExpanded(true) }, `+${hiddenCount}`)
+        ...chips.map((c, i) => btn(c, i)),
+        // 折叠态 +N（0.9.57 终版）：绝对定位钉在「末可见行右端预留槽」——出流不挤压 chip、不参与
+        // 行分组（data-more）；预留槽由 .dshm-chips-clip 的 padding-right 划出，几何保证零重叠；
+        // 位置右对齐紧贴筛选 gutter 左侧，垂直对齐末可见行（top = lastVisTop，测量派生）。
+        clip && geom && hiddenCount > 0
+          ? h("button", {
+              key: "more",
+              "data-more": "1",
+              className: "dshm-chip dsvm-chipmore-plus",
+              style: { top: `${lastVisTop}px` },
+              onClick: () => setExpanded(true),
+            }, `+${hiddenCount}`)
           : null,
-        ...chips.slice(visCount).map((c, i) => btn(c, visCount + i, clip)), // hide 仅折叠态生效；展开态全量可见
         expanded
           ? [
               h("button", {
@@ -3022,7 +3024,12 @@ function MarketPanel({ onClose }) {
 function mountPanel() {
   if (typeof document === "undefined") return;
   ensureCss();
-  if (document.getElementById("dshm-panel-root")) return;
+  const existing = document.getElementById("dshm-panel-root");
+  if (existing) {
+    // React 在渲染异常后会清空树，但不移除命令式挂载容器；旧 guard 会使入口永久失效。
+    if (existing.querySelector(".dshm-panel")) return;
+    existing.remove();
+  }
   const container = document.createElement("div");
   container.id = "dshm-panel-root";
   document.body.appendChild(container);

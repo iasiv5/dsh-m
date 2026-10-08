@@ -118,6 +118,18 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     for (const label of Object.values(labels)) assert.ok(html.includes(label), `缺少分类 chip：${label}`)
   })
 
+  it('ZoneChips 精选分区可渲染且换区测量/空容器恢复有回归守卫', () => {
+    const html = renderToString(h(components.__ZoneChips, {
+      zone: 'primary', counts: { essentials: 5, 'cui-picks': 4, 'self-dev': 8, 'tencent-lighthouse': 3, watchlist: 3 },
+      labels: null, active: null, onPick: () => {}, trailing: null,
+    }))
+    assert.equal((html.match(/data-chip="1"/g) || []).length, 6, '精选区=全部+固定五类')
+    assert.match(src, /const chipsSignature = JSON\.stringify\(chips\.map/, '分类内容签名而非不稳定的对象引用')
+    assert.match(src, /\[chipsSignature, active, expanded, zone, stuck, rowHeight, measure\]/, '布局测量不依赖自身的 geom')
+    assert.match(src, /if \(existing\.querySelector\("\.dshm-panel"\)\) return;\s*existing\.remove\(\);/, '崩溃遗留空容器不得永久阻挡重新打开')
+    assert.match(src, /\.dshm-chips\.dshm-chips-clip\.dshm-chips-gutter\.dshm-chips-reserve\{padding-right:calc\(var\(--dshm-clip-gutter,96px\) \+ 52px\)\}/, '社区区 +N/筛选右侧槽不被 gutter 覆盖')
+  })
+
   it('FavoriteZone 带一条收藏快照渲染不抛（卡片路径）', () => {
     const fav = {
       id: 'o1--demo',
