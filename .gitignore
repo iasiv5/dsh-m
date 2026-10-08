@@ -10,3 +10,5 @@ lib/
 research-dshmarketplace/
 .env*
 .DS_Store
+.review-evidence.txt
+.e2e-*.png
