@@ -324,11 +324,11 @@ const CSS = `
 .dshm-chips{display:flex;flex-wrap:wrap;gap:6px;position:relative}
 .dshm-chips-clip{overflow:hidden}
 .dshm-chips-gutter{padding-right:var(--dshm-clip-gutter,96px)}
-/* +N/筛选分别占右侧 52/96px，不能让 gutter 同特异性规则覆盖总预留宽度。 */
-.dshm-chips.dshm-chips-clip.dshm-chips-reserve{padding-right:52px}
-.dshm-chips.dshm-chips-clip.dshm-chips-gutter.dshm-chips-reserve{padding-right:calc(var(--dshm-clip-gutter,96px) + 52px)}
+/* +N/筛选分别占右侧 60/96px；保留优先级高于单独的筛选 gutter。 */
+.dshm-chips.dshm-chips-clip.dshm-chips-reserve{padding-right:60px}
+.dshm-chips.dshm-chips-clip.dshm-chips-gutter.dshm-chips-reserve{padding-right:calc(var(--dshm-clip-gutter,96px) + 60px)}
 .dsvm-chipmore{position:absolute;right:8px}
-.dsvm-chipmore-plus{position:absolute;right:calc(var(--dshm-clip-gutter,96px) + 6px);z-index:1;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
+.dsvm-chipmore-plus{position:absolute;z-index:1;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
 .dsvm-searchrow{display:flex;align-items:center;gap:8px}
 .dsvm-searchrow .dshm-search{flex:1;display:flex}
 .dshm-search{position:relative}
@@ -918,7 +918,8 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   const [expanded, setExpanded] = useState(false);
   const [stuck, setStuck] = useState(false);
   // 折叠态测量快照：{tops: 全部 data-chip 的 offsetTop（含 visibility:hidden 占位者——占位才能稳定测量）,
-  // clipTop: 首个被裁剪行行顶, hiddenCount: 裁剪线外分类颗数, lastVisTop: 末可见行行顶}。
+  // clipTop: 首个被裁剪行行顶, hiddenCount: 裁剪线外分类颗数,
+  // lastVisTop/lastVisRight: 末可见行行顶、最后一颗可见 chip 的右缘}。
   // hiddenCount 为展示布局的纯派生量：宽度变窄自动增长、变宽自动回落（双向自愈，无棘轮无反馈）。
   const [geom, setGeom] = useState(null);
   const [rowHeight, setRowHeight] = useState(0);
@@ -946,8 +947,13 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
       // 全部也占首行：必须从完整 tops 数行，不能 slice(1) 后误把第二行认作第一行。
       const hiddenCount = countBeyondRows(tops, maxRows);
       const lastVisTop = visibleRowTop(tops, maxRows);
-      const next = { tops, clipTop: clipTopV, hiddenCount, lastVisTop };
-      const same = prev && prev.hiddenCount === next.hiddenCount && prev.clipTop === next.clipTop && prev.lastVisTop === next.lastVisTop && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
+      let lastVisRight = 0;
+      for (const k of el.children) {
+        if (!(k instanceof HTMLElement) || k.getAttribute("data-chip") !== "1") continue;
+        if (k.offsetTop < clipTopV) lastVisRight = k.offsetLeft + k.offsetWidth;
+      }
+      const next = { tops, clipTop: clipTopV, hiddenCount, lastVisTop, lastVisRight };
+      const same = prev && prev.hiddenCount === next.hiddenCount && prev.clipTop === next.clipTop && prev.lastVisTop === next.lastVisTop && prev.lastVisRight === next.lastVisRight && prev.tops.length === next.tops.length && prev.tops.every((t, i) => t === next.tops[i]);
       return same ? prev : next;
     });
     setRowHeight((prev) => (Math.abs(prev - rh) <= 0.5 ? prev : rh));
@@ -1021,6 +1027,7 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
   const clipTop = geom ? geom.clipTop : Infinity;
   const hiddenCount = geom ? geom.hiddenCount : 0;
   const lastVisTop = geom ? geom.lastVisTop : 0;
+  const moreLeft = geom ? geom.lastVisRight + 6 : 0;
   const btn = (c, i) => {
     const top = geom ? geom.tops[i + 1] : null; // tops[0] = 「全部」
     // 仅折叠态施 visibility（D4）；展开态全量可见
@@ -1062,13 +1069,13 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
         ...chips.map((c, i) => btn(c, i)),
         // 折叠态 +N（0.9.57 终版）：绝对定位钉在「末可见行右端预留槽」——出流不挤压 chip、不参与
         // 行分组（data-more）；预留槽由 .dshm-chips-clip 的 padding-right 划出，几何保证零重叠；
-        // 位置右对齐紧贴筛选 gutter 左侧，垂直对齐末可见行（top = lastVisTop，测量派生）。
+        // 左缘动态紧贴末可见 chip 右侧 6px，仍受右侧预留槽保护；垂直对齐末可见行。
         clip && geom && hiddenCount > 0
           ? h("button", {
               key: "more",
               "data-more": "1",
               className: "dshm-chip dsvm-chipmore-plus",
-              style: { top: `${lastVisTop}px` },
+              style: { top: `${lastVisTop}px`, left: `${moreLeft}px` },
               onClick: () => setExpanded(true),
             }, `+${hiddenCount}`)
           : null,
