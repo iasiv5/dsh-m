@@ -323,8 +323,9 @@ const CSS = `
 .dshm-input:focus{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dshm-chips{display:flex;flex-wrap:wrap;gap:6px;position:relative}
 .dshm-chips-clip{overflow:hidden}
-.dshm-chips-gutter{padding-right:var(--dshm-clip-gutter,132px)}
-.dsvm-chipmore{position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:8px;min-height:28px;background:var(--dsw-alias-bg-base,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));border-radius:999px;padding:2px 8px;box-sizing:border-box}
+.dshm-chips-gutter{padding-right:var(--dshm-clip-gutter,96px)}
+.dsvm-chipmore{position:absolute;right:8px;display:flex;align-items:center;gap:8px;min-height:28px;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff));border:1px solid var(--dsw-alias-border-l1,rgba(127,127,127,.18));border-radius:999px;padding:2px 8px;box-sizing:border-box}
+.dsvm-chipmore-plus{position:absolute;z-index:2;background-color:var(--dsw-alias-bg-base,#fff);background-image:linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff)),linear-gradient(var(--dsw-alias-bg-base,#fff),var(--dsw-alias-bg-base,#fff))}
 .dsvm-searchrow{display:flex;align-items:center;gap:8px}
 .dsvm-searchrow .dshm-search{flex:1;display:flex}
 .dshm-search{position:relative}
@@ -932,8 +933,31 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
       if (!rh && k.offsetHeight) rh = k.offsetHeight;
     }
     if (!tops.length) return;
-    const next = { tops, clipTop: clipTopOf(tops, maxRows), hiddenCount: countBeyondRows(tops.slice(1), maxRows) };
-    setGeom((prev) => (prev && prev.tops.length === next.tops.length && prev.clipTop === next.clipTop && prev.hiddenCount === next.hiddenCount ? prev : next));
+    const clipTop = clipTopOf(tops, maxRows);
+    // 末可见分类 chip 右缘/行顶（0.9.55 对齐 dsh-market 参考设计：+N 内联钉在其右侧 +6px）
+    let lastVisRight = 0;
+    let lastVisTop = 0;
+    let idx = -1;
+    for (const k of el.children) {
+      if (!(k instanceof HTMLElement) || k.getAttribute("data-chip") !== "1") continue;
+      idx += 1;
+      if (idx === 0) continue; // 「全部」恒在第 1 行，不参与末可见 chip 定位
+      if (k.offsetTop < clipTop) {
+        lastVisRight = k.offsetLeft + k.offsetWidth;
+        lastVisTop = k.offsetTop;
+      }
+    }
+    const cs = getComputedStyle(el);
+    const contentW = el.clientWidth - (parseFloat(cs.paddingRight) || 0);
+    const plusLeft = Math.max(0, Math.min(lastVisRight + 6, contentW - 48)); // 48 ≈ +N 徽章宽，越界时贴内容右缘收口
+    const next = {
+      tops,
+      clipTop,
+      hiddenCount: countBeyondRows(tops.slice(1), maxRows),
+      plusLeft,
+      plusTop: lastVisTop,
+    };
+    setGeom((prev) => (prev && prev.tops.length === next.tops.length && prev.clipTop === next.clipTop && prev.hiddenCount === next.hiddenCount && prev.plusLeft === next.plusLeft && prev.plusTop === next.plusTop ? prev : next));
     setRowHeight((prev) => (Math.abs(prev - rh) <= 0.5 ? prev : rh));
   }, [expanded, maxRows]);
   // 顺序恒定（0.7.9：点击分类不再换序）。两个 effect 拆分（探针 V5 暴露——合并写法 + deps 含
@@ -995,8 +1019,9 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
     return () => io.disconnect();
   }, []);
   const clip = !expanded;
-  // gutter/overlay 仅当「overlay 组非空」：社区区 trailing 常在；精选区无 trailing 且无截断时不预留（R3-N4）
-  const overlay = clip && (trailing != null || (geom && geom.hiddenCount > 0));
+  // gutter 仅承载钉住的筛选（0.9.55 对齐 dsh-market 参考设计：+N/⌃ 内联化，不再进 overlay 组；
+  // 精选区无 trailing 时不预留——R3-N4 语义保持）
+  const filterPinned = clip && trailing != null;
   const clipTop = geom ? geom.clipTop : Infinity;
   const hiddenCount = geom ? geom.hiddenCount : 0;
   const btn = (c, i) => {
@@ -1032,12 +1057,23 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
         "div",
         {
           ref: wrapRef,
-          className: `dshm-chips${clip ? " dshm-chips-clip" : ""}${clip && overlay ? " dshm-chips-gutter" : ""}`,
+          className: `dshm-chips${clip ? " dshm-chips-clip" : ""}${filterPinned ? " dshm-chips-gutter" : ""}`,
           title: wrapTitle || undefined,
           style: { maxHeight: clip ? `${maxH}px` : "none" },
         },
         h("button", { "data-chip": "1", className: `dshm-chip${active == null ? " on" : ""}`, onClick: () => onPick(null) }, lookup("cat.all")),
         ...chips.map((c, i) => btn(c, i)),
+        // 折叠态 +N（0.9.55 对齐 dsh-market 参考设计）：绝对定位内联钉在「末可见分类 chip 右侧 +6px」，
+        // 与展开态 ⌃（列表末尾 in-flow）构成同一位置语义——「紧跟当前列表末尾」，只翻方向不挪位。
+        // 不带 data-chip（不参与行分组测量）；位于可见行区内，不受 overflow 裁剪。
+        clip && geom && hiddenCount > 0
+          ? h("button", {
+              key: "more",
+              className: "dshm-chip dsvm-chipmore-plus",
+              style: { left: `${geom.plusLeft}px`, top: `${geom.plusTop}px` },
+              onClick: () => setExpanded(true),
+            }, `+${hiddenCount}`)
+          : null,
         expanded
           ? [
               h("button", {
@@ -1055,21 +1091,15 @@ function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }
             ]
           : null,
       ),
-      // 折叠态右侧 overlay 组（D5/D6）：[筛选][+N] 水平并排、钉末可见行右端；gutter 保证与 chip 零相交。
-      // 吸顶单行态末可见行=第 1 行，两按钮仍同行并排（第④类碰撞结构性消除，R2-N1）。
-      // ⚠️ 展开态不用 overlay（⌃/筛选 in-flow，与现状一致）；弹层锚点 .dsvm-filterwrap 随组定位。
-      clip && overlay
+      // 折叠态钉住的筛选触发器（gutter 几何保证与 chip 零相交；叠涂 scrim 强化浅色对比度，评审 R1 后主人优化②）
+      filterPinned
         ? h(
             "div",
             {
               className: "dsvm-chipmore",
-              // 评审 R1-Q4：按行高垂直居中于末可见行（28px 组盒在 22px 行高上居中 → bottom 补偿 -3px）
               style: { bottom: `${8 + ((rowHeight || 22) - 28) / 2}px` },
             },
             trailing || null,
-            hiddenCount > 0
-              ? h("button", { className: "dshm-chip", onClick: () => setExpanded(true) }, `+${hiddenCount}`)
-              : null,
           )
         : null,
     ),
