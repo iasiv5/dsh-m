@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.57 修复：精选切换后面板崩溃/无法重开 + 折叠筛选双框与 +N 重叠
+
+- **根因（0.9.56 真机复现）**：精选区的标签对象可能每次父级重渲染都重建；layout effect 依赖 `chips` 数组引用及自身更新的 `geom`，同步测量反复进入、最终触发 React `Maximum update depth exceeded`（#185）。React 清空面板树但留下 `#dshm-panel-root`，旧入口守卫只检查容器存在，导致点击入口永久无效。叠加折叠筛选定位壳和按钮的双边框、以及 +N 位置夹取/文档流试验在窄宽下压住相邻 chip。
+- **修复**：按实际渲染的分类 id/文案/计数生成稳定内容签名，layout effect 不再同步依赖自身 `geom`；预留槽变化改在上一轮状态提交后的 rAF 复测。回退 0.9.56 的 `display:none`/in-flow 反馈链，恢复分类全量占位 + 越界 `visibility:hidden`，以完整 `offsetTop` 按行纯派生隐藏数；+N 脱离文档流，独占右侧 52px 槽（筛选另占 96px），双类 CSS 选择器确保总预留不被 gutter 覆盖。末可见行顶按**去重行**而非第 N 颗 chip 计算。筛选外壳去边框仅保留定位；若崩溃留下无可见面板的空容器，再次点击时先移除再挂载。
+- **取舍**：+N 优先保证零重叠、正确计数和可重开；不再强求其贴着最后一颗分类。窄宽下边界分类自然少显示，`+N` 如实计入；展开态 `⌃` 仍在分类列表末尾。
+- **验证**：新增 3 个回归断言，累计 1224 测试全绿、typecheck 零错误；真实 DSH Web 加载候选客户端验证精选↔社区连续三次、关闭再开及崩溃残留空容器恢复；260–880px 六档 +N/chip/筛选相交面积恒 0，精选五类不出现错误 +N。
+
 ### 0.9.56 变更：ZoneChips +N 重叠根治——in-flow 文档流布局 + 折行减类（主人方案）
 
 - **缺陷（0.9.55 真机复现）**：折叠态 `+N` 采用「绝对定位 + contentW−48 夹取」，当末可见行剩余空间小于徽章宽时，徽章压住末可见 chip（真机：+9 压住「文档与渲染 61」右端计数）。
@@ -418,6 +425,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.57 — curated-zone update loop, dead panel entry, and collapsed filter/overflow overlaps
+
+- **Root cause (reproduced on 0.9.56)**: curated labels may get a fresh object on every parent render; the layout effect depended on the `chips` array identity and on its own `geom` update. Synchronous remeasurement repeatedly entered the same commit, eventually throwing React `Maximum update depth exceeded` (#185). React emptied the panel tree while leaving `#dshm-panel-root`; the old entry guard checked only for a container and silently blocked every later open. The pinned Filter wrapper also added a second border around its bordered button, while the clamped/inline `+N` iterations overlapped neighboring chips at narrow widths.
+- **Fix**: depend on a stable signature of rendered category IDs, labels and counts; defer geometry-dependent remeasurement to an animation frame after state commits. Retire the 0.9.56 `display:none`/in-flow feedback path in favor of a full in-flow chip layout with `visibility:hidden` beyond the clip; derive the hidden count from all chip row offsets. Give out-of-flow `+N` its own 52px right slot, separate from Filter's 96px, with a more specific selector so the total reservation wins the cascade. Measure the last visible **distinct row** rather than the Nth chip. Strip the redundant Filter-wrapper border; discard an orphaned panel root on the next open.
+- **Tradeoff**: correctness, zero overlap and reopenability take precedence over keeping `+N` flush against the last chip. Its count remains truthful; expanded `⌃` remains at list end.
+- **Verification**: three additional regression assertions, 1224 tests passing and clean typecheck; real DSH Web with the candidate client survived three curated↔community round trips, close/reopen and stale-root recovery; six widths from 260–880px showed zero badge/chip/Filter intersection, and curated's five categories showed no spurious `+N`.
 
 ### Fixed in 0.9.56 — ZoneChips +N overlap eradicated: in-flow document layout + wrap-yield-a-category (owner's design)
 
