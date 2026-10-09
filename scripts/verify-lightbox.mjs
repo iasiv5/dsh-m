@@ -53,12 +53,23 @@ ${bundle}
 })({ exports: {} }, {}, window.__req);
 window.__dshm.__Apply({ effect: (fn) => fn(), inject: () => {}, slots: { inject: () => {}, register: () => {} } });
 window.__mountProbe = null;
-window.__boot = function (shots) {
-  const it = { id: 'o1--demo', name: 'demo', description: 'demo desc', category: 'tools', source: 'npm', npm: 'demo', community: true, github: 'elysia395/dsh-wallpaper-engine', screenshots: shots };
+window.__boot = function (shots, options = {}) {
+  const it = {
+    id: options.id || 'o1--demo', name: 'demo', description: 'demo desc', category: 'tools',
+    source: 'npm', npm: 'demo', community: options.community !== false,
+    github: options.github || 'elysia395/dsh-wallpaper-engine', screenshots: shots,
+    ...(typeof options.owner === 'string' ? { owner: options.owner } : {}),
+  };
   const root = window.ReactDOM.createRoot(document.getElementById('modalhost'));
   root.render(window.React.createElement(window.__dshm.__DetailModal, {
     it, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: false, profileKind: 'web',
   }));
+};
+window.__bootPrimary = function () {
+  window.__boot([], { id: 'dsh-skins', community: false, github: 'fake/repo' });
+};
+window.__bootOwnerSnapshot = function () {
+  window.__boot([], { id: 'owner--old-plugin', community: false, github: 'fake/repo', owner: 'author' });
 };
 <\/script></body></html>`
 
@@ -72,24 +83,34 @@ const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] }
 try {
   let page = await browser.newPage({ viewport: { width: 1055, height: 764 } })
   const reqLog = []
+  const unexpectedExternal = []
+  const primaryCalls = []
   const wirePage = (p) => {
     p.on('pageerror', (e) => console.log('PAGEERROR', e.message))
-    p.on('request', (r) => { const u = r.url(); if (u.includes('images.weserv.nl') || u.includes('github.com')) reqLog.push(u) })
+    p.on('request', (r) => { const u = r.url(); if (u.startsWith('https://')) reqLog.push(u) })
+  }
+  const mountExternalGuard = async (targetPage) => {
+    // 注册在具体 fulfill routes 之前；后注册的已知 route 优先命中，任何其它 HTTPS 请求一律记录并 abort。
+    await targetPage.route('https://**/*', (route) => {
+      unexpectedExternal.push(route.request().url())
+      return route.abort()
+    })
   }
   wirePage(page)
   // 0.9.61 执行期教训：勿对本 page 外挂 CDP session（如 Network.setCacheDisabled）——Playwright 拦截
   // 自身走 CDP，外部 session 在若干次 reload 后会互相踩踏，路由静默失效、请求真网泄漏（canary 实证）。
   // 确定性由「代次 URL（全局唯一）+ fulfill 带 no-store」承担，无需 CDP。
   const SVG = (c) => `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000"><rect width="1600" height="1000" fill="${c}"/><text x="60" y="120" font-size="72" fill="#fff" font-family="monospace">SHOT</text></svg>`
-  await page.route('https://github.com/fake/**', (route) => {
-    const url = route.request().url()
-    const color = url.endsWith('1.png') ? '#334155' : url.endsWith('2.png') ? '#7c3aed' : '#0e7490'
-    route.fulfill({ contentType: 'image/svg+xml', body: SVG(color), headers: { 'cache-control': 'no-store' } })
-  })
   // 0.9.61 图片加载链 harness：三域 route（域名为指称，pattern 须匹配完整 URL——Playwright glob 全 URL 锚定）
   const WESERV_PAT = '**images.weserv.nl**'
   const FAKE_PAT = 'https://github.com/fake/**'
   const AVATAR_PAT = '**/elysia395.png*'
+  const FAKE_AVATAR_PAT = 'https://github.com/fake.png*'
+  const RAW_PAT = 'https://raw.githubusercontent.com/fake/**'
+  const PRIMARY_SCREENSHOTS = [
+    'https://raw.githubusercontent.com/fake/repo/HEAD/docs/assets/primary-one.webp',
+    'https://raw.githubusercontent.com/fake/repo/HEAD/docs/assets/primary-two.webp',
+  ]
   // 代次化 URL（0.9.61 执行期·确定性根基）：已解码位图按 URL 复用且不受 CDP 禁缓存管辖——
   // 凡在本页生命周期内成功过的 URL，后续失败场景不再发请求（无 error → 链不走）。
   // 故每个 freshState 生成全新代次 URL（?g=N），失败场景的 URL 保证全局唯一。
@@ -99,18 +120,22 @@ try {
 
   const directHits = []
   const mountDirect = async (mode) => {
-    await page.unroute(FAKE_PAT).catch(() => {})
-    await page.unroute(AVATAR_PAT).catch(() => {})
+    for (const pattern of [FAKE_PAT, AVATAR_PAT, FAKE_AVATAR_PAT, RAW_PAT]) await page.unroute(pattern).catch(() => {})
     if (mode === 'abort') {
       await page.route(FAKE_PAT, (r) => { directHits.push(`abort:${r.request().url().slice(0, 50)}`); r.abort() })
       await page.route(AVATAR_PAT, (r) => { directHits.push(`abort-av:${r.request().url().slice(0, 50)}`); r.abort() })
+      await page.route(FAKE_AVATAR_PAT, (r) => { directHits.push(`abort-fake-av:${r.request().url().slice(0, 50)}`); r.abort() })
+      await page.route(RAW_PAT, (r) => { directHits.push(`abort-raw:${r.request().url().slice(0, 50)}`); r.abort() })
     } else {
-      await page.route(FAKE_PAT, (route) => {
+      const fulfillImage = (route) => {
         const url = route.request().url()
-        const color = url.endsWith('1.png') ? '#334155' : url.endsWith('2.png') ? '#7c3aed' : '#0e7490'
-        route.fulfill({ contentType: 'image/svg+xml', body: SVG(color), headers: { 'cache-control': 'no-store' } })
-      })
+        const color = url.endsWith('1.png') || url.endsWith('primary-one.webp') ? '#334155' : url.endsWith('2.png') || url.endsWith('primary-two.webp') ? '#7c3aed' : '#0e7490'
+        return route.fulfill({ contentType: 'image/svg+xml', body: SVG(color), headers: { 'cache-control': 'no-store' } })
+      }
+      await page.route(FAKE_PAT, fulfillImage)
       await page.route(AVATAR_PAT, (r) => r.fulfill({ contentType: 'image/svg+xml', body: SVG('#7c3aed'), headers: { 'cache-control': 'no-store' } }))
+      await page.route(FAKE_AVATAR_PAT, (r) => r.fulfill({ contentType: 'image/svg+xml', body: SVG('#7c3aed'), headers: { 'cache-control': 'no-store' } }))
+      await page.route(RAW_PAT, fulfillImage)
     }
   }
   const mountWeserv = async (mode, delayMs = 0) => {
@@ -120,31 +145,64 @@ try {
     else await page.route(WESERV_PAT, (r) => { weservHits.push(`fulfill:${r.request().url()}`); r.fulfill({ contentType: 'image/svg+xml', body: SVG('#0e7490'), headers: { 'cache-control': 'no-store' } }) })
   }
   const weservHits = []
+  const mountPrimaryHost = async (targetPage, mode = 'screenshots') => {
+    await targetPage.route('**/dshm', async (route) => {
+      let body = {}
+      try { body = JSON.parse(route.request().postData() || '{}') } catch { /* fixture below returns a protocol error */ }
+      if (body.method !== 'primary-screenshots') {
+        return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'unexpected method' }) })
+      }
+      primaryCalls.push(body)
+      if (mode === 'error') {
+        return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'fixture offline' }) })
+      }
+      const screenshots = mode === 'empty' ? [] : PRIMARY_SCREENSHOTS
+      return route.fulfill({ status: 200, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ ok: true, screenshots }) })
+    })
+  }
   // Route 生命周期协议：凡 reload 场景开头 unrouteAll 后仅重挂本场景所需 route（评审 R2-5）
   // 0.9.61 执行期定稿：每场景全新 page（独立 context）——零路由历史（消灭 unroute/复挂竞态与
   // 「同页多轮 reload 后路由静默失效」的现场性怪病）、零共享缓存（消灭跨场景已解码位图复用）、
   // 模块态天然归零（赢家记忆重置不再依赖 reload 语义）。
-  const freshState = async ({ direct = 'fulfill', weserv = 'fulfill', weservDelayMs = 0 } = {}) => {
+  const freshState = async ({ direct = 'fulfill', weserv = 'fulfill', weservDelayMs = 0, primary = 'screenshots', boot = 'community' } = {}) => {
     gen += 1
     const oldPage = page
     page = await browser.newPage({ viewport: { width: 1055, height: 764 } })
     wirePage(page)
     reqLog.length = 0
+    unexpectedExternal.length = 0
+    primaryCalls.length = 0
     await oldPage.close().catch(() => {})
+    // 每个 fresh page 单独安装 catch-all 与业务 routes；page.route 不跨 page 继承。
+    await mountExternalGuard(page)
     await mountDirect(direct)
     await mountWeserv(weserv, weservDelayMs)
+    await mountPrimaryHost(page, primary)
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load' })
-    await page.evaluate((s) => window.__boot(s), shotsOf(gen))
-    await page.locator('.dsvm-shotbox').first().waitFor({ state: 'visible', timeout: 15000 })
+    if (boot === 'primary') {
+      const response = page.waitForResponse((r) => new URL(r.url()).pathname === '/dshm')
+      await page.evaluate(() => window.__bootPrimary())
+      await response
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    } else if (boot === 'owner-snapshot') {
+      await page.evaluate(() => window.__bootOwnerSnapshot())
+    } else {
+      await page.evaluate((s) => window.__boot(s), shotsOf(gen))
+      await page.locator('.dsvm-shotbox').first().waitFor({ state: 'visible', timeout: 15000 })
+    }
+    await page.locator('.dsvm-modal').waitFor({ state: 'visible', timeout: 5000 })
     return gen
   }
-  // 初始化即挂 weserv fulfill——A0-A15 与新场景全程零真网 weserv 依赖（评审 R2-3）
+  // 初始化即挂 route：A0-A25 与 Primary 场景都不依赖真实外网。
+  await mountExternalGuard(page)
+  await mountDirect('fulfill')
   await mountWeserv('fulfill')
   // http 源（localStorage 可用，等价真实宿主）；setContent 的 opaque origin 会禁 localStorage
   const http = await import('node:http')
   const server = http.createServer((req, res) => { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end(html) })
   await new Promise((ready) => server.listen(0, '127.0.0.1', ready))
   try {
+    await mountPrimaryHost(page, 'screenshots')
     await page.goto(`http://127.0.0.1:${server.address().port}/`, { waitUntil: 'load' })
     await page.evaluate((shots) => window.__boot(shots), SHOTS)
     await page.locator('.dsvm-shotbox').first().waitFor({ state: 'visible', timeout: 15000 })
@@ -372,7 +430,39 @@ try {
       `src=${stateAfter ? stateAfter.src.slice(0, 52) : 'no-img'} direct请求=${a25DirectReqs}`)
     await page.keyboard.press('Escape')
 
-    // --live：A0-A23 照旧（route 伪造不变），仅追加真网压缩对比（样图不经任何 route；评审 R2-D）
+    // A26 Primary DetailModal：Host 按 id 给出作者 manifest 的图片 URL；thumb 与 Lightbox 仍走现有 weserv 链。
+    const g26 = await freshState({ boot: 'primary', primary: 'screenshots' })
+    await page.locator('.dsvm-shotrow').waitFor({ state: 'visible', timeout: 5000 })
+    const a26Call = primaryCalls[0]
+    const a26Thumb = await page.locator('.dsvm-shotbox img').first().getAttribute('src')
+    ok('A26 Primary 详情按 id 取图，缩略图走 weserv h=300',
+      primaryCalls.length === 1 && a26Call?.method === 'primary-screenshots' && a26Call?.id === 'dsh-skins' && a26Thumb?.includes('images.weserv.nl') && a26Thumb.includes('h=300') && unexpectedExternal.length === 0,
+      `calls=${primaryCalls.length} thumb=${a26Thumb || 'none'} unexpected=${unexpectedExternal.length}`)
+    await open()
+    const a26Lightbox = await page.locator('.dsvm-lightbox img').getAttribute('src')
+    ok('A26 Primary 灯箱仍走 weserv w=1600', a26Lightbox?.includes('images.weserv.nl') && a26Lightbox.includes('w=1600'), a26Lightbox || 'none')
+    await page.keyboard.press('Escape')
+
+    // A27 live Community 保持目录截图路径，不调用 Primary Host method。
+    await freshState({ boot: 'community' })
+    ok('A27 live Community 保持旧图库且不调用 Primary method',
+      primaryCalls.length === 0 && await page.locator('.dsvm-shotrow').count() === 1 && unexpectedExternal.length === 0,
+      `primaryCalls=${primaryCalls.length} unexpected=${unexpectedExternal.length}`)
+
+    // A28 owner-only 收藏快照是 Community 来源：无截图持久化，也不错误读取 Primary manifest。
+    await freshState({ boot: 'owner-snapshot' })
+    ok('A28 owner-only Community 快照无图库且不调用 Primary method',
+      primaryCalls.length === 0 && await page.locator('.dsvm-shotrow').count() === 0 && unexpectedExternal.length === 0,
+      `primaryCalls=${primaryCalls.length} unexpected=${unexpectedExternal.length}`)
+
+    // A29 manifest 空/失败均安静降级为无图库。
+    await freshState({ boot: 'primary', primary: 'empty' })
+    const a29Empty = primaryCalls.length === 1 && await page.locator('.dsvm-shotrow').count() === 0 && unexpectedExternal.length === 0
+    await freshState({ boot: 'primary', primary: 'error' })
+    const a29Error = primaryCalls.length === 1 && await page.locator('.dsvm-shotrow').count() === 0 && unexpectedExternal.length === 0
+    ok('A29 manifest 空/失败不显示空占位或错误区', a29Empty && a29Error, `empty=${a29Empty} error=${a29Error}`)
+
+    // --live：A0-A25 照旧（route 伪造不变），仅追加真网压缩对比（样图不经任何 route；评审 R2-D）
     if (process.argv.includes('--live')) {
       const SAMPLE = 'https://raw.githubusercontent.com/elysia395/dsh-wallpaper-engine/HEAD/docs/images/mascot-drawer.png'
       const { weservUrl } = await import(join(root, 'src/client/img-chain.js'))

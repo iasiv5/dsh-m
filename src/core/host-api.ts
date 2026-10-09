@@ -21,6 +21,7 @@ import {
 } from './market.js'
 import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
 import { readInstalledPluginReadme, type PluginReadme } from './installed.js'
+import { loadPrimaryScreenshots } from './primary-screenshots.js'
 import { isNewerVersion, npmLatest, npmPackumentReadme } from './versions.js'
 import { getCommunitySummary } from './community.js'
 import type { RegistryController, RegistryControllerSnapshot } from './registry-controller.js'
@@ -61,6 +62,8 @@ export interface HostApiOverrides {
   /** 0.9.45 U10b：README 本地读取与 npm 兜底（测试注入；缺省 = 真实现）。 */
   readInstalledPluginReadme?: typeof readInstalledPluginReadme
   npmPackumentReadme?: typeof npmPackumentReadme
+  /** Primary detail author screenshots manifest reader（GUI method；测试注入）。 */
+  loadPrimaryScreenshots?: typeof loadPrimaryScreenshots
   /** registry 分支社区 summary 数据源（M1 Task 6；测试注入 cache-first 模拟） */
   getCommunitySummary?: typeof getCommunitySummary
   /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
@@ -279,6 +282,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     npmLatest: ctx.deps?.npmLatest ?? npmLatest,
     readInstalledPluginReadme: ctx.deps?.readInstalledPluginReadme ?? readInstalledPluginReadme,
     npmPackumentReadme: ctx.deps?.npmPackumentReadme ?? npmPackumentReadme,
+    loadPrimaryScreenshots: ctx.deps?.loadPrimaryScreenshots ?? loadPrimaryScreenshots,
     getCommunitySummary: ctx.deps?.getCommunitySummary ?? getCommunitySummary,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
@@ -386,6 +390,27 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             deadlineAt: Date.now() + 3_000,
           })
           payload = { plugins: snap.loaded.registry.plugins, registryState: snap.loaded, community }
+          break
+        }
+
+        case 'primary-screenshots': {
+          const id = strArg(body, 'id')
+          if (!id) throw new ApiProtocolError(400, '缺少 id')
+          await ctx.controller.ensureReady({ signal })
+          const snap = await ctx.controller.snapshot({ signal })
+          // 只信 active Primary Registry 的精确 id → github 映射；请求体中的 github/url 一律忽略。
+          // 本 method 不调用 listMarket/getCommunitySummary，也不加载 Community Catalog。
+          const entry = snap.loaded.registry.plugins.find((candidate) => candidate.id === id)
+          if (!entry || typeof entry.github !== 'string' || entry.github.trim() === '') {
+            payload = { screenshots: [] }
+            break
+          }
+          try {
+            payload = { screenshots: await d.loadPrimaryScreenshots(entry.github) }
+          } catch {
+            // 截图是可选详情元数据；manifest 不可用不应阻塞详情或安装决策。
+            payload = { screenshots: [] }
+          }
           break
         }
 

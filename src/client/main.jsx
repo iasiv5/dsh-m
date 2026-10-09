@@ -1356,10 +1356,43 @@ function useModalDepth(active) {
 
 function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeBusy, upgradeRec, profileKind, installRec, installNote }) {
   useModalDepth(true);
-  const shots = it.community === true ? safeScreenshots(it) : [];
+  const communityScreenshotSource = it.community === true || typeof it.owner === "string";
+  const [primaryShotState, setPrimaryShotState] = useState({ id: null, screenshots: [] });
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    setPrimaryShotState({ id: it.id, screenshots: [] });
+    if (communityScreenshotSource || typeof it.id !== "string" || it.id.trim() === "") {
+      return () => {
+        live = false;
+        controller.abort();
+      };
+    }
+    api("primary-screenshots", { id: it.id }, controller.signal)
+      .then((data) => {
+        if (!live) return;
+        setPrimaryShotState({ id: it.id, screenshots: safeScreenshots({ screenshots: data && data.screenshots }) });
+      })
+      .catch(() => {
+        if (live) setPrimaryShotState({ id: it.id, screenshots: [] });
+      });
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [it.id, it.github, it.community, it.owner]);
+  const primaryShots = primaryShotState.id === it.id ? primaryShotState.screenshots : [];
+  const shots = communityScreenshotSource ? safeScreenshots(it) : primaryShots;
   // 0.9.61 图片加载链（评审 E：DetailModal 作用域内四处 shots 基准同步换 visible——
   // 整条门控/截图条 map 的开灯箱索引/灯箱门控/键盘 lbStep；漏改则剔除后索引错位）
   const [brokenShots, setBrokenShots] = useState([]);
+  // 评审建议落盘：条目切换时渲染期重置坏图剔除记录（prev-key 模式）。当前两挂载点
+  // 关闭 Modal 即卸载、现状无害；防未来 Modal 复用时旧条目记录错误剔除新条目截图。
+  const [brokenShotsKey, setBrokenShotsKey] = useState(it.id);
+  if (brokenShotsKey !== it.id) {
+    setBrokenShotsKey(it.id);
+    setBrokenShots([]);
+  }
   const breakShot = useCallback((src) => setBrokenShots((prev) => (prev.includes(src) ? prev : prev.concat(src))), []);
   const visible = shots.filter((src) => !brokenShots.includes(src));
   const [lb, setLb] = useState(null);

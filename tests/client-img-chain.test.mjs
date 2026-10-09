@@ -179,3 +179,27 @@ describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处�
     assert.ok(mainSrc.includes('.dsvm-lbfail{'), '占位 CSS 在')
   })
 })
+
+describe('Primary screenshot DetailModal source（GUI only）', () => {
+  const modalSeg = mainSrc.slice(mainSrc.indexOf('function DetailModal('), mainSrc.indexOf('// ---------- 市场页'))
+
+  it('Primary entry 按 id 读取 Host manifest；Community live item 使用目录截图', () => {
+    assert.ok(modalSeg.includes('primaryShots'), '截图 URL 保存在 DetailModal 局部 state')
+    assert.ok(modalSeg.includes('api("primary-screenshots", { id: it.id }'), 'Host method 只传 entry id')
+    assert.ok(/\[it\.id, it\.github, it\.community, it\.owner\]/.test(modalSeg), 'id/repo/source 变化时重新解析或切换截图来源')
+    assert.ok(modalSeg.includes('safeScreenshots(it)'), 'Community live item 沿用目录 screenshots')
+    assert.ok(modalSeg.includes('safeScreenshots({ screenshots:'), 'Primary reader 结果复用同一消费端 allowlist')
+  })
+
+  it('owner-only Community snapshot 不触发 Primary reader；favorite lookup 仍 all 后 snapshot fallback', () => {
+    assert.ok(modalSeg.includes('it.owner'), 'owner-only 社区收藏快照识别在')
+    assert.ok(mainSrc.includes('api("market", { query: id, source: "all", limit: 8 })'), 'openFavDetail 既有跨区回查不改')
+    const snapshotSeg = mainSrc.slice(mainSrc.indexOf('function snapshotOf('), mainSrc.indexOf('function FavoriteZone('))
+    assert.doesNotMatch(snapshotSeg, /screenshots/, 'favorite snapshot 不持久化图库 URL')
+  })
+
+  it('条目切换时渲染期重置坏图剔除记录（评审建议落盘：防 Modal 复用陈旧剔除）', () => {
+    assert.ok(modalSeg.includes('const [brokenShotsKey, setBrokenShotsKey] = useState(it.id);'), 'prev-key 状态在')
+    assert.ok(/if \(brokenShotsKey !== it\.id\) \{\s*setBrokenShotsKey\(it\.id\);\s*setBrokenShots\(\[\]\);\s*\}/.test(modalSeg), '渲染期比较并清空 brokenShots')
+  })
+})

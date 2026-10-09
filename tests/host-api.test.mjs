@@ -153,6 +153,20 @@ afterEach(() => {
   if (cacheRoot) rmSync(cacheRoot, { recursive: true, force: true })
 })
 
+function writeRegistry(plugins) {
+  const path = join(cacheRoot, 'primary-registry.json')
+  writeFileSync(path, JSON.stringify({ version: 1, plugins }))
+  return path
+}
+
+function primaryEntry(overrides = {}) {
+  return {
+    id: 'dsh-skins', name: 'DSH Skins', description: 'test', category: 'self-dev', tags: [],
+    source: 'npm', npm: '@iasiv5/dsh-skins', github: 'iasiv5/dsh-skins',
+    ...overrides,
+  }
+}
+
 describe('host-api：协议防护', () => {
   it('GET / 其他 method → 405', async () => {
     const { dispatcher } = setup()
@@ -237,6 +251,59 @@ describe('host-api：method 响应', () => {
     assert.equal(res.status, 200)
     assert.ok(Array.isArray(res.body.plugins))
     assert.ok(['ready', 'stale'].includes(res.body.registryState.status), `force 加载状态 ${res.body.registryState.status}`)
+  })
+
+  it('primary-screenshots 从 active Primary Registry 取 repo，忽略客户端 github/url 覆盖且不加载社区', async () => {
+    const seen = []
+    let communityCalls = 0
+    const file = writeRegistry([primaryEntry()])
+    const s = setup({
+      loadPrimaryScreenshots: async (github) => {
+        seen.push(github)
+        return ['https://raw.githubusercontent.com/iasiv5/dsh-skins/HEAD/docs/assets/preview-openbmc-1.webp']
+      },
+      getCommunitySummary: async () => {
+        communityCalls += 1
+        return { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, acceptedCount: 0, upstreamCount: null, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] }
+      },
+    }, { registryUrl: file })
+
+    const res = await callApi(s.dispatcher, {
+      headers: JSON_HEADERS,
+      body: { method: 'primary-screenshots', id: 'dsh-skins', github: 'attacker/other', url: 'https://attacker.example/screenshots.json' },
+    })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.ok, true)
+    assert.deepEqual(res.body.screenshots, ['https://raw.githubusercontent.com/iasiv5/dsh-skins/HEAD/docs/assets/preview-openbmc-1.webp'])
+    assert.deepEqual(seen, ['iasiv5/dsh-skins'], '目标仓库只能来自 active Registry')
+    assert.equal(communityCalls, 0, 'Primary截图读取不得加载 Community Catalog')
+    assert.equal(s.calls.listMarket.length, 0, 'Primary截图读取不得走 listMarket/source=all')
+  })
+
+  it('primary-screenshots：缺 id → 400；未知 id 或无 github → 空列表且不调用 reader', async () => {
+    const noGithub = primaryEntry({ id: 'no-github', npm: '@example/no-github', github: undefined })
+    const file = writeRegistry([primaryEntry(), noGithub])
+    const seen = []
+    const s = setup({ loadPrimaryScreenshots: async (github) => { seen.push(github); return [] } }, { registryUrl: file })
+
+    const missing = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'primary-screenshots' } })
+    assert.equal(missing.status, 400)
+    const unknown = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'primary-screenshots', id: 'unknown' } })
+    assert.equal(unknown.status, 200)
+    assert.deepEqual(unknown.body.screenshots, [])
+    const noRepo = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'primary-screenshots', id: 'no-github' } })
+    assert.equal(noRepo.status, 200)
+    assert.deepEqual(noRepo.body.screenshots, [])
+    assert.deepEqual(seen, [])
+  })
+
+  it('primary-screenshots：reader 失败降级为空图库', async () => {
+    const file = writeRegistry([primaryEntry()])
+    const s = setup({ loadPrimaryScreenshots: async () => { throw new Error('offline') } }, { registryUrl: file })
+    const res = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'primary-screenshots', id: 'dsh-skins' } })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body.screenshots, [])
   })
 
   it('market 转发 query/offset/limit/source/sort，忽略客户端 withLatest，limit clamp 1..96（0.7.0 Task 7）', async () => {
