@@ -1344,8 +1344,10 @@ function Lightbox({ shots, index, onNav, onClose }) {
           h(ExtLink, { href: shots[index] }, lookup("lb.open")),
         )
       : [
-          // 0.9.62 走链期间转圈占位（settled 即卸载；点它视为点遮罩可关——急躁关闭是合理逃生门）
-          !chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true" }) : null,
+          // 0.9.62 走链期间转圈占位（settled 即卸载）；0.9.63 onClick=onClose——
+          // backdropCloseHandlers 仅 target===根 时关（防拖拽误关），转圈是子元素，
+          // 不补这条则点在 34px 转圈上无动作；急躁关闭是合理逃生门，与点图即关同语义。
+          !chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true", onClick: onClose }) : null,
           h("img", { className: `dsvm-lbimg${chain.settled ? " dsvm-lbimg-on" : ""}`, src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad }),
         ],
     h("button", { ref: closeRef, className: "dsvm-btn dsvm-lbclose", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),

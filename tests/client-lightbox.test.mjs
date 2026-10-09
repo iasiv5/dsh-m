@@ -100,7 +100,7 @@ describe('灯箱 0.9.62 影院自持（皮肤碰撞修复）+ 加载指示', () 
   it('加载转圈：走链期间占位，settled 即卸载', () => {
     assert.ok(src.includes('@keyframes dsvm-lbspin{to{transform:rotate(360deg)}}'), 'keyframes 在')
     assert.ok(src.includes('.dsvm-lbspin{position:absolute;left:50%;top:50%'), '转圈居中定位在')
-    assert.ok(src.includes('!chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true" }) : null'), 'JSX 门控：未 settled 且有 src 才渲染')
+    assert.ok(src.includes('!chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true", onClick: onClose }) : null'), 'JSX 门控：未 settled 且有 src 才渲染；onClick=onClose（backdrop 守卫只认根元素，转圈子元素须显式接关）')
   })
   it('图片淡入：onLoad（settled）后 160ms 淡入，img 类名随 chain.settled', () => {
     assert.ok(src.includes('.dsvm-lightbox .dsvm-lbimg{opacity:0;transition:opacity .16s ease-out}'), '淡入规则在')
