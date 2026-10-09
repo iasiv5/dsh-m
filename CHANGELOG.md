@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.61 修复：大陆浏览器拉不到插件截图/图标——图片加载链 weserv 优先双兜底
+
+- **根因（2026-10-09 实测）**：截图（raw.githubusercontent.com）与图标（github.com 头像）由用户浏览器直连拉取——服务器侧 200/0.2s，大陆浏览器路径时断时通，当日故障样本 dsh-wallpaper-engine 五图（22.5MB，含 10.4MB GIF）缩略图条与灯箱全空；0.9.60 已排除灯箱 v2 回归，图标「能显示」实为本地字母兜底。对标 dsh-market 1.66.14：缩略图无条件 weserv（其源码实测大陆 1.39s/23KB vs 原图 41KB）但灯箱直连零兜底——大陆点开大图同款黑洞。
+- **图片加载链（ADR-0014）**：三类消费方（缩略图 h=300 / 灯箱 w=1600 / 图标 h=96）共用 `useImgChain`——weserv 层（`fit=inside&we=1&output=webp&q=80` 服务端缩放转码）优先，失败或 8s 人工超时（仅此层；直连层零人工超时防误杀慢速合法下载）换原图直连，再败走终态：缩略图剔除（全败隐藏整条）、灯箱占位「⚠ 失败 + 重试 + 打开原图 ↗」、图标字母渐变兜底。赢家记忆按 raw/avatar 两桶记最近成功层，**链启动时快照次序**——同批多图竞态下兄弟图不因偏好翻转跳层（执行期实证：缩略图 1 经直连成功翻转偏好后 2/3 全灭的竞态）；链内前进序感知（偏好为 direct 时 direct 败仍按序试 weserv，固定阶梯会跳过兜底直判死）。四处 shots 基准同步换 visible（整条门控/截图条 map/灯箱门控/键盘导航+effect 依赖），列表保持全量 map + `${i}:${src}` 稳定 key，灯箱 index 钳制防越界。
+- **配套**：纯逻辑入 `src/client/img-chain.js`（URL 构造/桶分类/序感知 tier 机/赢家记忆，`WESERV_BASE` 单常量——未来设置项只改一处）；GLOSSARY 增「图片加载链（Image Chain）」一条；探针扩展 A16-A24（断直连/断 weserv/双断占位+重试/weserv 挂起 8s 守卫/赢家记忆/缩略图剔除/direct-first 换层 Probe 场景）+ `--live` 真网压缩实证；执行期探针 harness 三大确定性根基：**每场景全新 page（独立 context，消灭路由复挂竞态与跨场景解码复用）**、代次化 URL（凡需失败的 URL 全页生命周期唯一）、层序断言走 reqLog（page.on('request') 不依赖路由拦截）。
+- **验证**：1256 项测试全绿（基线 1236 + 新增 20）、typecheck 零错误；探针 31/31 三连跑稳定；`--live` 压缩实证 mascot-drawer.png 直连 2859KB vs weserv 151KB（≈18.9×）。评审轮记录待实施评审后补记。
+
 ### 0.9.60 修复：截图灯箱窗口态无导航/无法退出——createPortal 逃出面板包含块 + 控件常驻
 
 - **根因**：灯箱 `position:fixed` 是 `.dshm-panel`（`backdrop-filter` + `overflow:hidden`）的后代，面板盒成了它的包含块——图片按视口单位放大（旧 94vw/80vh），在 ≤680px 高的窗口态面板里必然溢出，in-flow 的 ‹›/圆点被裁出屏外，又没有 ✕；全屏态面板恰为视口才「碰巧」可见（即「只有全屏才有导航按钮，窗口态图片占满小屏且无法退出」）。
@@ -445,6 +452,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.61 — screenshots/icons unreachable from mainland browsers: weserv-first dual-fallback image chain
+
+- **Root cause (measured 2026-10-09)**: screenshots (raw.githubusercontent.com) and icons (github.com avatars) load browser-direct - fine from the server (200/0.2s), intermittently dead from mainland browsers. That day's failure sample dsh-wallpaper-engine (5 images, 22.5MB incl. a 10.4MB GIF) rendered an empty strip and a black lightbox; 0.9.60 ruled out a lightbox-v2 regression, and "working" icons were the local letter fallback. Benchmark dsh-market 1.66.14: thumbnails unconditionally via weserv (their in-source mainland measurement: 1.39s/23KB vs 41KB original) but the lightbox loads direct with zero fallback - the same mainland black hole.
+- **Image chain (ADR-0014)**: three consumers (thumbnail h=300 / lightbox w=1600 / icon h=96) share `useImgChain` - weserv tier first (`fit=inside&we=1&output=webp&q=80` server-side resize/recode), on failure or an 8s guard (that tier only; the direct tier gets no artificial timeout so slow-but-legal downloads are never killed) fall back to the original URL, then to per-consumer finals: thumbnails dropped (whole strip hidden when all fail), lightbox placeholder "failed + retry + open original", icon letter fallback. Winner memory per service bucket (raw/avatar) remembers the last successful tier, and **each chain snapshots the order at start** - sibling images racing in the same batch never skip a tier because a preference flipped mid-flight (found in execution: thumbnail 1 succeeding via direct flipped the preference and killed thumbnails 2/3); advancement is order-aware (with direct preferred, a direct failure still tries weserv - a fixed ladder would skip the fallback entirely). All four shots references switch to visible (strip gating / strip map / lightbox gating / keyboard nav + effect deps), the strip keeps a full-list map with stable `${i}:${src}` keys, and the lightbox index is clamped against shrinkage.
+- **Supporting**: pure logic in `src/client/img-chain.js` (URL builder / bucket classifier / order-aware tier machine / winner memory; `WESERV_BASE` single constant - a future setting changes one line); one GLOSSARY term (Image Chain); probe extended A16-A24 (direct-blocked / weserv-blocked / dual-block placeholder+retry / weserv-hang 8s guard / winner memory / strip removal / direct-first Probe scenario) plus `--live` real-network compression; three probe-harness determinism pillars learned during execution: **a fresh page (fresh context) per scenario** (kills route-remount races and cross-scenario decoded-image reuse), generation URLs (`?g=N` - any URL that must fail is unique for the page lifetime), and tier-order assertions via reqLog (`page.on('request')` survives route interception quirks).
+- **Verification**: 1256 tests green (1236 baseline + 20 new), typecheck clean; probe 31/31 stable across three runs; `--live` compression: mascot-drawer.png direct 2859KB vs weserv 151KB (~18.9x). Review round notes to be appended after the implementation review.
 
 ### Fixed in 0.9.60 — screenshot lightbox unusable when windowed: portal out of the panel containing block + always-visible controls
 

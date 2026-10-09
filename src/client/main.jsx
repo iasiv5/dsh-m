@@ -15,6 +15,7 @@ const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normal
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { lbStep } = require("./lightbox.js");
+const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 const { installedViewModel, registrySourceKey } = require("./installed-view.js");
@@ -85,7 +86,7 @@ const ZH = {
   "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
   "pager.jump": "跳转", "pager.jump.ph": "页号",
   "panel.fullscreen": "全屏", "panel.restore": "还原",
-  "lb.title": "插件截图预览", "lb.prev": "上一张（←）", "lb.next": "下一张（→）", "lb.hint": "点图或空白处关闭 · ←→ 切换",
+  "lb.title": "插件截图预览", "lb.prev": "上一张（←）", "lb.next": "下一张（→）", "lb.hint": "点图或空白处关闭 · ←→ 切换", "lb.fail": "图片加载失败", "lb.retry": "重试", "lb.open": "打开原图",
   "filter.title": "筛选", "filter.sortfield": "排序字段", "filter.sortdir": "排列方向", "filter.pagesize": "每页条数",
   "filter.field.downloads": "npm 下载量（近 30 天）", "filter.field.stars": "Star 数", "filter.field.added": "收录日期",
   "filter.dir.desc": "降序", "filter.dir.asc": "升序",
@@ -197,7 +198,7 @@ const EN = {
   "notice.unavailable": "Registry unavailable · check the address in Settings",
   "pager.jump": "Go", "pager.jump.ph": "Page",
   "panel.fullscreen": "Fullscreen", "panel.restore": "Restore",
-  "lb.title": "Plugin screenshot preview", "lb.prev": "Previous (←)", "lb.next": "Next (→)", "lb.hint": "Click image or backdrop to close · ←→ to switch",
+  "lb.title": "Plugin screenshot preview", "lb.prev": "Previous (←)", "lb.next": "Next (→)", "lb.hint": "Click image or backdrop to close · ←→ to switch", "lb.fail": "Failed to load image", "lb.retry": "Retry", "lb.open": "Open original",
   "filter.title": "Filter", "filter.sortfield": "Sort by", "filter.sortdir": "Direction", "filter.pagesize": "Per page",
   "filter.field.downloads": "npm downloads (30-day)", "filter.field.stars": "Stars", "filter.field.added": "Date added",
   "filter.dir.desc": "Descending", "filter.dir.asc": "Ascending",
@@ -404,6 +405,10 @@ const CSS = `
 .dsvm-lbdot{box-sizing:content-box;width:8px;height:8px;padding:5px;border-radius:50%;background:rgba(255,255,255,.32);background-clip:content-box;cursor:pointer}
 .dsvm-lbdot.on{background:#fff;background-clip:content-box}
 @media (max-width:640px){.dsvm-lbhint{display:none}.dsvm-btn.dsvm-lbarrow{width:40px;height:54px}}
+/* 0.9.61 双败终态占位：居中列——⚠ 文案 + 重试（复用 dsvm-btn）+ 打开原图（ExtLink 新标签） */
+.dsvm-lbfail{display:flex;flex-direction:column;align-items:center;gap:12px;padding:24px 32px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.14);border-radius:12px}
+.dsvm-lbfailmsg{color:rgba(255,255,255,.85);font-size:14px}
+.dsvm-lbfail a{color:rgba(255,255,255,.75);font-size:13px;text-decoration:underline}
 .dsvm-card-clickable, .dshm-card{cursor:pointer}
 .dshm-card:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
@@ -694,18 +699,22 @@ function useMarketData(zone = "community") {
 
 // ---------- 通用小组件 ----------
 function Icon({ entry }) {
-  const [broken, setBroken] = useState(false);
   const letter = String(entry.name || entry.id || "?").charAt(0).toUpperCase();
   const url = entry.icon || (entry.github ? `https://github.com/${entry.github.split("/")[0]}.png?size=64` : null);
-  if (!url || broken) {
+  // 0.9.61 图片加载链（Q10）：weserv(h=96)→原图→双败字母渐变兜底（github.com 头像 → avatar 桶）。
+  // url 为空时传 ""（serviceBucketOf 防御归 raw，src 不会被渲染——下方 !url 分支先返回）。
+  const chain = useImgChain(url || "", { h: 96 });
+  if (!url || chain.failed) {
     return h("div", { className: "dshm-icon", "aria-hidden": "true" }, letter);
   }
   return h("img", {
     className: "dshm-icon",
-    src: url,
+    src: chain.src,
     alt: "",
-    onError: () => setBroken(true),
+    onError: chain.onError,
+    onLoad: chain.onLoad,
     referrerPolicy: "no-referrer",
+    decoding: "async",
   });
 }
 
@@ -1163,8 +1172,9 @@ function compactCount(n) {
   return String(n);
 }
 
-// ---------- 截图三层懒加载（0.7.0 Task 12：IO 200px 挂 src + loading=lazy + fetchPriority=low） ----------
-function Shot({ src, onClick }) {
+// ---------- 截图三层懒加载（0.7.0 Task 12：IO 200px 挂 src + loading=lazy + fetchPriority=low；
+// 0.9.61 图片加载链：weserv(h=300)→原图→双败上报剔除。active:show——IO 未可见不计时 ----------
+function Shot({ src, onClick, onBroken }) {
   const [show, setShow] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -1185,6 +1195,11 @@ function Shot({ src, onClick }) {
     io.observe(el);
     return () => io.disconnect();
   }, []);
+  const chain = useImgChain(src, { h: 300, active: show });
+  // 评审 R2-9：onBroken 经 effect 上报（渲染体内直调父 setState 会触发 React 告警/循环）
+  useEffect(() => {
+    if (chain.failed && onBroken) onBroken(src);
+  }, [chain.failed, onBroken, src]);
   return h(
     "div",
     {
@@ -1200,9 +1215,55 @@ function Shot({ src, onClick }) {
       },
     },
     show
-      ? h("img", { className: "dsvm-shot", src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", fetchPriority: "low" })
+      ? (chain.failed ? null : h("img", { className: "dsvm-shot", src: chain.src, alt: "", loading: "lazy", referrerPolicy: "no-referrer", fetchPriority: "low", decoding: "async", onError: chain.onError, onLoad: chain.onLoad }))
       : null,
   );
+}
+
+// ---------- 图片加载链 hook（0.9.61，grilling Q1-Q18 / 实施计划架构快照，勿无声改动） ----------
+// 语义：当前层 tier 初始 = 打开时刻的偏好层（Q18 初始 weserv）；url 变化即重置为最新偏好层
+// （灯箱翻页复用同一 <img> 换 src）；onError 经 nextTier 前进（weserv→direct→failed）；
+// onLoad 记 rememberSuccess（最近成功层，成功才晋升，结构性不降级）；retry 重走整链不动桶偏好。
+// 8s 人工超时仅当 active && needsTimeout(当前层)——「img 实际开始加载后才计时」由 active 门控：
+// Shot 传 active: show（IO 未可见不计时，杜绝不可见耗尽 weserv 层）；Lightbox/Icon 恒真（缺省）。
+function useImgChain(url, opts) {
+  const { w, h, active = true } = opts || {};
+  const bucket = useMemo(() => serviceBucketOf(url), [url]);
+  // 链启动偏好快照（0.9.61 执行期修正·同批竞态）：同屏多图并行走链时，任一图成功会翻转全局偏好，
+  // 若前进时读「当前偏好」，仍在旧 tier0 上的兄弟图会 nextTier(旧层, 新偏好)=序末 → 跳过兜底直判死
+  // （探针 A18 实证：缩略图 1 经 direct 成功后 2/3 全灭）。故链内前进只认启动快照，翻转只影响下一条链。
+  const startPrefRef = useRef(null);
+  if (startPrefRef.current === null) startPrefRef.current = preferredTier(serviceBucketOf(url));
+  const [tier, setTier] = useState(() => tierOrder(startPrefRef.current)[0]);
+  const startChain = useCallback(() => {
+    startPrefRef.current = preferredTier(serviceBucketOf(url));
+    setTier(tierOrder(startPrefRef.current)[0]);
+  }, [url]);
+  useEffect(() => {
+    // url 变化 → 以当前偏好重开链（attempt 归零语义）
+    startChain();
+  }, [url, startChain]);
+  const failed = tier === "failed";
+  const src = failed ? "" : tier === "weserv" ? weservUrl(url, { w, h }) : url;
+  // 序感知前进：以启动快照序换下一层（对称双兜底 Q3——preferred=direct 时 direct 败仍要试 weserv）
+  const advance = () => setTier((t) => nextTier(t, startPrefRef.current));
+  const onError = advance;
+  const onLoad = useCallback(() => rememberSuccess(bucket, tier), [bucket, tier]);
+  const retry = startChain;
+  useEffect(() => {
+    if (!active || !needsTimeout(tier)) return;
+    const timer = setTimeout(advance, WESERV_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [active, tier, url]);
+  return { src, failed, retry, onError, onLoad };
+}
+
+/** 冒烟/诊断专用：hook 完整链行为的出口（初始 src + onError/onLoad 接线 + failed 终态）。
+ * 注意不 解构 props——解构出的 h 会遮蔽模块级 h(=React.createElement)，酿成「h is not a function」。 */
+function UseImgChainProbe(props) {
+  const chain = useImgChain(props.url, { w: props.w, h: props.h });
+  if (chain.failed) return h("div", { className: "dsvm-probe-failed" }, "chain:failed");
+  return h("img", { src: chain.src, alt: "", referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad });
 }
 
 // ---------- 截图灯箱 v2（0.9.60） ----------
@@ -1231,10 +1292,21 @@ function Lightbox({ shots, index, onNav, onClose }) {
     // 对齐 DetailModal U8：开灯箱即聚焦关闭钮，键盘用户第一时间可达退出
     if (closeRef.current) closeRef.current.focus();
   }, []);
+  // 0.9.61 图片加载链：weserv(w=1600, webp)→原图→双败占位（重试 + 打开原图逃生门）。
+  // index 变化即 url 变化 → hook 自重置（复用同一 <img> 换 src）。
+  const chain = useImgChain(shots[index], { w: 1600 });
   const node = h(
     "div",
     { className: "dsvm-lightbox", role: "dialog", "aria-modal": "true", "aria-label": lookup("lb.title"), ...backdropCloseHandlers(onClose) },
-    h("img", { src: shots[index], alt: "", onClick: onClose, referrerPolicy: "no-referrer" }),
+    chain.failed
+      ? h(
+          "div",
+          { className: "dsvm-lbfail", onClick: (e) => e.stopPropagation() },
+          h("div", { className: "dsvm-lbfailmsg" }, `⚠ ${lookup("lb.fail")}`),
+          h("button", { className: "dsvm-btn", onClick: chain.retry }, lookup("lb.retry")),
+          h(ExtLink, { href: shots[index] }, lookup("lb.open")),
+        )
+      : h("img", { src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad }),
     h("button", { ref: closeRef, className: "dsvm-btn dsvm-lbclose", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
     single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow prev", "aria-label": lookup("lb.prev"), title: lookup("lb.prev"), onClick: () => onNav(lbStep(index, -1, shots.length)) }, "‹"),
     single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow next", "aria-label": lookup("lb.next"), title: lookup("lb.next"), onClick: () => onNav(lbStep(index, 1, shots.length)) }, "›"),
@@ -1271,6 +1343,11 @@ function useModalDepth(active) {
 function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeBusy, upgradeRec, profileKind, installRec, installNote }) {
   useModalDepth(true);
   const shots = it.community === true ? safeScreenshots(it) : [];
+  // 0.9.61 图片加载链（评审 E：DetailModal 作用域内四处 shots 基准同步换 visible——
+  // 整条门控/截图条 map 的开灯箱索引/灯箱门控/键盘 lbStep；漏改则剔除后索引错位）
+  const [brokenShots, setBrokenShots] = useState([]);
+  const breakShot = useCallback((src) => setBrokenShots((prev) => (prev.includes(src) ? prev : prev.concat(src))), []);
+  const visible = shots.filter((src) => !brokenShots.includes(src));
   const [lb, setLb] = useState(null);
   const [copied, setCopied] = useState(false);
   // 0.9.45 U10b：README 折叠页——展开才拉取（收起态零请求）
@@ -1286,14 +1363,14 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
         if (lb !== null) setLb(null);
         else onClose();
       }
-      if (lb !== null && shots.length > 1) {
-        if (e.key === "ArrowLeft") setLb((i) => lbStep(i, -1, shots.length));
-        if (e.key === "ArrowRight") setLb((i) => lbStep(i, 1, shots.length));
+      if (lb !== null && visible.length > 1) {
+        if (e.key === "ArrowLeft") setLb((i) => lbStep(i, -1, visible.length));
+        if (e.key === "ArrowRight") setLb((i) => lbStep(i, 1, visible.length));
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [lb, shots.length, onClose]);
+  }, [lb, visible.length, onClose]);
   const catLabel =
     (labels && labels[it.category]) ||
     (["essentials", "cui-picks", "self-dev", "tencent-lighthouse", "watchlist"].includes(it.category) ? lookup("cat." + it.category) : it.category);
@@ -1378,11 +1455,13 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
             rmOpen ? h(ReadmeBlock, { pkg: it.npm, repo: it.github }) : h("div", { className: "dshm-hint" }, lookup("readme.loading")),
           )
         : null,
-      shots.length
+      visible.length
         ? h(
             "div",
             { className: "dsvm-shotrow" },
-            ...shots.map((src, i) => h(Shot, { key: `${i}:${src}`, src, onClick: () => setLb(i) })),
+            // 0.9.61（评审 G）：全量 shots map + 原始索引稳定 key，broken 项由 Shot 内部渲 null——
+            // 剔除不引发未 broken 项重挂重载；点击按 src 在 visible 中的实位开灯箱（原始索引≠visible 索引）
+            ...shots.map((src, i) => h(Shot, { key: `${i}:${src}`, src, onClick: () => setLb(visible.indexOf(src)), onBroken: breakShot })),
           )
         : null,
       it.community === true
@@ -1440,7 +1519,8 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
           : h("button", { className: "dshm-btn primary", disabled: busy, onClick: () => onInstall(it) }, busy ? h(Spin) : lookup("action.install")),
       ),
     ),
-    lb !== null && shots.length ? h(Lightbox, { shots, index: lb, onNav: setLb, onClose: () => setLb(null) }) : null,
+    // 0.9.61（评审 F）：visible 活引用 + index 钳制（后台剔除收缩防越界）
+    lb !== null && visible.length ? h(Lightbox, { shots: visible, index: Math.min(lb, visible.length - 1), onNav: setLb, onClose: () => setLb(null) }) : null,
   );
 }
 

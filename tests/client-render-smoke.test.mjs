@@ -30,7 +30,7 @@ try {
     entry,
     src +
       '\n// ---- 测试追加导出（不进生产：build.mjs 打包的是 main.jsx 本体，此文件不入库不发布）----\n' +
-      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __Lightbox: Lightbox };\n',
+      'module.exports = { __MarketPanel: MarketPanel, __InstalledTab: InstalledTab, __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __DetailModal: DetailModal, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe };\n',
   )
   await build({
     entryPoints: [entry],
@@ -253,13 +253,35 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(html.includes('1 / 3'), '计数在')
     assert.equal((html.match(/dsvm-lbdot[" ]/g) || []).length, 3, '三张图三颗圆点')
     assert.ok(html.includes('dsvm-lbhint'), '操作提示在')
-    assert.ok(html.match(/<img[^>]*src="a\.png"/), '当前图渲染')
+    assert.ok(html.match(/<img[^>]*src="https:\/\/images\.weserv\.nl\/\?url=a\.png&amp;w=1600&amp;fit=inside&amp;we=1&amp;output=webp&amp;q=80"/), '当前图渲染（0.9.61 tier0=weserv，url=a.png 原样）')
     const single = renderToString(h(components.__Lightbox, { shots: ['only.png'], index: 0, onNav: () => {}, onClose: () => {} }))
     assert.ok(single.includes('dsvm-lbclose'), '单图 ✕ 仍在')
     assert.ok(!single.includes('dsvm-lbarrow') && !single.includes('dsvm-lbcount') && !single.includes('dsvm-lbdot'), '单图无 ‹›/计数/圆点死控件')
     // 评审 R4：重复 URL 不撞 key——圆点数仍 = shots 数（key 用序号）
     const dup = renderToString(h(components.__Lightbox, { shots: ['a.png', 'a.png', 'b.png'], index: 0, onNav: () => {}, onClose: () => {} }))
     assert.equal((dup.match(/dsvm-lbdot[" ]/g) || []).length, 3, '重复 URL 三颗圆点全渲染（key=序号）')
+  })
+
+  // 0.9.61 图片加载链：useImgChain 初始态 SSR 可见（tier0 = weserv；Q18 初始偏好）。
+  // Shot 因 IO 门控不进 SSR（见 client-img-chain 源锚），Probe 是 hook 初始 src 的唯一 SSR 出口。
+  it('useImgChain Probe：初始 src 为 weserv URL（scheme 剥离 + w 参数 + 固定参数串）', () => {
+    const html = renderToString(
+      h(components.__UseImgChainProbe, { url: 'https://raw.githubusercontent.com/a/b/HEAD/c.png', w: 1600 }),
+    )
+    assert.ok(
+      html.includes('src="https://images.weserv.nl/?url=raw.githubusercontent.com%2Fa%2Fb%2FHEAD%2Fc.png&amp;w=1600&amp;fit=inside&amp;we=1&amp;output=webp&amp;q=80"'),
+      `weserv tier0 src 应逐字在 SSR 输出：${html.slice(0, 200)}`,
+    )
+  })
+
+  // 0.9.61 Icon 走链（Q10）：github 头像 SSR 即渲染 tier0 weserv（h=96，avatar 桶）
+  it('Icon 走链：community 条目头部图标 src=weserv + h=96（query 随 URL 编码）', () => {
+    const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg', community: true, github: 'elysia395/dsh-wallpaper-engine' }
+    const html = renderToString(h(components.__DetailModal, { it: entry, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }))
+    assert.ok(
+      html.includes('url=github.com%2Felysia395.png%3Fsize%3D64&amp;h=96&amp;fit=inside&amp;we=1&amp;output=webp&amp;q=80'),
+      `Icon 头像应走 weserv h=96：${html.slice(0, 120)}`,
+    )
   })
 })
 

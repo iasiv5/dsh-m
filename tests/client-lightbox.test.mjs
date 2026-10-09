@@ -68,8 +68,8 @@ describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', ()
     assert.ok(src.includes('h("span", { key: i, className: `dsvm-lbdot'), '圆点 key=i')
     assert.ok(!src.includes('key: s, className: `dsvm-lbdot'), '旧 key:s（URL）退役')
   })
-  it('✕ 常驻 + 点图即关（img onClick=onClose，不再 stopPropagation 吞点击）', () => {
-    assert.ok(src.includes('h("img", { src: shots[index], alt: "", onClick: onClose, referrerPolicy: "no-referrer" })'), '点图即关')
+  it('✕ 常驻 + 点图即关（0.9.61 走链后仍保留 onClick=onClose 与 referrerPolicy 语义）', () => {
+    assert.ok(src.includes('src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad'), 'img 走链 + 点图即关 + 属性保持')
     assert.ok(src.includes('className: "dsvm-btn dsvm-lbclose"'), '✕ 走 dsvm-btn 视觉 + dsvm-lbclose 定位')
   })
   it('底部 pill 绝对定位 + 图片 74vh 留位（构造上不可能被挤出屏）', () => {
@@ -77,9 +77,9 @@ describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', ()
     assert.ok(src.includes('.dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh'), '图片降位（旧 80vh 在窗口态必然溢出面板盒）')
     assert.ok(!src.includes('.dsvm-lbnav{'), '旧 in-flow 导航行退役')
   })
-  it('键盘 ‹› 与组件统一走 lbStep（内联取模退役）', () => {
+  it('键盘 ‹› 与组件统一走 lbStep（内联取模退役；0.9.61 键盘基准随 visible）', () => {
     assert.ok(src.includes('lbStep(index, -1, shots.length)') && src.includes('lbStep(index, 1, shots.length)'), '组件 ‹› 走 lbStep')
-    assert.ok(src.includes('lbStep(i, -1, shots.length)') && src.includes('lbStep(i, 1, shots.length)'), '键盘 ←→ 走 lbStep')
+    assert.ok(src.includes('lbStep(i, -1, visible.length)') && src.includes('lbStep(i, 1, visible.length)'), '键盘 ←→ 走 lbStep（0.9.61 基准 visible.length）')
     assert.ok(!src.includes('(index - 1 + shots.length) % shots.length'), '内联取模退役')
   })
 })
