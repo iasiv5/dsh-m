@@ -1394,7 +1394,10 @@ function Lightbox({ shots, index, onNav, onClose }) {
     swipeRef.current = null;
     if (!dir || single) return;
     swipedAtRef.current = Date.now();
-    onNav(lbStep(index, dir, shots.length));
+    // 0.9.66 方向修正：触屏走内容拖拽隐喻——手指把条带往左拖（dx<0，dir=-1）＝翻到右边
+    // 那张（下一张），与相册/车龙惯例一致；「ArrowRight=next」的光标隐喻只属于键盘，
+    // 触屏必须取反映射（-dir）。0.9.65 锚错隐喻致真机方向相反（用户实机反馈定谳）。
+    onNav(lbStep(index, -dir, shots.length));
   };
   const onClickCapture = (e) => {
     if (Date.now() - swipedAtRef.current < 500) e.stopPropagation();

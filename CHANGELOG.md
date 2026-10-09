@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.66 修复：触屏滑动方向与移动端惯例相反（用户实机反馈）
+
+- **根因**：0.9.65 触屏滑动把映射锚在了键盘光标隐喻上（`ArrowRight=next` ⇒ 手指右拖=下一张），而触屏的正确隐喻是**内容拖拽**——手指拖着图像条走，**往左拖露出右边那张＝下一张**（相册/微信/车龙全部如此）。`swipeDir` 返回的手指位移方向被原样喂给了 `lbStep`，致真机上「左滑出上一张、右滑出下一张」，与全部肌肉记忆相反。
+- **修复**：调用点取反映射 `lbStep(index, -dir, …)`；`swipeDir` 纯函数语义不变（仍报手指方向），文档注释明确「返回值是手指方向而非翻页方向，调用点必须取反」。键盘 ←→ 不动（桌面光标惯例：←=上一张、→=下一张，两者隐喻各自成立互不干扰）。
+- **探针同批修正**：`verify-lightbox.mjs` A31a/A31b 断言按正确惯例重写（修正后旧断言转红即方向确已翻转的实证）；附带修正探针编号撞车——尾部既有 Primary 场景 A26–A29 保留，新特性场景编为 A30（预取命中）/A31（滑动）/A32（焦点圈闭）；A19 重写为时序确定性版双断占位（当轮验证附带产出：疑似回归经消融+worktree 对比+确定性时序三重取证定谳为「预取预热了场景前提图」，非回归，取证记录见探针内注释）。
+- **验证**：1289 项测试全绿、typecheck 零错误；浏览器探针 50/50（A31 五断言含方向翻转实证 + A32 圈闭六断言 + A30 预取命中 + A19/A20–A25 既有锚全数保持）。
+
 ### 0.9.65 优化：灯箱邻图预取 + 触屏滑动切换 + 焦点圈闭
 
 - **邻图预取**：当前图加载完成（`useImgChain` settled）后静默预热左右邻——URL 用与灯箱真实请求**逐字节同形**的 `weservUrl(w=1600)`，翻页直接命中浏览器缓存近零等待。纯 best-effort：不碰赢家记忆/链状态，预取失败对真实链零影响（导航时照常走 weserv→原图双兜底）；`prefetchedRef` Set 去重防来回翻页重复发起，Set 随灯箱挂载期生命周期（重开重新预热）；单图由 `lbNeighbors` 空表自然短路。
@@ -481,6 +488,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.66 — touch swipe direction inverted vs mobile convention (user report from a real phone)
+
+- **Root cause**: 0.9.65 anchored the swipe mapping on the keyboard cursor metaphor (`ArrowRight=next` ⇒ finger-right = next image), while touch follows the **content-drag** metaphor - the finger drags the filmstrip, so **swiping left reveals the image on the right = next** (photo libraries, chat apps, every carousel). `swipeDir`'s finger-direction result was fed straight into `lbStep`, producing "swipe left → previous, swipe right → next" on real devices - inverted against all muscle memory.
+- **Fix**: the call site flips the mapping (`lbStep(index, -dir, …)`); `swipeDir` semantics unchanged (still reports the finger direction), now documented as "the return value is the finger direction, not the page direction - callers must negate". Keyboard ←→ untouched (desktop cursor convention: ←=previous, →=next - the two metaphors each hold in their own domain).
+- **Probe fixes in the same batch**: `verify-lightbox.mjs` A31a/A31b rewritten to the correct convention (the old assertion going red after the fix is direct proof the direction flipped); probe numbering collision fixed - the pre-existing Primary scenarios keep A26-A29, the new-feature scenarios become A30 (prefetch warm-hit) / A31 (swipe) / A32 (focus trap); A19 rewritten as a timing-deterministic double-fail placeholder scenario (byproduct of this verification round: the suspected regression was triply disproven - ablation probe, worktree bisect, deterministic timing - the prefetch had legitimately pre-warmed the scenario's premise image; forensics live in the probe comments).
+- **Verification**: 1289 tests green, typecheck clean; browser probe 50/50 (A31 five assertions incl. the flip proof + A32 six trap assertions + A30 prefetch warm-hit + A19/A20-A25 legacy anchors all held).
 
 ### Added in 0.9.65 — lightbox: neighbor prefetch + touch swipe navigation + focus trap
 

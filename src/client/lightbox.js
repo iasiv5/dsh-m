@@ -5,9 +5,11 @@
  * 0.9.65 增两枚交互纯函数：
  * lbNeighbors：左右邻图序号（走 lbStep 回绕，去重保序）——邻图预取的取数源；
  *   length<=1 → []（单图无邻可预取）；双图左右邻是同一张 → 去重成一项。
- * swipeDir：横滑判向——|dx| 达阈值且 |dx| ≥ ratio×|dy| 才算一次横向滑动，返回
- *   -1/1/0；不设时长门槛（慢拖也算一次翻页，误触由方向比兜住）；竖滑/斜滑/短滑
- *   一律 0（纵向手势留给原生：页面滚动/pinch-zoom 不被劫持）。
+ * swipeDir：横滑判向——|dx| 达阈值且 |dx| ≥ ratio×|dy| 才算一次横向滑动，返回**手指
+ *   位移方向**（dx>0 右拖 → 1，dx<0 左拖 → -1）；不设时长门槛（慢拖也算一次翻页，
+ *   误触由方向比兜住）；竖滑/斜滑/短滑一律 0（纵向手势留给原生：页面滚动/pinch-zoom
+ *   不被劫持）。注意返回值是手指方向而非翻页方向——触屏走内容拖拽隐喻（手指左拖
+ *   露出右边那张＝下一张），调用点必须取反映射（0.9.66 实机反馈修正）。
  */
 export function lbStep(index, step, length) {
   if (!Number.isFinite(index) || !Number.isFinite(step) || !Number.isInteger(length) || length <= 1) return index;

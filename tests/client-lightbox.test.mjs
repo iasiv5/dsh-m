@@ -131,8 +131,8 @@ describe('灯箱 0.9.65 邻图预取 + 触屏滑动 + 焦点圈闭', () => {
     assert.deepEqual(lbNeighbors(0, NaN), [])
   })
   it('swipeDir：横滑达阈值且 |dx|≥2|dy| 才判向；竖/斜/短滑归零', () => {
-    assert.equal(swipeDir(60, 10), 1, '右滑 → 下一张')
-    assert.equal(swipeDir(-60, -10), -1, '左滑 → 上一张')
+    assert.equal(swipeDir(60, 10), 1, '手指右拖 → +1（纯函数只报手指方向，翻页映射在调用点取反）')
+    assert.equal(swipeDir(-60, -10), -1, '手指左拖 → -1')
     assert.equal(swipeDir(47, 0), 0, '未达 48px 阈值')
     assert.equal(swipeDir(60, 40), 0, '斜滑 |dx| < 2|dy| 不判向')
     assert.equal(swipeDir(0, 200), 0, '纯竖滑不判向（纵向手势留原生）')
@@ -150,7 +150,7 @@ describe('灯箱 0.9.65 邻图预取 + 触屏滑动 + 焦点圈闭', () => {
   it('触屏滑动：pointer 只认 touch，判向走 swipeDir，滑动后吞合成 click', () => {
     assert.ok(src.includes('if (e.pointerType !== "touch") return;'), 'pointerdown/up 只认 touch（鼠标保持原生拖拽/点击语义）')
     assert.ok(src.includes('swipeDir(e.clientX - swipeRef.current.x, e.clientY - swipeRef.current.y)'), '位移交给 swipeDir 判向')
-    assert.ok(src.includes('onNav(lbStep(index, dir, shots.length))'), '滑动翻页与键盘/‹› 同走 lbStep')
+    assert.ok(src.includes('onNav(lbStep(index, -dir, shots.length))'), '滑动翻页走 lbStep 且取反映射（内容拖拽隐喻：手指左拖＝下一张；0.9.66 实机反馈修正）')
     assert.ok(src.includes('if (Date.now() - swipedAtRef.current < 500) e.stopPropagation();'), '滑动后 500ms 内 capture 吞合成 click（防落在 ✕/遮罩上误触发其点击语义）')
   })
   it('焦点圈闭：Tab 仅灯箱开着时拦截，回绕 + 逃逸拉回', () => {
