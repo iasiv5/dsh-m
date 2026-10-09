@@ -6,7 +6,9 @@
 // 内嵌 react/react-dom UMD 于页面，__Apply 注入真实样式表，复刻 .dshm-overlay > .dshm-panel 真实语境
 // （backdrop-filter + overflow:hidden 包含块），http 源让 localStorage 可用（等价真实宿主）。
 // 覆盖：包含块实证 / portal 挂 body / 全视口覆盖 / 控件常驻 / 导航与键盘 / 点图与 Esc 关闭 /
-// 计算样式（R1 级联）/ Windows 拖拽带避让（R2）/ 焦点还原（R3）/ 全屏回归 / 矮窗口。
+// 计算样式（R1 级联）/ Windows 拖拽带避让（R2）/ 焦点还原（R3）/ 全屏回归 / 矮窗口 /
+// 图片加载链 A16-A25（0.9.61）/ 邻图预取命中 A30 + 触屏滑动 A31 + 焦点圈闭 A32（0.9.65）/
+// 双断占位 v2 A19（0.9.65 预取时代前提修正：延迟 fulfill 钉死时序，详见场景内注释）。
 import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -327,11 +329,71 @@ try {
     try { await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.src.includes('github.com/fake') && i.naturalWidth > 0 }, null, { timeout: 10000 }); a18 = true } catch { a18 = false }
     ok('A18 断 weserv：src 翻转直连并渲染', a18 && a18boxes === 3, `shotbox=${a18boxes}（3=同批竞态未误灭） ${await page.evaluate(() => { const i = document.querySelector('.dsvm-lightbox img'); return i ? i.src.slice(0, 50) : 'no img' })}`)
 
-    // A19 双断占位（weserv 先通后断设计：缩略图经 weserv 存活、灯箱 shot1 已渲染——无剔除竞速、
-    // 无解码复用干扰；断 weserv 后切 shot2，其 w=1600 URL 全新 → 双兜底全程 → 占位）
-    const g19 = await freshState({ direct: 'abort', weserv: 'fulfill' })
+    // A30 邻图预取（0.9.65）：shot1 settled 后左右邻以同形 w=1600 预热；导航 shot2 零新请求秒显
+    //（页内按 URL 复用已解码位图——0.9.61 已证不受 no-store 管辖，这里正是消费该特性的正例）
+    const gA30 = await freshState({ direct: 'fulfill', weserv: 'fulfill' })
+    await open()
+    await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.naturalWidth > 0 }, null, { timeout: 10000 })
+    await page.waitForTimeout(800) // 预取窗口（settle → effect → 邻图预热）
+    const warm30 = reqLog.filter((u) => u.includes(`shot2.png%3Fg%3D${gA30}`) && u.includes('w=1600')).length
+    const before30 = reqLog.filter((u) => u.includes('shot2.png') && u.includes('w=1600')).length
+    await page.locator('.dsvm-lbarrow.next').click()
+    ok('A30a 预取命中：导航 2 / 3', (await page.locator('.dsvm-lbcount').innerText()) === '2 / 3')
+    await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.src.includes('shot2') && i.naturalWidth > 0 }, null, { timeout: 5000 })
+    const after30 = reqLog.filter((u) => u.includes('shot2.png') && u.includes('w=1600')).length
+    ok('A30 邻图预取：settled 后预热左右邻；导航零新请求秒显', warm30 >= 1 && after30 === before30, `warm=${warm30} delta=${after30 - before30}`)
+    await page.keyboard.press('Escape')
+
+    // A31 触屏滑动切换（0.9.65）：pointer touch 横滑过阈值翻页；短滑/斜滑不翻页；touch-action 保留纵向与 pinch
+    await freshState({ direct: 'fulfill', weserv: 'fulfill' })
+    await open()
+    await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.naturalWidth > 0 }, null, { timeout: 10000 })
+    const swipeTo = async (dx, dy) => {
+      await page.locator('.dsvm-lightbox').dispatchEvent('pointerdown', { pointerType: 'touch', clientX: 500, clientY: 380, button: 0, pointerId: 7 })
+      await page.locator('.dsvm-lightbox').dispatchEvent('pointerup', { pointerType: 'touch', clientX: 500 + dx, clientY: 380 + dy, button: 0, pointerId: 7 })
+    }
+    const clsNow = () => page.evaluate(() => String((document.activeElement || {}).className || ''))
+    await swipeTo(120, 10)
+    ok('A31a 右滑 120px → 下一张', (await page.locator('.dsvm-lbcount').innerText()) === '2 / 3')
+    await swipeTo(-120, 8)
+    ok('A31b 左滑 120px → 上一张', (await page.locator('.dsvm-lbcount').innerText()) === '1 / 3')
+    await swipeTo(30, 0)
+    ok('A31c 短滑 30px（<48px 阈值）不翻页', (await page.locator('.dsvm-lbcount').innerText()) === '1 / 3')
+    await swipeTo(120, 120)
+    ok('A31d 斜滑 45°（|dx| < 2|dy|）不翻页', (await page.locator('.dsvm-lbcount').innerText()) === '1 / 3')
+    const ta = await page.evaluate(() => getComputedStyle(document.querySelector('.dsvm-lightbox')).touchAction)
+    ok('A31e touch-action=pan-y pinch-zoom（纵向原生与 pinch 保留）', ta === 'pan-y pinch-zoom', ta)
+
+    // A32 焦点圈闭（0.9.65）：Tab/Shift+Tab 圈在灯箱控件内；焦点逃逸（body）后 Tab 拉回
+    await page.evaluate(() => document.querySelector('.dsvm-lbclose').focus())
+    ok('A32a 初始聚焦 ✕（U8 先例）', (await clsNow()).includes('dsvm-lbclose'))
+    await page.keyboard.press('Tab')
+    ok('A32b Tab ✕→‹', (await clsNow()).includes('prev'))
+    await page.keyboard.press('Tab')
+    ok('A32c Tab ‹→›', (await clsNow()).includes('next'))
+    await page.keyboard.press('Tab')
+    ok('A32d Tab ›→回绕 ✕', (await clsNow()).includes('dsvm-lbclose'))
+    await page.keyboard.press('Shift+Tab')
+    ok('A32e Shift+Tab ✕→回绕 ›', (await clsNow()).includes('next'))
+    await page.evaluate(() => document.activeElement && document.activeElement.blur())
+    await page.keyboard.press('Tab')
+    const cls28f = await clsNow()
+    ok('A32f 焦点逃逸（body）后 Tab 拉回灯箱控件', ['dsvm-lbclose', 'prev', 'next'].some((c) => cls28f.includes(c)), `active=.${cls28f}`)
+    await page.keyboard.press('Escape')
+
+    // A19 双断占位 v2（0.9.65 预取时代的前提修正；A30 为其镜像正例）——灯箱 settled 即预取
+    // 左右邻，「先开灯箱再断网」时 shot2 已被预热（页内按 URL 复用，导航即秒显），旧版
+    // 「shot2 的 w=1600 URL 全新」前提不再成立——当轮曾误判为回归，消融探针（摘预取即 PASS）
+    // + 确定性时序探针（预取真败后真导航照常走链双败）双取证定谳：预取失败不毒化真导航，
+    // 本场景失效纯因预取把前提图预热了。本版用延迟 fulfill 钉死时序：shot1 的 tier0 请求
+    // 先于翻转 in-flight（必成），预取在翻转后发起（必败）→ 导航 shot2 才是真·双断：
+    // weserv(败)→direct(败)→占位。
+    const g19 = await freshState({ direct: 'fulfill', weserv: 'delay', weservDelayMs: 400 })
     await open()
     await mountWeserv('abort')
+    await mountDirect('abort')
+    await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.naturalWidth > 0 }, null, { timeout: 10000 })
+    await page.waitForTimeout(1200) // 翻转后的预取发出并失败（不毒化：下一行真导航照常走链，A19b 计数为证）
     await page.locator('.dsvm-lbarrow.next').click()
     let a19 = false
     try { await page.locator('.dsvm-lbfail').waitFor({ state: 'visible', timeout: 15000 }); a19 = true } catch { a19 = false }
