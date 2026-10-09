@@ -1255,7 +1255,8 @@ function useImgChain(url, opts) {
   const failed = tier === "failed";
   const src = failed ? "" : tier === "weserv" ? weservUrl(url, { w, h }) : url;
   // 序感知前进：以启动快照序换下一层（对称双兜底 Q3——preferred=direct 时 direct 败仍要试 weserv）
-  const advance = () => setTier((t) => nextTier(t, startPrefRef.current));
+  // 评审 R2-3 防御性重置：当前 settled 后 onError 不可达（成功后同 src 不再 error），未来若引入「成功后再失败」路径时此重置保证语义完备
+  const advance = () => { setSettled(false); setTier((t) => nextTier(t, startPrefRef.current)); };
   const onError = advance;
   const onLoad = useCallback(() => {
     setSettled(true);

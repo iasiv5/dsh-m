@@ -167,7 +167,8 @@ describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处�
     assert.ok(modalSeg.includes('shots: visible'), '灯箱收 visible 活引用')
     assert.ok(modalSeg.includes('Math.min(lb, visible.length - 1)'), 'index 钳制')
   })
-  it('Lightbox 走链（w=1600）+ 双败占位三件（重试/打开原图）+ i18n 三键', () => {    const lbSeg = mainSrc.slice(mainSrc.indexOf('function Lightbox('), mainSrc.indexOf('function UseImgChainProbe') > 0 ? mainSrc.indexOf('function DetailModal(') : mainSrc.indexOf('function DetailModal('))
+  it('Lightbox 走链（w=1600）+ 双败占位三件（重试/打开原图）+ i18n 三键', () => {
+    const lbSeg = mainSrc.slice(mainSrc.indexOf('function Lightbox('), mainSrc.indexOf('function DetailModal('))
     assert.ok(lbSeg.includes('useImgChain(shots[index], { w: 1600 })'), '灯箱 w=1600 走链')
     assert.ok(lbSeg.includes('className: "dsvm-lbfail"'), '占位容器 dsvm-lbfail')
     assert.ok(lbSeg.includes('chain.retry'), '重试接 chain.retry')
