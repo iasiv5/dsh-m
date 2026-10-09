@@ -449,7 +449,12 @@ const CSS = `
 .dshm-ops-scroll::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.45)}
 .dsvm-opgroup{display:flex;flex-direction:column;gap:3px}
 .dsvm-opgroup.done{opacity:.75}
-.dsvm-oprow{display:flex;align-items:center;gap:8px;min-height:22px}
+/* 0.9.67 移动端字号自洽（用户实机截图反馈）：oprow 原不声明 font-size——移动端宿主
+   基础字号（≈15-16px）下整行被放大，与设置卡 12px 家族（dsvm-kv/dshm-hint/dsvm-fold）
+   明显脱节。显式 12px 入族（状态 11px/注记 11px 的次级层级保持）；flex-wrap 让长目标名
+   与错误注记自然折行不挤压；✕ 单条移除钮钉行尾与社区卡行惯例一致。 */
+.dsvm-oprow{display:flex;align-items:center;gap:8px;min-height:22px;font-size:12px;flex-wrap:wrap}
+.dsvm-oprow .dshm-xbtn{margin-left:auto}
 .dsvm-opstatus{min-width:44px;font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
 .dsvm-oprow.ok .dsvm-opstatus{color:#15803d}
 .dsvm-oprow.warn .dsvm-opstatus, .dsvm-oprow.run .dsvm-opstatus{color:#b45309}

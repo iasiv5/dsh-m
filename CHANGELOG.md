@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.67 修复：操作记录卡移动端字号失控——显式入 12px 家族 + 折行自洽
+
+- **根因（用户手机截图反馈）**：操作记录行 `.dsvm-oprow` 从不声明 `font-size`——桌面宿主基础字号下无感，移动端浏览器基础字号（≈15-16px）下整行被放大近一倍，与同屏设置卡的 12px 家族（`dsvm-kv` 配置地址行、`dshm-hint`、`dsvm-fold`）明显脱节，观感突兀。
+- **修复（对齐周边卡片惯例）**：`.dsvm-oprow` 显式 `font-size:12px` 入族；状态字（完成/失败）保持 11px、错误/警告注记保持 11px 的次级层级不动；`flex-wrap:wrap` 让长目标名（如带 scope 的 npm 包名）与错误注记自然折行不挤压；单条移除 ✕ 钉行尾（`margin-left:auto`），与卡片行惯例一致。进行中/已结束分组标题（11px）与 220px 滚动区、空态 hint 均不受影响。
+- **验证**：1289 项测试全绿、typecheck 零错误；构建产物含新规则逐字锚。
+
 ### 0.9.66 修复：触屏滑动方向与移动端惯例相反（用户实机反馈）
 
 - **根因**：0.9.65 触屏滑动把映射锚在了键盘光标隐喻上（`ArrowRight=next` ⇒ 手指右拖=下一张），而触屏的正确隐喻是**内容拖拽**——手指拖着图像条走，**往左拖露出右边那张＝下一张**（相册/微信/车龙全部如此）。`swipeDir` 返回的手指位移方向被原样喂给了 `lbStep`，致真机上「左滑出上一张、右滑出下一张」，与全部肌肉记忆相反。
@@ -488,6 +494,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.67 — operations card font blows up on mobile: join the 12px family + wrap self-consistency
+
+- **Root cause (user phone screenshot)**: the operations rows `.dsvm-oprow` never declared a `font-size` — invisible on the desktop host base size, but on mobile browsers (base ≈15-16px) the whole row rendered nearly twice the size of the settings cards around it, clashing with the 12px family (`dsvm-kv` config rows, `dshm-hint`, `dsvm-fold`) on the same screen.
+- **Fix (aligned with surrounding card conventions)**: `.dsvm-oprow` explicitly joins the family at `font-size:12px`; the status word (done/failed) keeps its 11px and error/warning notes keep 11px secondary hierarchy; `flex-wrap:wrap` lets long targets (scoped npm names) and error notes wrap naturally instead of squeezing; the per-row remove ✕ pins to the line end (`margin-left:auto`), matching row conventions elsewhere. Group captions (11px), the 220px scroll region and the empty-state hint are untouched.
+- **Verification**: 1289 tests green, typecheck clean; the built bundle carries the new rule verbatim.
 
 ### Fixed in 0.9.66 — touch swipe direction inverted vs mobile convention (user report from a real phone)
 
