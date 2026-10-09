@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.62 修复：灯箱控件浅色模式下不可见——影院遮罩自持 + 控件深色玻璃芯片 + 加载转圈/淡入
+
+- **根因（2026-10-09 用户浅/深双模式实拍）**：dsh-skins ADR-0007 浮层毛玻璃并集按 `[role="dialog"][aria-modal="true"]` 命中灯箱根（灯箱根带 dialog 语义），浅色模式下 86% 暖白 tint + blur14 把影院式黑遮罩改成了浅色毛玻璃；而 ‹›/✕ 沿用基础 `.dsvm-btn` 白色半透配方（`rgba(255,255,255,.14)` 底 + 白字白边），浅底上整体隐形。深色模式走皮肤 `rgb(18,18,26)` 分支尚可读，故「浅色看不清、深色还行」。无皮肤的原生形态（黑遮罩恒在）无症状——这正是它漏网到 0.9.61 的原因。
+- **双侧修复**：① dsh-m 侧（本版）：灯箱 `background` 加 `!important` 自持——「深色遮罩 + 浅色控件」是影院面的组件自有可读性不变量，不随颜色模式/皮肤翻转；marketplace 社区皮肤不可枚举，不变量必须组件自己兜底（`!important` 清单定长 4，回归门钉住，新增须显式登记）。② dsh-skins 侧：三皮肤 `[role="dialog"][aria-modal="true"]` 追加 `:not(.dsvm-lightbox)` 豁免（1.5.1，ADR-0007 amendment）——语义上「弹窗毛玻璃」本就不该染指图片影院。
+- **控件深色玻璃芯片**：‹›/✕ 从裸透明白改为与底部 pill 同族的深色芯片（slate-900 55% + 白描边 + blur8 + 投影）——深遮罩上靠描边/blur/投影出层次，浅遮罩上芯片本身就是对比面，任何颜色模式与皮肤下都可读；显式 `:hover` 提亮（特异性 0,3,0 压基础 `.dsvm-btn:hover` 0,2,0，免疫源顺序——评审 R1 同族教训）。
+- **加载指示与淡入（UX 补强）**：灯箱走链期间（weserv 慢速/8s 守卫换层/直连大图）此前是空黑黑洞，现转圈占位（`useImgChain` 暴露 `settled`；点转圈视为点遮罩可关——急躁关闭是合理逃生门）；图片 onLoad 后 160ms 淡入换场；`prefers-reduced-motion` 下停用淡入、转圈降速。
+- **验证**：1283 项测试全绿、typecheck 零错误；`client-lightbox.test.mjs` 新增 6 项结构锚（遮罩 `!important` 定长清单/芯片规则与显式 hover/转圈门控/淡入类名/settled 暴露/reduced-motion），0.9.60 批次既有锚（portal/复合选择器/拖拽带/焦点还原/序号 key）全数保持。
+
 ### 0.9.61 修复：大陆浏览器拉不到插件截图/图标——图片加载链 weserv 优先双兜底
 
 - **根因（2026-10-09 实测）**：截图（raw.githubusercontent.com）与图标（github.com 头像）由用户浏览器直连拉取——服务器侧 200/0.2s，大陆浏览器路径时断时通，当日故障样本 dsh-wallpaper-engine 五图（22.5MB，含 10.4MB GIF）缩略图条与灯箱全空；0.9.60 已排除灯箱 v2 回归，图标「能显示」实为本地字母兜底。对标 dsh-market 1.66.14：缩略图无条件 weserv（其源码实测大陆 1.39s/23KB vs 原图 41KB）但灯箱直连零兜底——大陆点开大图同款黑洞。
@@ -452,6 +460,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fixed in 0.9.62 — lightbox controls invisible in light color schemes: self-owned cinema backdrop + dark glass control chips + loading spinner/fade
+
+- **Root cause (user photos, both color schemes, 2026-10-09)**: the dsh-skins ADR-0007 overlay-frost union targets `[role="dialog"][aria-modal="true"]` - which matches the lightbox root (it carries dialog semantics). In light schemes the 86% warm-white tint + blur14 turned the cinema-black backdrop into light frosted glass, while ‹›/✕ reuse the base `.dsvm-btn` translucent-white recipe (`rgba(255,255,255,.14)` fill, white glyph/border) - invisible on a light surface. Dark schemes hit the skin's `rgb(18,18,26)` branch and stayed readable, hence "light mode unreadable, dark mode okay". Vanilla installs (backdrop always near-black) never showed it - which is how it slipped past 0.9.61.
+- **Two-sided fix**: ① dsh-m side (this release): the lightbox `background` is now `!important`-owned - "dark backdrop + light controls" is the component's own readability invariant for a cinema surface and must not flip with color schemes or skins; marketplace community skins are un-enumerable, so the component must defend itself (the `!important` inventory is pinned at a fixed length of 4 by the regression gate; additions must register explicitly). ② dsh-skins side: all three skins exempt `.dsvm-lightbox` via `:not(...)` (1.5.1, ADR-0007 amendment) - semantically a "dialog frost" never should have tinted an image theater.
+- **Dark glass control chips**: ‹›/✕ move from bare translucent white to a chip in the same family as the bottom pill (slate-900 55% + white border + blur8 + shadow) - on dark backdrops the border/blur/shadow provide edge definition, on light backdrops the chip itself is the contrast surface; readable under any scheme or skin. Explicit `:hover` brightening (specificity 0,3,0 beats base `.dsvm-btn:hover` 0,2,0 regardless of source order - the R1 family lesson).
+- **Loading indicator & fade (UX)**: while the image chain runs (slow weserv / 8s guard tier-swap / large direct original) the lightbox used to be a silent black void; it now shows a spinner (`useImgChain` exposes `settled`; clicking the spinner counts as a backdrop click - an impatient close is a legitimate escape hatch). The image fades in over 160ms on onLoad; under `prefers-reduced-motion` the fade is disabled and the spinner slows down.
+- **Verification**: 1283 tests green, typecheck clean; `client-lightbox.test.mjs` gains 6 structural anchors (backdrop `!important` fixed-length inventory / chip rules with explicit hover / spinner gating / fade class / settled exposure / reduced-motion); all 0.9.60-era anchors (portal / compound selectors / titlebar offset / focus restore / index keys) retained.
 
 ### Fixed in 0.9.61 — screenshots/icons unreachable from mainland browsers: weserv-first dual-fallback image chain
 

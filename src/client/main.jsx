@@ -390,20 +390,43 @@ const CSS = `
    评审 R1：✕/‹› 用 .dsvm-btn.dsvm-lb* 复合选择器——基础 .dsvm-btn 规则源顺序靠后
    （padding:5px 14px/font-size:13px/radius:8px），同特异性下会反杀单类规则（实测字形 13px≠26px）。
    评审 R2：top 让出 Windows Desktop 拖拽带 var(--dsh-windows-titlebar-height)（0.9.4 先例，
-   壳顶 -webkit-app-region:drag 吞点击、无视 z-index）；Web 无此变量回落 0px 行为不变。 */
-.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center}
+   壳顶 -webkit-app-region:drag 吞点击、无视 z-index）；Web 无此变量回落 0px 行为不变。
+   0.9.62 影院遮罩自持：灯箱是图片影院面，「深色遮罩 + 浅色控件」是组件自有可读性
+   不变量，不随颜色模式/皮肤翻转。实证碰撞：dsh-skins ADR-0007 浮层毛玻璃并集按
+   [role=dialog][aria-modal=true] 命中本根（浅色模式 86% 暖白 tint+blur14），白色控件
+   在浅底上不可见（用户双模式实拍）。双侧修复——皮肤侧 :not(.dsvm-lightbox) 豁免
+   （dsh-skins 1.5.1 起）；本侧 background !important 自持：marketplace 社区皮肤不可
+   枚举，影院不变量必须由组件自己兜底。!important 清单定长（注释提及×2 + 本规则
+   + sidebar footer 兼容规则），新增须改 client-lightbox 断言显式登记，注释即守卫。 */
+.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important;display:flex;align-items:center;justify-content:center}
 .dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh;border-radius:8px;cursor:zoom-out;box-shadow:0 10px 44px rgba(0,0,0,.55);display:block}
 .dsvm-btn:focus-visible{outline:2px solid rgba(255,255,255,.75);outline-offset:2px}
 .dsvm-btn.dsvm-lbclose{position:absolute;top:12px;right:12px;width:38px;height:38px;padding:0;border-radius:10px;display:flex;align-items:center;justify-content:center}
 .dsvm-btn.dsvm-lbarrow{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:60px;padding:0;font-size:26px;line-height:1;border-radius:10px}
 .dsvm-lbarrow.prev{left:12px}
 .dsvm-lbarrow.next{right:12px}
+/* 0.9.62 控件深色玻璃芯片：‹›/✕ 原随基础 .dsvm-btn 裸透明白（rgba(255,255,255,.14) 底
+   + 白字白边），遮罩一旦被任何来源改浅即整体隐形（本次事故的另一半）。改用与底部
+   pill 同族的深色芯片（slate-900 55% + 白描边 + blur + 投影）——深遮罩上靠描边/blur/投影
+   出层次，浅遮罩上芯片本身就是对比面，任何颜色模式与皮肤下都可读；hover 提亮。
+   显式 :hover（特异性 0,3,0）压过基础 .dsvm-btn:hover（0,2,0）——即便本块排在基础规则
+   之前也不被源顺序反杀（评审 R1 同族教训）。 */
+.dsvm-btn.dsvm-lbclose,.dsvm-btn.dsvm-lbarrow{background:rgba(15,23,42,.55);border-color:rgba(255,255,255,.28);box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.dsvm-btn.dsvm-lbclose:hover,.dsvm-btn.dsvm-lbarrow:hover{background:rgba(15,23,42,.8);border-color:rgba(255,255,255,.5)}
 .dsvm-lbbar{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:12px;max-width:94vw;background:rgba(15,23,42,.62);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:7px 16px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .dsvm-lbcount{color:rgba(255,255,255,.82);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .dsvm-lbhint{color:rgba(255,255,255,.55);font-size:11px;white-space:nowrap}
 .dsvm-lbdots{display:flex;gap:2px}
 .dsvm-lbdot{box-sizing:content-box;width:8px;height:8px;padding:5px;border-radius:50%;background:rgba(255,255,255,.32);background-clip:content-box;cursor:pointer}
 .dsvm-lbdot.on{background:#fff;background-clip:content-box}
+/* 0.9.62 加载指示与淡入：灯箱走链期间（weserv 慢速/8s 守卫换层/直连大图）此前是
+   空黑黑洞，现转圈占位；图片 onLoad（useImgChain settled）后 160ms 淡入换场。
+   prefers-reduced-motion 下转场停用（转圈降速保留活动指示）。 */
+@keyframes dsvm-lbspin{to{transform:rotate(360deg)}}
+.dsvm-lbspin{position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:rgba(255,255,255,.92);animation:dsvm-lbspin .8s linear infinite}
+.dsvm-lightbox .dsvm-lbimg{opacity:0;transition:opacity .16s ease-out}
+.dsvm-lightbox .dsvm-lbimg.dsvm-lbimg-on{opacity:1}
+@media (prefers-reduced-motion:reduce){.dsvm-lbspin{animation-duration:1.6s}.dsvm-lightbox .dsvm-lbimg{transition:none}}
 @media (max-width:640px){.dsvm-lbhint{display:none}.dsvm-btn.dsvm-lbarrow{width:40px;height:54px}}
 /* 0.9.61 双败终态占位：居中列——⚠ 文案 + 重试（复用 dsvm-btn）+ 打开原图（ExtLink 新标签） */
 .dsvm-lbfail{display:flex;flex-direction:column;align-items:center;gap:12px;padding:24px 32px;background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.14);border-radius:12px}
@@ -1269,7 +1292,7 @@ function useImgChain(url, opts) {
     const timer = setTimeout(advance, WESERV_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [url, active, settled, tier]);
-  return { src, failed, retry, onError, onLoad };
+  return { src, failed, retry, onError, onLoad, settled };
 }
 
 /** 冒烟/诊断专用：hook 完整链行为的出口（初始 src + onError/onLoad 接线 + failed 终态）。
@@ -1320,7 +1343,11 @@ function Lightbox({ shots, index, onNav, onClose }) {
           h("button", { className: "dsvm-btn", onClick: chain.retry }, lookup("lb.retry")),
           h(ExtLink, { href: shots[index] }, lookup("lb.open")),
         )
-      : h("img", { src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad }),
+      : [
+          // 0.9.62 走链期间转圈占位（settled 即卸载；点它视为点遮罩可关——急躁关闭是合理逃生门）
+          !chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true" }) : null,
+          h("img", { className: `dsvm-lbimg${chain.settled ? " dsvm-lbimg-on" : ""}`, src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad }),
+        ],
     h("button", { ref: closeRef, className: "dsvm-btn dsvm-lbclose", "aria-label": lookup("common.close"), title: lookup("common.close"), onClick: onClose }, h(XIcon)),
     single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow prev", "aria-label": lookup("lb.prev"), title: lookup("lb.prev"), onClick: () => onNav(lbStep(index, -1, shots.length)) }, "‹"),
     single ? null : h("button", { className: "dsvm-btn dsvm-lbarrow next", "aria-label": lookup("lb.next"), title: lookup("lb.next"), onClick: () => onNav(lbStep(index, 1, shots.length)) }, "›"),

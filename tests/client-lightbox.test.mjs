@@ -5,6 +5,9 @@
  * 又无 ✕（全屏态面板恰为视口才可见）。v2：createPortal 挂 body + 控件绝对定位 + 点图即关。
  * 评审吸收：R1 复合选择器防 .dsvm-btn 级联反杀；R2 top 让出 Windows 拖拽带；
  * R3 焦点还原；R4 key 用序号防 URL 撞车。
+ * 0.9.62 批次：影院遮罩自持（background !important，清单定长）+ ‹›/✕ 深色玻璃芯片
+ * （浅色皮肤 tint 碰撞实拍修复，双侧修复的 dsh-m 侧）+ 走链转圈/settled 淡入
+ * （useImgChain 暴露 settled）+ prefers-reduced-motion。
  * 本文件：lbStep 纯逻辑单测 + main.jsx 结构锚（includes 级，避免整表达式逐字正则——
  * 那种断言红灯语义是「文本变了」而非「行为变了」）；渲染结构走 client-render-smoke（SSR 回退树），
  * 行为/计算样式/拖拽带走 scripts/verify-lightbox.mjs（手动跑，需 playwright-core+chromium）。
@@ -81,5 +84,34 @@ describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', ()
     assert.ok(src.includes('lbStep(index, -1, shots.length)') && src.includes('lbStep(index, 1, shots.length)'), '组件 ‹› 走 lbStep')
     assert.ok(src.includes('lbStep(i, -1, visible.length)') && src.includes('lbStep(i, 1, visible.length)'), '键盘 ←→ 走 lbStep（0.9.61 基准 visible.length）')
     assert.ok(!src.includes('(index - 1 + shots.length) % shots.length'), '内联取模退役')
+  })
+})
+
+describe('灯箱 0.9.62 影院自持（皮肤碰撞修复）+ 加载指示', () => {
+  it('影院遮罩自持：background !important（清单定长，新增须显式登记）', () => {
+    assert.ok(src.includes('.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important'), '影院深色遮罩 !important 自持（dsh-skins ADR-0007 浅色 tint 碰撞实拍）')
+    assert.equal((src.match(/!important/g) || []).length, 4, '!important 定长：注释提及×2 + 影院自持×1 + sidebar footer 兼容×1——新增须改本断言登记')
+  })
+  it('‹›/✕ 深色玻璃芯片：任何遮罩上可读，显式 :hover 压基础规则源顺序', () => {
+    assert.ok(src.includes('.dsvm-btn.dsvm-lbclose,.dsvm-btn.dsvm-lbarrow{background:rgba(15,23,42,.55)'), '芯片深底在（与底部 pill 同族 slate-900）')
+    assert.ok(src.includes('border-color:rgba(255,255,255,.28);box-shadow:0 4px 16px rgba(0,0,0,.35);backdrop-filter:blur(8px)'), '描边+投影+blur 在')
+    assert.ok(src.includes('.dsvm-btn.dsvm-lbclose:hover,.dsvm-btn.dsvm-lbarrow:hover{background:rgba(15,23,42,.8)'), '显式 :hover 提亮（特异性 0,3,0 压 .dsvm-btn:hover 0,2,0）')
+  })
+  it('加载转圈：走链期间占位，settled 即卸载', () => {
+    assert.ok(src.includes('@keyframes dsvm-lbspin{to{transform:rotate(360deg)}}'), 'keyframes 在')
+    assert.ok(src.includes('.dsvm-lbspin{position:absolute;left:50%;top:50%'), '转圈居中定位在')
+    assert.ok(src.includes('!chain.settled && chain.src ? h("div", { className: "dsvm-lbspin", "aria-hidden": "true" }) : null'), 'JSX 门控：未 settled 且有 src 才渲染')
+  })
+  it('图片淡入：onLoad（settled）后 160ms 淡入，img 类名随 chain.settled', () => {
+    assert.ok(src.includes('.dsvm-lightbox .dsvm-lbimg{opacity:0;transition:opacity .16s ease-out}'), '淡入规则在')
+    assert.ok(src.includes('.dsvm-lightbox .dsvm-lbimg.dsvm-lbimg-on{opacity:1}'), 'settled 显影类在')
+    assert.ok(src.includes('className: `dsvm-lbimg${chain.settled ? " dsvm-lbimg-on" : ""}`'), 'img 类名接 settled')
+    assert.ok(src.includes('src: chain.src, alt: "", onClick: onClose, referrerPolicy: "no-referrer", decoding: "async", onError: chain.onError, onLoad: chain.onLoad'), 'img 既有属性锚保持（点图即关/走链）')
+  })
+  it('useImgChain 暴露 settled（灯箱转圈/淡入的数据源）', () => {
+    assert.ok(src.includes('return { src, failed, retry, onError, onLoad, settled };'), 'hook 返回 settled')
+  })
+  it('prefers-reduced-motion：淡入停用、转圈降速', () => {
+    assert.ok(src.includes('@media (prefers-reduced-motion:reduce){.dsvm-lbspin{animation-duration:1.6s}.dsvm-lightbox .dsvm-lbimg{transition:none}}'), 'reduced-motion 块在')
   })
 })
