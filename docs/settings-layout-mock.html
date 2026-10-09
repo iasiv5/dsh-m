@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dsh-m 设置页布局 Mock — 两清单并排 + 关于 + 操作记录</title>
+<style>
+  /* ====== 页面底座（模拟宿主背景） ====== */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #c3c9d2 0%, #9aa2ae 55%, #b6bcc6 100%);
+    min-height: 100vh; color: #111827; font-size: 13px;
+  }
+
+  /* ====== 顶部工具条（mock 控制，非被测 UI） ====== */
+  .toolbar {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+    padding: 10px 18px; background: #1c2230; color: #e5e7eb;
+    box-shadow: 0 2px 12px rgba(0,0,0,.25); font-size: 12px;
+  }
+  .toolbar .grp { display: flex; align-items: center; gap: 6px; }
+  .toolbar .lbl { color: #9ca3af; margin-right: 2px; }
+  .toolbar button {
+    border: 1px solid #3b4356; background: transparent; color: #d1d5db;
+    border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .toolbar button:hover { border-color: #6b7280; }
+  .toolbar button.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .toolbar .hint { color: #6b7280; margin-left: auto; }
+
+  /* ====== 舞台：宽度三态 ====== */
+  .stage { padding: 26px 16px 40px; display: flex; justify-content: center; }
+  .stage .simwin { width: 100%; max-width: 920px; transition: max-width .25s ease; }
+  .stage[data-width="norm"]   .simwin { max-width: 920px; }
+  .stage[data-width="full"]   .simwin { max-width: 1880px; }
+  .stage[data-width="narrow"] .simwin { max-width: 760px; }
+
+  /* ====== 面板壳（对齐 .dshm-panel / -head / -body） ====== */
+  .panel {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+    box-shadow: 0 18px 48px rgba(2,6,23,.25); overflow: hidden;
+    display: flex; flex-direction: column; min-height: 560px;
+  }
+  .phead {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid #e5e7eb; background: #f9fafb;
+  }
+  .ptitle { font-weight: 600; font-size: 15px; margin-right: 2px; }
+  .phdiv { width: 1px; height: 18px; background: #e5e7eb; flex: none; }
+  .ptab {
+    border: 0; background: transparent; font: inherit; font-size: 12px; color: #6b7280;
+    padding: 4px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center;
+  }
+  .ptab.active { background: #eef2ff; color: #4338ca; font-weight: 600; }
+  .pcount { font-size: 11px; color: #4d6bfe; margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .reddot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; margin-left: 5px; vertical-align: middle; }
+  .pspacer { flex: 1; }
+  .chip {
+    font-size: 11px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+    border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+  }
+  .chip b { color: #15803d; }
+  .wbtn {
+    width: 26px; height: 26px; border: 1px solid #e5e7eb; background: transparent; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer; color: #4b5563; font-size: 12px;
+  }
+  .wbtn.danger:hover { border-color: #ef4444; color: #ef4444; }
+  .wbtn + .wbtn { margin-left: -1px; }
+
+  .pbody { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; }
+
+  /* ====== 设置页网格：本次被测主体 ====== */
+  /* 常态（920）与窄（760）下三种布局模式外观一致；差异只在全球屏态 —— mock 里以 data-mode 表达 */
+  .settings-grid {
+    display: grid; gap: 10px; align-items: stretch;
+    grid-template-columns: 5fr 7fr;
+    grid-template-areas: "c r" "a a" "o o";
+    min-width: 0;
+  }
+  /* C 三卡满幅（★推荐）：全屏时「关于」升入第一行 */
+  .stage[data-mode="C"][data-width="full"] .settings-grid {
+    grid-template-columns: 5fr 7fr 3fr;
+    grid-template-areas: "c r a" "o o o";
+  }
+  /* A 封顶：全屏时内容 1200 居中，网格不变 */
+  .stage[data-mode="A"][data-width="full"] .settings-grid {
+    max-width: 1172px; margin: 0 auto; width: 100%;
+  }
+  /* B 两卡拉伸：全屏不封顶、关于不升行（对照组） */
+  /* 窄屏：单列回落（真实实现为 @media (max-width:760px)） */
+  .stage[data-width="narrow"] .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "c" "r" "a" "o";
+  }
+  /* 比例三档（常态与全屏 C 同步加权；窄屏单列不受影响） */
+  .stage[data-ratio="5-7"]:not([data-width="narrow"]) .settings-grid { grid-template-columns: 5fr 7fr; }
+  .stage[data-ratio="4-7"]:not([data-width="narrow"]) .settings-grid { grid-template-columns: 4fr 7fr; }
+  .stage[data-ratio="3-7"]:not([data-width="narrow"]) .settings-grid { grid-template-columns: 3fr 7fr; }
+  .stage[data-mode="C"][data-width="full"][data-ratio="5-7"] .settings-grid { grid-template-columns: 5fr 7fr 3fr; }
+  .stage[data-mode="C"][data-width="full"][data-ratio="4-7"] .settings-grid { grid-template-columns: 4fr 7fr 3fr; }
+  .stage[data-mode="C"][data-width="full"][data-ratio="3-7"] .settings-grid { grid-template-columns: 3fr 7fr 3fr; }
+  .s-c { grid-area: c; } .s-r { grid-area: r; } .s-a { grid-area: a; } .s-o { grid-area: o; }
+
+  /* ====== 卡片（对齐 .dshm-section 系） ====== */
+  .sec {
+    background: rgba(38,49,72,.04); border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; margin: 0; min-width: 0;
+  }
+  .sec-title {
+    display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: 12px;
+    letter-spacing: .2px; color: #111827;
+  }
+  .sec-title::before { content: ""; width: 3px; height: 11px; border-radius: 2px; background: #4f46e5; }
+
+  /* 社区卡统计带（充实排版：大数字 + 小标注） */
+  .statband { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .stat { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 10px; min-width: 0; }
+  .stat .n { display: flex; align-items: baseline; gap: 4px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: #111827; white-space: nowrap; }
+  .stat .n small { font-size: 10px; font-weight: 400; color: #9ca3af; }
+  .stat .c { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+
+  /* 社区卡底部控制行：开关钉底，吸收拉伸留白 */
+  .crow { margin-top: auto; padding-top: 4px; display: flex; align-items: center; gap: 7px; }
+  .crow .clabel { font-size: 11px; color: #6b7280; }
+  .crow .badge { margin-left: auto; }
+  .crow .switch { margin-left: 0; }
+
+  /* 社区卡样式 B：清爽列表（发丝分隔线 + 右对齐等宽数值 + 状态圆点） */
+  .kvlines { display: flex; flex-direction: column; }
+  .kvlines .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(127,127,127,.14); min-width: 0; }
+  .kvlines .row:last-child { border-bottom: 0; }
+  .kvlines .rl { font-size: 11px; color: #6b7280; flex: none; }
+  .kvlines .rv { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; }
+  .kvlines .switch { margin-left: 0; align-self: center; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #22c55e; margin-right: 5px; vertical-align: 1px; }
+
+  .kv { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 6px 10px; font-size: 12px; align-items: baseline; }
+  .kv .k { color: #6b7280; font-size: 11px; }
+  .kv .v { min-width: 0; overflow-wrap: anywhere; }
+
+  .badge {
+    display: inline-block; border: 0; font-size: 11px; line-height: 16px; padding: 0 6px;
+    border-radius: 999px; background: #ecfdf5; color: #047857; flex: none;
+  }
+  .badge.warn { background: #fffbeb; color: #b45309; }
+  .badge.info { background: #eef2ff; color: #4338ca; }
+  .badge.err  { background: #fee2e2; color: #b91c1c; }
+
+  .input {
+    width: 100%; min-width: 0; border: 1px solid #c7d2fe; background: transparent; color: #111827;
+    border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 12px; outline: none;
+  }
+  .input:focus { border-color: #4f46e5; }
+  .note {
+    border-left: 3px solid #cbd5e1; padding: 3px 10px; color: #9ca3af; font-size: 11px;
+    line-height: 17px; word-break: break-word;
+  }
+  .note.warn { border-left-color: #b45309; }
+  .hint { color: #6b7280; font-size: 12px; line-height: 18px; }
+
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+  .btn {
+    border: 1px solid #e5e7eb; background: #fff; color: #111827; border-radius: 8px;
+    padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover { border-color: #9ca3af; }
+  .btn.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.sm { padding: 3px 9px; font-size: 11px; }
+  .btn[disabled] { opacity: .5; cursor: default; pointer-events: none; }
+
+  .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+    background: rgba(127,127,127,.12); padding: 1px 7px; border-radius: 5px;
+  }
+  /* 配置地址长 URL：单行省略，悬浮 title 显全文 */
+  .urlip {
+    display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .muted { color: #9ca3af; }
+
+  .links {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px;
+    padding-top: 6px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280;
+  }
+  .links a { color: #4d6bfe; text-decoration: none; font-weight: 500; }
+  .links a:hover { text-decoration: underline; }
+  .links .sep { color: #9ca3af; }
+
+  /* 开关（社区清单，静态 on） */
+  .switch {
+    position: relative; display: inline-flex; align-items: center; width: 34px; height: 19px;
+    border-radius: 10px; background: #22c55e; cursor: pointer; flex: none; margin-left: auto;
+  }
+  .switch::after {
+    content: ""; position: absolute; left: 17px; top: 2px; width: 15px; height: 15px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+  }
+
+  /* ====== 操作记录卡（对齐 .dsvm-ops 系） ====== */
+  .opcaption { font-size: 11px; color: #9ca3af; margin: 2px 0 -3px; }
+  /* 已结束组：滚动区，条目再多不撑长页面；进行中组在滚动区外常驻 */
+  .opscroll { max-height: 220px; overflow-y: auto; overscroll-behavior: contain; }
+  .opscroll::-webkit-scrollbar { width: 8px; }
+  .opscroll::-webkit-scrollbar-thumb { background: rgba(127,127,127,.28); border-radius: 4px; }
+  .opscroll::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,.45); }
+  .opgroup { display: flex; flex-direction: column; gap: 3px; }
+  .opgroup.done { opacity: .75; }
+  .oprow { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; }
+  .opstatus { min-width: 44px; font-size: 11px; color: #6b7280; flex: none; }
+  .oprow.ok  .opstatus { color: #15803d; }
+  .oprow.run,
+  .oprow.warn { }
+  .oprow.run .opstatus, .oprow.warn .opstatus { color: #b45309; }
+  .oprow.err .opstatus { color: #b91c1c; }
+  .oprow.sup .opstatus { color: #6b7280; }
+  .opkind { color: #4b5563; flex: none; }
+  .optarget { font-weight: 500; overflow-wrap: anywhere; min-width: 0; }
+  .opnote { color: #b45309; font-size: 11px; overflow-wrap: anywhere; }
+  .oprow.err .opnote { color: #b91c1c; }
+  .xbtn {
+    border: 1px solid #e5e7eb; background: transparent; color: #4b5563; width: 22px; height: 22px;
+    padding: 0; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; flex: none; font-size: 11px; margin-left: auto;
+  }
+  .xbtn:hover { border-color: #9ca3af; color: #111827; }
+  .spin {
+    width: 10px; height: 10px; border: 2px solid #cbd5e1; border-top-color: #4f46e5;
+    border-radius: 50%; animation: rot 1s linear infinite; flex: none;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+  .opfoot { margin-top: 6px; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="grp"><span class="lbl">宽度</span>
+    <button data-w="norm" class="on">常态 920</button>
+    <button data-w="full">全屏</button>
+    <button data-w="narrow">窄 760</button>
+  </div>
+  <div class="grp"><span class="lbl">布局（全屏态生效）</span>
+    <button data-m="C" class="on">C 三卡满幅 ★推荐</button>
+    <button data-m="A">A 封顶 1200</button>
+    <button data-m="B">B 两卡拉伸</button>
+  </div>
+  <div class="grp"><span class="lbl">宽比</span>
+    <button data-r="5-7">5:7</button>
+    <button data-r="4-7" class="on">4:7 ★选定</button>
+    <button data-r="3-7">3:7</button>
+  </div>
+  <div class="grp"><span class="lbl">社区卡</span>
+    <button data-cs="clean" class="on">清爽列表 ★</button>
+    <button data-cs="stats">统计带</button>
+  </div>
+  <div class="grp"><span class="lbl">精选清单</span>
+    <button data-s="default" class="on">默认清单</button>
+    <button data-s="custom">自定义源</button>
+  </div>
+  <div class="grp"><span class="lbl">操作记录</span>
+    <button data-o="on" class="on">有记录</button>
+    <button data-o="off">空态</button>
+  </div>
+  <span class="hint">被测对象：下方面板的「设置」tab · 其余按钮为 mock 控制</span>
+</div>
+
+<div class="stage" data-width="norm" data-mode="C" data-ratio="4-7">
+  <div class="simwin">
+    <div class="panel">
+      <div class="phead">
+        <span class="ptitle">DeepSeek Harness 插件市场</span>
+        <span class="phdiv"></span>
+        <button class="ptab">市场<span class="pcount">4257</span></button>
+        <button class="ptab">已装<span class="pcount">13</span></button>
+        <button class="ptab active" id="tabSettings">设置<span class="reddot" id="reddot"></span></button>
+        <span class="pspacer"></span>
+        <span class="chip">dsh-m v0.9.62 <b>↑ v0.9.63</b></span>
+        <span class="phdiv"></span>
+        <button class="wbtn" title="全屏">⛶</button>
+        <button class="wbtn danger" title="关闭">✕</button>
+      </div>
+
+      <div class="pbody">
+        <div class="settings-grid">
+
+          <!-- ① 社区清单（左，3fr） -->
+          <div class="sec s-c">
+            <div class="sec-title">社区清单（awesome-dsh-plugin）</div>
+            <!-- 样式 B：清爽列表（默认） -->
+            <div class="kvlines" id="cbodyClean">
+              <div class="row"><span class="rl">状态</span><span class="rv"><span class="dot"></span>正常</span></div>
+              <div class="row"><span class="rl">目录版本</span><span class="rv">2026.1009.4947</span></div>
+              <div class="row"><span class="rl">获取线路</span><span class="rv">jsdelivr</span></div>
+              <div class="row"><span class="rl">收录条目</span><span class="rv">4268（上游 4460）</span></div>
+              <div class="row"><span class="rl">与精选重复</span><span class="rv">11 条</span></div>
+              <div class="row"><span class="rl">社区目录开关</span><span class="switch" title="社区目录开关"></span></div>
+            </div>
+            <!-- 样式 A：统计带（对照，可切） -->
+            <div class="hidden" id="cbodyStats">
+              <div class="statband">
+                <div class="stat"><div class="n">4268</div><div class="c">收录条目</div></div>
+                <div class="stat"><div class="n">4460</div><div class="c">上游条目</div></div>
+                <div class="stat"><div class="n">11<small>条</small></div><div class="c">与精选重复</div></div>
+              </div>
+              <div class="kv" style="margin-top:2px">
+                <span class="k">目录版本</span> <span class="v">2026.1009.4947</span>
+                <span class="k">获取线路</span> <span class="v">jsdelivr</span>
+              </div>
+            </div>
+            <div class="crow hidden" id="crowStats">
+              <span class="clabel">社区目录</span>
+              <span class="badge" title="目录加载状态">正常</span>
+              <span class="switch" title="社区目录开关"></span>
+            </div>
+          </div>
+
+          <!-- ② 精选清单（右，7fr） -->
+          <div class="sec s-r">
+            <div class="sec-title">精选清单（registry.json）</div>
+            <input class="input" id="regInput" spellcheck="false"
+                   placeholder="https://example.com/registry.json 或 /path/to/registry.json">
+            <div class="note">自定义源将整体替换「精选清单」；留空 = 使用内置默认清单。</div>
+            <div class="actions">
+              <button class="btn sm">强制刷新</button>
+              <button class="btn primary sm" id="applyBtn">校验并应用</button>
+              <button class="btn sm">恢复默认</button>
+              <button class="btn sm">下载默认清单</button>
+            </div>
+            <div class="kv" style="margin-top:4px">
+              <span class="k">配置地址</span> <span class="v" id="kvAddr"><span class="muted">内置默认清单</span></span>
+              <span class="k">生效来源</span> <span class="v" id="kvSrc">默认清单缓存</span>
+              <span class="k">更新时间</span> <span class="v">2026/10/9 13:36:14</span>
+              <span class="k">条目数</span>   <span class="v">19</span>
+            </div>
+            <div class="note warn hidden" id="trustHint">⚠️ 自定义收录清单未经官方 CI 校验，条目来源请确认可信后再安装。</div>
+          </div>
+
+          <!-- ③ 关于（常态全宽；全屏 C 态升入第一行第三列） -->
+          <div class="sec s-a">
+            <div class="sec-title">关于</div>
+            <div class="hint">dsh-m 插件市场：「Awesome DSH Plugin」社区 + 「精选策展」的双清单分区市场，收录、安装、卸载、升级一站完成。</div>
+            <div class="links">
+              <a href="#">GitHub</a><span class="sep">·</span>
+              <a href="#">问题反馈</a><span class="sep">·</span>
+              <a href="#">npm</a>
+            </div>
+          </div>
+
+          <!-- ④ 操作记录（恒全宽，两形态都在最后） -->
+          <div class="sec s-o">
+            <div class="sec-title">操作记录</div>
+            <div id="opsBody">
+              <div class="opcaption">进行中</div>
+              <div class="opgroup">
+                <div class="oprow run"><span class="opstatus">进行中</span><span class="opkind">升级</span><span class="optarget">dsh-context</span><span class="spin"></span></div>
+              </div>
+              <div class="opcaption" style="margin-top:7px">已结束（滚动区）</div>
+              <div class="opscroll">
+                <div class="opgroup done">
+                  <div class="oprow err"><span class="opstatus">失败</span><span class="opkind">安装</span><span class="optarget" title="npm 包名不存在：@iasiv5/dsh-foo">dsh-foo</span><span class="opnote">npm 包名不存在：@iasiv5/dsh-foo</span><button class="xbtn" title="移除记录">✕</button></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">升级</span><span class="optarget">dsh-context</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">升级</span><span class="optarget">dshmarket</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">开关</span><span class="optarget">@iasiv5/dsh-skins</span></div>
+                  <div class="oprow sup"><span class="opstatus">已跳过</span><span class="opkind">升级</span><span class="optarget">dsh-context</span><button class="xbtn" title="移除记录">✕</button></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">安装</span><span class="optarget">dsh-surf</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">卸载</span><span class="optarget">dsh-web-search</span></div>
+                  <div class="oprow warn"><span class="opstatus">带警告</span><span class="opkind">升级</span><span class="optarget">dshmarket</span><span class="opnote">peer 依赖不匹配，已按 force 处理</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">开关</span><span class="optarget">dsh-better-sidebar</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">升级</span><span class="optarget">dsh-m</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">安装</span><span class="optarget">dsh-copilot-auth</span></div>
+                  <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">升级</span><span class="optarget">@iasiv5/dsh-skins</span></div>
+                </div>
+              </div>
+              <div class="opfoot"><button class="btn sm">清除已结束</button></div>
+            </div>
+            <div class="hint hidden" id="opsEmpty">暂无操作记录。安装、升级、卸载与开关操作的执行历史将在这里显示。</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const stage = document.querySelector('.stage');
+  const CUSTOM_URL = 'https://raw.githubusercontent.com/iasiv5/dsh-workspace/main/registry.json';
+
+  function bindGroup(name, attr, fn) {
+    document.querySelectorAll(`.toolbar button[data-${name}]`).forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll(`.toolbar button[data-${name}]`).forEach(b => b.classList.remove('on'));
+        btn.classList.add('on');
+        fn(btn.dataset[attr]);
+      });
+    });
+  }
+
+  bindGroup('w', 'w', v => { stage.dataset.width = v; });
+  bindGroup('m', 'm', v => { stage.dataset.mode = v; });
+  bindGroup('r', 'r', v => { stage.dataset.ratio = v; });
+  bindGroup('cs', 'cs', v => {
+    const clean = v === 'clean';
+    document.getElementById('cbodyClean').classList.toggle('hidden', !clean);
+    document.getElementById('cbodyStats').classList.toggle('hidden', clean);
+    // 统计带样式无状态行，开关行退回钉底控制行（含徽章）；清爽样式开关在列表末行
+    document.getElementById('crowStats').classList.toggle('hidden', clean);
+  });
+
+  bindGroup('s', 's', v => {
+    const custom = v === 'custom';
+    document.getElementById('regInput').value = custom ? CUSTOM_URL : '';
+    document.getElementById('applyBtn').toggleAttribute('disabled', !custom);
+    document.getElementById('kvAddr').innerHTML = custom
+      ? `<span class="code urlip" title="${CUSTOM_URL}">${CUSTOM_URL}</span>`
+      : '<span class="muted">内置默认清单</span>';
+    document.getElementById('kvSrc').innerHTML = custom
+      ? '自定义 URL 源 <span class="badge info" style="margin-left:6px">自定义</span>'
+      : '默认清单缓存';
+    document.getElementById('trustHint').classList.toggle('hidden', !custom);
+  });
+
+  bindGroup('o', 'o', v => {
+    const on = v === 'on';
+    document.getElementById('opsBody').classList.toggle('hidden', !on);
+    document.getElementById('opsEmpty').classList.toggle('hidden', on);
+    document.getElementById('reddot').style.display = on ? '' : 'none';
+  });
+
+  // 初始态：默认清单 → 校验并应用禁用（草稿为空）；红点显示（样例含失败记录）
+  document.getElementById('applyBtn').toggleAttribute('disabled', true);
+</script>
+</body>
+</html>

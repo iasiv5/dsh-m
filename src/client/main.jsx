@@ -40,7 +40,7 @@ const ZH = {
   "modal.verified": "实测版本", "modal.tags": "标签", "modal.replacement": "已弃用 · 替代", "modal.installcmd": "安装命令", "modal.copy": "复制", "modal.copied": "已复制",
   "modal.audience.label": "受众", "modal.audience.value": "作者自用（不面向大众推广）", "modal.decoupled.label": "适配", "modal.decoupled.value": "版本无关（DSH 升级无需跟随适配）",
   "op.clear": "清除已结束", "op.clear.none": "没有可清除的已结束记录",
-  "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认", "op.remove": "移除记录", "op.panel.jump": "查看操作面板",
+  "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认", "op.remove": "移除记录", "op.panel.jump": "查看操作记录",
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
@@ -74,7 +74,7 @@ const ZH = {
   "src.default.raw": "GitHub 原始文件（@main）", "src.default.jsdelivr": "GitHub 镜像（备用）", "src.default.cache": "默认清单缓存",
   "src.custom.url": "自定义 URL 源", "src.custom.file": "本地文件源", "src.custom.cache": "自定义源（缓存）", "src.custom.unavailable": "自定义源（不可用）",
   "settings.address": "Registry 地址", "settings.address.default": "内置默认清单",
-  "settings.note.custom": "自定义源将整体替换「精选清单」；条目格式可参照下载的默认清单。留空 = 使用内置默认清单。",
+  "settings.note.custom": "自定义源将整体替换「精选清单」；留空 = 使用内置默认清单。",
   "settings.address.ph": "https://example.com/registry.json 或 /path/to/registry.json",
   "settings.configured": "配置地址", "settings.effective": "生效来源",
   "settings.status.label": "配置状态", "settings.status.loading": "加载中", "settings.status.ready": "正常", "settings.status.pending": "待写入（校验已通过）", "settings.status.rejected": "已拒绝（保持旧配置）", "settings.status.unavailable": "不可用",
@@ -99,13 +99,15 @@ const ZH = {
   "guard.restartsafenow": "可以重启 DSH Web", "guard.restartunsafe": "修复后再重启（不要现在一键重启）",
   "guard.noforce": "守卫拦截无「仍要安装」通道，请按修复依据人工处理",
   "detail.screenshots": "截图", "installed.check.incomplete": "检查未完成",
-  "settings.community": "社区清单（from awesome-dsh-plugin）", "settings.community.toggle": "社区目录开关",
+  "settings.community": "社区清单（awesome-dsh-plugin）", "settings.community.toggle": "社区目录开关",
   "settings.community.off": "社区目录已关闭：市场仅显示精选清单，重新开启即时生效。",
   "settings.community.on.ok": "社区目录已开启（即时生效）", "settings.community.off.ok": "社区目录已关闭（即时生效）",
   "settings.community.toggle.failed": "切换失败：{err}",
   "settings.community.status": "状态", "settings.community.status.stale": "缓存快照", "settings.community.version": "目录版本", "settings.community.route": "获取线路",
   "settings.community.count": "收录条目", "settings.community.count.v": "{n}（上游 {up}）",
   "settings.community.displaced": "与精选重复", "settings.community.displaced.v": "{n} 条",
+  "settings.ops": "操作记录", "settings.ops.empty": "暂无操作记录。安装、升级、卸载与开关操作的执行历史将在这里显示。",
+  "settings.ops.group.active": "进行中", "settings.ops.group.done": "已结束", "settings.ops.reddot": "存在失败或带警告的操作记录",
   "registry.refreshed": "收录清单已强制刷新",
 
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
@@ -152,7 +154,7 @@ const EN = {
   "modal.verified": "Verified runtimes", "modal.tags": "Tags", "modal.replacement": "Deprecated · replacement", "modal.installcmd": "Install command", "modal.copy": "Copy", "modal.copied": "Copied",
   "modal.audience.label": "Audience", "modal.audience.value": "Author's own (not for general promotion)", "modal.decoupled.label": "Compat", "modal.decoupled.value": "Version-independent (no per-release adaptation)",
   "op.clear": "Clear ended", "op.clear.none": "Nothing finished to clear",
-  "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled", "op.remove": "Dismiss", "op.panel.jump": "Open operations panel",
+  "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled", "op.remove": "Dismiss", "op.panel.jump": "Open operations card",
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
@@ -186,7 +188,7 @@ const EN = {
   "src.default.raw": "GitHub raw (@main)", "src.default.jsdelivr": "GitHub mirror (backup)", "src.default.cache": "Default registry cache",
   "src.custom.url": "Custom URL source", "src.custom.file": "Local file source", "src.custom.cache": "Custom source (cache)", "src.custom.unavailable": "Custom source (unavailable)",
   "settings.address": "Registry address", "settings.address.default": "Built-in default registry",
-  "settings.note.custom": "A custom source replaces the whole Curated registry; use the downloaded default registry as the format reference. Leave empty for the built-in default.",
+  "settings.note.custom": "A custom source replaces the whole Curated registry. Leave empty for the built-in default.",
   "settings.address.ph": "https://example.com/registry.json or /path/to/registry.json",
   "settings.configured": "Configured address", "settings.effective": "Effective source",
   "settings.status.label": "Config status", "settings.status.loading": "Loading", "settings.status.ready": "Online", "settings.status.pending": "Pending write (validated)", "settings.status.rejected": "Rejected (previous config kept)", "settings.status.unavailable": "Unavailable",
@@ -211,13 +213,15 @@ const EN = {
   "guard.restartsafenow": "You can restart DSH Web now", "guard.restartunsafe": "Fix before restarting (do not one-click restart now)",
   "guard.noforce": "Guard blocks have no force channel — repair manually per the basis above",
   "detail.screenshots": "Screenshots", "installed.check.incomplete": "Check incomplete",
-  "settings.community": "Community catalog (from awesome-dsh-plugin)", "settings.community.toggle": "Community catalog toggle",
+  "settings.community": "Community catalog (awesome-dsh-plugin)", "settings.community.toggle": "Community catalog toggle",
   "settings.community.off": "Community catalog is off: the market shows only the Curated registry. Toggle back on anytime — it applies live.",
   "settings.community.on.ok": "Community catalog enabled (live)", "settings.community.off.ok": "Community catalog disabled (live)",
   "settings.community.toggle.failed": "Toggle failed: {err}",
   "settings.community.status": "Status", "settings.community.status.stale": "Cached snapshot", "settings.community.version": "Catalog version", "settings.community.route": "Route",
   "settings.community.count": "Entries", "settings.community.count.v": "{n} (upstream {up})",
   "settings.community.displaced": "Displaced (duplicates)", "settings.community.displaced.v": "{n}",
+  "settings.ops": "Operations", "settings.ops.empty": "No operations yet. Install, upgrade, uninstall and toggle history will appear here.",
+  "settings.ops.group.active": "Active", "settings.ops.group.done": "Finished", "settings.ops.reddot": "Failed or warned operations exist",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
   "notify.builds": " (build scripts precisely allowed: {names})", "notify.builds.fallback": " (note: pending list unreadable; all builds allowed as fallback)",
@@ -436,7 +440,11 @@ const CSS = `
 .dshm-card:hover{border-color:var(--dsw-alias-interactive-bg-selected,#4f46e5)}
 .dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
 .dsvm-btn:hover{background:rgba(255,255,255,.24)}
-.dsvm-ops{border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.dsvm-ops-caption{font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af);margin:2px 0 -3px}
+.dshm-ops-scroll{max-height:220px;overflow-y:auto;overscroll-behavior:contain}
+.dshm-ops-scroll::-webkit-scrollbar{width:8px}
+.dshm-ops-scroll::-webkit-scrollbar-thumb{background:rgba(127,127,127,.28);border-radius:4px}
+.dshm-ops-scroll::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.45)}
 .dsvm-opgroup{display:flex;flex-direction:column;gap:3px}
 .dsvm-opgroup.done{opacity:.75}
 .dsvm-oprow{display:flex;align-items:center;gap:8px;min-height:22px}
@@ -480,6 +488,23 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-row{display:flex;align-items:center;gap:8px}
 .dshm-kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:12px;align-items:baseline}
 .dshm-kv .k{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px}
+.dshm-settings-grid{display:grid;gap:10px;grid-template-columns:4fr 7fr;min-width:0}
+.dshm-settings-grid>.dshm-section{margin:0;min-width:0}
+.dshm-settings-grid>.dshm-section:nth-child(3){grid-column:1/-1}
+.dshm-settings-grid>.dshm-ops-card{grid-column:1/-1}
+.dshm-panel.full .dshm-settings-grid{grid-template-columns:4fr 7fr 3fr}
+.dshm-panel.full .dshm-settings-grid>.dshm-section:nth-child(3){grid-column:auto}
+@media (max-width:760px){.dshm-settings-grid,.dshm-panel.full .dshm-settings-grid{grid-template-columns:minmax(0,1fr)}.dshm-settings-grid>.dshm-section:nth-child(3),.dshm-settings-grid>.dshm-ops-card{grid-column:1/-1}}
+.dshm-kvlines{display:flex;flex-direction:column}
+.dshm-kvline-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.14));min-width:0}
+.dshm-kvline-row:last-child{border-bottom:0}
+.dshm-kvline-row .rl{font-size:11px;color:var(--dsw-alias-label-caption,#6b7280);flex:none}
+.dshm-kvline-row .rv{font-size:12px;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0}
+.dshm-kvline-row .dshm-switch{margin-left:0;align-self:center}
+.dshm-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--dsw-alias-state-success-primary,#22c55e)}
+.dshm-dot.warn{background:var(--dsw-alias-state-warn-primary,#b45309)}
+.dshm-dot.err{background:var(--dsw-alias-state-error-primary,#b91c1c)}
+.dshm-code-1line{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dshm-section{background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;margin:0 0 10px}
 .dshm-section:last-child{margin-bottom:2px}
 .dshm-section-title{display:flex;align-items:center;gap:7px;font-weight:700;font-size:12px;letter-spacing:.2px;color:var(--dsw-alias-label-primary,inherit)}
@@ -1609,7 +1634,7 @@ const ZONE_TABS = [
 
 // 社区区排序（0.7.2 起选项入「筛选」弹层：filter.field 系 + filter.dir 系键，下拉 SORT_OPTIONS 退役）。
 
-function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind }) {
+function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, onOpenOps }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
@@ -1981,11 +2006,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind })
                 title: lookup("op.panel.jump"),
                 onClick: (e) => {
                   e.stopPropagation();
-                  // 评审 P7：徽章点击打开（滚动到）操作面板
-                  if (typeof document !== "undefined") {
-                    const el = document.querySelector(".dsvm-ops");
-                    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
-                  }
+                  // 评审 P7 → 0.9.x 第二批：操作记录卡搬进设置 tab，点击 = 切 tab + 滚动定位
+                  if (typeof onOpenOps === "function") onOpenOps();
                 },
               },
               lookup("op.status.running"),
@@ -2433,7 +2455,7 @@ function configStatusLabel(status) {
   return lookup(`settings.status.${status || "loading"}` || "settings.status.loading");
 }
 
-function SettingsTab({ notify, onRegistryChanged, onForceMarket }) {
+function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onOpsClearFinished, onOpsRemove }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
   const cfgState = useAsync(() => api("registry-config"), []);
   const [busy, setBusy] = useState(false);
@@ -2545,45 +2567,67 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket }) {
       ? { cls: "warn", label: lookup("settings.community.status.stale") }
       : { cls: "ok", label: lookup("settings.status.ready") };
 
+  // 社区卡（0.9.x 布局重构）：清爽列表行复用器；开关 = 列表末行，关态 = 提示 + 开关行
+  const kvlineRow = (labelKey, valueNode) =>
+    h(
+      "div",
+      { className: "dshm-kvline-row" },
+      h("span", { className: "rl" }, lookup(labelKey)),
+      h("span", { className: "rv" }, valueNode),
+    );
+  const communitySwitch = h(
+    "label",
+    {
+      className: `dshm-switch${communityOn ? " on" : ""}${communityBusy || communityOn === null ? " locked" : ""}`,
+      title: lookup("settings.community.toggle"),
+    },
+    h("input", {
+      type: "checkbox",
+      checked: communityOn === true,
+      disabled: communityBusy || communityOn === null,
+      onChange: (e) => applyCommunity(e.target.checked),
+    }),
+    h("span", { className: "dshm-switch-slider" }),
+  );
+  const communitySwitchRow = h(
+    "div",
+    { className: "dshm-kvline-row" },
+    h("span", { className: "rl" }, lookup("settings.community.toggle")),
+    communitySwitch,
+  );
+  const communityBody =
+    communityOn === false
+      ? h(
+          React.Fragment,
+          null,
+          h("div", { className: "dshm-hint" }, lookup("settings.community.off")),
+          communitySwitchRow,
+        )
+      : h(
+          "div",
+          { className: "dshm-kvlines" },
+          kvlineRow("settings.community.status", h(
+            "span",
+            null,
+            h("span", { className: `dshm-dot${communityStatusBadge.cls === "ok" ? "" : ` ${communityStatusBadge.cls}`}` }),
+            communityStatusBadge.label,
+          )),
+          kvlineRow("settings.community.version", communityLive ? communitySummary.version || "—" : "—"),
+          kvlineRow("settings.community.route", communityLive ? communitySummary.route || "—" : "—"),
+          kvlineRow("settings.community.count", communityLive ? lookup("settings.community.count.v", { n: communitySummary.acceptedCount ?? 0, up: communitySummary.upstreamCount ?? "—" }) : "—"),
+          kvlineRow("settings.community.displaced", communityLive ? lookup("settings.community.displaced.v", { n: communitySummary.displaced ?? 0 }) : "—"),
+          communitySwitchRow,
+        );
+  // 两清单并排（终审 2026-10-09 mock 定稿）：常态 4:7；全屏关于升三卡行（4:7:3，不封顶）；≤760px 单列
   return h(
-    React.Fragment,
-    null,
-    // ① 社区清单（from awesome-dsh-plugin）：标题行右侧开关；开态紧凑 kv，关态单行说明
+    "div",
+    { className: "dshm-settings-grid" },
+    // ① 社区清单（awesome-dsh-plugin）：左卡；清爽列表 + 发丝分隔线，开关为列表末行
     h(
       "div",
       { className: "dshm-section" },
-      h(
-        "div",
-        { className: "dshm-section-title" },
-        lookup("settings.community"),
-        h("span", { className: "dshm-spacer" }),
-        h(
-          "label",
-          {
-            className: `dshm-switch${communityOn ? " on" : ""}${communityBusy || communityOn === null ? " locked" : ""}`,
-            title: lookup("settings.community.toggle"),
-          },
-          h("input", {
-            type: "checkbox",
-            checked: communityOn === true,
-            disabled: communityBusy || communityOn === null,
-            onChange: (e) => applyCommunity(e.target.checked),
-          }),
-          h("span", { className: "dshm-switch-slider" }),
-        ),
-      ),
-      communityOn === false
-        ? h("div", { className: "dshm-hint" }, lookup("settings.community.off"))
-        : h(
-            "div",
-            { className: "dshm-kv" },
-            h("span", { className: "k" }, lookup("settings.community.status")),
-            h("span", null, h("span", { className: `dshm-badge ${communityStatusBadge.cls}` }, communityStatusBadge.label)),
-            h("span", { className: "k" }, lookup("settings.community.version")), h("span", null, communityLive ? communitySummary.version || "—" : "—"),
-            h("span", { className: "k" }, lookup("settings.community.route")), h("span", null, communityLive ? communitySummary.route || "—" : "—"),
-            h("span", { className: "k" }, lookup("settings.community.count")), h("span", null, communityLive ? lookup("settings.community.count.v", { n: communitySummary.acceptedCount ?? 0, up: communitySummary.upstreamCount ?? "—" }) : "—"),
-            h("span", { className: "k" }, lookup("settings.community.displaced")), h("span", null, communityLive ? lookup("settings.community.displaced.v", { n: communitySummary.displaced ?? 0 }) : "—"),
-          ),
+      h("div", { className: "dshm-section-title" }, lookup("settings.community")),
+      communityBody,
       communitySummary && Array.isArray(communitySummary.errors) && communitySummary.errors.length && communityOn !== false
         ? h("div", { className: "dshm-err" }, communitySummary.errors.join("；"))
         : null,
@@ -2628,7 +2672,7 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket }) {
         : null,
       h("div", { className: "dshm-kv", style: { marginTop: "4px" } },
         h("span", { className: "k" }, lookup("settings.configured")),
-        h("span", null, snap.registryUrl ? h("span", { className: "dshm-code" }, snap.registryUrl) : h("span", { className: "dshm-hint" }, lookup("settings.address.default"))),
+        h("span", null, snap.registryUrl ? h("span", { className: "dshm-code dshm-code-1line", title: snap.registryUrl }, snap.registryUrl) : h("span", { className: "dshm-hint" }, lookup("settings.address.default"))),
         h("span", { className: "k" }, lookup("settings.effective")),
         h("span", null, regSourceLabel(state), state && !state.isDefault ? h("span", { className: "dshm-badge info", style: { marginLeft: "6px" } }, lookup("badge.custom")) : null),
         h("span", { className: "k" }, lookup("settings.updated")), h("span", null, fmtDate(state && state.fetchedAt)),
@@ -2655,6 +2699,8 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket }) {
         h(ExtLink, { href: "https://www.npmjs.com/package/dsh-m" }, lookup("settings.about.npm")),
       ),
     ),
+    // ④ 操作记录：恒通宽卡（第二批搬迁），进行中常驻 + 已结束滚动区，空态 hint 导览
+    h(OperationsCard, { records: opsRecords, onClearFinished: onOpsClearFinished, onRemove: onOpsRemove }),
   );
 }
 
@@ -2844,10 +2890,13 @@ const OP_STATUS_CLS = {
   queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
 };
 
-function OperationsPanel({ records, onClearFinished, onRemove }) {
+// 操作记录卡（0.9.x 布局重构·第二批）：从面板底部搬迁至设置 tab 末位恒通宽卡。
+// 结构契约：进行中组在滚动区外常驻（进度反馈不被滚走）；已结束组进 220px 滚动区；
+// 「清除已结束」钉底；空态显示 hint 卡（导览：记录搬到这里了）。终态展示上限 50 条
+// （store 无上限，滚动区只管 UI 高度，条数上限防 DOM 无界增长）。
+function OperationsCard({ records, onClearFinished, onRemove }) {
   const active = records.filter((r) => r.status === "queued" || r.status === "running" || r.status === "input");
-  const finished = records.filter((r) => active.indexOf(r) < 0).slice(-6);
-  if (!active.length && !finished.length) return null;
+  const finished = records.filter((r) => active.indexOf(r) < 0).slice(-50);
   // 0.9.6：清除按钮覆盖全部终态（含 failed/superseded，主人裁决）——无可清终态时置灰并说明，
   // 不再做无声 no-op（Windows 实机反馈：按钮对着失败记录点了没反应）。
   const clearable = records.some((r) => TERMINAL_CLEARABLE.has(r.status));
@@ -2868,16 +2917,36 @@ function OperationsPanel({ records, onClearFinished, onRemove }) {
     );
   return h(
     "div",
-    { className: "dsvm-ops" },
+    { className: "dshm-section dshm-ops-card" },
+    h("div", { className: "dshm-section-title" }, lookup("settings.ops")),
+    active.length && finished.length ? h("div", { className: "dsvm-ops-caption" }, lookup("settings.ops.group.active")) : null,
     active.length ? h("div", { className: "dsvm-opgroup" }, ...active.map(row)) : null,
     finished.length
       ? h(
           "div",
-          { className: "dsvm-opgroup done" },
-          ...finished.map(row),
+          { className: "dsvm-ops-caption", style: { marginTop: active.length ? "7px" : "0" } },
+          lookup("settings.ops.group.done"),
+        )
+      : null,
+    finished.length
+      ? h(
+          "div",
+          { className: "dshm-ops-scroll" },
+          h(
+            "div",
+            { className: "dsvm-opgroup done" },
+            ...finished.map(row),
+          ),
+        )
+      : null,
+    finished.length
+      ? h(
+          "div",
+          { className: "dshm-actions" },
           h("button", { className: "dshm-btn sm", disabled: !clearable, title: clearable ? undefined : lookup("op.clear.none"), onClick: onClearFinished }, lookup("op.clear")),
         )
       : null,
+    !active.length && !finished.length ? h("div", { className: "dshm-hint" }, lookup("settings.ops.empty")) : null,
   );
 }
 
@@ -3020,6 +3089,18 @@ function MarketPanel({ onClose }) {
   // 全局操作记录（0.7.0 Task 13 + 审计碰撞修正）：单例 store + 泵执行（queued 真实生命周期）
   const [opRecords, setOpRecords] = useState(() => opsStore.list().map((r) => ({ ...r })));
   const syncOps = useCallback(() => setOpRecords(opsStore.list().map((r) => ({ ...r }))), []);
+  // 操作记录卡跳转（第二批）：切到设置 tab 后等 React 提交再滚动定位到卡片
+  const openOps = useCallback(() => {
+    setTab("settings");
+    if (typeof document !== "undefined") {
+      setTimeout(() => {
+        const el = document.querySelector(".dshm-ops-card");
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      }, 60);
+    }
+  }, [setTab]);
+  // 设置 tab 红点（第二批可见性补偿）：仅 failed/warned 终态点亮；清除/移除后随 syncOps 自灭
+  const opsAttention = opRecords.some((r) => r.status === "failed" || r.status === "warned");
   const runOp = useCallback(
     (kind, target, exec, meta = {}, reuseId) =>
       // session:true = 活会话标记（终审·新伤1）：重挂载的 restore 跳过（泵仍拥有）；persist 时剥离。
@@ -3199,6 +3280,8 @@ function MarketPanel({ onClose }) {
               lookup(labelKey),
               countKey && counts[countKey] != null ? h("span", { className: "dshm-count" }, String(counts[countKey])) : null,
               key === "installed" && outdatedCount > 0 ? h("span", { className: "dsvm-reddot", title: lookup("installed.upgradeAll", { n: outdatedCount }) }) : null,
+              // 底部操作区搬迁补偿（第二批）：failed/warned 终态无人主动逛设置页，红点兜底可见性
+              key === "settings" && opsAttention ? h("span", { className: "dsvm-reddot", title: lookup("settings.ops.reddot") }) : null,
             ),
           ),
         ),
@@ -3229,20 +3312,23 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body" },
-        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null, onOpenOps: openOps }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, updates, onMutation: refreshViews, ops }) : null,
-        tab === "settings" ? h(SettingsTab, { notify, onRegistryChanged, onForceMarket: () => marketReloadAll(true) }) : null,
-        h(OperationsPanel, {
-          records: opRecords,
-          onClearFinished: () => {
+        tab === "settings" ? h(SettingsTab, {
+          notify,
+          onRegistryChanged,
+          onForceMarket: () => marketReloadAll(true),
+          opsRecords: opRecords,
+          onOpsClearFinished: () => {
             opsStore.clearFinished();
             syncOps();
           },
-          onRemove: (id) => {
+          onOpsRemove: (id) => {
             opsStore.remove(id);
             syncOps();
           },
-        }),
+        }) : null,
+        // 操作记录已整体搬迁至设置 tab 末位通宽卡（0.9.x 布局重构·第二批）：底部不再常驻
       ),
       toast
         ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },

@@ -8,6 +8,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.64 优化：设置页双清单并排重排 + 操作记录整体搬迁设置 tab
+
+- **设置页网格（mock 驱动终审）**：社区清单/精选清单两卡并排 **4:7**（社区卡只读五项 ~250px 足矣，宽度让给交互更多的精选卡）；全屏态「关于」升入三卡行（`4fr 7fr 3fr`，不封顶——对齐市场「加列不加宽」哲学，设置页恰有三个卡片单元可用）；视口 ≤760px 单列回落；关于卡常态通栏、操作记录恒通栏（`nth-child` 定位，与 `Section()` 签名解耦）。
+- **社区卡清爽列表**：标题行回归纯标题（去 `from` 前缀）；状态徽章降为绿/黄/红**小圆点**；行间发丝分隔线 + 数值右对齐等宽数字；「社区目录开关」入列表为末行（开关是目录属性，钉底反而脱离语境）；关态 = 提示行 + 开关行（重开入口不丢）。中途方案「统计带」（白盒大数字）经实评否决——卡片中的卡片是视觉噪音。
+- **精选卡减行**：说明行缩短（被删的「条目格式可参照下载的默认清单」与下载按钮 tooltip 重复，零信息损失）；配置地址长 URL 单行省略 + `title` 悬浮全文。
+- **操作记录搬迁（第二批）**：三 tab 共用的底部常驻区退役；`OperationsPanel` → `OperationsCard` 落位设置 tab 末位通宽卡——进行中组滚动区外常驻（进度不被滚走），已结束组进 220px 滚动区（展示上限 50 条防 DOM 无界，store/恢复校验不动），「清除已结束」钉底，空态 hint 卡常驻导览。
+- **可见性补偿**：底部消失后失败/带警告终态无人主动发现 → 设置 tab 红点（复用 outdated 红点样式，清除/移除后随 syncOps 自灭）；市场卡「进行中」徽章点击改道：切设置 tab + 滚动定位操作记录卡（文案「查看操作面板」→「查看操作记录」）。
+- **验证**：构建 verify 通过、typecheck 零错误、全量 1283 项测试连续 4 轮全绿（首轮 1 例与改动无关的瞬时 flake 未复现）；布局终稿经交互式 HTML mock 三宽度 × 三布局 × 多状态现场评审定稿（`docs/settings-layout-mock.html` 入库作设计记录）。
+
 ### 0.9.63 修复：点在加载转圈上不再无动作——转圈显式接 onClick=onClose
 
 - **背景**：0.9.62 给灯箱加了走链转圈占位，但转圈是遮罩根的**子元素**，而 `backdropCloseHandlers`（0.9.27 防拖拽误关）只在 `mousedown` 与 `click` 都命中遮罩自身（`target === currentTarget`）时才关——点在 34px 转圈正中因此无动作。转圈显式接 `onClick: onClose`，与「点图即关」同语义：走链期间的任何一次点击都是有效的关闭逃生门。
@@ -465,6 +474,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Changed in 0.9.64 — settings page: dual-catalog side-by-side layout + operations history moved into the settings tab
+
+- **Settings grid (mock-driven final review)**: the Community and Curated cards now sit side by side at **4:7** (the read-only community card needs ~250px; width goes to the more interactive registry card); in fullscreen the About card joins a three-card row (`4fr 7fr 3fr`, uncapped — the same "add columns, don't stretch units" philosophy as the market tab); below a 760px viewport it falls back to a single column; About spans full width in normal mode, the operations card is always full width.
+- **Community card, clean list**: the title row is a pure title again (`from` prefix dropped); the status badge becomes a small green/amber/red dot; hairline row separators + right-aligned tabular figures; the catalog toggle joins the list as its last row (the toggle is an attribute of the catalog — pinning it to the card bottom detached it from context); off state = hint line + toggle row (the re-entry control is preserved). The intermediate "stat band" design (boxed big numbers) was rejected in live review — cards inside a card are visual noise.
+- **Curated card trim**: the note line is shortened (the removed clause duplicated the download button tooltip — zero information loss); long configured URLs render as a single ellipsized line with the full value on hover.
+- **Operations history migration (batch 2)**: the bottom strip shared by all three tabs is retired; `OperationsPanel` becomes `OperationsCard` at the bottom of the settings tab — active rows stay outside the scroll area (progress never scrolls away), finished records live in a 220px scroll region (display cap 50 to bound the DOM; store/restore validation untouched), "Clear finished" is pinned below, and an empty-state hint card doubles as wayfinding.
+- **Visibility compensation**: with the bottom strip gone, failed/warned records would go unnoticed — the settings tab now shows a red dot (reuses the outdated-dot style; clears on remove/clear); the market card's "running" badge now switches to the settings tab and scrolls to the operations card (label 查看操作面板 → 查看操作记录).
+- **Verification**: build verify passes, typecheck clean, full 1283-test suite green in 4 consecutive runs (one transient unrelated flake in the first run did not reproduce); the final layout was settled via an interactive HTML mock across three widths × three layouts × multiple states (`docs/settings-layout-mock.html` committed as a design record).
 
 ### Fixed in 0.9.63 — clicking dead-center on the loading spinner no longer no-ops: spinner gets an explicit onClick=onClose
 
