@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.65 优化：灯箱邻图预取 + 触屏滑动切换 + 焦点圈闭
+
+- **邻图预取**：当前图加载完成（`useImgChain` settled）后静默预热左右邻——URL 用与灯箱真实请求**逐字节同形**的 `weservUrl(w=1600)`，翻页直接命中浏览器缓存近零等待。纯 best-effort：不碰赢家记忆/链状态，预取失败对真实链零影响（导航时照常走 weserv→原图双兜底）；`prefetchedRef` Set 去重防来回翻页重复发起，Set 随灯箱挂载期生命周期（重开重新预热）；单图由 `lbNeighbors` 空表自然短路。
+- **触屏滑动切换**：touch 指针横向滑过阈值即翻页（`swipeDir` 纯函数判向：|dx| ≥ 48px 且 |dx| ≥ 2|dy|；不设时长门槛，慢拖也算；竖滑/斜滑归零——纵向手势与 pinch 缩放可达性留给原生，`touch-action:pan-y pinch-zoom`）。只认 `pointerType==="touch"`——鼠标拖拽维持原生语义（图=原生拖拽、遮罩=按下+点击才关，0.9.27 防拖拽误关守卫不破）；滑动终结后 500ms 内根上 capture 吞掉合成 click（双保险：即便滑动止于 ✕/遮罩也不触发其点击语义）。判向/邻图两枚纯函数入 `lightbox.js`（`swipeDir`/`lbNeighbors`，Node 单测覆盖）。
+- **焦点圈闭**：灯箱开着时 Tab/Shift+Tab 只在灯箱内可聚焦控件（按钮/链接：✕/‹›/失败态重试+打开原图）间回绕；焦点已逃出灯箱（如点击遮罩落在 body）时拉回首/尾。portal 挂 body 后 Tab 本会走到背景面板，此处收口；DetailModal 自身 U8 债（无圈闭）维持不变，Esc 仍只关最上层弹层。
+- **验证**：1289 项测试全绿、typecheck 零错误；`client-lightbox.test.mjs` 新增 6 项（`lbNeighbors`/`swipeDir` 纯逻辑单测 + 预取/滑动/圈闭/touch-action 结构锚），0.9.60/0.9.62 批次既有锚全数保持。
+
 ### 0.9.64 优化：设置页双清单并排重排 + 操作记录整体搬迁设置 tab
 
 - **设置页网格（mock 驱动终审）**：社区清单/精选清单两卡并排 **4:7**（社区卡只读五项 ~250px 足矣，宽度让给交互更多的精选卡）；全屏态「关于」升入三卡行（`4fr 7fr 3fr`，不封顶——对齐市场「加列不加宽」哲学，设置页恰有三个卡片单元可用）；视口 ≤760px 单列回落；关于卡常态通栏、操作记录恒通栏（`nth-child` 定位，与 `Section()` 签名解耦）。
@@ -474,6 +481,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Added in 0.9.65 — lightbox: neighbor prefetch + touch swipe navigation + focus trap
+
+- **Neighbor prefetch**: once the current image settles (`useImgChain` settled), the left/right neighbors are warmed silently - using a `weservUrl(w=1600)` URL **byte-identical** to the lightbox's real request, so a swipe/arrow navigation hits the browser cache with near-zero wait. Strictly best-effort: no winner-memory or chain-state mutation, a failed prefetch leaves the real chain untouched (navigation still runs the weserv→original dual fallback); a `prefetchedRef` Set dedupes repeated crossings (no re-issuing when bouncing back), the Set lives for the lightbox mount lifetime (a fresh open warms again); single-image boxes short-circuit naturally via `lbNeighbors` returning an empty list.
+- **Touch swipe navigation**: a horizontal touch drag past the threshold flips images (`swipeDir` pure predicate: |dx| ≥ 48px and |dx| ≥ 2|dy|; no time gate - slow deliberate drags count; vertical/diagonal drags return 0 - vertical gestures and pinch-zoom accessibility stay native, via `touch-action:pan-y pinch-zoom`). Only `pointerType==="touch"` is recognized - mouse drags keep their native semantics (image = native drag, backdrop = press+click to close, the 0.9.27 drag-misfire guard intact); for 500ms after a recognized swipe the root's capture phase swallows the synthetic click (double belt: a swipe ending on ✕ or the backdrop triggers neither).
+- **Focus trap**: while the lightbox is open, Tab/Shift+Tab cycles only among focusable controls inside it (buttons/links: ✕/‹›/failed-state retry + open-original); if focus has escaped (e.g. a backdrop click left it on body), the next Tab pulls it back to the first/last control. After the portal-to-body change, Tab used to walk into the background panel - this closes that gap; DetailModal's own U8 debt (no trap) is unchanged and Esc still closes only the topmost layer.
+- **Verification**: 1289 tests green, typecheck clean; `client-lightbox.test.mjs` gains 6 items (`lbNeighbors`/`swipeDir` pure-logic units + prefetch/swipe/trap/touch-action structural anchors); all 0.9.60/0.9.62-era anchors retained.
 
 ### Changed in 0.9.64 — settings page: dual-catalog side-by-side layout + operations history moved into the settings tab
 

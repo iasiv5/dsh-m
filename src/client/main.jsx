@@ -14,7 +14,7 @@ const API = "/dshm";
 const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
-const { lbStep } = require("./lightbox.js");
+const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");
 const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
@@ -401,8 +401,10 @@ const CSS = `
    在浅底上不可见（用户双模式实拍）。双侧修复——皮肤侧 :not(.dsvm-lightbox) 豁免
    （dsh-skins 1.5.1 起）；本侧 background !important 自持：marketplace 社区皮肤不可
    枚举，影院不变量必须由组件自己兜底。!important 清单定长（注释提及×2 + 本规则
-   + sidebar footer 兼容规则），新增须改 client-lightbox 断言显式登记，注释即守卫。 */
-.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important;display:flex;align-items:center;justify-content:center}
+   + sidebar footer 兼容规则），新增须改 client-lightbox 断言显式登记，注释即守卫。
+   0.9.65：touch-action:pan-y pinch-zoom——横滑判向交给灯箱滑动切换，纵向原生
+   手势与 pinch 缩放（低视力可达性）不被劫持。 */
+.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important;display:flex;align-items:center;justify-content:center;touch-action:pan-y pinch-zoom}
 .dsvm-lightbox img{max-width:min(92vw,1500px);max-height:74vh;border-radius:8px;cursor:zoom-out;box-shadow:0 10px 44px rgba(0,0,0,.55);display:block}
 .dsvm-btn:focus-visible{outline:2px solid rgba(255,255,255,.75);outline-offset:2px}
 .dsvm-btn.dsvm-lbclose{position:absolute;top:12px;right:12px;width:38px;height:38px;padding:0;border-radius:10px;display:flex;align-items:center;justify-content:center}
@@ -1357,9 +1359,49 @@ function Lightbox({ shots, index, onNav, onClose }) {
   // 0.9.61 图片加载链：weserv(w=1600, webp)→原图→双败占位（重试 + 打开原图逃生门）。
   // index 变化即 url 变化 → hook 自重置（复用同一 <img> 换 src）。
   const chain = useImgChain(shots[index], { w: 1600 });
+  // 0.9.65 邻图预取：当前图 settled 后静默预热左右邻——URL 用与 useImgChain 完全
+  // 同形的 weservUrl(w=1600)（逐字节同 URL，翻页直接命中浏览器缓存近零等待）。
+  // 纯 best-effort：不碰赢家记忆/链状态，预取失败对真实链零影响（导航时照常走
+  // weserv→原图双兜底）；prefetchedRef 去重防来回翻页重复发起；Set 随灯箱挂载期
+  // 生命周期，重开灯箱重新预热。单图由 lbNeighbors 返回空表自然短路。
+  const prefetchedRef = useRef(null);
+  if (prefetchedRef.current === null) prefetchedRef.current = new Set();
+  useEffect(() => {
+    if (typeof Image === "undefined") return;
+    if (!chain.settled || chain.failed) return;
+    for (const n of lbNeighbors(index, shots.length)) {
+      const url = shots[n];
+      if (typeof url !== "string" || url === "" || prefetchedRef.current.has(url)) continue;
+      prefetchedRef.current.add(url);
+      const img = new Image();
+      img.decoding = "async";
+      img.src = weservUrl(url, { w: 1600 });
+    }
+  }, [chain.settled, chain.failed, index, shots]);
+  // 0.9.65 触屏滑动切换：touch 指针横向滑过阈值（swipeDir 判向）即翻页，与键盘/‹›
+  // 同走 lbStep。只认 pointerType==="touch"——鼠标拖拽维持原生语义（图=原生拖拽、
+  // 遮罩=按下+点击才关，0.9.27 防拖拽误关守卫不破）；滑动终结后 500ms 内吞掉合成
+  // click（拖拽本就不产 click，此处双保险：即便落在 ✕/遮罩上也不触发其点击语义）。
+  const swipeRef = useRef(null);
+  const swipedAtRef = useRef(0);
+  const onPointerDown = (e) => {
+    if (e.pointerType !== "touch") return;
+    swipeRef.current = { x: e.clientX, y: e.clientY };
+  };
+  const onPointerUp = (e) => {
+    if (e.pointerType !== "touch" || !swipeRef.current) return;
+    const dir = swipeDir(e.clientX - swipeRef.current.x, e.clientY - swipeRef.current.y);
+    swipeRef.current = null;
+    if (!dir || single) return;
+    swipedAtRef.current = Date.now();
+    onNav(lbStep(index, dir, shots.length));
+  };
+  const onClickCapture = (e) => {
+    if (Date.now() - swipedAtRef.current < 500) e.stopPropagation();
+  };
   const node = h(
     "div",
-    { className: "dsvm-lightbox", role: "dialog", "aria-modal": "true", "aria-label": lookup("lb.title"), ...backdropCloseHandlers(onClose) },
+    { className: "dsvm-lightbox", role: "dialog", "aria-modal": "true", "aria-label": lookup("lb.title"), onPointerDown, onPointerUp, onClickCapture, ...backdropCloseHandlers(onClose) },
     chain.failed
       ? h(
           "div",
@@ -1467,6 +1509,23 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
       if (lb !== null && visible.length > 1) {
         if (e.key === "ArrowLeft") setLb((i) => lbStep(i, -1, visible.length));
         if (e.key === "ArrowRight") setLb((i) => lbStep(i, 1, visible.length));
+      }
+      if (e.key === "Tab" && lb !== null) {
+        // 0.9.65 焦点圈闭：灯箱开着时 Tab/Shift+Tab 只在灯箱内可聚焦控件（按钮/链接）
+        // 间回绕；焦点已逃出灯箱（如点击遮罩落在 body）时拉回首/尾。圈闭范围以
+        // .dsvm-lightbox 根查询——portal 挂 body 后 Tab 本会走到背景面板，此处收口；
+        // DetailModal 自身的 U8 债（无圈闭）维持不变，Esc 仍只关最上层弹层。
+        const box = typeof document !== "undefined" ? document.querySelector(".dsvm-lightbox") : null;
+        if (!box) return;
+        const focusables = Array.from(box.querySelectorAll("button, a[href]")).filter((el) => el.offsetWidth > 0 && el.offsetHeight > 0);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (!box.contains(active) || (e.shiftKey ? active === first : active === last)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        }
       }
     };
     document.addEventListener("keydown", onKey);

@@ -8,6 +8,9 @@
  * 0.9.62 批次：影院遮罩自持（background !important，清单定长）+ ‹›/✕ 深色玻璃芯片
  * （浅色皮肤 tint 碰撞实拍修复，双侧修复的 dsh-m 侧）+ 走链转圈/settled 淡入
  * （useImgChain 暴露 settled）+ prefers-reduced-motion。
+ * 0.9.65 批次：邻图预取（settled 后同形 weservUrl 预热左右邻，URL 去重）+
+ * 触屏滑动切换（pointer 只认 touch，swipeDir 判向，滑动后吞合成 click）+
+ * 焦点圈闭（灯箱开着时 Tab/Shift+Tab 圈在灯箱内，焦点逃逸拉回）。
  * 本文件：lbStep 纯逻辑单测 + main.jsx 结构锚（includes 级，避免整表达式逐字正则——
  * 那种断言红灯语义是「文本变了」而非「行为变了」）；渲染结构走 client-render-smoke（SSR 回退树），
  * 行为/计算样式/拖拽带走 scripts/verify-lightbox.mjs（手动跑，需 playwright-core+chromium）。
@@ -22,7 +25,7 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
 const src = readFileSync(join(root, 'src/client/main.jsx'), 'utf8')
-const { lbStep } = await import(join(root, 'src/client/lightbox.js'))
+const { lbStep, lbNeighbors, swipeDir } = await import(join(root, 'src/client/lightbox.js'))
 
 describe('lbStep 环形步进（灯箱 ‹›/键盘 ←→ 共用）', () => {
   it('向前/向后回绕', () => {
@@ -113,5 +116,52 @@ describe('灯箱 0.9.62 影院自持（皮肤碰撞修复）+ 加载指示', () 
   })
   it('prefers-reduced-motion：淡入停用、转圈降速', () => {
     assert.ok(src.includes('@media (prefers-reduced-motion:reduce){.dsvm-lbspin{animation-duration:1.6s}.dsvm-lightbox .dsvm-lbimg{transition:none}}'), 'reduced-motion 块在')
+  })
+})
+
+describe('灯箱 0.9.65 邻图预取 + 触屏滑动 + 焦点圈闭', () => {
+  it('lbNeighbors：左右邻去重保序，length<=1 空表（单图无邻可预取）', () => {
+    assert.deepEqual(lbNeighbors(0, 3), [1, 2])
+    assert.deepEqual(lbNeighbors(1, 3), [2, 0])
+    assert.deepEqual(lbNeighbors(2, 3), [0, 1])
+    assert.deepEqual(lbNeighbors(0, 2), [1], '双图左右邻同一张 → 去重成一项')
+    assert.deepEqual(lbNeighbors(0, 1), [])
+    assert.deepEqual(lbNeighbors(0, 0), [])
+    assert.deepEqual(lbNeighbors(NaN, 3), [])
+    assert.deepEqual(lbNeighbors(0, NaN), [])
+  })
+  it('swipeDir：横滑达阈值且 |dx|≥2|dy| 才判向；竖/斜/短滑归零', () => {
+    assert.equal(swipeDir(60, 10), 1, '右滑 → 下一张')
+    assert.equal(swipeDir(-60, -10), -1, '左滑 → 上一张')
+    assert.equal(swipeDir(47, 0), 0, '未达 48px 阈值')
+    assert.equal(swipeDir(60, 40), 0, '斜滑 |dx| < 2|dy| 不判向')
+    assert.equal(swipeDir(0, 200), 0, '纯竖滑不判向（纵向手势留原生）')
+    assert.equal(swipeDir(NaN, 0), 0, '非有限输入归零')
+    assert.equal(swipeDir(60, 10, { threshold: 100 }), 0, '阈值可调')
+    assert.equal(swipeDir(60, 31, { ratio: 3 }), 0, '方向比可调')
+  })
+  it('邻图预取：settled 后以同形 weservUrl(w=1600) 预热左右邻，URL 去重不重复发起', () => {
+    assert.ok(src.includes('if (!chain.settled || chain.failed) return;'), '仅当前图 settled 后预热（走链期间不抢带宽）')
+    assert.ok(src.includes('lbNeighbors(index, shots.length)'), '邻图取数走 lbNeighbors')
+    assert.ok(src.includes('img.src = weservUrl(url, { w: 1600 })'), '预取 URL 与 useImgChain 灯箱请求逐字节同形（翻页命中缓存）')
+    assert.ok(src.includes('prefetchedRef.current.has(url)'), 'URL 去重（来回翻页不重复发起）')
+    assert.ok(src.includes('if (prefetchedRef.current === null) prefetchedRef.current = new Set();'), 'Set 随挂载期生命周期')
+  })
+  it('触屏滑动：pointer 只认 touch，判向走 swipeDir，滑动后吞合成 click', () => {
+    assert.ok(src.includes('if (e.pointerType !== "touch") return;'), 'pointerdown/up 只认 touch（鼠标保持原生拖拽/点击语义）')
+    assert.ok(src.includes('swipeDir(e.clientX - swipeRef.current.x, e.clientY - swipeRef.current.y)'), '位移交给 swipeDir 判向')
+    assert.ok(src.includes('onNav(lbStep(index, dir, shots.length))'), '滑动翻页与键盘/‹› 同走 lbStep')
+    assert.ok(src.includes('if (Date.now() - swipedAtRef.current < 500) e.stopPropagation();'), '滑动后 500ms 内 capture 吞合成 click（防落在 ✕/遮罩上误触发其点击语义）')
+  })
+  it('焦点圈闭：Tab 仅灯箱开着时拦截，回绕 + 逃逸拉回', () => {
+    assert.ok(src.includes('if (e.key === "Tab" && lb !== null) {'), 'Tab 分支仅灯箱开着时生效（DetailModal 自身 U8 债不变）')
+    assert.ok(src.includes('document.querySelector(".dsvm-lightbox")'), '圈闭范围限灯箱根（portal 挂 body 后 Tab 本会走到背景）')
+    assert.ok(src.includes('box.querySelectorAll("button, a[href]")'), '可聚焦集=按钮+链接（✕/‹›/失败态重试+打开原图）')
+    assert.ok(src.includes('el.offsetWidth > 0 && el.offsetHeight > 0'), '可见性过滤')
+    assert.ok(src.includes('!box.contains(active)'), '焦点逃出灯箱（如点遮罩落 body）时拉回首/尾')
+    assert.ok(src.includes('(e.shiftKey ? last : first).focus();'), 'Shift+Tab 反向回绕')
+  })
+  it('touch-action：横滑交给灯箱，纵向原生与 pinch 缩放可达性保留', () => {
+    assert.ok(src.includes('justify-content:center;touch-action:pan-y pinch-zoom}'), 'touch-action 在遮罩规则上')
   })
 })
