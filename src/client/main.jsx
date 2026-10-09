@@ -1235,26 +1235,39 @@ function useImgChain(url, opts) {
   const startPrefRef = useRef(null);
   if (startPrefRef.current === null) startPrefRef.current = preferredTier(serviceBucketOf(url));
   const [tier, setTier] = useState(() => tierOrder(startPrefRef.current)[0]);
+  // settled（评审 R1-1）：当前层已成功交付——8s 守卫必须随之解除，否则成功图 8s 后被强制换层重载
+  // （大陆场景 → direct 败 → 缩略图误剔除/图标字母化/灯箱看着看着变占位）。
+  const [settled, setSettled] = useState(false);
   const startChain = useCallback(() => {
     startPrefRef.current = preferredTier(serviceBucketOf(url));
+    setSettled(false);
     setTier(tierOrder(startPrefRef.current)[0]);
   }, [url]);
-  useEffect(() => {
-    // url 变化 → 以当前偏好重开链（attempt 归零语义）
-    startChain();
-  }, [url, startChain]);
+  // url 变化 → 渲染期重置（derived-state 模式，评审 R1-5）：effect 重置存在「中间帧」——首帧用旧 tier
+  // 算新 url 的 src 先发请求。渲染期比较 prevUrl 立即重渲染，无中间帧。
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (prevUrl !== url) {
+    setPrevUrl(url);
+    startPrefRef.current = preferredTier(serviceBucketOf(url));
+    setSettled(false);
+    setTier(tierOrder(startPrefRef.current)[0]);
+  }
   const failed = tier === "failed";
   const src = failed ? "" : tier === "weserv" ? weservUrl(url, { w, h }) : url;
   // 序感知前进：以启动快照序换下一层（对称双兜底 Q3——preferred=direct 时 direct 败仍要试 weserv）
   const advance = () => setTier((t) => nextTier(t, startPrefRef.current));
   const onError = advance;
-  const onLoad = useCallback(() => rememberSuccess(bucket, tier), [bucket, tier]);
+  const onLoad = useCallback(() => {
+    setSettled(true);
+    rememberSuccess(bucket, tier);
+  }, [bucket, tier]);
   const retry = startChain;
   useEffect(() => {
-    if (!active || !needsTimeout(tier)) return;
+    // 8s 守卫（仅 weserv 层；评审 R1-1：settled 即解除；评审 R1-1 附：空 url 不挂——字母兜底 Icon 白挂计时器）
+    if (!url || !active || settled || !needsTimeout(tier)) return;
     const timer = setTimeout(advance, WESERV_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [active, tier, url]);
+  }, [url, active, settled, tier]);
   return { src, failed, retry, onError, onLoad };
 }
 

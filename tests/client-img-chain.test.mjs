@@ -125,6 +125,18 @@ describe('赢家记忆（Q8：页面生命周期、最近成功层、成功才�
   })
 })
 
+describe('main.jsx 计时门控源锚（评审 R1-1/R1-4：settled 解除 + active/空 url 守卫）', () => {
+  it('8s 守卫四条件齐备（url/active/settled/needsTimeout），依赖数组含 settled；onLoad 置 settled', () => {
+    assert.ok(mainSrc.includes('if (!url || !active || settled || !needsTimeout(tier)) return;'), '守卫四条件')
+    assert.ok(mainSrc.includes('[url, active, settled, tier]'), 'timer effect 依赖数组')
+    assert.ok(/onLoad = useCallback\(\(\) => \{\s*setSettled\(true\);\s*rememberSuccess\(bucket, tier\);/.test(mainSrc), 'onLoad 先置 settled 再记成功')
+    assert.ok(/setSettled\(false\);[\s\S]{0,80}setTier\(tierOrder\(startPrefRef\.current\)\[0\]\)/.test(mainSrc), 'startChain 重置 settled 与 tier')
+  })
+  it('url 变化走渲染期 derived-state 重置（评审 R1-5：无中间帧）', () => {
+    assert.ok(/const \[prevUrl, setPrevUrl\] = useState\(url\);[\s\S]{0,200}if \(prevUrl !== url\) \{/.test(mainSrc), 'prevUrl 渲染期比较')
+  })
+})
+
 describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处基准 + 稳定 key）', () => {
   it('Shot 走链：h=300 + active:show（IO 门控计时），img 用 chain.src 且保留既有属性', () => {
     assert.ok(mainSrc.includes('useImgChain(src, { h: 300, active: show })'), 'Shot 内 useImgChain(src, { h: 300, active: show })')
@@ -155,8 +167,7 @@ describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处�
     assert.ok(modalSeg.includes('shots: visible'), '灯箱收 visible 活引用')
     assert.ok(modalSeg.includes('Math.min(lb, visible.length - 1)'), 'index 钳制')
   })
-  it('Lightbox 走链（w=1600）+ 双败占位三件（重试/打开原图）+ i18n 三键', () => {
-    const lbSeg = mainSrc.slice(mainSrc.indexOf('function Lightbox('), mainSrc.indexOf('function UseImgChainProbe') > 0 ? mainSrc.indexOf('function DetailModal(') : mainSrc.indexOf('function DetailModal('))
+  it('Lightbox 走链（w=1600）+ 双败占位三件（重试/打开原图）+ i18n 三键', () => {    const lbSeg = mainSrc.slice(mainSrc.indexOf('function Lightbox('), mainSrc.indexOf('function UseImgChainProbe') > 0 ? mainSrc.indexOf('function DetailModal(') : mainSrc.indexOf('function DetailModal('))
     assert.ok(lbSeg.includes('useImgChain(shots[index], { w: 1600 })'), '灯箱 w=1600 走链')
     assert.ok(lbSeg.includes('className: "dsvm-lbfail"'), '占位容器 dsvm-lbfail')
     assert.ok(lbSeg.includes('chain.retry'), '重试接 chain.retry')

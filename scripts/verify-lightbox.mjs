@@ -129,6 +129,7 @@ try {
     const oldPage = page
     page = await browser.newPage({ viewport: { width: 1055, height: 764 } })
     wirePage(page)
+    reqLog.length = 0
     await oldPage.close().catch(() => {})
     await mountDirect(direct)
     await mountWeserv(weserv, weservDelayMs)
@@ -304,7 +305,7 @@ try {
     await page.keyboard.press('Escape')
 
     // A22 赢家记忆：weserv 断、直连成功后，新图首请求走直连（最近成功层翻转实证）
-    await freshState({ direct: 'fulfill', weserv: 'abort' })
+    const g22 = await freshState({ direct: 'fulfill', weserv: 'abort' })
     await open()
     await page.waitForFunction(() => { const i = document.querySelector('.dsvm-lightbox img'); return i && i.src.includes('github.com/fake') && i.naturalWidth > 0 }, null, { timeout: 10000 }).catch(() => {})
     reqLog.length = 0
@@ -313,7 +314,10 @@ try {
     // direct-first 证据改为 src 形态（直连层与缩略图同 URL 的已解码复用会让「首请求」不再发——
     // 复用本身即记忆生效的体现：src 直接落在直连层，不经过 weserv 形态）
     const src22 = await page.evaluate(() => { const i = document.querySelector('.dsvm-lightbox img'); return i ? i.src : '' })
-    ok('A22 赢家记忆：新图起点=直连层（src 不经 weserv 形态且渲染成功）', src22.startsWith('https://github.com/fake/shot2.png'), src22.slice(0, 64))
+    const a22WeservReq = reqLog.filter((u) => u.includes('weserv') && u.includes(`shot2.png%3Fg%3D${g22}`)).length
+    ok('A22 赢家记忆：新图起点=直连层（src 直连形态 + 全程零 weserv 形态请求）',
+      src22.startsWith('https://github.com/fake/shot2.png') && a22WeservReq === 0,
+      `src=${src22.slice(0, 52)} weserv形式请求=${a22WeservReq}`)
     await page.keyboard.press('Escape')
 
     // A23 缩略图剔除：双断下双败上报 → shotbox 递减至 0、整条隐藏
@@ -347,23 +351,42 @@ try {
     let a24 = false
     try { await page.locator('#probe-host .dsvm-probe-failed').waitFor({ state: 'visible', timeout: 12000 }); a24 = true } catch { a24 = false }
     // 层序证据走 reqLog（同 A19b：同页 unroute+复挂的 route 静默失效不影响请求本身）
-    const a24Weserv = reqLog.filter((u) => u.includes(`shot2.png%3Fg%3D${g24}x`) && u.includes('w=1600')).length
-    const a24Direct = reqLog.filter((u) => u.includes(`shot2.png?g=${g24}x`)).length
-    ok('A24 direct-first 换层：direct 败→按序试 weserv→failed 终态',
-      a24 && a24Direct >= 1 && a24Weserv >= 1,
-      `failed=${a24} direct=${a24Direct} weserv=${a24Weserv}`)
+    const a24Shot2Reqs = reqLog.filter((u) => u.includes(`shot2.png?g=${g24}x`) || u.includes(`shot2.png%3Fg%3D${g24}x`))
+    const a24Weserv = a24Shot2Reqs.filter((u) => u.includes('weserv')).length
+    const a24Direct = a24Shot2Reqs.filter((u) => !u.includes('weserv')).length
+    ok('A24 direct-first 换层：首请求=direct 形态，败后按序试 weserv→failed 终态',
+      a24 && a24Direct >= 1 && a24Weserv >= 1 && !a24Shot2Reqs[0].includes('weserv'),
+      `failed=${a24} 首请求=${a24Shot2Reqs[0] ? (a24Shot2Reqs[0].includes('weserv') ? 'weserv' : 'direct') : '无'} direct=${a24Direct} weserv=${a24Weserv}`)
     await page.screenshot({ path: join(OUT, '07-direct-first-chain.png') })
+
+    // A25 成功驻留（评审 R1-1 行为钉子）：weserv 成功渲染后停留 >8.5s——src 须仍为 weserv 形态、
+    // 该图零 direct 形态请求（8s 守卫在 settled 后解除；失败形态=成功图被强制换层重载）
+    const g25 = await freshState({ direct: 'abort', weserv: 'fulfill' })
+    await open()
+    const srcAt0 = await page.evaluate(() => { const i = document.querySelector('.dsvm-lightbox img'); return i ? i.src : '' })
+    await page.waitForTimeout(8800)
+    const stateAfter = await page.evaluate(() => { const i = document.querySelector('.dsvm-lightbox img'); return i ? { src: i.src, nw: i.naturalWidth } : null })
+    const a25DirectReqs = reqLog.filter((u) => !u.includes('weserv') && u.includes(`shot1.png?g=${g25}`)).length
+    ok('A25 成功驻留 >8.5s：src 不离 weserv 层、无 direct 重载请求',
+      stateAfter && stateAfter.src === srcAt0 && stateAfter.src.includes('images.weserv.nl') && stateAfter.nw > 0 && a25DirectReqs === 0,
+      `src=${stateAfter ? stateAfter.src.slice(0, 52) : 'no-img'} direct请求=${a25DirectReqs}`)
+    await page.keyboard.press('Escape')
 
     // --live：A0-A23 照旧（route 伪造不变），仅追加真网压缩对比（样图不经任何 route；评审 R2-D）
     if (process.argv.includes('--live')) {
       const SAMPLE = 'https://raw.githubusercontent.com/elysia395/dsh-wallpaper-engine/HEAD/docs/images/mascot-drawer.png'
       const { weservUrl } = await import(join(root, 'src/client/img-chain.js'))
+      const getBuf = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(`HTTP ${r.status}`); const ct = r.headers.get('content-type') || ''; if (!ct.startsWith('image/')) throw new Error(ct || 'no content-type'); return r.arrayBuffer() }
       const [directBuf, viaBuf] = await Promise.all([
-        fetch(SAMPLE).then((r) => r.arrayBuffer()),
-        fetch(weservUrl(SAMPLE, { w: 1600 })).then((r) => r.arrayBuffer()),
-      ])
-      const dKB = Math.round(directBuf.byteLength / 1024), wKB = Math.round(viaBuf.byteLength / 1024)
-      ok('--live 压缩实证（mascot-drawer.png w=1600 webp）', viaBuf.byteLength > 0 && viaBuf.byteLength <= directBuf.byteLength, `直连 ${dKB}KB vs weserv ${wKB}KB`)
+        getBuf(SAMPLE),
+        getBuf(weservUrl(SAMPLE, { w: 1600 })),
+      ]).catch(() => [null, null])
+      if (!directBuf || !viaBuf) {
+        ok('--live 压缩实证（mascot-drawer.png w=1600 webp）', false, 'fetch 失败或非 image/* 响应（错误页不得假 PASS）')
+      } else {
+        const dKB = Math.round(directBuf.byteLength / 1024), wKB = Math.round(viaBuf.byteLength / 1024)
+        ok('--live 压缩实证（mascot-drawer.png w=1600 webp）', viaBuf.byteLength <= directBuf.byteLength, `直连 ${dKB}KB vs weserv ${wKB}KB（两侧均 image/* 且 ok）`)
+      }
     }
   } finally {
     server.close()
