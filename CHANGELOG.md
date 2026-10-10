@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.69 功能：还原态面板头部拖拽 + 位置记忆（ADR-0017）
+
+- **方案**：市场面板（`.dshm-panel`）还原态下按住头部（标题/tab 行）即可自由拖拽——头部全域为手柄，tab/全屏/关闭钮点击语义原样（`closest("button")` 门卫 + 多指重入守卫）；双击头部非按钮区切换全屏；释放位置烘焙为视口绝对坐标存 `dshm-panel-pos`，下次打开还原，无记忆首开与旧版 flex 居中渲染逐字节一致。运动范围四周 8px；desktop profile 额外让出壳层标题拖拽带（quota-watch 契约：`data-windows-titlebar` + `--dsh-windows-titlebar-height`，web 无此变量恒 0）——胶囊时代「停进系统按钮区就再也抓不回」的坑由 clamp 机制性杜绝。挂载/全屏往返/resize 三触发源重夹紧，还原 commit 的重夹紧时序由 render 期 latest-ref 镜像保证（执行评审 E1-1 实证修复并以结构锚钉死）。
+- **皮肤免疫（拖拽期 = 最快渲染路径）**：拖拽背景取手势开始时 `getComputedStyle` 的最终色强制 α=1 写入 `--dshm-drag-bg` 并 `!important` 自持——openbmc/uefi 玻璃皮肤（bg-base α=0.55 病类，quota-watch 胶囊拖拽变半透明的同款病例）下按住拖动面板完全实心不透字；同时拖拽期关闭 backdrop-filter，每帧只剩 compositor 平移一层：pointer capture + 手势期才挂 document 监听 + pointermove 只存点、样式帧内写 + 拖拽帧绝不走 React state。静止态玻璃外观、0.9.27 防误关守卫、灯箱/详情 modal 语义全部不动。
+- **验证**：1326 项测试全绿、typecheck 零错误；构建产物含 `dshm-panel--dragging`/`dshm-panel-pos` 逐字锚；`!important` 清单定长 4→7（client-lightbox 断言登记）。实施计划与执行结果经独立评审 Agent 五轮对抗评审全闭环（16 条：13 条修于计划、3 条修于代码/如实申报）。
+
 ### 0.9.68 性能：合并市场物化——同身份免重付 5MB 解析 + 适配 + 合并（ADR-0016）
 
 - **问题（性能架构审查旗舰项，三轮评审闭环）**：领域概念「合并市场（Merged Market）」在 GLOSSARY 有名无主——装配逻辑内联在 `communityOutcome`，每个市场请求（缓存全命中的快路径也在内）都重付磁盘读 5.36MB 社区目录 + JSON.parse（实测 30–55ms）→ 目录适配层重建 4,400 条（30–90ms）→ 合并排序（5–35ms）；且全部是**同步 JS、阻塞宿主事件循环**——市场每翻一页/每提交一次搜索，宿主的 SSE 对话流与工具调用停摆 65–400ms。搜索评分因归一化 WeakMap 跨请求永不命中再加 ~330ms（冷）。
@@ -504,6 +510,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Feature in 0.9.69 — drag the marketplace panel by its header in restore state, with position memory (ADR-0017)
+
+- **Design**: hold the panel header (title/tab row) in restore state to drag the marketplace panel freely - the whole header is the handle while tab / fullscreen / close buttons keep their click semantics (`closest("button")` gate + multi-pointer re-entry guard); double-click on a non-button header area toggles fullscreen; on release the position is baked into absolute viewport coordinates and stored under `dshm-panel-pos`, restored on next open - with no stored position the first render stays byte-identical to the old flex-centered layout. The motion range is clamped 8px on all sides; the desktop profile additionally yields the shell titlebar drag band (quota-watch contract: `data-windows-titlebar` + `--dsh-windows-titlebar-height`; web without the variable is always 0) - the capsule-era trap of parking inside the system button zone and never being grabbable again is eliminated by construction. Mount, fullscreen round-trips and window resize all re-clamp; the restore-commit re-clamp is ordered by render-phase latest-ref mirrors (execution review E1-1, reproduced, fixed, and pinned by structural anchors).
+- **Skin immunity (drag = fastest render path)**: the drag background is captured at gesture start from `getComputedStyle` with alpha forced to 1 into `--dshm-drag-bg`, self-held by `!important` - on glass skins (openbmc/uefi, bg-base alpha 0.55 disease class - the same case that made the quota-watch capsule translucent while dragged) the panel stays fully opaque with zero see-through. backdrop-filter is disabled for the gesture, so each frame is a single compositor translation: pointer capture + document-level listeners only during the gesture + pointermove stores the point only (styles written inside rAF) + drag frames never touch React state. Resting glass looks, the 0.9.27 mis-close guard, lightbox and detail-modal semantics are all untouched.
+- **Verification**: 1326 tests green, typecheck clean; bundle carries literal anchors `dshm-panel--dragging` / `dshm-panel-pos`; the `!important` inventory is length-pinned 4→7 (registered in client-lightbox assertions). Plan and execution were adversarially reviewed by an independent reviewer agent across five rounds - 16 findings, all closed (13 fixed in the plan, 3 fixed in code / honestly declared).
 
 ### Performance in 0.9.68 — materialized merged market: skip the 5MB parse + adapt + merge for repeat identities (ADR-0016)
 
