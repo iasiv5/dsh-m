@@ -1628,16 +1628,16 @@ async function upgradePluginLocked(
   let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
   try {
     if (!entry) {
-    const communityTask = (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-    const outcome = await mergedOutcome({
-      namespace: opts.namespace ?? 'host',
-      profile: opts.profile ?? WEB_PROFILE,
-      cfg,
-      registry: loaded,
-      communityTask,
-      deadlineAt: Date.now() + DEFAULT_DEADLINE_MS,
-    })
-    entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
+      const communityTask = (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+      const outcome = await mergedOutcome({
+        namespace: opts.namespace ?? 'host',
+        profile: opts.profile ?? WEB_PROFILE,
+        cfg,
+        registry: loaded,
+        communityTask,
+        deadlineAt: Date.now() + DEFAULT_DEADLINE_MS,
+      })
+      entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
     }
   } catch {
     entry = undefined
