@@ -3,6 +3,12 @@
  * 每个变更操作（安装/升级/卸载/开关）一条 record，状态不挂卡片——翻页/搜索/切 tab 不丢；
  * localStorage 持久化（key `dshm-operations`），宿主重载恢复时逐条校验「此刻仍成立才执行，否则报告」。
  *
+ * 设置类终态直落记录（2026-10-10，DESIGN §2.6 修订）：`community-toggle` / `registry-url` 两类
+ * **不入泵**——创建即终态（done/failed），无 queued 生命周期、无恢复重放语义；恢复分支对其
+ * 原样保留（与 done/warned/failed 同路）、「清除已结束」照常可清、failed 照常点亮红点。
+ * target 只承载对象身份（`community-catalog` / 目标地址，恢复默认记 `"(default)"`），参数进 meta
+ * （toggle 的 on / registry-url 的 from）。
+ *
  * - OpStatus 七态：queued / running / input（冲突待决，恢复时不可复活）/ done / warned / failed /
  *   superseded（良性前提消失——如恢复期间用户已手动装同款；UI 中性样式呈现，不得显示为红色错误）；
  * - 持久化原子写：每次变更全量写，配额/序列化失败静默降级内存态（persistDegraded=true，不抛）；
@@ -17,19 +23,24 @@
  */
 
 /** 操作记录的参数载体（0.7.0 Task 13 契约扩展）：install 的 version/forceIncompatible、
- *  toggle 的 on、upgrade 的 force 等——target 只承载身份，参数进 meta。 */
+ *  toggle 的 on、upgrade 的 force、community-toggle 的 on、registry-url 的 from 等——
+ *  target 只承载身份，参数进 meta。 */
 export const OP_STORAGE_KEY = 'dshm-operations'
 
+/** registry-url 记录的「恢复默认」target 记号（共享常量，2026-10-10 评审 N1：三处引用不散落魔法串）。 */
+export const REGISTRY_DEFAULT_TARGET = '(default)'
+
 /**
- * @typedef {'install'|'upgrade'|'uninstall'|'toggle'} OpKind
+ * @typedef {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'} OpKind
  * @typedef {'queued'|'running'|'input'|'done'|'warned'|'failed'|'superseded'} OpStatus
  */
 
 /**
  * @typedef {Object} OperationRecord
  * @property {string} id
- * @property {'install'|'upgrade'|'uninstall'|'toggle'} kind
- * @property {string} target install=收录 id；upgrade/uninstall/toggle=包名
+ * @property {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'} kind
+ * @property {string} target install=收录 id；upgrade/uninstall/toggle=包名；community-toggle=community-catalog；
+ *                            registry-url=目标地址（恢复默认为 "(default)"）
  * @property {'queued'|'running'|'input'|'done'|'warned'|'failed'|'superseded'} status
  * @property {number} createdAt
  * @property {number} updatedAt

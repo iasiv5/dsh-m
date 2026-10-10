@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, OP_STORAGE_KEY, upgradeNotify } from '../src/client/operations.js'
+import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, OP_STORAGE_KEY, upgradeNotify, TERMINAL_CLEARABLE, REGISTRY_DEFAULT_TARGET } from '../src/client/operations.js'
 
 /** localStorage mock（可注入故障）。 */
 function memStorage() {
@@ -397,5 +397,52 @@ describe('upgradeNotify：升级完成提示三态（0.9.22 生效判定）', ()
   it('restart-required 与缺席 → needsRestart true、无后缀（现状横幅）', () => {
     assert.deepEqual(upgradeNotify('restart-required'), { needsRestart: true, suffixKey: null })
     assert.deepEqual(upgradeNotify(undefined), { needsRestart: true, suffixKey: null })
+  })
+})
+
+describe('设置类终态直落记录（2026-10-10：community-toggle / registry-url 不入泵）', () => {
+  it('done 直落记录跨 restoreRecords 原样保留，且不参与恢复前提校验（不咨询谓词）', async () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'set-1', kind: 'community-toggle', target: 'community-catalog', status: 'done', meta: { on: false } }))
+    store.upsert(rec({ id: 'set-2', kind: 'registry-url', target: 'https://example.com/registry.json', status: 'done', meta: { from: REGISTRY_DEFAULT_TARGET } }))
+    // 计数桩（评审 M2）：终态直落记录不得进入 stillApplies 校验——若未来回归对 done/failed 也
+    // 咨询谓词，called > 0 立即可证伪。
+    let called = 0
+    const still = async () => {
+      called++
+      return false
+    }
+    const restored = await restoreRecords(store.list(), still)
+    assert.equal(called, 0, '终态记录不参与恢复前提校验')
+    assert.equal(restored.find((r) => r.id === 'set-1').status, 'done')
+    assert.deepEqual(restored.find((r) => r.id === 'set-1').meta, { on: false })
+    assert.equal(restored.find((r) => r.id === 'set-2').target, 'https://example.com/registry.json')
+    assert.deepEqual(restored.find((r) => r.id === 'set-2').meta, { from: REGISTRY_DEFAULT_TARGET })
+    // 快照往返：恢复窗口期快照外新增的直落记录不被 replaceAll 丢失
+    const staleSnapshot = store.list()
+    store.upsert(rec({ id: 'set-4', kind: 'registry-url', target: REGISTRY_DEFAULT_TARGET, status: 'done', meta: { from: 'https://example.com/registry.json' } }))
+    store.replaceAll(await restoreRecords(staleSnapshot, still))
+    assert.equal(called, 0, 'replaceAll 路径同样不咨询谓词')
+    assert.equal(store.list().some((r) => r.id === 'set-4'), true, '快照外新增不丢')
+    assert.equal(store.list().find((r) => r.id === 'set-1').status, 'done', '终态不被旧快照回卷为非终态')
+  })
+
+  it('failed 直落记录恢复时保留 failed + error，且落入「清除已结束」范围', async () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'set-f', kind: 'community-toggle', target: 'community-catalog', status: 'failed', meta: { on: true }, error: '写入设置失败：quota' }))
+    const restored = await restoreRecords(store.list(), async () => true)
+    assert.equal(restored.find((r) => r.id === 'set-f').status, 'failed', 'failed 终态原样保留（不误标重启中断）')
+    assert.equal(restored.find((r) => r.id === 'set-f').error, '写入设置失败：quota')
+    assert.equal(TERMINAL_CLEARABLE.has('failed'), true)
+    assert.equal(store.clearFinished().some((r) => r.id === 'set-f'), false, 'failed 终态可被清除')
+  })
+
+  it('直落记录永不参与泵生命周期：创建即终态；假设性 queued 也会被恢复校验 superseded 而非误派发', () => {
+    const store = createOperationsStore(memStorage())
+    store.upsert(rec({ id: 'set-3', kind: 'community-toggle', target: 'community-catalog', status: 'done', meta: { on: true } }))
+    assert.equal(store.list().some((r) => r.status === 'queued'), false, '设置类记录创建即终态')
+    // 评审 M3：target 是对象身份而非包名——即使数据异常落入 queued，opAppliesTo(空 installed)=false
+    // ⇒ restoreRecords 改标 superseded，不会进 dispatchRestored 的 set-enabled 兜底分支误执行。
+    assert.equal(opAppliesTo(store.list()[0], []), false)
   })
 })

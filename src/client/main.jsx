@@ -25,7 +25,7 @@ const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
-const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE, upgradeNotify } = require("./operations.js");
+const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE, upgradeNotify, REGISTRY_DEFAULT_TARGET } = require("./operations.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 const { shouldShowInstallCmd } = require("./install-cmd.js");
@@ -43,6 +43,8 @@ const ZH = {
   "op.clear": "清除已结束", "op.clear.none": "没有可清除的已结束记录",
   "op.superseded.note": "{target} 已跳过（前提已不成立或已手动处理）", "op.cancelled": "用户放弃确认", "op.remove": "移除记录", "op.panel.jump": "查看操作记录",
   "op.kind.install": "安装", "op.kind.upgrade": "升级", "op.kind.uninstall": "卸载", "op.kind.toggle": "开关",
+  "op.kind.community-toggle": "社区目录开关", "op.kind.registry-url": "清单源变更",
+  "op.state.on": "开", "op.state.off": "关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
   "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
@@ -107,7 +109,7 @@ const ZH = {
   "settings.community.status": "状态", "settings.community.status.stale": "缓存快照", "settings.community.version": "目录版本", "settings.community.route": "获取线路",
   "settings.community.count": "收录条目", "settings.community.count.v": "{n}（上游 {up}）",
   "settings.community.displaced": "与精选重复", "settings.community.displaced.v": "{n} 条",
-  "settings.ops": "操作记录", "settings.ops.empty": "暂无操作记录。安装、升级、卸载与开关操作的执行历史将在这里显示。",
+  "settings.ops": "操作记录", "settings.ops.empty": "暂无操作记录。安装、升级、卸载、开关与供给面设置（清单源、社区目录）的执行历史将在这里显示。",
   "settings.ops.group.active": "进行中", "settings.ops.group.done": "已结束", "settings.ops.reddot": "存在失败或带警告的操作记录",
   "registry.refreshed": "收录清单已强制刷新",
 
@@ -157,6 +159,8 @@ const EN = {
   "op.clear": "Clear ended", "op.clear.none": "Nothing finished to clear",
   "op.superseded.note": "{target} skipped (precondition gone or already handled)", "op.cancelled": "user cancelled", "op.remove": "Dismiss", "op.panel.jump": "Open operations card",
   "op.kind.install": "Install", "op.kind.upgrade": "Upgrade", "op.kind.uninstall": "Uninstall", "op.kind.toggle": "Toggle",
+  "op.kind.community-toggle": "Community catalog toggle", "op.kind.registry-url": "Registry source change",
+  "op.state.on": "On", "op.state.off": "Off",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
   "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
@@ -221,7 +225,7 @@ const EN = {
   "settings.community.status": "Status", "settings.community.status.stale": "Cached snapshot", "settings.community.version": "Catalog version", "settings.community.route": "Route",
   "settings.community.count": "Entries", "settings.community.count.v": "{n} (upstream {up})",
   "settings.community.displaced": "Displaced (duplicates)", "settings.community.displaced.v": "{n}",
-  "settings.ops": "Operations", "settings.ops.empty": "No operations yet. Install, upgrade, uninstall and toggle history will appear here.",
+  "settings.ops": "Operations", "settings.ops.empty": "No operations yet. History of installs, upgrades, uninstalls, toggles and registry / community catalog settings will appear here.",
   "settings.ops.group.active": "Active", "settings.ops.group.done": "Finished", "settings.ops.reddot": "Failed or warned operations exist",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
@@ -2584,8 +2588,16 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onO
   const applyAddress = async (raw) => {
     setApplying(true);
     setApplyError(null);
+    // from 值取点击时的配置态（草稿仅在 cfgData 到位后可编辑，按钮 disabled: draftAddress===null，
+    // 故能走到这里 cfgData 必已加载）；外部直改窗口期 from 取面板视角，可陈旧（apply 响应只含后态，
+    // 无更优数据源，可接受）。空地址与恢复默认统一记 REGISTRY_DEFAULT_TARGET。
+    const prevAddress = typeof (cfgData && cfgData.registryUrl) === "string" ? cfgData.registryUrl.trim() : "";
     try {
       await api("registry-config-apply", { registryUrl: raw });
+      // 设置类终态直落记录（2026-10-10）：清单源 = 信任根变更，记成功——校验拒绝不记录
+      //（无状态变更且卡片红字就地呈现，高频试错入记录只会制造红点噪音）。
+      const to = typeof raw === "string" ? raw.trim() : "";
+      recordSettingsOp("registry-url", to === "" ? REGISTRY_DEFAULT_TARGET : to, "done", { from: prevAddress === "" ? REGISTRY_DEFAULT_TARGET : prevAddress });
       setDraftAddress(typeof raw === "string" ? raw.trim() : "");
       notify({ kind: "ok", text: raw.trim() === "" ? lookup("settings.reset.ok") : lookup("settings.apply.ok"), needsRestart: false });
       // 先同步配置状态，再让父层按顺序重载市场/已装
@@ -2634,11 +2646,16 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onO
     setCommunityBusy(true);
     try {
       await api("set-community", { enabled });
+      // 设置类终态直落记录（2026-10-10）：社区目录开关 = 供给面/信任边界变更，成败皆记——
+      // 失败 = 已接受的变更尝试中途失败回滚，有「以为关了其实没关」的误信风险，红点值得点亮。
+      // 落点紧贴 api 成功（= Host 事务边界，镜像 applyAddress），不依赖刷新链的吞错行为。
+      recordSettingsOp("community-toggle", "community-catalog", "done", { on: enabled });
       await reloadRegistryState();
       await (onRegistryChanged ? onRegistryChanged() : reg.reload(false));
       notify({ kind: "ok", text: lookup(enabled ? "settings.community.on.ok" : "settings.community.off.ok"), needsRestart: false });
     } catch (e) {
       setCommunityOn(prev);
+      recordSettingsOp("community-toggle", "community-catalog", "failed", { on: enabled }, String((e && e.message) || e));
       notify({ kind: "err", text: lookup("settings.community.toggle.failed", { err: (e && e.message) || e }) });
     } finally {
       setCommunityBusy(false);
@@ -2970,6 +2987,17 @@ let opsPumpCtx = null;
 /** 单一执行泵（0.7.0 评审 P4：实现与测试都在 operations.js——createOpsPump）。 */
 const opsPump = createOpsPump(opsStore, () => opsPumpCtx);
 
+/**
+ * 设置类操作记录（2026-10-10）：终态直落——不入泵、不排队、不参与恢复重放；
+ * 恢复/清除语义天然兼容（done/failed 终态原样保留、TERMINAL_CLEARABLE 可清、failed 点红点）。
+ * 与泵 finalize 同源触发 syncOps；面板未挂载时静默（记录本体已落 localStorage）。
+ * 口径 = 面板发起的供给面/信任边界设置变更（DESIGN §2.6 修订）；参数进 meta，target 只承载身份。
+ */
+function recordSettingsOp(kind, target, status, meta, error) {
+  opsStore.upsert({ kind, target, status, ...(meta ? { meta } : {}), ...(error ? { error } : {}) });
+  if (opsPumpCtx && opsPumpCtx.syncOps) opsPumpCtx.syncOps();
+}
+
 
 const OP_STATUS_CLS = {
   queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
@@ -2985,13 +3013,19 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   // 0.9.6：清除按钮覆盖全部终态（含 failed/superseded，主人裁决）——无可清终态时置灰并说明，
   // 不再做无声 no-op（Windows 实机反馈：按钮对着失败记录点了没反应）。
   const clearable = records.some((r) => TERMINAL_CLEARABLE.has(r.status));
+  // 设置类记录 target 展示派生（2026-10-10 评审 M1）：community-toggle 的 meta.on 是唯一实质信息，
+  // 裸渲染对象身份会让开/关两条记录逐字节相同；registry-url 的 target=URL 本身即信息，保持原样。
+  const targetText = (r) =>
+    r.kind === "community-toggle" && r.meta && typeof r.meta.on === "boolean"
+      ? lookup(r.meta.on ? "op.state.on" : "op.state.off")
+      : r.target;
   const row = (r) =>
     h(
       "div",
       { key: r.id, className: `dsvm-oprow ${OP_STATUS_CLS[r.status] || ""}` },
       h("span", { className: "dsvm-opstatus" }, lookup("op.status." + r.status)),
       h("span", { className: "dsvm-opkind" }, lookup("op.kind." + r.kind)),
-      h("span", { className: "dsvm-optarget", title: r.error || r.warning || undefined }, r.target),
+      h("span", { className: "dsvm-optarget", title: r.error || r.warning || undefined }, targetText(r)),
       r.status === "running" ? Spin() : null,
       r.error ? h("span", { className: "dsvm-opnote" }, r.error) : null,
       r.warning ? h("span", { className: "dsvm-opnote" }, r.warning) : null,
