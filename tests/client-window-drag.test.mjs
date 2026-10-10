@@ -6,6 +6,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   POS_KEY,
@@ -134,5 +135,25 @@ describe("isDragTarget（拖拽门卫：命中 button 即让位）", () => {
     assert.equal(isDragTarget({ closest: () => null }), false);
     assert.equal(isDragTarget(null), false);
     assert.equal(isDragTarget({}), false);
+  });
+});
+
+// ---------- 接线存在性结构锚（0.9.69 Task 3；断言 main.jsx 源串，仓库惯例同 client-lightbox） ----------
+describe("main.jsx 拖拽接线结构锚", () => {
+  const src = readFileSync(new URL("../src/client/main.jsx", import.meta.url), "utf8");
+
+  it("require window-drag 模块（纯逻辑接线入口）", () => {
+    assert.ok(src.includes('require("./window-drag.js")'), "main.jsx 必须 require ./window-drag.js");
+  });
+  it("双击切全屏走 isDragTarget 门卫（button 区不触发）", () => {
+    assert.ok(src.includes("onDoubleClick"), "head 需挂 onDoubleClick");
+    assert.ok(/onDoubleClick[^}]*isDragTarget/s.test(src), "onDoubleClick 内须经 isDragTarget 门卫");
+  });
+  it("位置记忆读写接进 MarketPanel（loadPanelPos/savePanelPos）", () => {
+    assert.ok(src.includes("loadPanelPos"), "初始化读位置记忆");
+    assert.ok(src.includes("savePanelPos"), "释放时写位置记忆");
+  });
+  it("负向锚：POS_KEY 字面量只允许活在 window-drag.js（恒绿 tripwire，不计入失败数对账）", () => {
+    assert.equal(src.includes('"dshm-panel-pos"'), false, "main.jsx 不得硬编码存储键字面量");
   });
 });

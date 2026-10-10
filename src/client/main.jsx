@@ -15,6 +15,7 @@ const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normal
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");
+const { dragSlop, grabOffset, titlebarTopInset, clampPoint, solidifyColor, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
 const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
@@ -3139,6 +3140,32 @@ function FsIcon({ full }) {
         h("path", { d: "M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }));
 }
 
+// desktop 壳标题拖拽带读数（0.9.69，quota-watch readTitlebarInset 同款契约）：只认 <html> 的
+// data-windows-titlebar / data-fullscreen 属性与 --dsh-windows-titlebar-height 变量，不判版本号；
+// DSH Web / 浏览器 / jsdom 无属性 → 0。该 inset 只抬 clamp 的 minY，面板永不落进系统按钮区。
+function readTitlebarInsets() {
+  if (typeof document === "undefined" || !document.documentElement) {
+    return { left: 0, right: 0, top: 0, bottom: 0 };
+  }
+  const htmlEl = document.documentElement;
+  let height = "";
+  try {
+    height = window.getComputedStyle(htmlEl).getPropertyValue("--dsh-windows-titlebar-height");
+  } catch {
+    /* 无窗口环境回落空串 → titlebarTopInset 判 0 */
+  }
+  return {
+    left: 0,
+    right: 0,
+    top: titlebarTopInset({
+      titlebar: htmlEl.hasAttribute("data-windows-titlebar"),
+      fullscreen: htmlEl.hasAttribute("data-fullscreen"),
+      height,
+    }),
+    bottom: 0,
+  };
+}
+
 function MarketPanel({ onClose }) {
   const [tab, setTab] = useState("market");
   // 全屏态（0.7.7 移植 dsh-market）：localStorage 记忆（dshm-panel-fullscreen），
@@ -3161,6 +3188,170 @@ function MarketPanel({ onClose }) {
       }
       return next;
     });
+  }, []);
+  // 位置记忆（0.9.69 还原态拖拽，ADR-0017）：{x,y} = 面板视口左上角绝对坐标；
+  // null = 无记录 → 保持 overlay flex 居中，渲染与旧版逐字节一致。
+  const panelRef = useRef(null);
+  const headRef = useRef(null);
+  const fullRef = useRef(full);
+  const draggingRef = useRef(false);
+  const suppressClickRef = useRef(false);
+  const [pos, setPos] = useState(() =>
+    loadPanelPos(typeof window !== "undefined" && window.localStorage ? window.localStorage : null),
+  );
+  const posRef = useRef(pos);
+  useEffect(() => {
+    fullRef.current = full;
+  }, [full]);
+  useEffect(() => {
+    posRef.current = pos;
+  }, [pos]);
+  // 重夹紧：还原态渲染后（挂载/全屏往返）与窗口 resize 时，把记忆位置收回当前视口 + titlebar
+  // 带内；全屏态与拖拽中跳过（拖拽帧有实时 clamp，全屏无位置语义）。
+  const reclamp = useCallback(() => {
+    if (fullRef.current || draggingRef.current || !panelRef.current || typeof window === "undefined") return;
+    const prev = posRef.current;
+    if (!prev) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    const next = clampPoint(
+      { x: prev.x, y: prev.y },
+      { width: window.innerWidth, height: window.innerHeight },
+      { width: rect.width, height: rect.height },
+      readTitlebarInsets(),
+    );
+    if (next.x !== prev.x || next.y !== prev.y) setPos(next);
+  }, []);
+  useLayoutEffect(() => {
+    reclamp();
+  }, [full, reclamp]);
+  useEffect(() => {
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [reclamp]);
+  // 拖拽状态机（0.9.69，ADR-0017）：pointer capture + 手势期才挂 document 监听 + 帧内写。
+  // 拖拽帧绝不走 React state——transform 直写面板节点；释放时同步烘焙 left/top 再 setPos 收口。
+  useEffect(() => {
+    const headEl = headRef.current;
+    if (!headEl) return undefined;
+    let dragging = false;
+    let moved = false;
+    let slop = 6;
+    let originX = 0;
+    let originY = 0;
+    let grab = { dx: 0, dy: 0 };
+    let rest = { x: 0, y: 0 };
+    let size = { width: 0, height: 0 };
+    let lastPoint = null;
+    const bindGesture = () => {
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      document.addEventListener("pointercancel", onPointerCancel);
+    };
+    const unbindGesture = () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+    };
+    const frameStep = () => {
+      // 帧回调首行守卫（评审 R1-5）：释放/取消后的在途残帧一律早退，杜绝烘焙后再写 transform
+      if (!dragging || !lastPoint || !panelRef.current) return;
+      const topLeft = clampPoint(
+        { x: lastPoint.x - grab.dx, y: lastPoint.y - grab.dy },
+        { width: window.innerWidth, height: window.innerHeight },
+        size,
+        readTitlebarInsets(),
+      );
+      panelRef.current.style.transform = `translate3d(${Math.round(topLeft.x - rest.x)}px, ${Math.round(topLeft.y - rest.y)}px, 0)`;
+    };
+    const onPointerMove = (event) => {
+      if (!dragging) return;
+      if (!moved) {
+        if (Math.hypot(event.clientX - originX, event.clientY - originY) < slop) return;
+        moved = true;
+        document.body.style.userSelect = "none";
+        panelRef.current.classList.add("dshm-panel--dragging");
+        panelRef.current.style.willChange = "transform";
+      }
+      // pointermove 只存点不写样式，样式写集中在 rAF 帧内（评审 R2-1 帧内写语义）
+      lastPoint = { x: event.clientX, y: event.clientY };
+      if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(frameStep);
+      else frameStep();
+    };
+    const bakeFinal = (event) => {
+      const panel = panelRef.current;
+      const final = clampPoint(
+        { x: event.clientX - grab.dx, y: event.clientY - grab.dy },
+        { width: window.innerWidth, height: window.innerHeight },
+        size,
+        readTitlebarInsets(),
+      );
+      panel.style.left = `${final.x}px`;
+      panel.style.top = `${final.y}px`;
+      panel.classList.remove("dshm-panel--dragging");
+      panel.style.willChange = "";
+      panel.style.transform = "";
+      panel.style.removeProperty("--dshm-drag-bg");
+      savePanelPos(window.localStorage, final);
+      suppressClickRef.current = true;
+      setPos(final);
+    };
+    const onPointerUp = (event) => {
+      if (!dragging) return;
+      dragging = false;
+      draggingRef.current = false;
+      unbindGesture();
+      document.body.style.userSelect = "";
+      if (!moved) return; // 纯点击：不动位置，click/dblclick 语义照旧
+      bakeFinal(event);
+    };
+    const onPointerCancel = () => {
+      if (!dragging) return;
+      dragging = false;
+      draggingRef.current = false;
+      unbindGesture();
+      document.body.style.userSelect = "";
+      // 取消不落盘：只还原视觉，位置保持拖前值（quota-watch 语义）
+      const panel = panelRef.current;
+      panel.classList.remove("dshm-panel--dragging");
+      panel.style.willChange = "";
+      panel.style.transform = "";
+      panel.style.removeProperty("--dshm-drag-bg");
+    };
+    const onPointerDown = (event) => {
+      if (dragging) return; // 多指重入守卫（评审 R1-7）：拖拽中第二指不重启手势
+      if (fullRef.current || event.button !== 0 || isDragTarget(event.target)) return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      dragging = true;
+      draggingRef.current = true;
+      moved = false;
+      lastPoint = null;
+      originX = event.clientX;
+      originY = event.clientY;
+      slop = dragSlop(event.pointerType);
+      const rect = panel.getBoundingClientRect();
+      grab = grabOffset({ x: event.clientX, y: event.clientY }, rect);
+      rest = { x: rect.left, y: rect.top };
+      size = { width: rect.width, height: rect.height };
+      // 实心固化（ADR-0017）：读引擎最终合成色强制 α=1；病态全透明回落 → CSS 回退 Canvas
+      const solid = solidifyColor(window.getComputedStyle(panel).backgroundColor);
+      if (solid) panel.style.setProperty("--dshm-drag-bg", solid);
+      else panel.style.removeProperty("--dshm-drag-bg");
+      if (headEl.setPointerCapture) {
+        try {
+          headEl.setPointerCapture(event.pointerId);
+        } catch {
+          /* 指针已释放等竞态静默 */
+        }
+      }
+      bindGesture();
+    };
+    headEl.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      headEl.removeEventListener("pointerdown", onPointerDown);
+      unbindGesture();
+      document.body.style.userSelect = "";
+    };
   }, []);
   // 市场数据唯一 owner（0.7.0 Task 9：两分区独立状态实例，切 tab 互不重置；
   // 收藏区数据在 Task 14 落地，本地 localStorage 不走 market 通道）
@@ -3343,10 +3534,30 @@ function MarketPanel({ onClose }) {
     { className: full ? "dshm-overlay full" : "dshm-overlay", ...backdropCloseHandlers(onClose) },
     h(
       "div",
-      { className: full ? "dshm-panel full" : "dshm-panel", onClick: (e) => e.stopPropagation() },
+      {
+        className: ["dshm-panel", full && "full", !full && pos && "abs"].filter(Boolean).join(" "),
+        style: !full && pos ? { left: `${pos.x}px`, top: `${pos.y}px` } : undefined,
+        ref: panelRef,
+        onClick: (e) => e.stopPropagation(),
+      },
       h(
         "div",
-        { className: "dshm-head", title: full ? undefined : lookup("panel.dragHint") },
+        {
+          className: "dshm-head",
+          title: full ? undefined : lookup("panel.dragHint"),
+          ref: headRef,
+          onDoubleClick: (e) => {
+            if (isDragTarget(e.target)) return;
+            toggleFull();
+          },
+          onClickCapture: (e) => {
+            // 拖拽释放后的尾部 click 吞掉（quota-watch suppressNextClick 同款），防误触头部子元素
+            if (!suppressClickRef.current) return;
+            suppressClickRef.current = false;
+            e.stopPropagation();
+            e.preventDefault();
+          },
+        },
         h("span", { className: "dshm-title" }, lookup("title.full")),
         h("span", { className: "dshm-head-divider", "aria-hidden": "true" }),
         h(
