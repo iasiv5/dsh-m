@@ -225,6 +225,17 @@
       "npm": "dsh-chat-manager",
       "github": "WSL043/dsh-chat-manager",
       "homepage": "https://github.com/WSL043/dsh-chat-manager"
+    },
+    {
+      "id": "dsh-mermaid",
+      "name": "DSH Mermaid",
+      "description": "Mermaid 图表渲染：代码块转 SVG，支持源码切换、全屏缩放与导出。",
+      "category": "watchlist",
+      "tags": ["图表", "可视化", "流程图", "SVG"],
+      "source": "npm",
+      "npm": "dsh-mermaid",
+      "github": "MrmoLabs/dsh-mermaid",
+      "homepage": "https://github.com/MrmoLabs/dsh-mermaid"
     }
   ]
 }
