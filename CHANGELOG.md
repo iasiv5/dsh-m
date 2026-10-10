@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.72 修复：设置页滚轮黑洞——操作记录滚动区/横幅的 contain 改为「可滚才挂」（Chrome 144 规范对齐暴露）
+
+- **根因（主人设置页实拍：操作记录条数少、滚动条尚未出现时，鼠标悬停该区域滚轮无法翻页）**：`.dshm-ops-scroll` 恒挂 `overscroll-behavior:contain`（0.9.64 随 220px 滚动区引入）。`overflow-y:auto` 使元素无论内容多少都是滚动容器，而规范口径「没有可滚溢出的滚动容器恒在滚动边界」+ contain「到边界禁止向祖先链滚」→ 内容不满时整块区域吞掉滚轮。Chrome 144 起「Respect overscroll-behavior on non-scrollable scroll containers」落地（此前引擎仅真可滚才执行 contain，病灶被宽容掩盖），潜伏缺陷被引擎升级激活；错误/提示横幅 `.dshm-banner-text`（限高滚动时代引入的同款恒挂）同病。
+- **修复（意图精确化：有得滚才断链）**：新增 `useScrollableContain(dep)`——实测 `scrollHeight > clientHeight`（+1 容亚像素取整）才挂 `.is-scrollable`（= contain），容器与首子元素入 ResizeObserver，改宽折行/注记增删引起的可滚性翻转自动复检，SSR/Node（ResizeObserver 缺席）安全跳过；操作记录滚动区、重启横幅、toast 三处接线。钢人结论：0.9.64 每个局部决策（限高滚动区/50 条上限/清除钉底/contain 自身的嵌套滚动卫生）都成立，错的只是「静态 CSS 事实表达了动态适用前提」——日志不满限时滚轮还给页面，日志实滚时边界断链照旧。
+- **顺带**：滚动区补 `tabIndex=0` + aria-label（0.9.45 U8 键盘可达纪律延续，50 条记录此前键盘用户无法滚动）；布局契约不动（通栏/220px/钉底照旧）；布局 mock 同步（`.opscroll` 双规则 + 样本标注实滚类）。
+- **验证**：1330 项测试全绿（新增 `client-scroll-contain` 结构锚 4 用例：恒挂形态退役/条件规则在/hook 守卫/三处接线）、typecheck 零错误。
+
 ### 0.9.71 功能：设置类操作记录——社区目录开关与清单源变更入账（DESIGN §2.6 修订）
 
 - **背景**：设置页「社区目录开关」与「校验并应用 / 恢复默认」（清单源）的变更此前不入操作记录，事后无法回看「何时改的、从哪改到哪」——而 agent 供给面（`dshm_search` 可见目录规模 20 余精选 ↔ 4,000+ 社区）与信任根（自定义清单源）恰恰挂在这两个开关上。
@@ -524,6 +531,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fix in 0.9.72 — settings-page wheel black hole: ops scroll region and banner now apply contain only when actually scrollable (exposed by Chrome 144 spec alignment)
+
+- **Root cause (owner screenshot: with few operation records and no scrollbar yet, wheeling over the scroll region does nothing)**: `.dshm-ops-scroll` carried a permanent `overscroll-behavior:contain` (introduced with the 220px region in 0.9.64). `overflow-y:auto` makes the element a scroll container no matter how little content it has, and per spec a scroll container without scrollable overflow is always at its scroll boundary — with contain forbidding chaining, the whole area swallows the wheel. Chrome 144's "Respect overscroll-behavior on non-scrollable scroll containers" made engines honor this unconditionally (previously contain only applied when actually scrollable), activating the latent defect; the banner text (`.dshm-banner-text`, same permanent contain from the capped-banner era) shares the disease.
+- **Fix (intent made precise: block chaining only when scrollable)**: new `useScrollableContain(dep)` — attaches `.is-scrollable` (= contain) only when `scrollHeight > clientHeight` (+1 for sub-pixel rounding), with the container and first child in a ResizeObserver so wrap/note changes re-check, and a safe skip when ResizeObserver is absent (SSR/Node); wired into the ops scroll region, restart banner, and toast. Steelman verdict: every 0.9.64 decision stands (capped region / 50-record cap / pinned clear button / contain's own nested-scroll hygiene); the only flaw was a static CSS fact expressing a dynamic precondition — short logs now hand the wheel back to the page, long logs keep boundary containment.
+- **Also**: the scroll region gains `tabIndex=0` + aria-label (keyboard-reachability discipline from 0.9.45 U8); the layout contract is untouched; the layout mock is synced.
+- **Verification**: 1330 tests green (new client-scroll-contain structural anchors, 4 cases), typecheck clean.
 
 ### Feature in 0.9.71 — settings-class operation records: community catalog toggle and registry source changes are now logged (DESIGN §2.6 revision)
 
