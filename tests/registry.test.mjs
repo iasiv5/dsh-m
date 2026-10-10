@@ -64,7 +64,7 @@ describe('validateRegistry：官方清单', () => {
     const parsed = validateRegistry(raw)
     assert.equal(parsed.ok, true, parsed.errors.join('; '))
     assert.ok(parsed.registry)
-    assert.equal(parsed.registry.plugins.length, 19)
+    assert.equal(parsed.registry.plugins.length, 20) // 1eaf44d 起 20 条（dsh-mermaid 入 watchlist）
   })
 })
 
