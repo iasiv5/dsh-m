@@ -228,6 +228,35 @@ interface CommunityMeta {
   route: string | null
 }
 
+// ---------- ADR-0016 决策 1 L1：已解析目录 body memo ----------
+// body 文件名 version-pin 不可变（catalog-{version}.json，atomicWrite 新版本写新文件），
+// 同 (dir, version) 即同字节——memo 键即身份，零失效逻辑。cap=2（身份组合常态 ≤2；
+// 每条 ≈15-20MB 解析对象，最坏 ≈40MB）。失败路径（parse/validate 失败）不写 memo。
+
+const bodyMemo = new Map<string, CommunityCatalog>()
+const BODY_MEMO_CAP = 2
+let communityBodyReads = 0
+
+function rememberBody(dir: string, version: string, catalog: CommunityCatalog): void {
+  const key = `${dir}§${version}`
+  if (!bodyMemo.has(key) && bodyMemo.size >= BODY_MEMO_CAP) {
+    const oldest = bodyMemo.keys().next().value
+    if (oldest !== undefined) bodyMemo.delete(oldest)
+  }
+  bodyMemo.set(key, catalog)
+}
+
+/** 测试钩子：readCache 对 body 文件的实读次数（memo 命中不计；命名先例 _waitForCommunityBackgroundForTests）。 */
+export function _communityBodyReadsForTests(): number {
+  return communityBodyReads
+}
+
+/** 测试钩子：清 body memo 与计数（测试隔离用，latest-cache resetLatestCacheForTest 同款）。 */
+export function _resetCommunityBodyMemoForTests(): void {
+  bodyMemo.clear()
+  communityBodyReads = 0
+}
+
 /** 读取顺序（v8 定稿）：meta 结构校验 → isExactVersion(meta.version) → body containment → 才读正文；损坏文件清理。 */
 async function readCache(
   dir: string,
@@ -260,6 +289,10 @@ async function readCache(
   }
   const bodyPath = join(dir, bodyName(meta.version))
   if (!contained(dir, bodyPath)) return null
+  // L1 快路径：meta 每次实读（checkedAt 会更新），body 命中 memo 即免 5MB 级 parse+校验
+  const memoHit = bodyMemo.get(`${dir}§${meta.version}`)
+  if (memoHit) return { meta, catalog: memoHit }
+  communityBodyReads += 1
   let data: unknown
   try {
     data = JSON.parse(await readFile(bodyPath, 'utf8'))
@@ -272,6 +305,7 @@ async function readCache(
     await rm(bodyPath, { force: true }).catch(() => undefined)
     return null
   }
+  rememberBody(dir, meta.version, v.catalog)
   return { meta, catalog: v.catalog }
 }
 

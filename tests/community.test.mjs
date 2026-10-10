@@ -124,7 +124,7 @@ describe('COMMUNITY_CATEGORY_LABELS 与 fixture 一致（0.7.0 Task 4 改名导�
 import { mkdtempSync, writeFileSync, rmSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
-import { fetchCommunityCatalog, _waitForCommunityBackgroundForTests } from '../lib/core/community.js'
+import { fetchCommunityCatalog, _waitForCommunityBackgroundForTests, _communityBodyReadsForTests, _resetCommunityBodyMemoForTests } from '../lib/core/community.js'
 
 const sleep2 = (ms) => new Promise((r) => setTimeout(r, ms))
 const catalogJson = (version) =>
@@ -196,6 +196,7 @@ describe('fetchCommunityCatalog（获取链）', () => {
   beforeEach(() => {
     cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-community-'))
     process.env.DSHM_CACHE_DIR = cacheRoot
+    _resetCommunityBodyMemoForTests()
   })
   afterEach(async () => {
     delete process.env.DSHM_CACHE_DIR
@@ -506,5 +507,88 @@ describe('getCommunitySummary', () => {
     const summary = await getCommunitySummary([], { communityCatalogPin: '../../etc' }, { deadlineAt: Date.now() + 1000 })
     assert.equal(summary.status, 'unavailable')
     assert.ok(summary.errors.some((e) => e.includes('communityCatalogPin')))
+  })
+})
+
+// ---------- ADR-0016 L1：readCache 的 body memo（按不可变 version 键） ----------
+
+describe('L1 body memo（ADR-0016 决策 1：body 文件名 version-pin 不可变，同键即同字节）', () => {
+  let cacheRoot
+  beforeEach(() => {
+    cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-l1memo-'))
+    process.env.DSHM_CACHE_DIR = cacheRoot
+    _resetCommunityBodyMemoForTests()
+  })
+  afterEach(async () => {
+    delete process.env.DSHM_CACHE_DIR
+    rmSync(cacheRoot, { recursive: true, force: true })
+    while (task3Servers.length) await task3Servers.pop().close()
+  })
+
+  it('(a) 同 version 多次读取：catalog 引用同一、body 实读仅一次', async () => {
+    const st = makeState()
+    const s = await startCatalog(st)
+    const first = await fetchCommunityCatalog({}, { routes: s.routes })   // 冷：链路写 meta+body
+    assert.equal(first.state.status, 'ready')
+    const second = await fetchCommunityCatalog({}, { routes: s.routes })  // TTL 内：readCache 快路径
+    const third = await fetchCommunityCatalog({}, { routes: s.routes })
+    assert.equal(second.state.status, 'ready')
+    assert.equal(_communityBodyReadsForTests(), 1, 'body 只实读一次（首次 readCache），后续 memo 命中')
+    assert.equal(second.catalog, third.catalog, '同 version 返回同一 catalog 对象引用')
+  })
+
+  it('(b) 脏 body：null 路径照旧（rm 触发、不写 memo），修复后重新计数', async () => {
+    const st = makeState()
+    const s = await startCatalog(st)
+    await fetchCommunityCatalog({}, { routes: s.routes })                 // 冷：链路写 meta+body（不读 body）
+    await fetchCommunityCatalog({}, { routes: s.routes })                 // TTL 内：readCache 快路径实读 #1 并入 memo
+    assert.equal(_communityBodyReadsForTests(), 1)
+    const awesome = join(cacheRoot, 'host', 'awesome')
+    writeFileSync(join(awesome, 'catalog-1.0.0.json'), '{oops')            // 破坏 body
+    _resetCommunityBodyMemoForTests()                                     // 模拟新进程（memo 空、计数归零）
+    const bad = await fetchCommunityCatalog({}, { routes: s.routes })
+    // 脏 body：两处 readCache 各实读一次（快路径 + ⑫ 同版本短路），均失败 → rm → null → 链路重拉重建
+    assert.equal(bad.state.status, 'ready')
+    assert.equal(_communityBodyReadsForTests(), 2, '失败实读计入、失败不入 memo')
+    const warmed = await fetchCommunityCatalog({}, { routes: s.routes })
+    assert.equal(warmed.state.status, 'ready')
+    assert.equal(_communityBodyReadsForTests(), 3, '重建后（网络路径不写 memo）再读计一次')
+  })
+
+  it('(c) reset 钩子清 memo：重读触发实读', async () => {
+    const st = makeState()
+    const s = await startCatalog(st)
+    await fetchCommunityCatalog({}, { routes: s.routes })
+    await fetchCommunityCatalog({}, { routes: s.routes })
+    assert.equal(_communityBodyReadsForTests(), 1)
+    _resetCommunityBodyMemoForTests()
+    const after = await fetchCommunityCatalog({}, { routes: s.routes })
+    assert.equal(after.state.status, 'ready')
+    assert.equal(_communityBodyReadsForTests(), 1, 'reset 后计数归零再计一次')
+  })
+
+  it('(d) cap=2：第三个 version 淘汰最早键，重读触发实读且产生新对象', async () => {
+    const st = makeState({ version: '1.0.0' })
+    const s = await startCatalog(st)
+    const readRound = async () => {
+      await fetchCommunityCatalog({ cacheTtlMin: 0 }, { routes: s.routes, force: true }) // 换代：链路写新 meta+body
+      await fetchCommunityCatalog({}, { routes: s.routes })                              // 快路径：readCache 实读入 memo
+    }
+    await readRound()                                                     // v1 → memo {1.0.0}
+    const v1Catalog = (await fetchCommunityCatalog({}, { routes: s.routes })).catalog
+    st.version = '2.0.0'
+    await readRound()                                                     // v2 → memo {1.0.0, 2.0.0}
+    st.version = '3.0.0'
+    await readRound()                                                     // v3 → cap 满，淘汰 1.0.0
+    assert.equal(_communityBodyReadsForTests(), 3)
+    // 手写 meta.json 指回 1.0.0（TTL 内）：memo 已淘汰 → 必须重新实读
+    const awesome = join(cacheRoot, 'host', 'awesome')
+    writeFileSync(join(awesome, 'meta.json'), JSON.stringify({
+      version: '1.0.0', checkedAt: new Date().toISOString(), fetchedAt: new Date().toISOString(), route: 'jsdelivr',
+    }))
+    const back = await fetchCommunityCatalog({}, { routes: s.routes })
+    assert.equal(back.state.version, '1.0.0')
+    assert.equal(_communityBodyReadsForTests(), 4, '最早版本被淘汰后重读实读一次')
+    assert.notEqual(back.catalog, v1Catalog, '淘汰后重建 → 新 catalog 对象（非旧引用）')
   })
 })
