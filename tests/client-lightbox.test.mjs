@@ -93,10 +93,11 @@ describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', ()
 describe('灯箱 0.9.62 影院自持（皮肤碰撞修复）+ 加载指示', () => {
   it('影院遮罩自持：background !important（清单定长，新增须显式登记）', () => {
     assert.ok(src.includes('.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important'), '影院深色遮罩 !important 自持（dsh-skins ADR-0007 浅色 tint 碰撞实拍）')
-    assert.equal((src.match(/!important/g) || []).length, 7, '!important 定长：注释提及×2 + 影院自持×1 + sidebar footer 兼容×1 + 拖拽态自持×3（ADR-0017 登记）——新增须改本断言登记')
+    assert.equal((src.match(/!important/g) || []).length, 4, '!important 定长：注释提及×2 + 影院自持×1 + sidebar footer 兼容×1（0.9.70 拖拽自持退役清单回归）——新增须改本断言登记')
   })
-  it('拖拽态实心自持：计算值固化 + 关 blur（皮肤 α 变量免疫，ADR-0017）', () => {
-    assert.ok(src.includes('.dshm-panel--dragging{cursor:grabbing;background:var(--dshm-drag-bg,Canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important'), '拖拽态背景取手势开始时固化的计算色，blur 关闭保帧率（openbmc 0.55 α 病例）')
+  it('拖拽态观感与静止态一致（0.9.70 修订）：仅光标/阴影变化，玻璃与 blur 不动', () => {
+    assert.ok(src.includes('.dshm-panel--dragging{cursor:grabbing;box-shadow:0 24px 64px rgba(2,6,23,.38)}'), '拖拽态只动光标与投影加深（0.9.69 实心固化浅色模式跳变实拍，退役）')
+    assert.equal(src.includes('--dshm-drag-bg'), false, '计算值固化退役无残留（CSS 变量/JS 接线/注释全部清空）')
     assert.ok(src.includes('.dshm-panel.abs{position:absolute;margin:0}'), '还原态绝对定位形态在（无记忆时 flex 居中不变）')
     assert.ok(src.includes('.dshm-panel:not(.full):not(.dshm-panel--dragging) .dshm-head{cursor:grab}'), 'grab 仅还原态非拖拽中直接命中 head（拖拽中继承 grabbing；全屏不误导）')
   })

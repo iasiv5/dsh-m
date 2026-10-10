@@ -15,7 +15,7 @@ const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normal
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");
-const { dragSlop, grabOffset, titlebarTopInset, clampPoint, solidifyColor, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
+const { dragSlop, grabOffset, titlebarTopInset, clampPoint, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
 const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
 const { createMarkdown } = require("./markdown.js");
 const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
@@ -287,16 +287,16 @@ function communityLabels(data) {
 const CSS = `
 .dshm-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.48));display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-windows-titlebar-height,0px)) 16px 24px;box-sizing:border-box}
 .dshm-panel{width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff));background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
-/* 0.9.69 还原态拖拽：.abs = 有位置记忆时的绝对定位形态（overlay 为 inset:0 fixed，
+/* 0.9.70 还原态拖拽：.abs = 有位置记忆时的绝对定位形态（overlay 为 inset:0 fixed，
    绝对定位坐标即视口坐标）；无记录时面板仍走 overlay flex 居中，渲染路径与旧版逐字节一致。
-   拖拽态自持（0.9.62 影院同款纪律）：background 取调用方手势开始时写入的 --dshm-drag-bg
-   （getComputedStyle 解析后的最终色强制 α=1，见 window-drag.solidifyColor），皮肤对
-   --dsw-alias-* 的半透明定义（openbmc/uefi bg-base α=0.55 病类）无法再让拖拽中面板透光；
-   blur 关闭是拖拽期最大性能收益（每帧免大面积重滤镜），transform ≠ none 维持包含块，
-   fixed 后代不逃逸。自持三处已登记于 client-lightbox.test.mjs 定长断言（4→7）；
-   本注释刻意不用清单关键字字面量——计数对注释提及同样生效（评审 R1-2）。 */
+   拖拽观感不变量（0.9.70 修订，ADR-0017 v2）：拖拽态与静止态同玻璃同 blur，外观逐像素一致
+   ——用户双态实拍裁决：0.9.69 的拖拽期实心固化在浅色模式下实/玻璃跳变观感突兀，退役；
+   透字防护回归静止态既有不变量（毛玻璃模糊背景自持——透字病灶的成因是「关 blur 还留
+   半透明」，两样都不动即无此病）。拖拽可供性只剩 grabbing 光标与投影加深；代价是拖拽期
+   恢复每帧 backdrop 重滤镜（GPU 合成承担，弱机若报告掉帧再评估），帧内写/capture/
+   手势期监听等其余性能手段全部保留。 */
 .dshm-panel.abs{position:absolute;margin:0}
-.dshm-panel--dragging{cursor:grabbing;background:var(--dshm-drag-bg,Canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;box-shadow:0 24px 64px rgba(2,6,23,.38)}
+.dshm-panel--dragging{cursor:grabbing;box-shadow:0 24px 64px rgba(2,6,23,.38)}
 /* 0.9.69 拖拽手柄：user-select/touch-action/tap-highlight 无条件生效（全屏双击切换时
    标题不出现选中闪现）；grab 光标仅在「还原态且非拖拽中」直接命中 head——拖拽中 head
    无自有 cursor 声明，自然继承面板根 .dshm-panel--dragging 的 grabbing（cursor 按
@@ -3294,7 +3294,6 @@ function MarketPanel({ onClose }) {
       panel.classList.remove("dshm-panel--dragging");
       panel.style.willChange = "";
       panel.style.transform = "";
-      panel.style.removeProperty("--dshm-drag-bg");
       try {
         savePanelPos(window.localStorage, final);
       } catch {
@@ -3323,7 +3322,6 @@ function MarketPanel({ onClose }) {
       panel.classList.remove("dshm-panel--dragging");
       panel.style.willChange = "";
       panel.style.transform = "";
-      panel.style.removeProperty("--dshm-drag-bg");
     };
     const onPointerDown = (event) => {
       if (dragging) return; // 多指重入守卫（评审 R1-7）：拖拽中第二指不重启手势
@@ -3341,10 +3339,6 @@ function MarketPanel({ onClose }) {
       grab = grabOffset({ x: event.clientX, y: event.clientY }, rect);
       rest = { x: rect.left, y: rect.top };
       size = { width: rect.width, height: rect.height };
-      // 实心固化（ADR-0017）：读引擎最终合成色强制 α=1；病态全透明回落 → CSS 回退 Canvas
-      const solid = solidifyColor(window.getComputedStyle(panel).backgroundColor);
-      if (solid) panel.style.setProperty("--dshm-drag-bg", solid);
-      else panel.style.removeProperty("--dshm-drag-bg");
       if (headEl.setPointerCapture) {
         try {
           headEl.setPointerCapture(event.pointerId);

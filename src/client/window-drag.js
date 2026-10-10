@@ -69,41 +69,7 @@ export function clampPoint(point, viewport, size = 0, insets = ZERO_INSETS) {
   };
 }
 
-const RGB_RE = /^rgba?\(([^)]+)\)$/i;
-const COLOR_SRGB_RE = /^color\(srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)(?:\s*\/\s*([0-9.]+))?\)$/i;
-
-/**
- * 拖拽态实心固化（皮肤免疫，ADR-0017）：输入 getComputedStyle 的最终背景色
- * （引擎已解析皮肤变量与 color-mix），把 α 数学上强制为 1，输出不透明 rgb()。
- * 玻璃皮肤（openbmc/uefi 的 bg-base α=0.55 病类）因此无法让拖拽中面板透光——
- * 变量是皮肤的自由度，计算值才是真相。α<0.05（病态近全透明）或不可解析格式
- * （oklab/transparent 等）返回 null，调用方不写变量，CSS 回落 Canvas 系统色。
- */
-export function solidifyColor(computedColor) {
-  if (typeof computedColor !== "string") return null;
-  const srgb = COLOR_SRGB_RE.exec(computedColor.trim());
-  if (srgb) {
-    const alpha = srgb[4] !== undefined ? Number.parseFloat(srgb[4]) : 1;
-    if (!Number.isFinite(alpha) || alpha < 0.05) return null;
-    const to255 = (v) => Math.round(Number.parseFloat(v) * 255);
-    return `rgb(${to255(srgb[1])}, ${to255(srgb[2])}, ${to255(srgb[3])})`;
-  }
-  const rgb = RGB_RE.exec(computedColor.trim());
-  if (rgb) {
-    const parts = rgb[1].split(",").map((p) => p.trim());
-    if (parts.length !== 3 && parts.length !== 4) return null;
-    const r = Number.parseFloat(parts[0]);
-    const g = Number.parseFloat(parts[1]);
-    const b = Number.parseFloat(parts[2]);
-    const a = parts.length === 4 ? Number.parseFloat(parts[3]) : 1;
-    if (![r, g, b, a].every(Number.isFinite)) return null;
-    if (a < 0.05) return null;
-    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
-  }
-  return null;
-}
-
-/** 读取位置记忆：JSON + 有限性校验，storage 缺席/损坏/异常一律 null（居中兜底）。 */
+/** 位置记忆读取：JSON + 有限性校验，storage 缺席/损坏/异常一律 null（居中兜底）。 */
 export function loadPanelPos(storage) {
   if (!storage || typeof storage.getItem !== "function") return null;
   try {

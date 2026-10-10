@@ -1,7 +1,7 @@
 /**
  * 0.9.69 还原态面板拖拽：window-drag 纯逻辑单测。
  * 覆盖：slop 分级、grab 偏移、clamp（8px 边距 + desktop titlebar 契约）、
- * 实心固化色解析（计算值强制 α=1，病态回落 null）、位置存取（垃圾/异常回落 null）。
+ * 位置存取（垃圾/异常回落 null）。（0.9.70：实心固化解析随 ADR-0017 v2 退役，用例移除。）
  * 运行：node --test tests/client-window-drag.test.mjs
  */
 import { describe, it } from "node:test";
@@ -17,7 +17,6 @@ import {
   grabOffset,
   titlebarTopInset,
   clampPoint,
-  solidifyColor,
   loadPanelPos,
   savePanelPos,
   isDragTarget,
@@ -78,22 +77,6 @@ describe("clampPoint（8px 边距 + insets）", () => {
   });
   it("size 大于视口：Math.max 退化守卫回落 {x:8,y:8}", () => {
     assert.deepEqual(clampPoint({ x: 0, y: 0 }, { width: 100, height: 100 }, size, zero), { x: 8, y: 8 });
-  });
-});
-
-describe("solidifyColor（计算色强制 α=1；病态/不可解析→null）", () => {
-  it("rgb/rgba/color(srgb) 三形态固化", () => {
-    assert.equal(solidifyColor("rgb(255, 255, 255)"), "rgb(255, 255, 255)");
-    assert.equal(solidifyColor("rgba(12, 26, 38, 0.47)"), "rgb(12, 26, 38)");
-    assert.equal(solidifyColor("color(srgb 0.047 0.102 0.149 / 0.47)"), "rgb(12, 26, 38)");
-  });
-  it("α<0.05 视为病态透明，回落 null（CSS 侧回退 Canvas）", () => {
-    assert.equal(solidifyColor("rgba(0, 0, 0, 0)"), null);
-    assert.equal(solidifyColor("rgba(0, 0, 0, 0.04)"), null);
-  });
-  it("不可解析格式回落 null", () => {
-    assert.equal(solidifyColor("oklab(0.5 0 0)"), null);
-    assert.equal(solidifyColor("transparent"), null);
   });
 });
 
