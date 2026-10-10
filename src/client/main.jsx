@@ -465,7 +465,10 @@ const CSS = `
 .dsvm-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.14);color:#fff;border-radius:8px;padding:5px 14px;font:inherit;font-size:13px;cursor:pointer}
 .dsvm-btn:hover{background:rgba(255,255,255,.24)}
 .dsvm-ops-caption{font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af);margin:2px 0 -3px}
-.dshm-ops-scroll{max-height:220px;overflow-y:auto;overscroll-behavior:contain}
+/* 0.9.72 滚轮治理（useScrollableContain）：contain 只在真的可滚时挂——Chrome 144+ 对
+   「无可滚溢出的滚动容器」也执行 contain，恒挂会把不满高的滚动区变成滚轮黑洞 */
+.dshm-ops-scroll{max-height:220px;overflow-y:auto}
+.dshm-ops-scroll.is-scrollable{overscroll-behavior:contain}
 .dshm-ops-scroll::-webkit-scrollbar{width:8px}
 .dshm-ops-scroll::-webkit-scrollbar-thumb{background:rgba(127,127,127,.28);border-radius:4px}
 .dshm-ops-scroll::-webkit-scrollbar-thumb:hover{background:rgba(127,127,127,.45)}
@@ -513,7 +516,9 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .dshm-banner{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-state-warn-tertiary,#fffbeb);color:var(--dsw-alias-state-warn-primary,#b45309);font-size:12px}
 .dshm-banner.err{background:rgba(239,68,68,.13);color:var(--dsw-alias-state-error-primary,#b91c1c)}
-.dshm-banner .dshm-banner-text{flex:1;max-height:140px;overflow:auto;overscroll-behavior:contain;white-space:pre-wrap;word-break:break-word;line-height:18px}
+/* 0.9.72 同款滚轮治理（见 dshm-ops-scroll 注）：横幅文本不满 140px 时不得吞滚轮 */
+.dshm-banner .dshm-banner-text{flex:1;max-height:140px;overflow:auto;white-space:pre-wrap;word-break:break-word;line-height:18px}
+.dshm-banner .dshm-banner-text.is-scrollable{overscroll-behavior:contain}
 .dshm-row{display:flex;align-items:center;gap:8px}
 .dshm-kv{display:grid;grid-template-columns:96px 1fr;gap:6px 10px;font-size:12px;align-items:baseline}
 .dshm-kv .k{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px}
@@ -938,14 +943,16 @@ function RestartBanner({ note, onDone, desktop, onRestarted }) {
       setErr(String((e && e.message) || e));
     }
   }, [onDone, onRestarted]);
+  // 0.9.72 滚轮治理：横幅文本超限才有滚动语义，不满限时不挂 contain（吞滚轮病灶同款）
+  const text = phase === "restarting" ? lookup("restart.doing") :
+    phase === "waiting" ? lookup("restart.waiting") :
+    err ? lookup("restart.failed", { err }) :
+    note || lookup("banner.done");
+  const [textRef, textScrollCls] = useScrollableContain(text);
   return h(
     "div",
     { className: "dshm-banner" },
-    h("span", { className: "dshm-banner-text" },
-      phase === "restarting" ? lookup("restart.doing") :
-      phase === "waiting" ? lookup("restart.waiting") :
-      err ? lookup("restart.failed", { err }) :
-      note || lookup("banner.done")),
+    h("span", { className: `dshm-banner-text${textScrollCls}`, ref: textRef }, text),
     phase === "idle" && !err && !desktop ? h("button", { className: "dshm-btn primary sm", onClick: restart }, lookup("restart.now")) : null,
     phase === "restarting" || phase === "waiting" ? Spin() : null,
     phase === "idle" && err ? h("button", { className: "dshm-btn sm", onClick: () => onDone(false) }, lookup("common.ok")) : null,
@@ -3003,6 +3010,31 @@ const OP_STATUS_CLS = {
   queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
 };
 
+// ---------- 滚动区滚轮治理（0.9.72：contain 改为「可滚才挂」） ----------
+// 病灶：overscroll-behavior:contain 恒挂在 max-height 滚动区上（0.9.64 随操作记录滚动区引入）。
+// overflow-y:auto 使元素无论内容多少都是滚动容器，而规范口径「没有可滚溢出的滚动容器恒在
+// 滚动边界」+ contain「到边界禁止向祖先链滚」→ 内容不满时整块区域吞掉滚轮、页面无法翻页。
+// Chrome 144 起「Respect overscroll-behavior on non-scrollable scroll containers」落地
+// （此前引擎仅在真可滚时才执行 contain，病灶被宽容掩盖），潜伏缺陷被引擎升级激活。
+// 修复 = 意图精确化「有得滚才断链」：实测 scrollHeight > clientHeight 才挂 .is-scrollable（=contain）。
+// 容器与首子元素都进 ResizeObserver：改宽折行/注记增删引起的可滚性翻转自动复检；dep 由调用方
+// 给内容键（条数/文本）。SSR 冒烟（renderToString）effect 不跑、ResizeObserver 缺席即跳过，类名恒缺省。
+function useScrollableContain(dep) {
+  const ref = useRef(null);
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const check = () => setScrollable(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [dep]);
+  return [ref, scrollable ? " is-scrollable" : ""];
+}
+
 // 操作记录卡（0.9.x 布局重构·第二批）：从面板底部搬迁至设置 tab 末位恒通宽卡。
 // 结构契约：进行中组在滚动区外常驻（进度反馈不被滚走）；已结束组进 220px 滚动区；
 // 「清除已结束」钉底；空态显示 hint 卡（导览：记录搬到这里了）。终态展示上限 50 条
@@ -3013,6 +3045,8 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   // 0.9.6：清除按钮覆盖全部终态（含 failed/superseded，主人裁决）——无可清终态时置灰并说明，
   // 不再做无声 no-op（Windows 实机反馈：按钮对着失败记录点了没反应）。
   const clearable = records.some((r) => TERMINAL_CLEARABLE.has(r.status));
+  // 0.9.72 滚轮治理：已结束滚动区可滚才挂 contain；同时补键盘可达（0.9.45 U8 纪律）
+  const [scrollRef, scrollCls] = useScrollableContain(finished.length);
   // 设置类记录 target 展示派生（2026-10-10 评审 M1）：community-toggle 的 meta.on 是唯一实质信息，
   // 裸渲染对象身份会让开/关两条记录逐字节相同；registry-url 的 target=URL 本身即信息，保持原样。
   const targetText = (r) =>
@@ -3050,7 +3084,12 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
     finished.length
       ? h(
           "div",
-          { className: "dshm-ops-scroll" },
+          {
+            className: `dshm-ops-scroll${scrollCls}`,
+            ref: scrollRef,
+            tabIndex: 0,
+            "aria-label": lookup("settings.ops"),
+          },
           h(
             "div",
             { className: "dsvm-opgroup done" },
@@ -3539,6 +3578,8 @@ function MarketPanel({ onClose }) {
   const outdatedCount = installedUpdateStats(mergedItems || []).outdatedCount;
   const [banner, setBanner] = useState(null); // { text } | null
   const [toast, setToast] = useState(null); // { kind, text } | null
+  // 0.9.72 滚轮治理：toast 长文本同款——可滚才挂 contain，不满限时不吞滚轮
+  const [toastTextRef, toastScrollCls] = useScrollableContain(toast ? toast.text : "");
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape" && dsvmModalDepth === 0 && onClose) onClose();
@@ -3663,7 +3704,7 @@ function MarketPanel({ onClose }) {
       ),
       toast
         ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
-            h("span", { className: "dshm-banner-text" }, toast.text))
+            h("span", { className: `dshm-banner-text${toastScrollCls}`, ref: toastTextRef }, toast.text))
         : null,
       banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true, onRestarted: reloadPing }) : null,
     ),

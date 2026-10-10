@@ -203,8 +203,11 @@
 
   /* ====== 操作记录卡（对齐 .dsvm-ops 系） ====== */
   .opcaption { font-size: 11px; color: #9ca3af; margin: 2px 0 -3px; }
-  /* 已结束组：滚动区，条目再多不撑长页面；进行中组在滚动区外常驻 */
-  .opscroll { max-height: 220px; overflow-y: auto; overscroll-behavior: contain; }
+  /* 已结束组：滚动区，条目再多不撑长页面；进行中组在滚动区外常驻。
+     0.9.72 滚轮治理：contain 只在真的可滚时挂（.is-scrollable，运行时按 scrollHeight 判定）——
+     Chrome 144+ 对「无可滚溢出的滚动容器」也执行 contain，恒挂会把不满高的滚动区变成滚轮黑洞 */
+  .opscroll { max-height: 220px; overflow-y: auto; }
+  .opscroll.is-scrollable { overscroll-behavior: contain; }
   .opscroll::-webkit-scrollbar { width: 8px; }
   .opscroll::-webkit-scrollbar-thumb { background: rgba(127,127,127,.28); border-radius: 4px; }
   .opscroll::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,.45); }
@@ -362,7 +365,8 @@
                 <div class="oprow run"><span class="opstatus">进行中</span><span class="opkind">升级</span><span class="optarget">dsh-context</span><span class="spin"></span></div>
               </div>
               <div class="opcaption" style="margin-top:7px">已结束（滚动区）</div>
-              <div class="opscroll">
+              <!-- 本样本 11 行 > 220px，实滚：类名在实现里由 useScrollableContain 实测挂载，此处静态模拟 -->
+              <div class="opscroll is-scrollable">
                 <div class="opgroup done">
                   <div class="oprow err"><span class="opstatus">失败</span><span class="opkind">安装</span><span class="optarget" title="npm 包名不存在：@iasiv5/dsh-foo">dsh-foo</span><span class="opnote">npm 包名不存在：@iasiv5/dsh-foo</span><button class="xbtn" title="移除记录">✕</button></div>
                   <div class="oprow ok"><span class="opstatus">完成</span><span class="opkind">升级</span><span class="optarget">dsh-context</span></div>
