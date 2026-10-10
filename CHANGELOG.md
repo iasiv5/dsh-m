@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.76 修复：三项展示层退役与吸顶跳动根治——「对话」徽章/「版本无关」徽章退役 + 分类行滚动锚定自激断路
+
+- **① 「对话」来源徽章退役（主人实拍：界面全点按钮却全员误标「对话」）**：`meta.session` 是 0.7.0 终审·新伤1 的**泵所有权标记**（restore 跳过 / replaceAll 不回卷 / persist 时剥离），GUI 的 `runOp` 与对话区镜像两路无条件同打同一标——它区分不了来源，且重载后徽章整体蒸发。修复：opRowVm 删 session 派生、行渲染删徽章、CSS 与 i18n 键退役；`meta.session` 本职不动（数据模型零变更），来源区分留待未来 `meta.origin` 承载。
+- **② 「版本无关」徽章退役（市场卡 + Modal 头）**：英文标签 Version-independent 19 字符把卡片最高价值资产——插件名——挤成 `D...`/`O...`；且同一事实在卡片描述文案（「版本无关，详见仓库。」）与 Modal Compat 行已双处存在，卡片徽章边际信息为零。设计原则落定：**卡片徽章行只放「别处拿不到且影响当下决策」的信息**（已实测/安装态/供给源），版本无关属详规层，由 Modal Compat 行（`modal.decoupled.*`）唯一承载；`snapshotOf` 数据字段保留（收藏/快照完整性）；`badge.decoupled` 与 `badge.decoupled.tip` 两键退役。
+- **③ 市场 tab 分类行吸顶高频跳动根治（主人实拍：三 tab 来回切换偶发疯狂上下蹦跳）**：Chrome 滚动锚定把「吸顶 stuck 翻转的高度变化」翻译成 scrollTop 补偿，哨兵（sticky wrap 内 top:-5px）被来回送进/送出视口 → IO stuck 每帧翻转 → sticky bar 在钉住/流内两形态间高频瞬移。触发面：tab 条件渲染重挂（stuck=false + IO 重新武装）× `.dshm-body` 保留的 scrollTop 落在哨兵边界 ±30px 敏感带（翻页 `scrollIntoView` 会把 scrollTop 送到 bar 边缘，命中概率大增）。修复：`.dshm-body` `overflow-anchor:none` 一行断驱动器；吸顶/哨兵/+N 裁剪几何零变更。非本批回归——吸顶/IO 为 0.9.52-0.9.59 机制，长期潜伏的边界 bug。
+- **验证**：1379 项测试全绿（render-smoke 新增退役负向锚与锚定停用/吸顶几何契约锚）、typecheck 零错误；三项均为展示层修复，数据模型零迁移；client-only——刷新页面即生效。
+
 ### 0.9.75 功能：操作记录信息增强——行内时刻/按日分组/开关方向/耗时/版本变迁/来源标记（数据零迁移）
 
 - **背景（主人设置页实拍：开关记录读不出「开还是关」）**：操作记录行只有「状态 + 类型 + 包名」三要素——开关看不出方向（截图里连续两条 `开关 @iasiv5/dsh-quota-watch` 无法分辨先后开/关）、无任何时间、看不出耗时、看不出对话区发起还是界面点击、升级不知道版本从哪到哪。而这些信息**全部已在每条记录里**（`createdAt`/`updatedAt` 是 store 打点常态、`meta.on` 0.4.0 起就随开关入账、`meta.session` 是泵拾取标记）——纯展示层缺口，非数据缺失；浏览器 localStorage（`dshm-operations`）里的存量旧记录升级后立即可读，零迁移。
@@ -551,6 +558,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fix in 0.9.76 — three presentation-layer retirements and sticky-chips jitter fixed at the root: "Chat" badge / "Version-independent" badge retired + scroll-anchoring self-excitation cut on the category row
+
+- **① "Chat" source badge retired (owner screenshot: every row flagged despite all-UI clicks)**: `meta.session` is the **pump-ownership marker** from the 0.7.0 final review (restore skip / replaceAll no-rollback / stripped on persist) — both the GUI `runOp` path and the chat-mirror path set it unconditionally, so it cannot distinguish origins, and the badge vanishes entirely after a page reload. Fix: opRowVm drops the session derivation; the row badge, its CSS and i18n keys retire; `meta.session` keeps its day job (zero data-model change); a future `meta.origin` would be the honest carrier for source attribution.
+- **② "Version-independent" badge retired (market card + modal head)**: the 19-character English label squeezed the card's highest-value asset — the plugin name — into `D...`/`O...`, while the same fact already lived twice next to it (the card description text and the modal Compat row), leaving the card badge zero marginal information. Design rule settled: **card badge rows carry only information unavailable elsewhere and relevant to the decision at hand** (verified / installed / source); decoupled belongs to the detail layer, solely carried by the modal Compat row (`modal.decoupled.*`); `snapshotOf` keeps the data field (favorites/snapshot integrity); `badge.decoupled` and `badge.decoupled.tip` retire.
+- **③ Market-tab category-row high-frequency jitter fixed at the root (owner screenshot: wild bouncing after switching tabs back)**: Chrome scroll anchoring translated every stuck-toggle height change into a scrollTop compensation, shoving the sentinel (top:-5px inside the sticky wrap) in and out of the viewport → IO flipped stuck every frame → the sticky bar teleported between pinned and in-flow shapes. Trigger surface: conditional tab remount (stuck=false + re-armed IO) × `.dshm-body`'s preserved scrollTop landing in the ±30px sentinel boundary band (pagination `scrollIntoView` parks scrollTop right at the bar edge, raising the odds). Fix: one line — `.dshm-body` `overflow-anchor:none` — cuts the loop at its driver; sticky/sentinel/+N clip geometry untouched. Not a regression from this batch — the sticky/IO machinery dates to 0.9.52–0.9.59; a long-latent boundary bug.
+- **Verification**: 1379 tests all green (render-smoke gains retirement negative anchors plus anchoring-off / sticky-geometry contract anchors), typecheck clean; all three are presentation-layer fixes with zero data-model migration; client-only — a page refresh takes effect.
 
 ### Feature in 0.9.75 — operations log enrichment: inline clock/day groups/toggle direction/duration/upgrade versions/chat source (zero data migration)
 
