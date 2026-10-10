@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.74 功能：详情截图条滚轮横滚——裸滚轮 deltaY 安全映射 scrollLeft（钢人三红线）
+
+- **背景（主人验收 0.9.73 实拍反馈）**：截图条是横滚容器，鼠标滚轮在横滚容器上默认纵滚祖先（弹窗）——图片多时纯鼠标用户只能拖 ~700px 细滚动条（离散目标上的连续输入，精度成本极高）；触控板双指横滑（deltaX）与 Shift+滚轮虽有原生路径，但属隐藏知识不可达。
+- **判定（新纯函数 `shotWheelAction`，src/client/wheel-strip.js，Node tests 直测）**：钢人三红线——①可滚才拦：scrollWidth ≤ clientWidth(+1 亚像素容差，0.9.72 同款口径) 零劫持，不满行的多数条目行为与今日一致，杜绝「静态劫持表达动态适用前提」的滚轮黑洞同构病复发；②到头放行：已到 deltaY 方向边界时零动作，纵滚还给弹窗（横向有得滚才借道、借完即还）；③deltaX 不碰：|deltaX| ≥ |deltaY|（触控板横滑）不劫持不重复喂。非有限输入安全短路。
+- **接线**：DetailModal 手动 `addEventListener("wheel", …, {passive:false})`（React onWheel 走 document 级 passive 委托，preventDefault 无效）；deps=visible.length 随截图条存在性（条件渲染/primary 异步到达/坏图剔除）重挂；布局入参逐事件现读，无缓存失效问题。灯箱、走链、键盘导航零变化。
+- **验证**：1339 项测试全绿（新增 client-wheel-strip 7 项：三红线逐条 + 容差边界 + 安全短路 + 接线源锚三件；img-chain ①锚放宽容 props 前缀）、typecheck 零错误。
+
 ### 0.9.73 修复：详情截图条统一瓷砖——「大小不一 + 预览图盖住左右邻图」（flex 收缩外溢根治）
 
 - **根因（主人详情弹窗实拍：缩略图大小参差，图片压在左右邻图上）**：两处机制缺陷叠加——① `.dsvm-shotbox` 无固定几何（盒 min 120×84 / img max 220×130），跟着图片固有比例走，16:9、4:3、竖图、小原图各渲各的，「大的大小的小」；②盒子显式 `min-width:120px` 顶掉了 flex 的 automatic minimum size——8 张截图自然总宽（~1.7k px）远超弹窗内容宽（~688px）触发 flex 收缩时，盒子被压到 120px 地板而盒内 `<img>`（替换元素）不受盒宽约束保持固有宽度，加上盒子 `overflow:visible`，图片居中外溢每侧盖住邻图 ~44px——且发生在滚动条出现之前，两症状同屏；加载完成瞬间行高还随最高图 84→130px 跳变（CLS）。
@@ -537,6 +544,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Feature in 0.9.74 — screenshot-strip wheel hscroll: bare-wheel deltaY safely mapped to scrollLeft (steelman's three red lines)
+
+- **Background (owner feedback while verifying 0.9.73)**: the strip is a horizontal scroll container, and a mouse wheel over it scrolls the ancestor (the modal) by default — with many screenshots, mouse-only users must drag a ~700px thin scrollbar (continuous input on a discrete target); trackpad two-finger hscroll (deltaX) and Shift+wheel exist natively but are hidden knowledge.
+- **Decision (new pure predicate `shotWheelAction`, src/client/wheel-strip.js, Node-tested)**: steelman's three red lines — ① intercept only when scrollable: zero hijack while scrollWidth ≤ clientWidth (+1 sub-pixel tolerance, same rule as 0.9.72's useScrollableContain), so most entries (1-2 images) behave exactly as today — no relapse of the "static hijack expressing a dynamic precondition" wheel black-hole disease; ② release at the edge: zero action once the delta direction has no horizontal room left, handing vertical scroll back to the modal (borrow the scroll only while there is room); ③ never touch deltaX: |deltaX| ≥ |deltaY| (trackpad hscroll) passes through untouched. Non-finite inputs short-circuit safely.
+- **Wiring**: DetailModal attaches a manual `addEventListener("wheel", …, {passive:false})` (React's onWheel rides the document-level passive delegation where preventDefault is a no-op); deps=visible.length re-attach as the strip's existence changes (conditional render / async primary shots / broken-shot eviction); layout inputs are read per event — nothing cached. Lightbox, image chain, and keyboard navigation unchanged.
+- **Verification**: 1339 tests green (new client-wheel-strip, 7 cases: three red lines + tolerance edges + safe short-circuit + wiring anchors; the img-chain ① anchor widened to allow props prefixes), typecheck clean.
 
 ### Fix in 0.9.73 — detail screenshot strip unified tiles: inconsistent sizes and previews overlapping neighboring thumbnails (flex-shrink overflow fixed at the root)
 
