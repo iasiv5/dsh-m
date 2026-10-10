@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.68 性能：合并市场物化——同身份免重付 5MB 解析 + 适配 + 合并（ADR-0016）
+
+- **问题（性能架构审查旗舰项，三轮评审闭环）**：领域概念「合并市场（Merged Market）」在 GLOSSARY 有名无主——装配逻辑内联在 `communityOutcome`，每个市场请求（缓存全命中的快路径也在内）都重付磁盘读 5.36MB 社区目录 + JSON.parse（实测 30–55ms）→ 目录适配层重建 4,400 条（30–90ms）→ 合并排序（5–35ms）；且全部是**同步 JS、阻塞宿主事件循环**——市场每翻一页/每提交一次搜索，宿主的 SSE 对话流与工具调用停摆 65–400ms。搜索评分因归一化 WeakMap 跨请求永不命中再加 ~330ms（冷）。
+- **两级 memo，各持天然安全键（ADR-0016 决策 1）**：L1——community.ts `readCache` 按不可变 version-pin 文件名缓存已解析目录（cap=2，meta 每次实读保 checkedAt 新鲜，失败路径不入 memo）；L2——新模块 `src/core/merged-market.ts` 物化适配→合并→匹配索引（cap=4），身份键 = (namespace, profile, registry 身份, 目录 version+pin+开关)。
+- **探测驱动换代 + 同步临界区（决策 3）**：每请求照常走廉价快路径（registry ~10KB + meta 141B ≈1–2ms）以返回身份字段查代；全部 await 位于键派生前、临界区全同步——并发同键天然只建一次，`builds` 计数断言哨兵。**summary 永不入代**每调用现算（status/checkedAt/errors 永远新鲜，SWR 与⑫同版本短路零漂移）；deadline/unavailable/disabled/task=null 透传不落代；communityTask reject 透传（安装侧窄 catch 吞为 miss）。
+- **双索引保安装语义（R2-3）**：merged 域 `lookupInstalled` 服务读路径；全量域 `findById`/`lookupInstalledAll`（[primary…, adapt 全量] 含 displaced 让位条目）服务安装/升级三处（resolveRegistryEntry / upgradePlugin / profile-ops desktop 升级）——id-让位条目今日可装可升，语义零变化；主清单优先短路保留（社区异常不阻断主清单命中）。
+- **解环 + score-once**：合并层六符号自 market.ts 迁入 merged-market.ts、23 条分类标签自 community.ts 随迁（原位 re-export 保 cli/tools 零改动）——market↔community import 环三方向断开；listMarket 评分段单遍化（类别短路先行、rank 查表），tie-break 与 0.9.67 逐点一致。
+- **行为零变化承诺**：ADR-0003/0006/0008/0012/0013 全部不动；golden 等价基线（七维度 capture，含分页/搜索/排序/探测徽标）全程逐字节绿。
+- **验证**：1305 项测试全绿、typecheck 零错误；实测本机 4,460 条真实目录首次 319ms → 同身份第二次 65ms，搜索评分冷 330ms → 同代热 8ms（40×）。实施经三轮独立评审闭环（计划评审 16 项 + 执行评审 7 项，全部「已修复并复核通过」；含一次修复脚本静默 no-op 的虚报，被评审 `git diff` 核对抓出并以真实 diff 补正）。实施计划与 ADR-0016 v3 在案（`docs/plans/`、`docs/adr/`）。
+
 ### 0.9.67 修复：操作记录卡移动端字号失控——显式入 12px 家族 + 折行自洽
 
 - **根因（用户手机截图反馈）**：操作记录行 `.dsvm-oprow` 从不声明 `font-size`——桌面宿主基础字号下无感，移动端浏览器基础字号（≈15-16px）下整行被放大近一倍，与同屏设置卡的 12px 家族（`dsvm-kv` 配置地址行、`dshm-hint`、`dsvm-fold`）明显脱节，观感突兀。
@@ -494,6 +504,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Performance in 0.9.68 — materialized merged market: skip the 5MB parse + adapt + merge for repeat identities (ADR-0016)
+
+- **Problem (flagship item of the performance architecture review, closed over three review rounds)**: the domain concept "Merged Market" existed in the GLOSSARY without an owning module - assembly logic lived inline in `communityOutcome`, so every market request (including fully cache-hit fast paths) re-paid a 5.36MB community catalog disk read + JSON.parse (measured 30-55ms) → adapter rebuild of 4,400 entries (30-90ms) → merge + sort (5-35ms). All of it is **synchronous JS blocking the host event loop** - every page turn / committed search froze the host's SSE streams and tool calls for 65-400ms. Search scoring added ~330ms cold because the normalization WeakMap never survived across requests.
+- **Two-level memo, each with a naturally safe key (ADR-0016 decision 1)**: L1 - community.ts `readCache` memoizes the parsed catalog keyed by the immutable version-pinned body filename (cap=2; meta re-read every time so `checkedAt` stays fresh; failure paths never enter the memo); L2 - new module `src/core/merged-market.ts` materializes adapt→merge→match-index (cap=4), keyed by identity = (namespace, profile, registry identity, catalog version+pin+flag).
+- **Probe-driven generations + synchronous critical section (decision 3)**: every request still walks the cheap fast path (registry ~10KB + meta 141B ≈1-2ms) and probes the store with the returned identity fields; all awaits happen before key derivation and the critical section (derive→check→adapt→merge→index→set) is fully synchronous - concurrent same-key callers naturally build once, asserted by a `builds` counter sentinel. **Summaries never enter the generation**: they are computed per call from the current state (status/checkedAt/errors always fresh; zero drift across SWR and the ⑫ same-version short-circuit). deadline/unavailable/disabled/task=null pass through without landing; communityTask rejections propagate (install-side narrow catches swallow them into a miss).
+- **Dual indexes preserve install semantics (R2-3)**: the merged-domain `lookupInstalled` serves read paths; the full-domain `findById`/`lookupInstalledAll` ([primary…, full adapt set] including displaced entries) serves the three install/upgrade sites (resolveRegistryEntry / upgradePlugin / profile-ops desktop upgrade) - id-displaced entries remain installable and upgradable, byte-for-byte semantics. Primary-first short-circuits preserved (community failures never block primary hits).
+- **Cycle dissolved + score-once**: six merge-layer symbols moved from market.ts into merged-market.ts, the 23 category labels moved from community.ts (re-exported in place so cli/tools stay untouched) - the market↔community import cycle is broken in all three directions; listMarket's scoring is single-pass (category short-circuit first, rank reads the table) with tie-breaks byte-identical to 0.9.67.
+- **Zero behavior change pledge**: ADR-0003/0006/0008/0012/0013 untouched; a golden equivalence baseline (seven capture dimensions incl. paging/search/sort/probe badges) stayed byte-identical throughout.
+- **Verification**: 1305 tests green, typecheck clean; measured on this machine against the real 4,460-entry catalog: first call 319ms → second same-identity call 65ms; search scoring 330ms cold → 8ms warm within a generation (40×). Implementation closed through three independent review rounds (16 plan-review + 7 execution-review findings, all "fixed and re-verified"; including one silent no-op fix caught by the reviewer's `git diff` discipline and corrected with a real diff). Implementation plan and ADR-0016 v3 on record (`docs/plans/`, `docs/adr/`).
 
 ### Fixed in 0.9.67 — operations card font blows up on mobile: join the 12px family + wrap self-consistency
 
