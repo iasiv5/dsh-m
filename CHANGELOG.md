@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.71 功能：设置类操作记录——社区目录开关与清单源变更入账（DESIGN §2.6 修订）
+
+- **背景**：设置页「社区目录开关」与「校验并应用 / 恢复默认」（清单源）的变更此前不入操作记录，事后无法回看「何时改的、从哪改到哪」——而 agent 供给面（`dshm_search` 可见目录规模 20 余精选 ↔ 4,000+ 社区）与信任根（自定义清单源）恰恰挂在这两个开关上。
+- **方案（DESIGN §2.6 修订）**：操作记录边界从包级事务扩至**供给面/信任边界设置变更**，新增两类**终态直落**记录（不入泵、创建即终态、不参与恢复重放；恢复原样保留 / 清除 / 红点语义天然兼容）：`community-toggle` 成败皆记（失败 = 已接受的变更尝试中途回滚，有「以为关了其实没关」的误信风险；meta.on），`registry-url` 仅记成功（校验拒绝零状态变更且卡片红字就地呈现，高频试错入记录只会制造红点噪音；target = 新地址、恢复默认记 `(default)`，meta.from = 原地址）。记录行 target 展示派生：开关按 meta.on 显「开/关」，清单源保持 URL。
+- **口径**：面板发起的变更（CLI、`dsh plugin add`、DSH 设置表单直改不留痕，与包操作既有口径一致）。
+- **评审**：独立 subagent 盲评 0 blocker / 0 major，4 minor + 3 nit 全部随本版修掉（done 打点紧贴 api 成功消除刷新链吞错隐式依赖；测试计数桩钉死「终态不咨询恢复谓词」；`(default)` 收敛共享常量等）。
+- **验证**：1326 项测试全绿（新增设置类终态直落 describe 块 3 用例）、typecheck 零错误。
+
 ### 0.9.70 修复：拖拽观感与静止态一致——退役拖拽期实心固化（ADR-0017 v2）
 
 - **根因（用户浅色模式双态实拍）**：0.9.69 的拖拽期「计算值固化强制实心」在按住/松手瞬间造成实心↔玻璃的观感跳变，浅色模式下尤为突兀——防透字与观感连续两个目标里，实心方案牺牲了后者。
@@ -516,6 +524,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Feature in 0.9.71 — settings-class operation records: community catalog toggle and registry source changes are now logged (DESIGN §2.6 revision)
+
+- **Background**: changes made via the settings page's community catalog toggle and the registry source actions (apply / restore default) never appeared in the operations panel, leaving no answer to "when was it changed, and from what" — even though the agent-facing supply surface (`dshm_search` scope: ~20 curated vs 4,000+ community entries) and the trust root (custom registry source) hang exactly on these two switches.
+- **Design (DESIGN §2.6 revision)**: the operations-log boundary expands from package-level transactions to **supply-scope / trust-boundary settings changes**, adding two **terminal-at-creation** record kinds (never enqueued, no queued lifecycle, no restore replay; restore-passthrough / clear / red-dot semantics work unchanged): `community-toggle` records both success and failure (failure = an accepted mutation attempt rolled back mid-flight — the "thought it was off but it wasn't" risk; meta.on), `registry-url` records success only (validation rejections change nothing and surface inline in the card; logging every typo would only manufacture red-dot noise; target = new address, restore default logged as `(default)`, meta.from = previous address). Row display derivation: the toggle shows On/Off from meta.on; the registry source keeps the URL.
+- **Scope**: panel-initiated changes only (CLI, `dsh plugin add`, and DSH settings-form direct writes leave no record — consistent with the existing package-operations scope).
+- **Review**: independent subagent blind review found 0 blockers / 0 majors; all 4 minors + 3 nits fixed in this release (done-record placement now hugs api success, removing an implicit reliance on the refresh chain's error swallowing; a counting stub pins "terminal records never consult the restore predicate"; `(default)` converged into a shared constant).
+- **Verification**: 1326 tests green (new terminal-at-creation describe block with 3 cases), typecheck clean.
 
 ### Fix in 0.9.70 — drag appearance matches the resting state: drag-time solidification retired (ADR-0017 v2)
 
