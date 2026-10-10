@@ -1,13 +1,15 @@
 /**
- * 操作记录行展示模型（0.9.75 信息增强）：把「何时发生 / 开还是关 / 跑了多久 / 从哪升到哪 /
- * 谁发起」从记录数据派生为可直接渲染的视图模型——展示层纯函数，Node tests 直接覆盖，
+ * 操作记录行展示模型（0.9.75 信息增强）：把「何时发生 / 开还是关 / 跑了多久 / 从哪升到哪」
+ * 从记录数据派生为可直接渲染的视图模型——展示层纯函数，Node tests 直接覆盖，
  * main.jsx 只消费不内联（仓库惯例同 toggle-view.js / installed-view.js）。
  *
  * 数据契约（src/client/operations.js 的 OperationRecord 不变，零迁移）：
  * - createdAt / updatedAt（ms）store.upsert 本来就打点 → 行内时间与耗时零新增写入；
  * - toggle / community-toggle 的 meta.on（0.4.0 起）→ 方向徽章；
- * - upgrade 的 meta.from / meta.to（0.9.75 起由泵从执行器 value.opMeta 并入，见 pump）→ 版本变迁；
- * - meta.session（泵拾取标记）→ 「对话」来源徽章（对话区发起 ≠ GUI 点击）。
+ * - upgrade 的 meta.from / meta.to（0.9.75 起由泵从执行器 value.opMeta 并入，见 pump）→ 版本变迁。
+ * 不消费 meta.session（0.9.76 自纠）：它是泵所有权标记（restore 跳过 / replaceAll 不回卷 /
+ * persist 剥离），不是「对话区发起」来源语义——GUI 的 runOp 与对话镜像两条路都打同一标，
+ * 展示层消费它只会制造误报（0.9.75「对话」徽章事故）；来源区分须由未来 meta.origin 承载。
  * 全部字段缺席时优雅回退旧行形态（旧记录立即可读，不要求重放）。
  */
 
@@ -85,8 +87,9 @@ export function groupOpsByDay(records, now = Date.now()) {
 
 /**
  * 单行视图模型：clock（HH:mm）/ full（完整时刻）/ durText（终态耗时，非终态 ''）/
- * dir（'on'|'off'|null，toggle 与 community-toggle 按 meta.on）/ session（对话来源）/
+ * dir（'on'|'off'|null，toggle 与 community-toggle 按 meta.on）/
  * version（升级 from→to）/ target。字段缺席回退：clock='' 时渲染端整段省略（等价旧行）。
+ * 不含 session：泵所有权标记不是来源语义，展示层不消费（0.9.76 自纠，见文件头）。
  */
 export function opRowVm(r) {
   const rec = r || {}
@@ -108,7 +111,6 @@ export function opRowVm(r) {
     full: ts === null ? '' : fmtOpFull(ts),
     durText: durMs === null ? '' : fmtOpDuration(durMs),
     dir: isToggle && typeof meta.on === 'boolean' ? (meta.on ? 'on' : 'off') : null,
-    session: meta.session === true,
     version,
     target: typeof rec.target === 'string' ? rec.target : '',
   }

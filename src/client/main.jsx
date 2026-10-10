@@ -49,7 +49,6 @@ const ZH = {
   "op.state.on": "开", "op.state.off": "关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
   "op.day.today": "今天", "op.day.yesterday": "昨天",
-  "op.session": "对话", "op.session.tip": "对话区发起（非界面点击）",
   "settings.ops.group.done.n": "已结束（{n}）",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
   "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
@@ -168,7 +167,6 @@ const EN = {
   "op.state.on": "On", "op.state.off": "Off",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
   "op.day.today": "Today", "op.day.yesterday": "Yesterday",
-  "op.session": "Chat", "op.session.tip": "Initiated from chat (not a UI click)",
   "settings.ops.group.done.n": "Ended ({n})",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
   "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
@@ -505,15 +503,16 @@ const CSS = `
 .dsvm-opkind{color:var(--dsw-alias-label-secondary,#4b5563)}
 .dsvm-optarget{font-weight:500;overflow-wrap:anywhere}
 .dsvm-opnote{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;overflow-wrap:anywhere}
-/* 0.9.75 操作记录信息增强：行内时间/耗时（tabular-nums 对齐）、按日分组头、开关方向与
-   对话来源徽章、升级版本变迁。字号守 0.9.67 的 12px 家族（次级 11px），颜色沿用既有语义：
-   方向「开」用 ok 同款绿，「关」用次级灰；徽章 currentColor 描边自适应深浅主题。 */
+/* 0.9.75 操作记录信息增强：行内时间/耗时（tabular-nums 对齐）、按日分组头、开关方向徽章、
+   升级版本变迁。字号守 0.9.67 的 12px 家族（次级 11px），颜色沿用既有语义：
+   方向「开」用 ok 同款绿，「关」用次级灰；徽章 currentColor 描边自适应深浅主题。
+   （0.9.76：「对话」来源徽章随其 CSS 退役——meta.session 是泵所有权标记非来源语义。） */
 .dsvm-optime,.dsvm-opdur{font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af);font-variant-numeric:tabular-nums}
 .dsvm-opday{font-size:11px;font-weight:600;color:var(--dsw-alias-label-caption,#9ca3af);margin:6px 0 0}
 .dsvm-opgroup.done .dsvm-opday:first-child{margin-top:0}
-.dsvm-opdir,.dsvm-opsession{font-size:11px;line-height:16px;padding:0 6px;border-radius:8px;border:1px solid currentColor}
+.dsvm-opdir{font-size:11px;line-height:16px;padding:0 6px;border-radius:8px;border:1px solid currentColor}
 .dsvm-opdir.on{color:#15803d}
-.dsvm-opdir.off,.dsvm-opsession{color:var(--dsw-alias-label-secondary,#4b5563)}
+.dsvm-opdir.off{color:var(--dsw-alias-label-secondary,#4b5563)}
 .dsvm-opver{font-size:11px;color:var(--dsw-alias-label-secondary,#4b5563);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .dsvm-favbtn{appearance:none;border:0;background:transparent;color:var(--dsw-alias-label-caption,#9ca3af);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;margin-left:auto}
 .dsvm-favbtn:hover{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
@@ -3106,8 +3105,10 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   const dayGroups = useMemo(() => groupOpsByDay(finished), [records]); // eslint-disable-line react-hooks/exhaustive-deps -- finished 派生自 records
   // 行渲染（0.9.75）：展示派生全部收敛到 operations-view.js 的 opRowVm——
   // 行内时刻（title 给完整到秒）、开关/社区开关方向徽章（meta.on，旧记录已持久化立即可读）、
-  // 对话来源徽章（meta.session）、升级版本变迁（meta.from/to，泵 0.9.75 起落账）、终态耗时。
-  // 字段缺席逐段省略（等价旧行），target 恒在。
+  // 升级版本变迁（meta.from/to，泵 0.9.75 起落账）、终态耗时。
+  // 字段缺席逐段省略（等价旧行），target 恒在。0.9.76：「对话」来源徽章退役——meta.session
+  // 是泵所有权标记（GUI 的 runOp 与对话镜像两路同打、persist 时剥离），不是来源语义，
+  // 展示层不得消费（0.9.75 把它渲染成「对话」徽章属误报，主人界面全点按钮即全员误标）。
   const row = (r) => {
     const vm = opRowVm(r);
     const tip = [vm.full, vm.durText, r.error || r.warning || ""].filter(Boolean).join(" · ");
@@ -3118,7 +3119,6 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
       h("span", { className: "dsvm-opstatus" }, lookup("op.status." + r.status)),
       h("span", { className: "dsvm-opkind" }, lookup("op.kind." + r.kind)),
       vm.dir ? h("span", { className: `dsvm-opdir ${vm.dir}` }, lookup(vm.dir === "on" ? "op.state.on" : "op.state.off")) : null,
-      vm.session ? h("span", { className: "dsvm-opsession", title: lookup("op.session.tip") }, lookup("op.session")) : null,
       h("span", { className: "dsvm-optarget", title: tip || undefined }, vm.target),
       vm.version ? h("span", { className: "dsvm-opver", title: tip || undefined }, vm.version) : null,
       vm.durText ? h("span", { className: "dsvm-opdur" }, vm.durText) : null,

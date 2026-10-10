@@ -131,9 +131,10 @@ describe('opRowVm：方向/来源/版本/耗时派生与优雅回退', () => {
     assert.equal(vm({ from: '0.9.71' }), 'v0.9.71→')
     assert.equal(vm({}), '')
   })
-  it('session 标记 → 对话来源', () => {
-    assert.equal(opRowVm({ ...base, kind: 'install', status: 'done', meta: { session: true } }).session, true)
-    assert.equal(opRowVm({ ...base, kind: 'install', status: 'done', meta: {} }).session, false)
+  it('session 字段退役（0.9.76 自纠）：泵所有权标记不是来源语义，VM 不再暴露', () => {
+    const vm = opRowVm({ ...base, kind: 'install', status: 'done', meta: { session: true } })
+    assert.equal('session' in vm, false, 'meta.session 不得被展示层消费')
+    assert.equal(opRowVm({ ...base, kind: 'toggle', status: 'done', meta: { on: true, session: true } }).dir, 'on', 'dir 派生不受 session 退役影响')
   })
   it('非法/缺失输入不抛：null 记录、非数字时间戳', () => {
     const vm = opRowVm(null)
@@ -163,16 +164,20 @@ describe('main.jsx 操作记录增强接线结构锚', () => {
     assert.ok(src.includes('dsvm-optime'), '行内时刻列')
     assert.ok(src.includes('dsvm-opday'), '按日分组头')
     assert.ok(src.includes('dsvm-opdir'), '开关方向徽章')
-    assert.ok(src.includes('dsvm-opsession'), '对话来源徽章')
     assert.ok(src.includes('dsvm-opver'), '升级版本串')
     assert.ok(src.includes('dsvm-opdur'), '耗时列')
     assert.ok(src.includes('"op.day.today"'), '今天组头键')
     assert.ok(src.includes('"op.day.yesterday"'), '昨天组头键')
-    assert.ok(src.includes('"op.session.tip"'), '来源徽章说明键')
     assert.ok(src.includes('settings.ops.group.done.n'), '已结束计数键')
   })
   it('旧病灶负向锚：社区开关专属的方向渲染已退役（被 opRowVm.dir 泛化取代）', () => {
     assert.equal(src.includes('const targetText'), false, 'targetText 局部派生不得残留')
     assert.equal(src.includes('"settings.ops.group.done"'), false, '无计数旧键不得残留（已被 group.done.n 取代）')
+  })
+  it('旧病灶负向锚：「对话」来源徽章已退役（0.9.76 自纠——meta.session 是泵所有权标记非来源语义）', () => {
+    assert.equal(src.includes('dsvm-opsession'), false, '来源徽章类名不得残留')
+    assert.equal(src.includes('op.session.tip'), false, '来源徽章 i18n 键不得残留')
+    const vmSrc = readFileSync(join(root, 'src/client/operations-view.js'), 'utf8')
+    assert.equal(vmSrc.includes('session:'), false, 'opRowVm 不得派生 session 字段')
   })
 })
