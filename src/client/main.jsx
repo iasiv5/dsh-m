@@ -344,7 +344,14 @@ const CSS = `
 .dshm-seg .dshm-count{font-size:11px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-caption,#9ca3af);margin:0}
 .dshm-seg button.on .dshm-count{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dshm-spacer{flex:1}
-.dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+/* 0.9.76 分类行吸顶高频跳动根治：Chrome 滚动锚定（scroll anchoring）把「吸顶收展的
+   高度变化」翻译成 scrollTop 补偿（≈一个行高），哨兵（wrap 内 top:-5px）因此被来回送进/
+   送出视口 → IO stuck 每帧翻转 → chips 行高频蹦跳。触发条件：tab 条件渲染重挂回到市场
+   （stuck=false + IO 重新武装）且 .dshm-body 保留的 scrollTop 恰落在哨兵边界 ±30px 带内
+   （翻页 scrollIntoView 会把 scrollTop 精确送到 bar 边缘，命中概率大增）。锚定在本滚动
+   容器停用后，stuck 翻转不再移动哨兵，循环在驱动器处断开；面板内容只向下分页追加、
+   无上方懒加载布局，锚定损失趋零。 */
+.dshm-body{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;overflow-anchor:none}
 .dshm-hint{color:var(--dsw-alias-label-caption,#6b7280);font-size:12px;line-height:18px;margin:0}
 .dshm-err{color:var(--dsw-alias-state-error-primary,#b91c1c);font-size:12px;line-height:18px}
 .dshm-ok{color:var(--dsw-alias-state-success-primary,#047857);font-size:12px;line-height:18px;word-break:break-word}

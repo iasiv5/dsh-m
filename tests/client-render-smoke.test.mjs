@@ -370,3 +370,11 @@ describe('0.9.76「版本无关」徽章退役（源码断言）——展示层�
     assert.match(src, /"verified", "audience", "decoupled"\]/, 'snapshotOf 数据字段保留')
   })
 })
+
+describe('0.9.76 分类行吸顶高频跳动修复（源码断言）——滚动锚定在面板滚动容器停用', () => {
+  it('.dshm-body 关闭 overflow-anchor（断自激循环驱动器）；吸顶/哨兵几何不动', () => {
+    assert.match(src, /\.dshm-body\{[^}]*overflow-anchor:none/, '滚动锚定停用在位（.dshm-body 是面板唯一滚动容器）')
+    assert.ok(src.includes('position:sticky;top:-14px'), '吸顶几何不变（哨兵契约依赖 top:-14px）')
+    assert.ok(src.includes('top: "-5px"'), '哨兵 -5px 契约不变')
+  })
+})
