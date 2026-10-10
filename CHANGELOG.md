@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.70 修复：拖拽观感与静止态一致——退役拖拽期实心固化（ADR-0017 v2）
+
+- **根因（用户浅色模式双态实拍）**：0.9.69 的拖拽期「计算值固化强制实心」在按住/松手瞬间造成实心↔玻璃的观感跳变，浅色模式下尤为突兀——防透字与观感连续两个目标里，实心方案牺牲了后者。
+- **修复（ADR-0017 决策 3 修订 v2）**：拖拽态与静止态**同玻璃同 blur，外观逐像素一致**——透字防护回归静止态既有不变量（毛玻璃模糊背景自持；透字病灶的成因是「关 blur 还留半透明」，两样都不动即无此病，openbmc 静止态可读性本就由 blur 兜住）。拖拽可供性只剩 grabbing 光标与投影加深；`solidifyColor`/`--dshm-drag-bg`/拖拽态 `!important` 全部退役（清单定长回归 4，`client-lightbox` 断言含「无残留」负向锚）。性能保底手段（pointer capture/手势期监听/rAF 帧内写/translate3d/will-change）全部保留；拖拽期恢复的每帧 backdrop 重滤镜由 GPU 合成承担，弱机若报告掉帧再评估。
+- **验证**：1323 项测试全绿、typecheck 零错误；ADR-0017 修订 v2（Considered Options 翻案记录在案）。
+
 ### 0.9.69 功能：还原态面板头部拖拽 + 位置记忆（ADR-0017）
 
 - **方案**：市场面板（`.dshm-panel`）还原态下按住头部（标题/tab 行）即可自由拖拽——头部全域为手柄，tab/全屏/关闭钮点击语义原样（`closest("button")` 门卫 + 多指重入守卫）；双击头部非按钮区切换全屏；释放位置烘焙为视口绝对坐标存 `dshm-panel-pos`，下次打开还原，无记忆首开与旧版 flex 居中渲染逐字节一致。运动范围四周 8px；desktop profile 额外让出壳层标题拖拽带（quota-watch 契约：`data-windows-titlebar` + `--dsh-windows-titlebar-height`，web 无此变量恒 0）——胶囊时代「停进系统按钮区就再也抓不回」的坑由 clamp 机制性杜绝。挂载/全屏往返/resize 三触发源重夹紧，还原 commit 的重夹紧时序由 render 期 latest-ref 镜像保证（执行评审 E1-1 实证修复并以结构锚钉死）。
@@ -510,6 +516,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fix in 0.9.70 — drag appearance matches the resting state: drag-time solidification retired (ADR-0017 v2)
+
+- **Root cause (user side-by-side capture in light mode)**: the 0.9.69 drag-time "computed-value solidification" made the panel jump between solid and glass at grab/release - jarring in light mode. Of the two goals (no see-through, visual continuity), the solid approach sacrificed continuity.
+- **Fix (ADR-0017 decision 3 revised to v2)**: the drag state now shares the resting state's exact glass and blur - pixel-identical appearance. See-through protection returns to the resting invariant (frosted blur holds the background; the disease class was "blur off while still translucent" - leave both untouched and it cannot occur, exactly how openbmc's resting readability is already held). Drag affordance reduces to the grabbing cursor and a deeper shadow; `solidifyColor` / `--dshm-drag-bg` / drag-time `!important` are all retired (inventory back to a pinned 4, with a no-residue negative anchor in `client-lightbox`). The performance toolbox (pointer capture / gesture-scoped listeners / rAF-frame writes / translate3d / will-change) is fully retained; the restored per-frame backdrop re-filter is carried by GPU compositing - revisit only if weak-GPU jank is reported.
+- **Verification**: 1323 tests green, typecheck clean; ADR-0017 revised to v2 (Considered Options overruling recorded).
 
 ### Feature in 0.9.69 — drag the marketplace panel by its header in restore state, with position memory (ADR-0017)
 
