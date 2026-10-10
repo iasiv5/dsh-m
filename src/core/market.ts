@@ -581,18 +581,25 @@ export async function listMarket(
   // 相关性搜索（0.7.0 Task 3）：归一化分词 + 字段加权评分；0 分不返回；
   // id 整串精确匹配保证命中（收藏 stale 检测依赖）。
   const terms = tokenizeSearchText(normalizeSearchText(opts.query ?? ''))
+  // 0.9.68（ADR-0016 决策 7，score-once）：类别不匹配先短路（不付评分成本），terms 非空时
+  // 单遍评分并记入 scoreByEntry——rank 阶段查表，不再对每条目二次调用 relevanceScore。
+  // tie-break 取 afterSort 之后的位置，与 0.9.67 语义逐点一致（评审 R1-4）。
+  const scoreByEntry = new Map<RegistryEntry | CommunityEntry, number>()
   const filtered = zoned.filter((entry) => {
     const also = (entry as RegistryEntry).alsoCategories ?? []
     if (cat && entry.category !== cat && !also.includes(cat as RegistryEntry['category'])) return false
     if (terms.length === 0) return true
-    return relevanceScore(entry, terms) > 0
+    const score = relevanceScore(entry, terms)
+    if (score <= 0) return false
+    scoreByEntry.set(entry, score)
+    return true
   })
   // 排序：显式 sort 先行；query 命中时相关性优先（稳定 tie-break 回到既有序——merged 现序或用户排序）
   const afterSort = opts.sort ? sortEntries(filtered, opts.sort) : filtered
   const ranked =
     terms.length > 0
       ? afterSort
-          .map((entry, idx) => ({ entry, score: relevanceScore(entry, terms), idx }))
+          .map((entry, idx) => ({ entry, score: scoreByEntry.get(entry)!, idx }))
           .sort((a, b) => b.score - a.score || a.idx - b.idx)
           .map((s) => s.entry)
       : afterSort

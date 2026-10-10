@@ -2325,3 +2325,38 @@ describe('market probeMode 与 force 探测（0.9.45 两段加载，ADR-0013）'
     assert.equal(res.latestComplete, true, '未进探测段，维持既有 true 契约')
   })
 })
+
+// ---------- 0.9.68 score-once（ADR-0016 决策 7 / 评审 R1-4）：tie-break 保序回归 ----------
+
+describe('score-once：单遍评分 + 显式排序 tie-break 保序', () => {
+  const dlEntry = (id, npm, downloads) => ({
+    id, name: npm.replace('pkg-', 'theme-'), description: `d ${id}`, category: 'tools', tags: [], source: 'npm', npm,
+    ...(downloads !== undefined ? { downloads } : {}),
+  })
+  // 注：主清单条目无 downloads 旁路字段（社区专属），此处用社区目录侧构造同分不同下载量场景
+
+  it('sort=downloads,desc + query 命中同分条目：同分 tie-break 跟随显式排序序（不回退 merged 原序）', async () => {
+    const primary = [dlEntry('p-1', 'pkg-1')]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary, { configuredAddress: 'reg-scoreonce' }) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('alpha', 'o1', { npm: 'theme-alpha', downloads: 10 }),
+      communityRaw('beta', 'o2', { npm: 'theme-beta', downloads: 500 }),
+      communityRaw('gamma', 'o3', { npm: 'theme-gamma', downloads: 100 }),
+    ]))
+    // 三条社区条目 name 均为 theme-* 前缀命中（同权重同命中类型 → 同分）；downloads 互异
+    const res = await listMarket(cfg, { query: 'theme', source: 'community', sort: { field: 'downloads', dir: 'desc' }, withLatest: false }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), ['o2--beta', 'o3--gamma', 'o1--alpha'], '同分组内按显式排序（downloads 降序）排布')
+  })
+
+  it('无显式 sort 时同分 tie-break 维持 merged 现序（downloads 降序缺省序）', async () => {
+    const primary = [dlEntry('p-1', 'pkg-1')]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary, { configuredAddress: 'reg-scoreonce2' }) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('alpha', 'o1', { npm: 'theme-alpha', downloads: 10 }),
+      communityRaw('beta', 'o2', { npm: 'theme-beta', downloads: 500 }),
+      communityRaw('gamma', 'o3', { npm: 'theme-gamma', downloads: 100 }),
+    ]))
+    const res = await listMarket(cfg, { query: 'theme', source: 'community', withLatest: false }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), ['o2--beta', 'o3--gamma', 'o1--alpha'], 'merged 现序即 downloads 降序，同分保持该序')
+  })
+})
