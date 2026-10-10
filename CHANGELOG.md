@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.75 功能：操作记录信息增强——行内时刻/按日分组/开关方向/耗时/版本变迁/来源标记（数据零迁移）
+
+- **背景（主人设置页实拍：开关记录读不出「开还是关」）**：操作记录行只有「状态 + 类型 + 包名」三要素——开关看不出方向（截图里连续两条 `开关 @iasiv5/dsh-quota-watch` 无法分辨先后开/关）、无任何时间、看不出耗时、看不出对话区发起还是界面点击、升级不知道版本从哪到哪。而这些信息**全部已在每条记录里**（`createdAt`/`updatedAt` 是 store 打点常态、`meta.on` 0.4.0 起就随开关入账、`meta.session` 是泵拾取标记）——纯展示层缺口，非数据缺失；浏览器 localStorage（`dshm-operations`）里的存量旧记录升级后立即可读，零迁移。
+- **方案（展示派生全部收敛纯函数模块）**：新增 `src/client/operations-view.js`（`fmtOpClock`/`fmtOpFull`/`opDayKey`/`fmtOpDuration`/`opUpgradeMeta`/`groupOpsByDay`/`opRowVm`，Node tests 直测，惯例同 toggle-view）：① 行内 `HH:mm`（tabular-nums 对齐，title 完整到秒）；② 已结束**按日分组**，组头 今天/昨天/YYYY-MM-DD，**新组在上、组内新→旧**——最新一条贴「已结束」标题可见，不再沉底滚动找；③ 开关/社区开关按 `meta.on` 渲染 `开`（绿）/`关`（灰）徽章——原「社区开关专属方向渲染」（0.9.71 评审 M1 `targetText`）退役为泛化实现；④ 终态耗时 `<1s/42s/1m02s/3h05m`（免翻译）；⑤ 升级行版本变迁 `v0.9.71→v0.9.72`（github 源回退 sha 前 7 位，与 notify.upgraded 口径一致）；⑥ `meta.session` 行加「对话」来源徽章；⑦ 「已结束（N）」计数（无计数旧键 `settings.ops.group.done` 退役）。字段缺席逐段省略，旧行形态优雅回退；字号守 0.9.67 十二 px 家族，徽章 `currentColor` 描边自适应主题。
+- **数据管道（唯一一处非展示层改动）**：执行泵成功路径支持执行器回传 `value.opMeta` 并入记录 meta——底座取**落账时实读**的当前 meta（入队快照会丢拾取阶段追加的 session 标记，破「陈旧快照不回卷」保证，评审自纠）；失败路径不入账（结果不可信）。恢复路径（`dispatchRestored`）成功值统一接进成功值通道（`value = r`）——生产实现今日返回 `{ ok: true }`，对现有流零行为变化；两处 `doUpgrade` 调用点把 `fromVersion/version/sha` 管道为 `opMeta`。
+- **验证**：1375 项测试全绿（0.9.74 基线 1339 + 新增 36：`client-operations-view` 27 用例含格式化 TZ 无关派生/分组序/行 VM 回退/新病灶负向锚（`targetText` 与无计数旧键不得残留）+ 泵 opMeta 4 用例（done/warned 入账、失败与脏输入不入、恢复路径入账、session 保留））、typecheck 零错误；构建产物含新规则逐字锚。
+
 ### 0.9.74 功能：详情截图条滚轮横滚——裸滚轮 deltaY 安全映射 scrollLeft（钢人三红线）
 
 - **背景（主人验收 0.9.73 实拍反馈）**：截图条是横滚容器，鼠标滚轮在横滚容器上默认纵滚祖先（弹窗）——图片多时纯鼠标用户只能拖 ~700px 细滚动条（离散目标上的连续输入，精度成本极高）；触控板双指横滑（deltaX）与 Shift+滚轮虽有原生路径，但属隐藏知识不可达。
@@ -544,6 +551,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Feature in 0.9.75 — operations log enrichment: inline clock/day groups/toggle direction/duration/upgrade versions/chat source (zero data migration)
+
+- **Background (owner screenshot: toggle records unreadable as on/off)**: each operations row carried only "status + kind + package" — a toggle showed no direction (two consecutive `toggle @iasiv5/dsh-quota-watch` rows in the screenshot were indistinguishable), no timestamp, no duration, no chat-vs-UI source, no upgrade from→to versions. Yet **all of this already exists per record** (`createdAt`/`updatedAt` are store bookkeeping, `meta.on` has been recorded with every toggle since 0.4.0, `meta.session` is the pump pickup marker) — a pure presentation gap, not missing data. Existing records in browser localStorage (`dshm-operations`) become readable right after upgrade, zero migration.
+- **Approach (all display derivation in one pure module)**: new `src/client/operations-view.js` (`fmtOpClock`/`fmtOpFull`/`opDayKey`/`fmtOpDuration`/`opUpgradeMeta`/`groupOpsByDay`/`opRowVm`, directly unit-tested, same convention as toggle-view): ① inline `HH:mm` (tabular-nums, full-to-second time in title); ② finished records **grouped by local day**, headers Today/Yesterday/YYYY-MM-DD, **newest group on top, newest-first within** — the latest row sits right under the "Ended" caption instead of sinking to the scroll bottom; ③ toggles render an `On` (green) / `Off` (grey) badge from `meta.on` — the 0.9.71 community-toggle-only direction rendering (`targetText`) retires into this generalized path; ④ terminal duration `<1s/42s/1m02s/3h05m` (translation-free); ⑤ upgrade rows show `v0.9.71→v0.9.72` (github source falls back to 7-char sha, consistent with notify.upgraded); ⑥ `meta.session` rows get a "Chat" source badge; ⑦ "Ended (N)" count (the count-less key `settings.ops.group.done` retires). Missing fields omit their segment — old records degrade to the previous row shape; 12px type-family discipline (0.9.67) kept, badges use `currentColor` borders to follow the theme.
+- **Data plumbing (the single non-presentation change)**: the pump's success path now merges an executor-returned `value.opMeta` into the record meta — the merge base is the **freshly read** meta at finalize time (the enqueue snapshot lacks the pickup-time session marker and would break the stale-snapshot no-rollback guarantee; caught in self-review); failures never merge (result untrustworthy). The restored path (`dispatchRestored`) now routes its success value through the same channel (`value = r`) — the production implementation returns `{ ok: true }` today, so existing flows are behavior-unchanged; both `doUpgrade` call sites pipe `fromVersion/version/sha` into `opMeta`.
+- **Verification**: 1375 tests all green (0.9.74 baseline 1339 + 36 new: `client-operations-view` 27 cases covering TZ-agnostic time formatting, group ordering, row-VM fallbacks, and negative anchors against the retired `targetText`/count-less key; 4 pump opMeta cases covering done/warned merge, failure & dirty-input rejection, restored-path merge, session preservation), typecheck clean; build artifact carries the new rules verbatim.
 
 ### Feature in 0.9.74 — screenshot-strip wheel hscroll: bare-wheel deltaY safely mapped to scrollLeft (steelman's three red lines)
 
