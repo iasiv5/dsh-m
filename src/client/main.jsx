@@ -27,6 +27,7 @@ const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestar
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
 const { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, TERMINAL_CLEARABLE, upgradeNotify, REGISTRY_DEFAULT_TARGET } = require("./operations.js");
+const { groupOpsByDay, opRowVm, opUpgradeMeta } = require("./operations-view.js");
 const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 const { shouldShowInstallCmd } = require("./install-cmd.js");
@@ -47,6 +48,9 @@ const ZH = {
   "op.kind.community-toggle": "社区目录开关", "op.kind.registry-url": "清单源变更",
   "op.state.on": "开", "op.state.off": "关",
   "op.status.queued": "排队中", "op.status.running": "进行中", "op.status.input": "待决", "op.status.done": "完成", "op.status.warned": "带警告", "op.status.failed": "失败", "op.status.superseded": "已跳过",
+  "op.day.today": "今天", "op.day.yesterday": "昨天",
+  "op.session": "对话", "op.session.tip": "对话区发起（非界面点击）",
+  "settings.ops.group.done.n": "已结束（{n}）",
   "favorites.hint": "还没有收藏——去社区/精选页点插件卡片右上角的 ☆ 收藏",
   "favorites.stale": "{n} 条收藏已从目录下架", "favorites.clean": "清理失效收藏", "favorites.checking": "校验收藏有效性中…", "favorites.stalebadge": "已下架",
   "fav.add": "收藏", "fav.remove": "取消收藏",
@@ -111,7 +115,7 @@ const ZH = {
   "settings.community.count": "收录条目", "settings.community.count.v": "{n}（上游 {up}）",
   "settings.community.displaced": "与精选重复", "settings.community.displaced.v": "{n} 条",
   "settings.ops": "操作记录", "settings.ops.empty": "暂无操作记录。安装、升级、卸载、开关与供给面设置（清单源、社区目录）的执行历史将在这里显示。",
-  "settings.ops.group.active": "进行中", "settings.ops.group.done": "已结束", "settings.ops.reddot": "存在失败或带警告的操作记录",
+  "settings.ops.group.active": "进行中", "settings.ops.reddot": "存在失败或带警告的操作记录",
   "registry.refreshed": "收录清单已强制刷新",
 
   "notify.installed": "已安装 {pkg}{version}", "notify.allowbuilds": "（注意：该插件执行了构建脚本，已按策略放行）",
@@ -163,6 +167,9 @@ const EN = {
   "op.kind.community-toggle": "Community catalog toggle", "op.kind.registry-url": "Registry source change",
   "op.state.on": "On", "op.state.off": "Off",
   "op.status.queued": "Queued", "op.status.running": "Running", "op.status.input": "Pending", "op.status.done": "Done", "op.status.warned": "Warned", "op.status.failed": "Failed", "op.status.superseded": "Skipped",
+  "op.day.today": "Today", "op.day.yesterday": "Yesterday",
+  "op.session": "Chat", "op.session.tip": "Initiated from chat (not a UI click)",
+  "settings.ops.group.done.n": "Ended ({n})",
   "favorites.hint": "No favorites yet — tap ☆ on a plugin card in Community/Curated to bookmark it",
   "favorites.stale": "{n} favorites no longer in the catalog", "favorites.clean": "Clean up stale favorites", "favorites.checking": "Checking favorites…", "favorites.stalebadge": "Delisted",
   "fav.add": "Bookmark", "fav.remove": "Remove bookmark",
@@ -227,7 +234,7 @@ const EN = {
   "settings.community.count": "Entries", "settings.community.count.v": "{n} (upstream {up})",
   "settings.community.displaced": "Displaced (duplicates)", "settings.community.displaced.v": "{n}",
   "settings.ops": "Operations", "settings.ops.empty": "No operations yet. History of installs, upgrades, uninstalls, toggles and registry / community catalog settings will appear here.",
-  "settings.ops.group.active": "Active", "settings.ops.group.done": "Finished", "settings.ops.reddot": "Failed or warned operations exist",
+  "settings.ops.group.active": "Active", "settings.ops.reddot": "Failed or warned operations exist",
   "registry.refreshed": "Registry force-refreshed",
   "notify.installed": "Installed {pkg}{version}", "notify.allowbuilds": " (note: this plugin ran build scripts, allowed by policy)",
   "notify.builds": " (build scripts precisely allowed: {names})", "notify.builds.fallback": " (note: pending list unreadable; all builds allowed as fallback)",
@@ -498,6 +505,16 @@ const CSS = `
 .dsvm-opkind{color:var(--dsw-alias-label-secondary,#4b5563)}
 .dsvm-optarget{font-weight:500;overflow-wrap:anywhere}
 .dsvm-opnote{color:var(--dsw-alias-label-caption,#6b7280);font-size:11px;overflow-wrap:anywhere}
+/* 0.9.75 操作记录信息增强：行内时间/耗时（tabular-nums 对齐）、按日分组头、开关方向与
+   对话来源徽章、升级版本变迁。字号守 0.9.67 的 12px 家族（次级 11px），颜色沿用既有语义：
+   方向「开」用 ok 同款绿，「关」用次级灰；徽章 currentColor 描边自适应深浅主题。 */
+.dsvm-optime,.dsvm-opdur{font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af);font-variant-numeric:tabular-nums}
+.dsvm-opday{font-size:11px;font-weight:600;color:var(--dsw-alias-label-caption,#9ca3af);margin:6px 0 0}
+.dsvm-opgroup.done .dsvm-opday:first-child{margin-top:0}
+.dsvm-opdir,.dsvm-opsession{font-size:11px;line-height:16px;padding:0 6px;border-radius:8px;border:1px solid currentColor}
+.dsvm-opdir.on{color:#15803d}
+.dsvm-opdir.off,.dsvm-opsession{color:var(--dsw-alias-label-secondary,#4b5563)}
+.dsvm-opver{font-size:11px;color:var(--dsw-alias-label-secondary,#4b5563);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .dsvm-favbtn{appearance:none;border:0;background:transparent;color:var(--dsw-alias-label-caption,#9ca3af);font-size:15px;line-height:1;cursor:pointer;padding:0 2px;margin-left:auto}
 .dsvm-favbtn:hover{color:var(--dsw-alias-state-business-primary,#4d6bfe)}
 .dsvm-favbtn.on{color:#e0a33c}
@@ -1915,7 +1932,12 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   // record.target = 安装包名（R1：opAppliesTo 以 x.pkg === rec.target 判定前提，收录 id ≠ 包名会被误判 superseded）
   const doUpgrade = async (it) => {
     try {
-      const res = await ops.runOp("upgrade", it.installedPkg, () => api("upgrade", { pkg: it.installedPkg }));
+      // 0.9.75：升级结果版本变迁（from/to，github 源回退 sha 前 7 位）经 opMeta 落账进操作记录
+      const res = await ops.runOp("upgrade", it.installedPkg, async () => {
+        const r = await api("upgrade", { pkg: it.installedPkg });
+        const m = opUpgradeMeta(r);
+        return m ? { ...r, opMeta: m } : r;
+      });
       const note = upgradeNotify(res.activation); // 0.9.22 生效判定三态分流（client-only 不弹重启横幅）
       const text = lookup("notify.upgraded", { pkg: res.pkg, from: res.fromVersion ? `v${res.fromVersion}` : "—", to: res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : "latest" })
         + (res.buildApprovals && res.buildApprovals.length ? lookup("notify.builds", { names: res.buildApprovals.join(", ") }) : res.fallbackAllBuilds ? lookup("notify.builds.fallback") : "")
@@ -2417,7 +2439,12 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
 
   const doUpgrade = async (it) => {
     try {
-      const res = await ops.runOp("upgrade", it.pkg, () => api("upgrade", { pkg: it.pkg }));
+      // 0.9.75：升级结果版本变迁（from/to，github 源回退 sha 前 7 位）经 opMeta 落账进操作记录
+      const res = await ops.runOp("upgrade", it.pkg, async () => {
+        const r = await api("upgrade", { pkg: it.pkg });
+        const m = opUpgradeMeta(r);
+        return m ? { ...r, opMeta: m } : r;
+      });
       // 0.9.22 生效判定：needsRestart 分流 + 文案后缀（缺席 = github 源等未判定，维持现状横幅）
       const note = upgradeNotify(res.activation);
       notify({
@@ -3075,19 +3102,26 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   const clearable = records.some((r) => TERMINAL_CLEARABLE.has(r.status));
   // 0.9.72 滚轮治理：已结束滚动区可滚才挂 contain；同时补键盘可达（0.9.45 U8 纪律）
   const [scrollRef, scrollCls] = useScrollableContain(finished.length);
-  // 设置类记录 target 展示派生（2026-10-10 评审 M1）：community-toggle 的 meta.on 是唯一实质信息，
-  // 裸渲染对象身份会让开/关两条记录逐字节相同；registry-url 的 target=URL 本身即信息，保持原样。
-  const targetText = (r) =>
-    r.kind === "community-toggle" && r.meta && typeof r.meta.on === "boolean"
-      ? lookup(r.meta.on ? "op.state.on" : "op.state.off")
-      : r.target;
-  const row = (r) =>
-    h(
+  // 0.9.75 信息增强：已结束按日分组（新组在上、组内新→旧，最新一条贴标题可见不用滚动找）
+  const dayGroups = useMemo(() => groupOpsByDay(finished), [records]); // eslint-disable-line react-hooks/exhaustive-deps -- finished 派生自 records
+  // 行渲染（0.9.75）：展示派生全部收敛到 operations-view.js 的 opRowVm——
+  // 行内时刻（title 给完整到秒）、开关/社区开关方向徽章（meta.on，旧记录已持久化立即可读）、
+  // 对话来源徽章（meta.session）、升级版本变迁（meta.from/to，泵 0.9.75 起落账）、终态耗时。
+  // 字段缺席逐段省略（等价旧行），target 恒在。
+  const row = (r) => {
+    const vm = opRowVm(r);
+    const tip = [vm.full, vm.durText, r.error || r.warning || ""].filter(Boolean).join(" · ");
+    return h(
       "div",
       { key: r.id, className: `dsvm-oprow ${OP_STATUS_CLS[r.status] || ""}` },
+      vm.clock ? h("span", { className: "dsvm-optime", title: vm.full }, vm.clock) : null,
       h("span", { className: "dsvm-opstatus" }, lookup("op.status." + r.status)),
       h("span", { className: "dsvm-opkind" }, lookup("op.kind." + r.kind)),
-      h("span", { className: "dsvm-optarget", title: r.error || r.warning || undefined }, targetText(r)),
+      vm.dir ? h("span", { className: `dsvm-opdir ${vm.dir}` }, lookup(vm.dir === "on" ? "op.state.on" : "op.state.off")) : null,
+      vm.session ? h("span", { className: "dsvm-opsession", title: lookup("op.session.tip") }, lookup("op.session")) : null,
+      h("span", { className: "dsvm-optarget", title: tip || undefined }, vm.target),
+      vm.version ? h("span", { className: "dsvm-opver", title: tip || undefined }, vm.version) : null,
+      vm.durText ? h("span", { className: "dsvm-opdur" }, vm.durText) : null,
       r.status === "running" ? Spin() : null,
       r.error ? h("span", { className: "dsvm-opnote" }, r.error) : null,
       r.warning ? h("span", { className: "dsvm-opnote" }, r.warning) : null,
@@ -3096,6 +3130,7 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
         ? h("button", { className: "dshm-xbtn", title: lookup("op.remove"), onClick: () => onRemove(r.id) }, h(XIcon))
         : null,
     );
+  };
   return h(
     "div",
     { className: "dshm-section dshm-ops-card" },
@@ -3106,7 +3141,7 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
       ? h(
           "div",
           { className: "dsvm-ops-caption", style: { marginTop: active.length ? "7px" : "0" } },
-          lookup("settings.ops.group.done"),
+          lookup("settings.ops.group.done.n", { n: finished.length }),
         )
       : null,
     finished.length
@@ -3121,7 +3156,18 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
           h(
             "div",
             { className: "dsvm-opgroup done" },
-            ...finished.map(row),
+            // 0.9.75 按日分组：组头 今天/昨天/YYYY-MM-DD（lookup 键缺席语言回退由 lookup 承担；
+            // createdAt 非法的末组 key='' 不给日期头，行照常渲染）
+            ...dayGroups.map((g) =>
+              h(
+                React.Fragment,
+                { key: g.key || "op-day-unknown" },
+                g.key
+                  ? h("div", { className: "dsvm-opday" }, g.kind === "today" ? lookup("op.day.today") : g.kind === "yesterday" ? lookup("op.day.yesterday") : g.key)
+                  : null,
+                ...g.records.map(row),
+              ),
+            ),
           ),
         )
       : null,

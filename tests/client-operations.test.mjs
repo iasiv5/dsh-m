@@ -351,6 +351,50 @@ describe('createOpsPump（0.7.0 评审 P4：生产泵的直接测试）', () => 
     assert.equal(w.status, 'warned')
     assert.equal(w.warning, 'builds approved')
   })
+
+  describe('opMeta 落账（0.9.75：执行器成功值回传版本变迁等参数进 meta）', () => {
+    it('done：opMeta 并入 meta（实读 meta 为底——session 标记保留；opMeta 覆写同名键）', async () => {
+      const { store, pump } = setup(null)
+      await pump.enqueue(
+        rec({ id: 'm1', target: 't-m1', status: 'queued', meta: { on: true, from: 'stale' } }),
+        async () => ({ okv: 1, opMeta: { from: '0.9.71', to: '0.9.72' } }),
+      )
+      const stored = store.list().find((r) => r.id === 'm1')
+      assert.equal(stored.status, 'done')
+      assert.deepEqual(stored.meta, { on: true, from: '0.9.71', to: '0.9.72', session: true }, '入队 meta 为底 + opMeta 覆写 + session 保留')
+    })
+    it('warned 同样入账（部分成功也有版本事实）', async () => {
+      const { store, pump } = setup(null)
+      await pump.enqueue(rec({ id: 'm2', target: 't-m2', status: 'queued' }), async () => ({ opWarning: 'builds', opMeta: { to: '2.0.0' } }))
+      const stored = store.list().find((r) => r.id === 'm2')
+      assert.equal(stored.status, 'warned')
+      assert.deepEqual(stored.meta, { to: '2.0.0', session: true })
+    })
+    it('失败路径不入账（结果不可信）；无 opMeta / 非对象 opMeta → meta 零扰动', async () => {
+      const { store, pump } = setup(null)
+      const p1 = pump.enqueue(rec({ id: 'm3', target: 't-m3', status: 'queued', meta: { on: true } }), async () => {
+        throw new Error('boom')
+      }).then(() => null, (e) => e)
+      await p1
+      assert.deepEqual(store.list().find((r) => r.id === 'm3').meta, { on: true, session: true }, '失败不并入')
+      await pump.enqueue(rec({ id: 'm4', target: 't-m4', status: 'queued', meta: { on: true } }), async () => ({ okv: 1 }))
+      await pump.enqueue(rec({ id: 'm5', target: 't-m5', status: 'queued', meta: { on: true } }), async () => ({ okv: 1, opMeta: 'dirty' }))
+      assert.deepEqual(store.list().find((r) => r.id === 'm4').meta, { on: true, session: true })
+      assert.deepEqual(store.list().find((r) => r.id === 'm5').meta, { on: true, session: true })
+    })
+    it('恢复路径（dispatchRestored）结果带 opMeta 同样入账', async () => {
+      const store = createOperationsStore(memStorage())
+      store.upsert(rec({ id: 'm6', target: 't-m6', status: 'queued' }))
+      const pump = createOpsPump(store, () => ({
+        dispatchRestored: async () => ({ ok: true, opMeta: { to: '3.0.0' } }),
+      }))
+      pump.kick()
+      await new Promise((r) => setTimeout(r, 20))
+      const stored = store.list().find((r) => r.id === 'm6')
+      assert.equal(stored.status, 'done')
+      assert.equal(stored.meta.to, '3.0.0')
+    })
+  })
 })
 
 describe('恢复所有权语义（R3·N1 修正：session 标记区分泵拥有 vs 崩溃残留）', () => {

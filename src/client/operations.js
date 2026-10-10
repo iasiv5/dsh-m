@@ -239,6 +239,9 @@ export function opAppliesTo(rec, installedItems) {
  *   e.guard/e.issue 不受 record.error 字符串化影响；
  * - 取队首同步 store.list()，判空到退出之间不插任何 await；
  * - dispatch 前统一 stillApplies 实读校验；前提消失 → superseded（e.opSuperseded 拒绝 waiter）。
+ * - 执行器成功值可带 opMeta（0.9.75）：对象则并入记录 meta（落账时实读的当前 meta 为底、
+ *   opMeta 覆写同名键，session 标记保留），upgrade 调用方借此把 from/to 版本变迁落账；
+ *   失败路径不并入。
  * @param {ReturnType<typeof createOperationsStore>} store
  * @param {() => ({ stillApplies?: (rec) => Promise<boolean>, dispatchRestored?: (rec) => Promise<{ok: boolean, error?: string, issue?: unknown}>, syncOps?: () => void } | null)} getCtx
  */
@@ -291,6 +294,9 @@ export function createOpsPump(store, getCtx) {
           } else if (ctx && ctx.dispatchRestored) {
             const r = await ctx.dispatchRestored(queued)
             if (!r || !r.ok) err = Object.assign(new Error((r && r.error) || 'unknown'), r && r.issue ? { issue: r.issue } : {})
+            // 0.9.75：恢复成功值同样进成功值通道（opMeta 可落账）。生产 dispatchRestored 今日
+            // 返回 { ok: true }，此赋值对现有流零行为变化；opWarning 若未来出现也不再被吞。
+            else value = r
           } else {
             err = new Error('无执行上下文（面板未挂载）')
           }
@@ -298,7 +304,17 @@ export function createOpsPump(store, getCtx) {
           err = e
         }
         if (!err) {
-          finalize({ status: value && value.opWarning ? 'warned' : 'done', warning: value && value.opWarning })
+          // 0.9.75：执行器可回传 opMeta（如 upgrade 的 { from, to } 版本变迁）——并入记录 meta。
+          // 底座取**落账时实读**的当前记录 meta（而非入队快照 queued.meta）：拾取阶段追加的
+          // session 标记（R3 所有权凭证）不得在合并时被抹掉；opMeta 覆写同名键。
+          // 仅成功/warned 路径生效；失败路径结果不可信，不入账。
+          const opMeta = value && typeof value === 'object' && value.opMeta && typeof value.opMeta === 'object' ? value.opMeta : null
+          const cur = opMeta ? store.list().find((x) => x.id === queued.id) : null
+          finalize({
+            status: value && value.opWarning ? 'warned' : 'done',
+            warning: value && value.opWarning,
+            ...(opMeta ? { meta: { ...((cur && cur.meta) || {}), ...opMeta } } : {}),
+          })
           if (waitersEntry) waitersEntry.resolve(value)
         } else {
           const isInput = Boolean(err.issue)
