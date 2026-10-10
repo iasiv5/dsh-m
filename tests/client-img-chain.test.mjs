@@ -180,6 +180,23 @@ describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处�
   })
 })
 
+describe('详情截图条统一瓷砖 CSS 锚（0.9.73：修「大小不一 + flex 收缩外溢盖邻图」）', () => {
+  // 切片锚：shotrow 规则起 → 灯箱 v2 注释止（之间的 CSS 块只属于截图条）
+  const cssSeg = mainSrc.slice(mainSrc.indexOf('.dsvm-shotrow{'), mainSrc.indexOf('/* 灯箱 v2'))
+  it('统一瓷砖：box 禁收缩 + 固定 176×110 + overflow:hidden；img 满铺 cover 顶锚定；行 snap 翻页', () => {
+    assert.ok(cssSeg.includes('.dsvm-shotrow{display:flex;gap:6px;overflow-x:auto;padding:2px 0;scroll-snap-type:x proximity}'), '行保持横滚 + scroll-snap proximity')
+    assert.ok(/\.dsvm-shotbox\{flex:0 0 auto;width:176px;height:110px;overflow:hidden;/.test(cssSeg), 'box：flex:0 0 auto（几何与图片多少/加载态无关）+ 固定瓷砖 + 外溢兜底')
+    assert.ok(cssSeg.includes('scroll-snap-align:start'), 'box snap 锚点')
+    assert.ok(/\.dsvm-shot\{width:100%;height:100%;object-fit:cover;object-position:top center;/.test(cssSeg), 'img：满铺 cover + 顶锚定（标题栏保留，裁切只在底部）')
+  })
+  it('旧病灶形态退役（负向锚）：min-width 地板顶掉 automatic minimum size 的收缩机制不再存在', () => {
+    assert.doesNotMatch(cssSeg, /min-width:120px/, 'box min-width 地板退役（外溢盖邻图的根因）')
+    assert.doesNotMatch(cssSeg, /min-height:84px/, 'box min-height 退役（行高随图跳变的根因之一）')
+    assert.doesNotMatch(cssSeg, /max-width:220px/, 'img max-width 上限退役（大小不一的根因）')
+    assert.doesNotMatch(cssSeg, /max-height:130px/, 'img max-height 上限退役（大小不一的根因）')
+  })
+})
+
 describe('Primary screenshot DetailModal source（GUI only）', () => {
   const modalSeg = mainSrc.slice(mainSrc.indexOf('function DetailModal('), mainSrc.indexOf('// ---------- 市场页'))
 

@@ -407,9 +407,18 @@ const CSS = `
 .dsvm-cmdrow{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
 .dsvm-code{background:rgba(127,127,127,.12);padding:3px 8px;border-radius:6px;font-size:11px;overflow-wrap:anywhere}
 .dsvm-modalactions{display:flex;justify-content:flex-end;gap:8px}
-.dsvm-shotrow{display:flex;gap:6px;overflow-x:auto;padding:2px 0}
-.dsvm-shotbox{min-width:120px;min-height:84px;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.08);border-radius:6px;cursor:zoom-in;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25))}
-.dsvm-shot{max-width:220px;max-height:130px;border-radius:6px;display:block}
+/* 0.9.73 详情截图条统一瓷砖：两病灶——①盒子无固定几何（min 120×84 盒 / img max 220×130）跟着
+   图片固有比例走，整条参差（「大的大小的小」）；②shotbox 显式 min-width:120px 顶掉 flex 的
+   automatic minimum size，N 张图自然总宽超行（8×220px ≫ 弹窗内容宽 ~688px）触发 flex 收缩时，
+   盒子被压到 120px 地板而盒内 img（替换元素）不受盒宽约束保持固有宽度、盒子 overflow:visible
+   ——图片居中外溢盖住左右邻图（发生在滚动条出现之前，两症状同屏）；加载完成瞬间行高还被
+   撑高一次（行高随最高图 84→130px 跳变，CLS）。修复 = 统一瓷砖 176×110 + flex:0 0 auto
+   （永不收缩，几何与图片多少/加载态无关）+ overflow:hidden（外溢兜底双保险），img 改
+   width/height:100% + object-fit:cover + object-position:top（顶锚定保住截图标题栏，裁切只
+   发生在底部，竖图/方图露上半段，全图看灯箱）；scroll-snap proximity 给横滚翻页手感。 */
+.dsvm-shotrow{display:flex;gap:6px;overflow-x:auto;padding:2px 0;scroll-snap-type:x proximity}
+.dsvm-shotbox{flex:0 0 auto;width:176px;height:110px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.08);border-radius:6px;cursor:zoom-in;border:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.25));scroll-snap-align:start}
+.dsvm-shot{width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:6px;display:block}
 /* 灯箱 v2（0.9.60）：组件 createPortal 挂 body（逃出面板 backdrop-filter 包含块），
    控件全部绝对定位贴视口边——✕ 常驻右上、‹› 两侧居中、底部计数+圆点 pill，
    任何面板状态/任意图片高度下都不会被挤出屏幕；图片降到 74vh 给底部控件留位。
