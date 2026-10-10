@@ -157,7 +157,7 @@ describe('main.jsx 接线源锚（实施计划 Task 3：Shot + 截图条四处�
     assert.ok(/prev\.includes\(src\) \? prev : prev\.concat\(src\)/.test(modalSeg) || /prev\.includes\(/.test(modalSeg), 'broken 去重合并')
     assert.ok(/shots\.filter\(\(src\) => !broken/.test(modalSeg) || /filter\(\(src\) => !brokenShots\.includes/.test(modalSeg), 'visible 过滤式')
     // 四处基准：整条门控、灯箱门控、键盘 lbStep、effect 依赖
-    assert.ok(/visible\.length\s*\?\s*h\(\s*"div",\s*\{ className: "dsvm-shotrow" \}/.test(modalSeg), '① 整条门控 visible.length')
+    assert.ok(/visible\.length\s*\?\s*h\(\s*"div",\s*\{[^}]*className: "dsvm-shotrow"/.test(modalSeg), '① 整条门控 visible.length（0.9.74 起容 ref 等 props 前缀）')
     assert.ok(modalSeg.includes('lb !== null && visible.length'), '③ 灯箱门控 visible.length')
     assert.ok(modalSeg.includes('lbStep(i, -1, visible.length)') && modalSeg.includes('lbStep(i, 1, visible.length)'), '④ 键盘 lbStep 长度基准 visible.length')
     assert.ok(/\[lb, visible\.length, onClose\]/.test(modalSeg), '键盘 effect 依赖随动')

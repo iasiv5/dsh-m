@@ -15,6 +15,7 @@ const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normal
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");
+const { shotWheelAction } = require("./wheel-strip.js");
 const { dragSlop, grabOffset, titlebarTopInset, clampPoint, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
 const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
 const { createMarkdown } = require("./markdown.js");
@@ -1546,6 +1547,24 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
   useEffect(() => {
     if (closeRef.current) closeRef.current.focus();
   }, []);
+  // 0.9.74 截图条滚轮横滚：裸滚轮 deltaY 映射 scrollLeft（钢人三红线判定全在纯函数
+  // shotWheelAction——可滚才拦 / 到头放行 / deltaX 不碰）。接线要点：React onWheel 走
+  // document 级 passive 委托，preventDefault 无效，必须手动 addEventListener({passive:false})；
+  // deps=visible.length——截图条条件渲染（无图无 div），primary 截图异步到达 / 坏图剔除
+  // 都会改变存在性，此时重挂；判定入参逐事件现读 row 布局，无缓存失效问题。
+  const shotRowRef = useRef(null);
+  useEffect(() => {
+    const row = shotRowRef.current;
+    if (!row || typeof row.addEventListener !== "function") return;
+    const onWheel = (e) => {
+      const action = shotWheelAction({ deltaX: e.deltaX, deltaY: e.deltaY, scrollWidth: row.scrollWidth, clientWidth: row.clientWidth, scrollLeft: row.scrollLeft });
+      if (!action.preventDefault) return;
+      e.preventDefault();
+      row.scrollLeft += action.scrollBy;
+    };
+    row.addEventListener("wheel", onWheel, { passive: false });
+    return () => row.removeEventListener("wheel", onWheel);
+  }, [visible.length]);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") {
@@ -1664,7 +1683,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
       visible.length
         ? h(
             "div",
-            { className: "dsvm-shotrow" },
+            { ref: shotRowRef, className: "dsvm-shotrow" },
             // 0.9.61（评审 G）：全量 shots map + 原始索引稳定 key，broken 项由 Shot 内部渲 null——
             // 剔除不引发未 broken 项重挂重载；点击按 src 在 visible 中的实位开灯箱（原始索引≠visible 索引）
             ...shots.map((src, i) => h(Shot, { key: `${i}:${src}`, src, onClick: () => setLb(visible.indexOf(src)), onBroken: breakShot })),
