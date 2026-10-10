@@ -22,9 +22,13 @@
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
 import { withMutationSession, resolveRegistryEntry, matchInstalledByEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market.js'
+import { mergedOutcome } from './merged-market.js'
+import { WEB_PROFILE } from './env.js'
+
+/** desktop 升级社区兜底的等待上限（对齐 market.ts DEFAULT_DEADLINE_MS 量级；仅本路径使用）。 */
+const DEFAULT_COMMUNITY_DEADLINE_MS = 60_000
 import { loadRegistry as defaultLoadRegistry } from './registry.js'
 import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
-import { adaptCommunityCatalog } from './community-adapter.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { npmLatest as defaultNpmLatest, githubLatestTag as defaultGithubLatestTag } from './versions.js'
@@ -600,12 +604,20 @@ async function desktopUpgradeLocked(
   if (!target) throw new DesktopOpsError('install-refused', `desktop profile 未安装该插件: ${pkg}（升级目标必须是已装插件）`)
   let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
   if (!entry) {
-    // 0.5.1 同语义：主清单 miss 查社区目录（合并市场安装的社区条目同样可升级）
+    // 0.5.1 同语义：主清单 miss 查社区目录（合并市场安装的社区条目同样可升级）。
+    // 0.9.68（ADR-0016 / R2-3）：经物化合并市场全量域 lookupInstalledAll（含 displaced 让位条目，
+    // min-ord = 今日「先主清单后社区 adapt 全量」合成语义）；reject 透传由窄 catch 吞为 miss。
     try {
-      const community = await (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-      entry = community.catalog
-        ? adaptCommunityCatalog(community.catalog).entries.find((e) => matchInstalledByEntry(e, [target]))
-        : undefined
+      const communityTask = (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+      const outcome = await mergedOutcome({
+        namespace: opts.namespace ?? 'host',
+        profile: opts.profile ?? WEB_PROFILE,
+        cfg,
+        registry: loaded,
+        communityTask,
+        deadlineAt: Date.now() + DEFAULT_COMMUNITY_DEADLINE_MS,
+      })
+      entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
     } catch {
       entry = undefined
     }

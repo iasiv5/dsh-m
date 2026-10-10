@@ -450,6 +450,11 @@ export interface MergedOutcome extends CommunityOutcome {
   lookupInstalledAll(installed: InstalledPlugin): RegistryEntry | CommunityEntry | undefined
 }
 
+/** 导出（0.9.68 接线配套）：给无 memo 的 communityOutcome 结果挂兜底 lookup（线性扫描，今日语义原样）——供降级路径（registry-deadline / settings 摘要等冷路径）取得与 mergedOutcome 同形的返回值。 */
+export function withFallbackLookups(outcome: CommunityOutcome): MergedOutcome {
+  return outcomeWithLookups(outcome, null, null)
+}
+
 function outcomeWithLookups(outcome: CommunityOutcome, mergedIndex: MatchIndex | null, fullIndex: MatchIndex | null): MergedOutcome {
   return {
     ...outcome,

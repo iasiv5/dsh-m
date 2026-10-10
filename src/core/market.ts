@@ -10,7 +10,7 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { dshHome, webProfileDir } from './env.js'
+import { dshHome, webProfileDir, WEB_PROFILE } from './env.js'
 import {
   runProfileTransaction,
   makeNpmWarmPackument,
@@ -44,10 +44,13 @@ import {
 import {
   communityOutcome,
   communityTimeoutSummary,
+  withFallbackLookups,
   deadlineRace,
   isCommunityEntry,
   matchInstalledByEntry,
+  mergedOutcome,
   type CommunityRegistrySummary,
+  type MergedOutcome,
 } from './merged-market.js'
 export { communityOutcome, matchInstalledByEntry } from './merged-market.js'
 export type { CommunityOutcome, CommunityRegistrySummary, MergeRegistriesResult } from './merged-market.js'
@@ -543,7 +546,16 @@ export async function listMarket(
   const installedItems = installed?.items ?? []
 
   // 社区 waiter 收敛：主 unavailable 时 merged = 存活社区条目（Q42 出页不返空）；两层皆不可用 → 空页契约
-  const community = await communityOutcome(communityTask, deadlineAt, loaded.registry.plugins)
+  // 0.9.68（ADR-0016）：改经物化合并市场——同身份（registry 代 + 目录 version）命中即免 adapt+merge，
+  // summary 仍由当次 state 现算；失败/deadline/unavailable/disabled/task=null 形态透传不落代。
+  const community: MergedOutcome = await mergedOutcome({
+    namespace,
+    profile: opts.profile ?? WEB_PROFILE,
+    cfg,
+    registry: loaded,
+    communityTask,
+    deadlineAt,
+  })
 
   // 分区过滤 + 全量统计 + query/category 过滤 + 分页（同步，极轻；0.7.0 Task 2）：
   // categoryCounts = 分区集合（不含 query/category 过滤——chips 需要全区计数）；
@@ -666,8 +678,10 @@ export async function listMarket(
       }
     }
     // outdated 判定统一在 probe 后进行（0.9.45：cache-only 也执行——暖缓存不丢「可升级」徽标）
+    // 0.9.68（ADR-0016 决策 5 / 评审 R1-7）：pkg→installed 查表，页内 O(1) 取代逐项 find
+    const instByPkg = new Map(installedItems.map((i) => [i.pkg, i]))
     for (const item of items) {
-      const inst = item.installedPkg !== undefined ? installedItems.find((i) => i.pkg === item.installedPkg) : undefined
+      const inst = item.installedPkg !== undefined ? instByPkg.get(item.installedPkg) : undefined
       if (!inst) continue
       if (item.latestVersion !== undefined && inst.version) {
         item.outdated = isNewerVersion(item.latestVersion, inst.version)
@@ -736,7 +750,18 @@ export async function listInstalledWithMeta(
     loaded = 'deadline'
   }
 
-  const community = await communityOutcome(communityTask, deadlineAt, loaded === 'deadline' ? [] : loaded.registry.plugins)
+  // 0.9.68（ADR-0016）：registry 正常时经物化合并市场（同身份免 adapt+merge + 匹配查表）；
+  // registry deadline 降级路径身份残缺（primary=[]、fetchedAt 未知），走无 memo 的 communityOutcome，不进 L2。
+  const community: MergedOutcome = loaded === 'deadline'
+    ? withFallbackLookups(await communityOutcome(communityTask, deadlineAt, []))
+    : await mergedOutcome({
+        namespace,
+        profile: opts.profile ?? WEB_PROFILE,
+        cfg,
+        registry: loaded,
+        communityTask,
+        deadlineAt,
+      })
 
   if (loaded === 'deadline' || loaded.status === 'unavailable') {
     // registry 不可用：不做 matching/探测（原行为），但社区 summary 照常携带（CLI outdated 双源判定）
@@ -747,23 +772,28 @@ export async function listInstalledWithMeta(
 
   const registryState = stateOf(loaded)
 
-  matchInstalled(items, community.merged)
+  matchInstalled(items, community.merged, community.lookupInstalled)
   // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
   // 'only' 面板第二段 ttlMin=0 永远新鲜（readLatestCache(key,0) 先删共享条目再重探：host ns 下浏览页/
   // 工具的 TTL 命中被刷新为更新值，预算消耗速率上升、上限不变，超限走 latestError 降级）。
   if ((opts.probeMode ?? 'full') !== 'none') {
     // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
     await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-    await probeLatest(items, { merged: community.merged, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? 0 : Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+    await probeLatest(items, { merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? 0 : Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
   }
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
 }
 
 /** matching（主+社区合并条目）：命中主条目或社区条目都写 registryId；社区命中再标 community。 */
-function matchInstalled(items: InstalledItem[], merged: Array<RegistryEntry | CommunityEntry>): void {
+function matchInstalled(
+  items: InstalledItem[],
+  merged: Array<RegistryEntry | CommunityEntry>,
+  lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined,
+): void {
   for (const item of items) {
-    const entry = merged.find((e) => matchInstalledByEntry(e, [item]))
+    // 0.9.68（ADR-0016 决策 5）：mergedOutcome.lookupInstalled 查表 O(I)；缺省回退线性扫描保旧调用面
+    const entry = lookup ? lookup(item) : merged.find((e) => matchInstalledByEntry(e, [item]))
     if (!entry) continue
     item.registryId = entry.id
     item.registryGithub = entry.github ?? null
@@ -775,12 +805,12 @@ function matchInstalled(items: InstalledItem[], merged: Array<RegistryEntry | Co
 /** 已装页 latest 探测（Q46 已装页豁免，但 GitHub 计入 request 预算 + 宿主滚动窗口）。 */
 async function probeLatest(
   items: InstalledItem[],
-  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number },
+  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number; lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined },
   d: MarketDeps,
   rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
 ): Promise<void> {
   await mapWithConcurrency(items, LATEST_WORKERS, async (item) => {
-    const entry = ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
+    const entry = ctx.lookup ? ctx.lookup(item) : ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
     // latest 探测沿用 listMarket 的 TTL cache；npm-only 条目（不在收录清单的已装包）也走
     // latestCacheKey 归一格式（0.9.14：否则首段非 host/cli 会被落盘层静默跳过）
     const cacheKey = entry
@@ -890,11 +920,28 @@ export async function resolveRegistryEntry(
   if (loaded.status === 'unavailable') {
     throw new Error(`收录清单不可用，无法安装 ${id}；请检查 registry 配置或网络后重试`)
   }
-  const entry =
-    loaded.registry.plugins.find((e) => e.id === id) ??
-    (await findCommunityInstallEntry(id, cfg, opts, deps))
-  if (!entry) throw new Error(`registry 中没有该条目: ${id}`)
-  return entry
+  // 主清单优先短路（今日语义原样）：primary 命中不触碰社区——社区异常不阻断主清单条目安装。
+  const primaryEntry = loaded.registry.plugins.find((e) => e.id === id)
+  if (primaryEntry) return primaryEntry
+  // 0.9.68（ADR-0016 / R2-3）：主清单 miss 时经物化合并市场取全量域 findById（[primary..., adapt 全量...]
+  // 含 displaced 让位条目——id-让位条目今日可装，语义零变化）；同身份命中免每装机 4,400 条重 adapt。
+  // communityTask reject 透传，由窄 catch 吞为 miss（与旧 findCommunityInstallEntry 同构 →「没有该条目」）。
+  try {
+    const communityTask = (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+    const outcome = await mergedOutcome({
+      namespace: opts.namespace ?? 'host',
+      profile: opts.profile ?? WEB_PROFILE,
+      cfg,
+      registry: loaded,
+      communityTask,
+      deadlineAt: Date.now() + DEFAULT_DEADLINE_MS,
+    })
+    const entry = outcome.findById(id)
+    if (entry) return entry
+  } catch {
+    /* 社区失败/异常吞为 miss（今日语义） */
+  }
+  throw new Error(`registry 中没有该条目: ${id}`)
 }
 
 export async function installFromRegistry(
@@ -1566,9 +1613,26 @@ async function upgradePluginLocked(
   const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)(opts.profileDir)
   const target = installed.find((it) => it.pkg === pkg)
   if (!target) throw new Error(`web profile 未安装该插件: ${pkg}`)
+  // 0.5.1：合并市场安装的社区条目同样可升级——主清单优先，miss 时查社区目录。
+  // 0.9.68（ADR-0016 / R2-3）：社区兜底经物化合并市场全量域 lookupInstalledAll（含 displaced 让位条目，
+  // min-ord 胜者 = 今日「先主清单 find 后社区 adapt 全量 find」合成语义）；reject 透传由窄 catch 吞为 miss。
   let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
-  // 0.5.1：合并市场安装的社区条目同样可升级——主清单 miss 时查社区目录
-  if (!entry) entry = await findCommunityUpgradeEntry(target, cfg, opts, deps)
+  try {
+    if (!entry) {
+    const communityTask = (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+    const outcome = await mergedOutcome({
+      namespace: opts.namespace ?? 'host',
+      profile: opts.profile ?? WEB_PROFILE,
+      cfg,
+      registry: loaded,
+      communityTask,
+      deadlineAt: Date.now() + DEFAULT_DEADLINE_MS,
+    })
+    entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
+    }
+  } catch {
+    entry = undefined
+  }
   if (!entry) throw new Error(`「${pkg}」不是经 dsh-m 收录的插件；直接升级请用 dsh plugin update 或先在 registry 收录它`)
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
@@ -1592,41 +1656,6 @@ async function upgradePluginLocked(
  * （owner--name 等），主清单 miss 时按同一 id 查社区目录。社区清单未启用/不可用/加载
  * 异常/未命中 → undefined，由调用方统一报「registry 中没有该条目」。
  */
-async function findCommunityInstallEntry(
-  id: string,
-  cfg: RegistryConfig,
-  opts: RegistryRuntimeOptions,
-  deps?: InstallDeps,
-): Promise<InstallableEntry | undefined> {
-  try {
-    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-    if (!loaded.catalog) return undefined
-    return adaptCommunityCatalog(loaded.catalog).entries.find((e) => e.id === id)
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * 社区条目升级查找（0.5.1）：主清单 miss 时按同一 matchInstalledByEntry 语义查社区目录。
- * 社区清单未启用/不可用/加载异常/未命中 → undefined，由调用方统一报「不是经 dsh-m 收录」。
- */
-async function findCommunityUpgradeEntry(
-  target: InstalledPlugin,
-  cfg: RegistryConfig,
-  opts: RegistryRuntimeOptions,
-  deps?: InstallDeps,
-): Promise<InstallableEntry | undefined> {
-  try {
-    const loaded = await (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-    if (!loaded.catalog) return undefined
-    const adapted = adaptCommunityCatalog(loaded.catalog)
-    return adapted.entries.find((e) => matchInstalledByEntry(e, [target]))
-  } catch {
-    return undefined
-  }
-}
-
 /** 自升级（0.5.0 收编：host-api 直调事务的旁路封死）：npmLatest + integrity fail-closed + installEntryLocked（session/守卫经 installEntry）。 */
 export async function selfUpgrade(
   pkgName: string,

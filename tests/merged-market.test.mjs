@@ -225,4 +225,24 @@ describe('L2 物化合并市场（ADR-0016）', () => {
     assert.equal(_mergedMarketStatsForTests().builds, 0)
     assert.equal(_mergedMarketStatsForTests().hits, 0)
   })
+
+  it('集成（Task 3 / R1-5）：同身份两次 listMarket → builds===1、hits>=1、两次结果 deepEqual', async () => {
+    const { listMarket } = await import('../lib/core/market.js')
+    const mkDeps = () => ({
+      loadRegistry: async () => readyRegistry(PRIMARY),
+      listInstalledPlugins: async () => ({ items: [], others: 0, complete: true, profileDir: '/tmp/gold-profile' }),
+      npmLatest: async () => ({ version: '9.9.9' }),
+      githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
+      fetchCommunityCatalog: async () => communityTaskValue(COMMUNITY_RAW),
+    })
+    const cfg = { timeoutMs: 500 }
+    const first = await listMarket(cfg, { withLatest: false }, mkDeps())
+    const stats1 = _mergedMarketStatsForTests()
+    const second = await listMarket(cfg, { withLatest: false }, mkDeps())
+    const stats2 = _mergedMarketStatsForTests()
+    assert.equal(stats1.builds, 1, '首调用建代')
+    assert.equal(stats2.builds, 1, '第二次同身份 → 代命中不重建')
+    assert.ok(stats2.hits >= 1, `集成命中（实际 hits=${stats2.hits}）`)
+    assert.deepEqual(second, first, '两次结果逐字段等价（toMarketItem 展开产生新对象属预期，不比较引用）')
+  })
 })
