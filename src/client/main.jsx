@@ -85,7 +85,7 @@ const ZH = {
   "settings.warnings": "维护提示",
   "notice.unavailable": "收录清单不可用 · 请到设置页检查地址",
   "pager.jump": "跳转", "pager.jump.ph": "页号",
-  "panel.fullscreen": "全屏", "panel.restore": "还原",
+  "panel.fullscreen": "全屏", "panel.restore": "还原", "panel.dragHint": "拖拽移动 · 双击切换全屏",
   "lb.title": "插件截图预览", "lb.prev": "上一张（←）", "lb.next": "下一张（→）", "lb.hint": "点图或空白处关闭 · ←→ 切换", "lb.fail": "图片加载失败", "lb.retry": "重试", "lb.open": "打开原图",
   "filter.title": "筛选", "filter.sortfield": "排序字段", "filter.sortdir": "排列方向", "filter.pagesize": "每页条数",
   "filter.field.downloads": "npm 下载量（近 30 天）", "filter.field.stars": "Star 数", "filter.field.added": "收录日期",
@@ -199,7 +199,7 @@ const EN = {
   "settings.warnings": "Maintenance notice",
   "notice.unavailable": "Registry unavailable · check the address in Settings",
   "pager.jump": "Go", "pager.jump.ph": "Page",
-  "panel.fullscreen": "Fullscreen", "panel.restore": "Restore",
+  "panel.fullscreen": "Fullscreen", "panel.restore": "Restore", "panel.dragHint": "Drag to move · Double-click to toggle fullscreen",
   "lb.title": "Plugin screenshot preview", "lb.prev": "Previous (←)", "lb.next": "Next (→)", "lb.hint": "Click image or backdrop to close · ←→ to switch", "lb.fail": "Failed to load image", "lb.retry": "Retry", "lb.open": "Open original",
   "filter.title": "Filter", "filter.sortfield": "Sort by", "filter.sortdir": "Direction", "filter.pagesize": "Per page",
   "filter.field.downloads": "npm downloads (30-day)", "filter.field.stars": "Stars", "filter.field.added": "Date added",
@@ -286,6 +286,23 @@ function communityLabels(data) {
 const CSS = `
 .dshm-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.48));display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-windows-titlebar-height,0px)) 16px 24px;box-sizing:border-box}
 .dshm-panel{width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff));background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
+/* 0.9.69 还原态拖拽：.abs = 有位置记忆时的绝对定位形态（overlay 为 inset:0 fixed，
+   绝对定位坐标即视口坐标）；无记录时面板仍走 overlay flex 居中，渲染路径与旧版逐字节一致。
+   拖拽态自持（0.9.62 影院同款纪律）：background 取调用方手势开始时写入的 --dshm-drag-bg
+   （getComputedStyle 解析后的最终色强制 α=1，见 window-drag.solidifyColor），皮肤对
+   --dsw-alias-* 的半透明定义（openbmc/uefi bg-base α=0.55 病类）无法再让拖拽中面板透光；
+   blur 关闭是拖拽期最大性能收益（每帧免大面积重滤镜），transform ≠ none 维持包含块，
+   fixed 后代不逃逸。自持三处已登记于 client-lightbox.test.mjs 定长断言（4→7）；
+   本注释刻意不用清单关键字字面量——计数对注释提及同样生效（评审 R1-2）。 */
+.dshm-panel.abs{position:absolute;margin:0}
+.dshm-panel--dragging{cursor:grabbing;background:var(--dshm-drag-bg,Canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;box-shadow:0 24px 64px rgba(2,6,23,.38)}
+/* 0.9.69 拖拽手柄：user-select/touch-action/tap-highlight 无条件生效（全屏双击切换时
+   标题不出现选中闪现）；grab 光标仅在「还原态且非拖拽中」直接命中 head——拖拽中 head
+   无自有 cursor 声明，自然继承面板根 .dshm-panel--dragging 的 grabbing（cursor 按
+   「元素自有声明 > 继承」解析：grab 若在拖拽中仍直接命中 head，grabbing 永远继承不进
+   成为死代码——评审 R2-2）。全屏禁拖（硬性要求③），光标不误导（评审 R1-6）。 */
+.dshm-head{user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent}
+.dshm-panel:not(.full):not(.dshm-panel--dragging) .dshm-head{cursor:grab}
 /* 0.9.4 Windows Desktop 全屏修复：壳在 html 上设 --dsh-windows-titlebar-height（40px，
    titleBarStyle:hidden + titleBarOverlay:42 系统绘制 — □ ✕），其上还有全宽
    -webkit-app-region:drag 拖拽带——该带按布局参与拖拽判定、无视 z-index/绘制顺序，
@@ -3329,7 +3346,7 @@ function MarketPanel({ onClose }) {
       { className: full ? "dshm-panel full" : "dshm-panel", onClick: (e) => e.stopPropagation() },
       h(
         "div",
-        { className: "dshm-head" },
+        { className: "dshm-head", title: full ? undefined : lookup("panel.dragHint") },
         h("span", { className: "dshm-title" }, lookup("title.full")),
         h("span", { className: "dshm-head-divider", "aria-hidden": "true" }),
         h(
