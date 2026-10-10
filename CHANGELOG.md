@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.9.73 修复：详情截图条统一瓷砖——「大小不一 + 预览图盖住左右邻图」（flex 收缩外溢根治）
+
+- **根因（主人详情弹窗实拍：缩略图大小参差，图片压在左右邻图上）**：两处机制缺陷叠加——① `.dsvm-shotbox` 无固定几何（盒 min 120×84 / img max 220×130），跟着图片固有比例走，16:9、4:3、竖图、小原图各渲各的，「大的大小的小」；②盒子显式 `min-width:120px` 顶掉了 flex 的 automatic minimum size——8 张截图自然总宽（~1.7k px）远超弹窗内容宽（~688px）触发 flex 收缩时，盒子被压到 120px 地板而盒内 `<img>`（替换元素）不受盒宽约束保持固有宽度，加上盒子 `overflow:visible`，图片居中外溢每侧盖住邻图 ~44px——且发生在滚动条出现之前，两症状同屏；加载完成瞬间行高还随最高图 84→130px 跳变（CLS）。
+- **修复（统一瓷砖）**：盒子 `flex:0 0 auto`（几何与图片数量/加载态无关，永不收缩）+ 固定 176×110 + `overflow:hidden`（外溢兜底双保险）；img 改 `width/height:100%` + `object-fit:cover` + `object-position:top center`（顶锚定保住截图标题栏，裁切只发生在底部，竖图/方图露上半段，全图看灯箱）；行加 `scroll-snap-type:x proximity` + 盒 `scroll-snap-align:start`（横滚翻页手感）。灯箱、走链、坏图剔除、键盘导航语义零变化。
+- **验证**：1332 项测试全绿（新增截图条瓷砖 CSS 源锚 2 用例：统一瓷砖形态 + 旧病灶负向锚）、typecheck 零错误；构建产物含新规则逐字锚。方案对比 mock（现状复刻 + cover/contain/网格三案实况）先行经主人选型（A 案 cover）。
+
 ### 0.9.72 修复：设置页滚轮黑洞——操作记录滚动区/横幅的 contain 改为「可滚才挂」（Chrome 144 规范对齐暴露）
 
 - **根因（主人设置页实拍：操作记录条数少、滚动条尚未出现时，鼠标悬停该区域滚轮无法翻页）**：`.dshm-ops-scroll` 恒挂 `overscroll-behavior:contain`（0.9.64 随 220px 滚动区引入）。`overflow-y:auto` 使元素无论内容多少都是滚动容器，而规范口径「没有可滚溢出的滚动容器恒在滚动边界」+ contain「到边界禁止向祖先链滚」→ 内容不满时整块区域吞掉滚轮。Chrome 144 起「Respect overscroll-behavior on non-scrollable scroll containers」落地（此前引擎仅真可滚才执行 contain，病灶被宽容掩盖），潜伏缺陷被引擎升级激活；错误/提示横幅 `.dshm-banner-text`（限高滚动时代引入的同款恒挂）同病。
@@ -531,6 +537,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Fix in 0.9.73 — detail screenshot strip unified tiles: inconsistent sizes and previews overlapping neighboring thumbnails (flex-shrink overflow fixed at the root)
+
+- **Root cause (owner screenshot: jagged thumbnails with images spilling over their left/right neighbors)**: two defects stacked — ① `.dsvm-shotbox` had no fixed geometry (box min 120×84 / img max 220×130) and followed each image's intrinsic aspect ratio, so 16:9, 4:3, portrait and small originals all rendered at their own size; ② the explicit `min-width:120px` overrode the flex automatic minimum size — with eight screenshots' natural total width (~1.7k px) far exceeding the modal content width (~688px), flex-shrink squeezed each box to its 120px floor while the inner `<img>` (a replaced element) kept its intrinsic width, and with `overflow:visible` on the box each image spilled out centered, covering ~44px of each neighbor — all before the scrollbar even appeared; the row height also jumped 84→130px when the tallest image loaded (CLS).
+- **Fix (unified tiles)**: boxes get `flex:0 0 auto` (geometry independent of image count/load state, never shrinks) + fixed 176×110 + `overflow:hidden` (belt-and-braces against spill); images switch to `width/height:100%` + `object-fit:cover` + `object-position:top center` (top-anchored so screenshot title bars survive; cropping only trims the bottom — portrait/square shots show their upper half, the full image lives in the lightbox); the row gains `scroll-snap-type:x proximity` and boxes `scroll-snap-align:start`. Lightbox, image chain, broken-shot eviction, and keyboard navigation semantics unchanged.
+- **Verification**: 1332 tests green (new screenshot-strip tile CSS source anchors, 2 cases: unified-tile shape + negative anchors on the retired defect forms), typecheck clean; the built bundle carries the new rules verbatim. A standalone comparison mock (current-bug reproduction + cover/contain/grid variants) was reviewed by the owner beforehand (variant A: cover chosen).
 
 ### Fix in 0.9.72 — settings-page wheel black hole: ops scroll region and banner now apply contain only when actually scrollable (exposed by Chrome 144 spec alignment)
 
