@@ -6,7 +6,7 @@
  * 替身构造沿用 tests/market.test.mjs（fakeDeps/txProfile/mockTxRunner）与 tests/profile-ops.test.mjs（managerStub）。
  * 运行：npm run build && node --test tests/upgrade-activation.test.mjs
  */
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -14,6 +14,9 @@ import { join } from 'node:path'
 
 import { upgradePlugin, selfUpgrade } from '../lib/core/market.js'
 import { desktopUpgradeFromRegistry } from '../lib/core/profile-ops.js'
+import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
+// R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
+beforeEach(() => _resetMergedMarketForTests())
 
 // 隔离 cacheRoot（registry/latest 缓存不触碰真实 ~/.dsh，同 market.test.mjs 纪律）
 const testCacheRoot = mkdtempSync(join(tmpdir(), 'dshm-activation-'))

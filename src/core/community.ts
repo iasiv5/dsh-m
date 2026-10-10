@@ -11,7 +11,8 @@ import { isAbsolute, join, relative } from 'node:path'
 import { cacheRoot } from './env.js'
 import { decodeUtf8Fatal, fetchBytesLimited, describeFetchFailure } from './httpx.js'
 import { isExactVersion, npmLatest } from './versions.js'
-import { communityOutcome, type CommunityRegistrySummary } from './market.js'
+import { communityOutcome } from './merged-market.js'
+import type { CommunityRegistrySummary } from './merged-market.js'
 import type { RegistryEntry } from './registry.js'
 
 export const COMMUNITY_NPM_PACKAGE = 'dsh-plugin-catalog'
@@ -62,36 +63,9 @@ export interface CommunityCatalog {
   plugins: CommunityRawEntry[]
 }
 
-/**
- * 上游 23 个分类 id 的全量中文标签（以 fixture `categories` 键为准逐条核对）。
- * 0.7.0 Task 4 改名导出 + 作为标签单一事实源：summary 层附带（communitySummary）、
- * GUI zoneChips 消费服务端数据，客户端内嵌副本（market-state.js）随 Task 8 删除。
- */
-export const COMMUNITY_CATEGORY_LABELS: Record<string, string> = {
-  agi: 'AGI 架构探索',
-  ui: 'UI 增强',
-  usage: '用量与计费',
-  theme: '主题与外观',
-  model: '模型与账号接入',
-  identity: '身份与通信',
-  session: '会话与消息',
-  memory: '记忆',
-  tools: '工具与能力',
-  wsl: 'WSL 与 Windows 互操作',
-  browser: '浏览器与网页',
-  vision: '视觉与多模态',
-  voice: '语音与音频',
-  docs: '文档与渲染',
-  skill: '技能包',
-  workflow: '工作流与自动化',
-  git: 'Git 与代码评审',
-  notify: '通知与集成',
-  dev: '开发与运行时',
-  security: '安全与权限',
-  remote: '远程与移动端',
-  market: '插件市场与管理',
-  fun: '娱乐',
-}
+// 0.9.68（ADR-0016 R1-2）：COMMUNITY_CATEGORY_LABELS 随 communitySummary 迁入 merged-market.ts
+// （标签单一事实源不变，原位 re-export 保 cli.ts/tools.ts 既有 import 零改动）。
+export { COMMUNITY_CATEGORY_LABELS } from './merged-market.js'
 
 const TOP_LEVEL_KEYS = new Set(['name', 'url', 'source', 'updated', 'count', 'categories', 'plugins'])
 

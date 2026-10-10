@@ -16,6 +16,9 @@ import { installFromRegistry } from '../lib/core/market.js'
 import { readPnpmLockOverrides } from '../lib/core/npm-integrity.js'
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
+import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
+// R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
+beforeEach(() => _resetMergedMarketForTests())
 import { CONFIG_MISMATCH_TEXT, NO_MATCHING_TEXT } from './fixtures/pnpm-errors.mjs'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`

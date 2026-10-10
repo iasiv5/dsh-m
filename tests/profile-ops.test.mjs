@@ -20,6 +20,9 @@ import {
 import { _resetReleaseAgeCachesForTests } from '../lib/core/release-age.js'
 import { ToggleError } from '../lib/core/toggle.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
+import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
+// R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
+beforeEach(() => _resetMergedMarketForTests())
 
 const ENTRY = {
   id: 'plug-a',

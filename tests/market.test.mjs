@@ -12,6 +12,9 @@ import { join } from 'node:path'
 import { listMarket, listInstalledWithMeta, installFromRegistry, upgradePlugin, uninstallPlugin, communityOutcome, capturePreMutationState, derivePrior } from '../lib/core/market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
+import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
+// R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
+beforeEach(() => _resetMergedMarketForTests())
 
 // 0.9.14 Task 4b：latest 落盘接线后，listMarket/listInstalledWithMeta 会读写真实 cacheRoot——
 // 全文件统一隔离到临时目录（评审 R1-#4：本文件原先零 DSHM_CACHE_DIR，不补则触碰真实 ~/.dsh）。

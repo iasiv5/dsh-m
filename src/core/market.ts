@@ -35,12 +35,22 @@ import {
   type RegistryState,
 } from './registry.js'
 import {
-  COMMUNITY_CATEGORY_LABELS,
   fetchCommunityCatalog as defaultFetchCommunityCatalog,
-  type CommunityCatalogState,
-  type CommunityStatus,
   type LoadedCommunity,
 } from './community.js'
+// 0.9.68（ADR-0016）：合并层迁入 merged-market.ts（communityOutcome/mergeRegistries/communitySummary/
+// deadlineRace/matchInstalledByEntry/isCommunityEntry/COMMUNITY_CATEGORY_LABELS）——market↔community
+// import 环自此断开；re-export 保既有消费方（tools.ts 的类型、profile-ops 的 matchInstalledByEntry）零改动。
+import {
+  communityOutcome,
+  communityTimeoutSummary,
+  deadlineRace,
+  isCommunityEntry,
+  matchInstalledByEntry,
+  type CommunityRegistrySummary,
+} from './merged-market.js'
+export { communityOutcome, matchInstalledByEntry } from './merged-market.js'
+export type { CommunityOutcome, CommunityRegistrySummary, MergeRegistriesResult } from './merged-market.js'
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
@@ -113,28 +123,8 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
 /** 开放分类计数：策展五桶恒在 + 社区开放 slug 键（M1 Task 5；0.9.16 策展分类法替换功能五分类）。 */
 export type CategoryCounts = Record<string, number>
 
-/** 社区 registry summary 完整字段口径（Task 6 getCommunitySummary 同型；status=disabled/unavailable 时计数字段 0/null，不伪造）。 */
-export interface CommunityRegistrySummary {
-  enabled: boolean
-  status: CommunityStatus
-  version: string | null
-  checkedAt: string | null
-  fetchedAt: string | null
-  route: string | null
-  acceptedCount: number
-  upstreamCount: number | null
-  displaced: number
-  skippedDirty: number
-  skippedSubpathNoNpm: number
-  errors: string[]
-  warnings: string[]
-  /** 社区分类中文标签单一事实源（0.7.0 Task 4）：status 非 disabled/skipped 时携带；
-   *  客户端 market-state.js 的内嵌副本随 Task 8 删除。 */
-  categoryLabels?: Record<string, string>
-  /** 社区分类英文标签（i18n）：取上游目录 categories.en（双语目录自带；缺 en 的 id 不进映射，
-   *  客户端按界面语言取用并回退中文标签）；仅 ready 且上游携带 categories 时与 categoryLabels 同行携带。 */
-  categoryLabelsEn?: Record<string, string>
-}
+// 0.9.68：CommunityRegistrySummary / CommunityOutcome / MergeRegistriesResult 迁入 merged-market.ts
+// （本文件经上方 export type {...} from 转发，既有消费方零改动）。
 
 export interface MarketQuery extends RegistryRuntimeOptions {
   query?: string
@@ -332,22 +322,6 @@ function timeoutRegistryState(cfg: RegistryConfig): RegistryState {
   }
 }
 
-function deadlineRace<T>(task: Promise<T>, ms: number): Promise<T | 'deadline'> {
-  return new Promise<T | 'deadline'>((resolve, reject) => {
-    const timer = setTimeout(() => resolve('deadline'), Math.max(0, ms))
-    task.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (err) => {
-        clearTimeout(timer)
-        reject(err)
-      },
-    )
-  })
-}
-
 // ---------- latest TTL cache ----------
 // 0.9.20：纯内存 TTL 缓存（ADR-0006，推翻 0.9.14 的落盘跨重启存活——重启即失效是特性）；
 // mutation 成功后的定向失效走 invalidateLatestForEntry（只失效不回写）。
@@ -420,189 +394,6 @@ function classifyLatestError(err: unknown): LatestErrorCode {
   if (err instanceof HttpError && err.status === 403) return 'rate-limited'
   if (err instanceof Error && /限额已用尽/.test(err.message)) return 'rate-limited'
   return 'network-error'
-}
-
-/** 0.9.8 导出（原模块私有）：desktopUpgrade 的「已装 ↔ 收录条目」匹配与 web upgradePlugin 同语义。 */
-export function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github'>, installed: InstalledPlugin[]): InstalledPlugin | undefined {
-  return installed.find((it) => {
-    if (entry.npm && it.pkg === entry.npm) return true
-    if (entry.npm && it.name === entry.npm) return true
-    if (entry.github && it.source === 'github') {
-      const m = /^github:([^#]+)/.exec(it.spec)
-      if (m && m[1] === entry.github) return true
-    }
-    return false
-  })
-}
-
-// ---------- 合并层（M1 Task 5 / Q41 / Q45） ----------
-
-export interface MergeRegistriesResult {
-  /** 主清单在前（组内原顺序）+ 社区条目在后（downloads 降序、无数据按名称） */
-  items: Array<RegistryEntry | CommunityEntry>
-  /** 与主清单撞名而让位的社区条目数（Q41：去重键序 npm 名 → owner/repo → 合成 id） */
-  displaced: number
-  /** 合并层 warning（让位计数聚合；社区层 warnings 由 summary 另行合并） */
-  warnings: string[]
-}
-
-/**
- * 合并去重（Q41）：社区条目依次与主清单的 npm 名集 / github owner-repo 集 / id 集比对，
- * 任一相撞即让位（每条只计一次）；社区内部 npm 名重复同样让位（首条优先）。
- * 主清单恒优先——让位只影响社区条目，主条目原样保留。
- */
-export function mergeRegistries(primary: RegistryEntry[], community: CommunityEntry[]): MergeRegistriesResult {
-  const primaryNpm = new Set(primary.filter((e) => e.npm).map((e) => e.npm as string))
-  const primaryGithub = new Set(primary.filter((e) => e.github).map((e) => e.github as string))
-  const primaryIds = new Set(primary.map((e) => e.id))
-  const displaced: string[] = []
-  const kept: CommunityEntry[] = []
-  const seenNpm = new Set<string>()
-  for (const c of community) {
-    if (c.npm !== undefined) {
-      if (primaryNpm.has(c.npm) || seenNpm.has(c.npm)) {
-        displaced.push(c.id)
-        continue
-      }
-      seenNpm.add(c.npm)
-    }
-    if ((c.github !== undefined && primaryGithub.has(c.github)) || primaryIds.has(c.id)) {
-      displaced.push(c.id)
-      continue
-    }
-    kept.push(c)
-  }
-  // Q45：主清单置顶（组内原顺序）+ 社区按 30 天下载量降序（无数据按名称）
-  const sorted = [...kept].sort((a, b) => {
-    const da = a.downloads ?? -1
-    const db = b.downloads ?? -1
-    if (da !== db) return db - da
-    return a.name.localeCompare(b.name)
-  })
-  const warnings = displaced.length > 0 ? [`${displaced.length} 条社区条目与主清单重复，已让位（主清单恒优先）`] : []
-  return { items: [...primary, ...sorted], displaced: displaced.length, warnings }
-}
-
-function communitySummary(
-  state: CommunityCatalogState,
-  counts: Partial<CommunityRegistrySummary>,
-  extraWarnings: string[],
-  categoryLabelsEn?: Record<string, string>,
-): CommunityRegistrySummary {
-  const unavailableLike = state.status === 'disabled' || state.status === 'unavailable'
-  return {
-    enabled: state.enabled,
-    status: state.status,
-    version: state.version,
-    checkedAt: state.checkedAt,
-    fetchedAt: state.fetchedAt,
-    route: state.route,
-    acceptedCount: unavailableLike ? 0 : (counts.acceptedCount ?? 0),
-    upstreamCount: unavailableLike ? (state.status === 'disabled' ? null : 0) : (counts.upstreamCount ?? state.count),
-    displaced: unavailableLike ? 0 : (counts.displaced ?? 0),
-    skippedDirty: unavailableLike ? 0 : (counts.skippedDirty ?? 0),
-    skippedSubpathNoNpm: unavailableLike ? 0 : (counts.skippedSubpathNoNpm ?? 0),
-    errors: [...state.errors],
-    warnings: [...state.warnings, ...extraWarnings],
-    // 标签单一事实源（0.7.0 Task 4）：disabled/skipped 下无社区数据语义，不携带；
-    // EN 标签（i18n）随行携带，仅在调用方传入非空映射时出现（缺省 = 上游无 categories 数据）
-    ...(state.status !== 'disabled' && state.status !== 'skipped'
-      ? {
-          categoryLabels: { ...COMMUNITY_CATEGORY_LABELS },
-          ...(categoryLabelsEn && Object.keys(categoryLabelsEn).length > 0
-            ? { categoryLabelsEn: { ...categoryLabelsEn } }
-            : {}),
-        }
-      : {}),
-  }
-}
-
-function disabledCommunitySummary(): CommunityRegistrySummary {
-  return communitySummary(
-    { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] },
-    {},
-    [],
-  )
-}
-
-/** 查询层主动跳过（0.7.0 Task 2：source='primary'）：本次未加载社区层，非配置关闭、非故障。 */
-function skippedCommunitySummary(): CommunityRegistrySummary {
-  return communitySummary(
-    { enabled: true, status: 'skipped', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] },
-    {},
-    [],
-  )
-}
-
-function communityTimeoutSummary(): CommunityRegistrySummary {
-  return communitySummary(
-    { enabled: true, status: 'unavailable', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: ['社区目录状态获取超时，可稍后刷新'], warnings: [] },
-    {},
-    [],
-  )
-}
-
-interface CommunityOutcome {
-  summary: CommunityRegistrySummary
-  /** 合并后全量条目（主清单 + 存活社区条目）；社区不可用/未启用时 = 主清单原样 */
-  merged: Array<RegistryEntry | CommunityEntry>
-}
-
-/**
- * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
- * 本函数作为 waiter 用剩余 deadline race 自己的等待；到点只结束本 waiter（summary 标超时），
- * 共享 flight 照常继续。source='primary'/未启用 → loader 零调用（task 传 null → skipped；
- * 配置关闭走真任务的 disabled 分支，与跳过语义分离）。
- * 导出供 community.ts getCommunitySummary 复用（summary 组装单一产地）。
- */
-export async function communityOutcome(
-  task: Promise<LoadedCommunity> | null,
-  deadlineAt: number,
-  primary: RegistryEntry[],
-): Promise<CommunityOutcome> {
-  if (!task) return { summary: skippedCommunitySummary(), merged: primary }
-  let loaded: LoadedCommunity | 'deadline'
-  try {
-    loaded = await deadlineRace(task, deadlineAt - Date.now())
-  } finally {
-    // race 输出后共享 promise 若仍悬挂（deadline 先到），收尾防 unhandled rejection
-    void task.catch(() => undefined)
-  }
-  if (loaded === 'deadline') return { summary: communityTimeoutSummary(), merged: primary }
-  const state = loaded.state
-  if (state.status === 'disabled') return { summary: disabledCommunitySummary(), merged: primary }
-  if (state.status === 'unavailable' || !loaded.catalog) {
-    return {
-      summary: communitySummary(state, { acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0 }, []),
-      merged: primary,
-    }
-  }
-  const adapted = adaptCommunityCatalog(loaded.catalog)
-  const merge = mergeRegistries(primary, adapted.entries)
-  // EN 分类标签（i18n）：直接取上游目录 categories.en——上游新增分类自动跟进，
-  // 缺 en 的 id 不进映射（客户端按语言取用并回退中文标签，不在此处手养第二张表）
-  const categoryLabelsEn = Object.fromEntries(
-    Object.entries(loaded.catalog.categories)
-      .map(([id, c]) => [id, typeof c?.en === 'string' && c.en !== '' ? c.en : ''])
-      .filter(([, en]) => en !== ''),
-  )
-  const summary = communitySummary(
-    state,
-    {
-      acceptedCount: adapted.entries.length,
-      upstreamCount: loaded.catalog.plugins.length,
-      displaced: merge.displaced,
-      skippedDirty: adapted.skippedDirty,
-      skippedSubpathNoNpm: adapted.skippedSubpathNoNpm,
-    },
-    [...adapted.warnings, ...merge.warnings],
-    categoryLabelsEn,
-  )
-  return { summary, merged: merge.items }
-}
-
-function isCommunityEntry(entry: RegistryEntry | CommunityEntry): entry is CommunityEntry {
-  return (entry as CommunityEntry).descriptionEn !== undefined
 }
 
 /** 旁路数值/日期读取（RegistryEntry 无这些键 → null/''；0.7.0 Task 2 排序用）。 */
