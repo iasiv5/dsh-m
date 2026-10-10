@@ -357,3 +357,16 @@ describe('0.9.45 两段加载接线（源码断言）', () => {
     assert.match(src, /chips\.crossbucket\.tip/, '跨桶说明键存在')
   })
 })
+
+describe('0.9.76「版本无关」徽章退役（源码断言）——展示层两处退役、Modal Compat 行为唯一权威呈现', () => {
+  it('市场卡与 Modal 头不再渲染解耦徽章；徽章 i18n 键退役', () => {
+    assert.equal(src.includes('lookup("badge.decoupled")'), false, '卡片/Modal 头徽章渲染调用不得残留')
+    assert.equal(src.includes('badge.decoupled.tip'), false, '徽章 tooltip 键不得残留')
+    assert.equal(src.includes('"badge.decoupled"'), false, 'i18n 徽章键不得残留')
+  })
+  it('Modal Compat 行保留为唯一权威呈现；snapshotOf 数据字段照常透传（收藏/快照完整性）', () => {
+    assert.ok(src.includes('modal.decoupled.label') && src.includes('modal.decoupled.value'), 'Compat 行 i18n 键在')
+    assert.match(src, /it\.decoupled === true \? kv\(lookup\("modal\.decoupled\.label"\)/, 'Compat 行条件渲染在')
+    assert.match(src, /"verified", "audience", "decoupled"\]/, 'snapshotOf 数据字段保留')
+  })
+})
