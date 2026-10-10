@@ -2348,6 +2348,20 @@ describe('score-once：单遍评分 + 显式排序 tie-break 保序', () => {
     assert.deepEqual(res.items.map((it) => it.id), ['o2--beta', 'o3--gamma', 'o1--alpha'], '同分组内按显式排序（downloads 降序）排布')
   })
 
+  it('sort=downloads,asc + query 命中同分条目：tie-break 跟随升序显式排序（区分性用例——显式序与 merged 现序相反，锁 R1-4）', async () => {
+    const primary = [dlEntry('p-1', 'pkg-1')]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary, { configuredAddress: 'reg-scoreonce3' }) })
+    const { deps } = withCommunity(base, communityLoaded([
+      communityRaw('alpha', 'o1', { npm: 'theme-alpha', downloads: 10 }),
+      communityRaw('beta', 'o2', { npm: 'theme-beta', downloads: 500 }),
+      communityRaw('gamma', 'o3', { npm: 'theme-gamma', downloads: 100 }),
+    ]))
+    // 显式 asc 序 [alpha(10), gamma(100), beta(500)] 与 merged 缺省序 [beta,gamma,alpha] 相反——
+    // 若实现错取排序前位置或丢弃显式 sort，本断言必败
+    const res = await listMarket(cfg, { query: 'theme', source: 'community', sort: { field: 'downloads', dir: 'asc' }, withLatest: false }, deps)
+    assert.deepEqual(res.items.map((it) => it.id), ['o1--alpha', 'o3--gamma', 'o2--beta'], '同分组内按显式升序排布（区分 merged 现序）')
+  })
+
   it('无显式 sort 时同分 tie-break 维持 merged 现序（downloads 降序缺省序）', async () => {
     const primary = [dlEntry('p-1', 'pkg-1')]
     const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary, { configuredAddress: 'reg-scoreonce2' }) })

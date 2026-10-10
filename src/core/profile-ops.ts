@@ -24,9 +24,6 @@
 import { withMutationSession, resolveRegistryEntry, matchInstalledByEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market.js'
 import { mergedOutcome } from './merged-market.js'
 import { WEB_PROFILE } from './env.js'
-
-/** desktop 升级社区兜底的等待上限（对齐 market.ts DEFAULT_DEADLINE_MS 量级；仅本路径使用）。 */
-const DEFAULT_COMMUNITY_DEADLINE_MS = 60_000
 import { loadRegistry as defaultLoadRegistry } from './registry.js'
 import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
@@ -37,6 +34,9 @@ import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
 import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckDeps } from './release-age.js'
 import { governExcludeBlock, registerExclusion } from './exclude-governance.js'
 import type { RegistryConfig, RegistryCacheNamespace } from './registry.js'
+
+/** desktop 升级社区兜底的等待上限（对齐 market.ts DEFAULT_DEADLINE_MS 量级；仅本路径使用）。 */
+const DEFAULT_COMMUNITY_DEADLINE_MS = 60_000
 
 /** 官方 pluginManager 的 Desktop 超集投影（运行时探测，缺方法按不可用处理）。 */
 export interface DesktopManagerLike {

@@ -112,6 +112,14 @@ export type { CommunityRegistrySummary, CommunityOutcome, MergeRegistriesResult,
 //   _mergedMarketStatsForTests(): { builds: number; hits: number; evictions: number }
 ```
 
+> **实现备案（执行评审轮次 1，R3-3）**：符号面三处与上方契约有偏差，均为行为等价或零消费差异——
+> (a) `MergedGeneration` 保持模块**私有**实现形状（索引成员 `mergedIndex`/`fullIndex`，lookup 方法在
+> outcome 层经 `outcomeWithLookups` 挂接），未按契约导出；断言①的 merged 引用稳定性不受影响。
+> (b) merged-market 未 re-export `type { CommunityEntry }`（market.ts 直从 community-adapter 导入，无消费方）。
+> (c) 契约外新增公开导出 `withFallbackLookups`（registry-deadline 降级臂同形适配；兜底域 = merged
+> 透传形态 primary-only，不得用于安装路径——见源码注释）与 `communityTimeoutSummary`（market.ts
+> registry-deadline 分支取超时 summary）。
+
 身份键派生规则（mergedOutcome 内部）：`namespace§profile§registry.configuredAddress§registry.fetchedAt(??'never')§community.state.version(??'off')§pin(??'')§enabled`。等价性注记（R1-12）：`configuredAddress` 即规范化地址，registry cacheKey 是它的纯函数（default→`DEFAULT_CACHE_KEY`，否则 `stableKey(url)`），故键含 configuredAddress 与「cacheKey + configuredAddress」等价；不另加 plugins.length（同 fetchedAt ⇒ 同文件 ⇒ 同内容）。
 
 L1 实现要点（community.ts）：模块级 `Map<string, CommunityCatalog>`，键 `join(dir, '§', version)`，cap=2 淘汰最旧；readCache 在 meta 解析成功后先查 memo，命中直接返回 `{ meta, catalog }`（meta 每次实读——checkedAt 会更新）；未命中走既有 readFile+JSON.parse+validateCommunityContainer 后写入；**parse/validate 失败路径照旧 rm 且不写 memo**。测试钩子：`_communityBodyReadsForTests(): number` 与 `_resetCommunityBodyMemoForTests()`。

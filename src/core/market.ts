@@ -54,7 +54,7 @@ import {
 } from './merged-market.js'
 export { communityOutcome, matchInstalledByEntry } from './merged-market.js'
 export type { CommunityOutcome, CommunityRegistrySummary, MergeRegistriesResult } from './merged-market.js'
-import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
+import type { CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
@@ -686,7 +686,9 @@ export async function listMarket(
     }
     // outdated 判定统一在 probe 后进行（0.9.45：cache-only 也执行——暖缓存不丢「可升级」徽标）
     // 0.9.68（ADR-0016 决策 5 / 评审 R1-7）：pkg→installed 查表，页内 O(1) 取代逐项 find
-    const instByPkg = new Map(installedItems.map((i) => [i.pkg, i]))
+    // first-wins：与旧 installedItems.find 逐点一致（正常枚举无重复 pkg，理论边界防御）
+    const instByPkg = new Map<string, typeof installedItems[number]>()
+    for (const inst of installedItems) if (!instByPkg.has(inst.pkg)) instByPkg.set(inst.pkg, inst)
     for (const item of items) {
       const inst = item.installedPkg !== undefined ? instByPkg.get(item.installedPkg) : undefined
       if (!inst) continue

@@ -145,6 +145,7 @@ describe('Task 0：golden 等价基线（ADR-0016 行为零变化）', () => {
     const deps = goldDeps()
     const captures = [
       await capture('market-browse', () => listMarket(cfg, { withLatest: false }, deps)),
+      await capture('market-paged', () => listMarket(cfg, { withLatest: false, offset: 1, limit: 2 }, deps)),
       await capture('market-search', () => listMarket(cfg, { query: 'gold', withLatest: false }, deps)),
       await capture('market-community-sorted', () => listMarket(cfg, { source: 'community', sort: { field: 'downloads', dir: 'desc' }, withLatest: false }, deps)),
       await capture('market-badges-full', () => listMarket(cfg, {}, deps)),

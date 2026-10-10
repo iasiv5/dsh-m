@@ -454,6 +454,9 @@ export interface MergedOutcome extends CommunityOutcome {
 export function withFallbackLookups(outcome: CommunityOutcome): MergedOutcome {
   return outcomeWithLookups(outcome, null, null)
 }
+// ↑ 兜底域 = outcome.merged（透传形态下为 primary-only，不含 displaced 让位条目）——只保证读路径
+// lookupInstalled 等价；不得用于安装/升级路径（那里需要 findById/lookupInstalledAll 的全量域语义）。
+// 现状唯一消费点 listInstalledWithMeta 的 registry-deadline 臂在消费 lookups 前即早返回，零行为影响。
 
 function outcomeWithLookups(outcome: CommunityOutcome, mergedIndex: MatchIndex | null, fullIndex: MatchIndex | null): MergedOutcome {
   return {

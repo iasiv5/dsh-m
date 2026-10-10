@@ -197,6 +197,116 @@
       }
     }
   },
+  "market-paged": {
+    "items": [
+      {
+        "id": "gold-gh",
+        "name": "Gold Gh",
+        "description": "主清单 github 源条目",
+        "category": "ui",
+        "tags": [],
+        "source": "github",
+        "github": "own/gold-repo",
+        "installed": true,
+        "outdated": false,
+        "installedPkg": "y-pkg",
+        "installedVersion": "0.9.0"
+      },
+      {
+        "id": "gold-also",
+        "name": "Gold Also",
+        "description": "次级策展桶条目",
+        "category": "tools",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-npm-also",
+        "alsoCategories": [
+          "search"
+        ],
+        "installed": false,
+        "outdated": false
+      }
+    ],
+    "total": 7,
+    "offset": 1,
+    "limit": 2,
+    "categoryCounts": {
+      "essentials": 0,
+      "cui-picks": 0,
+      "self-dev": 0,
+      "tencent-lighthouse": 0,
+      "watchlist": 0,
+      "tools": 2,
+      "ui": 1,
+      "search": 1,
+      "market": 1,
+      "c-ui": 3
+    },
+    "sourceCounts": {
+      "primary": 4,
+      "community": 3
+    },
+    "registryState": {
+      "configuredAddress": "",
+      "activeAddress": "https://example.com/r.json",
+      "source": "default-raw",
+      "status": "ready",
+      "isDefault": true,
+      "stale": false,
+      "fetchedAt": "2026-10-10T00:00:00.000Z",
+      "errors": [],
+      "count": 4
+    },
+    "installedComplete": true,
+    "latestComplete": true,
+    "latestTimedOut": false,
+    "community": {
+      "enabled": true,
+      "status": "ready",
+      "version": "2026.10.10.1",
+      "checkedAt": "2026-10-10T00:00:00.000Z",
+      "fetchedAt": "2026-10-10T00:00:00.000Z",
+      "route": "jsdelivr",
+      "acceptedCount": 5,
+      "upstreamCount": 5,
+      "displaced": 2,
+      "skippedDirty": 0,
+      "skippedSubpathNoNpm": 0,
+      "errors": [],
+      "warnings": [
+        "zh 描述缺省回退 en：1 条",
+        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+      ],
+      "categoryLabels": {
+        "agi": "AGI 架构探索",
+        "ui": "UI 增强",
+        "usage": "用量与计费",
+        "theme": "主题与外观",
+        "model": "模型与账号接入",
+        "identity": "身份与通信",
+        "session": "会话与消息",
+        "memory": "记忆",
+        "tools": "工具与能力",
+        "wsl": "WSL 与 Windows 互操作",
+        "browser": "浏览器与网页",
+        "vision": "视觉与多模态",
+        "voice": "语音与音频",
+        "docs": "文档与渲染",
+        "skill": "技能包",
+        "workflow": "工作流与自动化",
+        "git": "Git 与代码评审",
+        "notify": "通知与集成",
+        "dev": "开发与运行时",
+        "security": "安全与权限",
+        "remote": "远程与移动端",
+        "market": "插件市场与管理",
+        "fun": "娱乐"
+      },
+      "categoryLabelsEn": {
+        "c-ui": "UI"
+      }
+    }
+  },
   "market-search": {
     "items": [
       {
