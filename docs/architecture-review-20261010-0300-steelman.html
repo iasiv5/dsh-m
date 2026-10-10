@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<title>dsh-m 性能架构审查 · 钢人过滤版 · 2026-10-10</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+<style>
+  .seam { stroke-dasharray: 4 4; }
+  .deepbox { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  .band { border-left-width: 4px; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-5xl mx-auto px-6 py-10 space-y-12">
+
+<!-- ============ HEADER ============ -->
+<header class="space-y-3">
+  <h1 class="font-serif text-3xl font-bold tracking-tight">dsh-m · 性能架构审查（钢人过滤版）</h1>
+  <p class="text-sm text-slate-500">2026-10-10 · 第二轮：对每个候选先构造「现状最强辩护」再裁决 · 首轮 9 张卡 → 幸存 3 张 + 1 项附带红利 · 全部结论经源码行号实证，ms 数为本机实测（社区目录 catalog-2026.1009.4947，4,460 条）</p>
+  <div class="flex flex-wrap gap-4 text-xs text-slate-600 pt-1">
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 h-3 border border-slate-500 bg-white"></span>module</span>
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-dashed border-slate-500"></span>seam</span>
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 border-t-2 border-red-500"></span>重复劳动 / 泄漏</span>
+    <span class="inline-flex items-center gap-1.5"><span class="inline-block w-4 h-3 deepbox rounded-sm"></span>深 module（deep）</span>
+    <span class="inline-flex items-center gap-1.5"><span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium">Strong</span>实测且会被感知</span>
+    <span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 font-medium">已否决</span>
+  </div>
+</header>
+
+<!-- ============ 方法论 ============ -->
+<section class="rounded-xl border border-slate-300 bg-white p-5">
+  <h2 class="text-xs uppercase tracking-wider text-slate-400 mb-3">这一轮多做了什么：钢人过滤</h2>
+  <div class="grid md:grid-cols-3 gap-4 text-sm">
+    <div>
+      <div class="font-semibold mb-1">第一轮（已废弃的排序）</div>
+      <p class="text-slate-600 text-xs leading-relaxed">三路子代理 + 主审实测，按架构摩擦排出 9 张卡。排序混杂了两类证据：<b>实测且会被感知的</b>（事件循环阻塞、镜像机秒级等待）与<b>推断且无人感知的</b>（渲染重建次数、RPC 次数、对象分配）。</p>
+    </div>
+    <div>
+      <div class="font-semibold mb-1">钢人裁决</div>
+      <p class="text-slate-600 text-xs leading-relaxed">对每张卡构造现状的最强辩护——「单用户宿主无人抱怨」「这套代码对缓存有伤疤」「重算是最简单的正确性纪律」「预加载是特性不是浪费」——然后看候选还站不站得住。辩护失败的卡出局，辩护成功的卡被迫换更硬的地基。</p>
+    </div>
+    <div>
+      <div class="font-semibold mb-1">幸存者的共同点</div>
+      <p class="text-slate-600 text-xs leading-relaxed">每张都能回答「谁、在什么场景、痛多少毫秒」：市场每次交互阻塞宿主事件循环 65–400ms；镜像机器每次装机 happy path 白等 ~10s；收藏检查每条付一次零收益的探测扇出。出局项全部答不上这个问题。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 基线 ============ -->
+<section class="rounded-xl border border-slate-200 bg-white p-5">
+  <h2 class="text-xs uppercase tracking-wider text-slate-400 mb-3">基线成本（缓存全命中的快路径 · 同步阻塞宿主事件循环）</h2>
+  <div class="grid grid-cols-4 gap-3 text-center text-sm">
+    <div class="rounded-lg bg-red-50 border border-red-200 p-3"><div class="font-mono text-lg font-bold text-red-700">30–55<span class="text-xs">ms</span></div><div class="text-xs text-slate-600 mt-1">社区目录 JSON.parse<br/>（磁盘 5.36MB，每请求）</div></div>
+    <div class="rounded-lg bg-red-50 border border-red-200 p-3"><div class="font-mono text-lg font-bold text-red-700">30–90<span class="text-xs">ms</span></div><div class="text-xs text-slate-600 mt-1">目录适配层 adapt<br/>4,400 条正则重建</div></div>
+    <div class="rounded-lg bg-red-50 border border-red-200 p-3"><div class="font-mono text-lg font-bold text-red-700">5–35<span class="text-xs">ms</span></div><div class="text-xs text-slate-600 mt-1">mergeRegistries<br/>+ 下载量重排序</div></div>
+    <div class="rounded-lg bg-red-50 border border-red-200 p-3"><div class="font-mono text-lg font-bold text-red-700">≈330<span class="text-xs">ms</span></div><div class="text-xs text-slate-600 mt-1">搜索评分（WeakMap 冷）<br/>同对象热命中仅 8ms</div></div>
+  </div>
+  <p class="text-xs text-slate-500 mt-3">关键定性：这不是「市场面板自己的 CPU」——dsh-m 跑在 DSH 宿主进程里，上面每一段都是<b>同步 JS</b>。市场每翻一页/每提交一次搜索，宿主的 SSE 对话流、工具调用、全部 API 响应停摆 65–400ms。单用户辩护在这一点上失效：单用户也会同时开着对话流。</p>
+</section>
+
+<!-- ============ CANDIDATES ============ -->
+<section id="candidates" class="space-y-10">
+
+<!-- ─────────── C1 ─────────── -->
+<article id="c1" class="rounded-xl border-2 border-emerald-300 bg-white p-6 space-y-4">
+  <div class="flex items-start justify-between gap-4">
+    <h3 class="font-serif text-xl font-bold">C1 · 把「合并市场（Merged Market）」物化成一个深 module</h3>
+    <div class="flex gap-2 shrink-0"><span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">Strong</span><span class="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs">in-process</span></div>
+  </div>
+  <p class="font-mono text-sm text-slate-600">market.ts:558-602, 695-902 · community.ts:232-276, 329-343 · registry.ts:943-963 · community-adapter.ts:133-243 · search-relevance.ts:78 · registry-controller.ts:120</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-red-600 font-semibold mb-2">Before · 每个请求重付全管线，且阻塞整个宿主</div>
+      <div class="space-y-1 text-xs">
+        <div class="band border-red-400 bg-red-50 px-2 py-1.5 flex justify-between"><span>磁盘读 5.36MB + JSON.parse（同步）</span><span class="font-mono text-red-600">30-55ms</span></div>
+        <div class="band border-red-400 bg-red-50 px-2 py-1.5 flex justify-between"><span>容器校验 + 目录适配层 adapt ×4,400（同步）</span><span class="font-mono text-red-600">30-90ms</span></div>
+        <div class="band border-red-400 bg-red-50 px-2 py-1.5 flex justify-between"><span>mergeRegistries + 下载量排序（同步）</span><span class="font-mono text-red-600">5-35ms</span></div>
+        <div class="band border-red-400 bg-red-50 px-2 py-1.5 flex justify-between"><span>评分 WeakMap 冷（条目对象每请求重建）</span><span class="font-mono text-red-600">搜索 +330ms</span></div>
+        <div class="text-center text-slate-400 text-[10px] uppercase tracking-widest my-1">↓ × 每次翻页 × 两段加载每一段 × dshm_search × 收藏 N 条</div>
+        <div class="rounded border border-red-300 bg-white px-2 py-1.5 text-center">阻塞期间：宿主 SSE / 工具调用 / 一切 API 全部停摆<br/><span class="text-slate-500">market.ts ↔ community.ts import 环 · RegistryController.loaded 无消费者</span></div>
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-emerald-600 font-semibold mb-2">After · 一代一份，查询骑在上面</div>
+      <div class="deepbox rounded-lg p-3 text-white">
+        <div class="text-[10px] uppercase tracking-wider text-emerald-300 mb-1">物化的合并市场（deep module）</div>
+        <div class="text-xs leading-relaxed">interface: 按 (namespace, profile, registry 代, 目录 version) 取一份<br/>implementation: parse → adapt → merge → 匹配索引 → 预归一化搜索字段<br/>失效键全部来自本地文件身份：SWR 落地 / force / 路由切换（onRouteSwitch 钩子已在）→ 换代</div>
+      </div>
+      <div class="mt-3 space-y-1 text-xs">
+        <div class="flex items-center gap-2"><span class="text-slate-400">─ ─ seam ─ ─</span></div>
+        <div class="band border-emerald-400 bg-emerald-50 px-2 py-1.5 flex justify-between"><span>listMarket / listInstalledWithMeta / 安装路径查条目 / profile-ops</span><span class="font-mono text-emerald-700">键查一次</span></div>
+        <div class="band border-emerald-400 bg-emerald-50 px-2 py-1.5 flex justify-between"><span>搜索评分（热 WeakMap，条目对象跨请求稳定）</span><span class="font-mono text-emerald-700">330ms → 8ms</span></div>
+        <div class="band border-emerald-400 bg-emerald-50 px-2 py-1.5 flex justify-between"><span>翻页 / 筛选（整段管线消失，事件循环不再阻塞）</span><span class="font-mono text-emerald-700">~100ms → ~10ms</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="text-sm"><span class="font-semibold">Problem：</span>GLOSSARY 定义了「合并市场」，但没有任何 module <em>拥有</em>它——装配逻辑内联在 <code class="font-mono text-xs">communityOutcome</code> 里，每个请求从四个 module 的输出现场重组一遍。search-relevance.ts:11 自述的「性能护栏」WeakMap 因目录适配层每请求重建条目对象而跨请求永不命中；现成的内存快照 RegistryController.loaded 热路径从不消费——cache far from consumer。</p>
+  <p class="text-sm"><span class="font-semibold">Solution：</span>一个进程内物化 module 拥有 load→adapt→merge→索引→预归一化字段，按目录 version + registry 代 keyed。第一刀就是首轮 C2（评分单遍化，market.ts:781-795 的两遍 relevanceScore 合一）——它已折入本卡作为起步切面。market.ts 瘦身为查询+探测编排，market↔community 的 import 环随之消解。</p>
+  <ul class="text-sm grid md:grid-cols-2 gap-x-6 gap-y-1 list-disc list-inside">
+    <li>leverage：一个 interface，四个消费点</li>
+    <li>locality：合并规则变更只动一处</li>
+    <li>安装路径 4,400 条重 adapt 找一个 id（market.ts:1813/1832）免费消失</li>
+    <li>测试经 MarketDeps 注入计数：两次相同调用，第二次 loadRegistry/fetchCommunityCatalog 必须为 0</li>
+  </ul>
+  <div class="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900"><b>钢人后的地基（为什么 ADR-0006 的伤疤不适用）</b>：0006 出事的是 <b>latest 探测值</b>——真值在远端、本地无失效信号；本卡物化的是<b>本地文件的派生数据</b>，失效键是确定性的文件身份（registry cacheKey+fetchedAt、目录 version、profile、namespace），目录 version-pin 文件名本就不可变（catalog-{version}.json）。探测值缓存 ≠ 派生数据 memo。ADR-0003 运行时合并语义、ADR-0006 内存制度、ADR-0008/0013 两段加载与探测模式全部不动——两段加载第一段只是不再重付管线。</div>
+</article>
+
+<!-- ─────────── C2 ─────────── -->
+<article id="c2" class="rounded-xl border-2 border-emerald-300 bg-white p-6 space-y-4">
+  <div class="flex items-start justify-between gap-4">
+    <h3 class="font-serif text-xl font-bold">C2 · packument 访问器：时戳出锁 + 三消费端共享缓存</h3>
+    <div class="flex gap-2 shrink-0"><span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">Strong</span><span class="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs">ports &amp; adapters</span></div>
+  </div>
+  <p class="font-mono text-sm text-slate-600">exclude-governance.ts:285-305（withFileLock 内 12s 网络腿）· release-age.ts:241-298（两腿 + 5min TTL 仅两消费端）· versions.ts:136-153（B3 预热，无缓存独立取）</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-red-600 font-semibold mb-2">Before · 镜像机器装机前白等 ~10s</div>
+      <div class="mermaid">
+sequenceDiagram
+  participant T as Profile 变更事务(登记)
+  participant L as withFileLock(package.json)
+  participant N as npm registry
+  T->>L: acquire
+  L->>N: cachedPackumentTimes（冷=全量 packument）
+  Note over L,N: 镜像路由机器: npmjs 首腿 5s 超时<br/>+ 生效源腿至 12s —— 纯等待
+  N-->>L: 时戳（只读 1 个字段）
+  L->>L: 读 workspace 策略(重读重析) → 写排除条目
+  L-->>T: release
+      </div>
+      <div class="text-xs text-slate-500 mt-2">web 快路径此缓存唯一消费端就是登记本身（desktop 预热腿不跑）≈ 每装机一次冷全量取；B3 重试再经 versions.ts 无缓存通道取第二次。</div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-emerald-600 font-semibold mb-2">After · 秒级腿消失，锁内纯 fs</div>
+      <div class="mermaid">
+sequenceDiagram
+  participant T as 登记步骤
+  participant P as packument 访问器（deep）
+  participant L as withFileLock
+  participant N as npm registry
+  T->>P: times(pkg)（锁外）
+  P->>P: TTL 缓存命中?
+  P->>N: 未命中才取（route-aware 单飞）
+  T->>L: acquire
+  L->>L: 纯 fs：读策略→写排除条目
+  L-->>T: release（毫秒级）
+      </div>
+    </div>
+  </div>
+  <p class="text-sm"><span class="font-semibold">Problem：</span>「registry 元数据」没有 owning module——三个 adapter 各自取、各自解释、各自缓存（或没有）。登记（Register）只为读一个发布时戳，却在官方文件锁内发起 8MiB 级网络取，把网络腿的墙钟直接加进每次装机的关键路径。</p>
+  <p class="text-sm"><span class="font-semibold">Solution：</span>一个 route-aware packument 访问器（latest/version/times/warm 共享一个 TTL 缓存，键 pkg+registry，single-flight）；登记只把 fs 写留锁内，网络腿全部出锁。</p>
+  <ul class="text-sm grid md:grid-cols-2 gap-x-6 gap-y-1 list-disc list-inside">
+    <li>镜像机器装机 −~10s 纯等待</li>
+    <li>B3 重试的第二次全量取并入缓存</li>
+    <li>锁持有回归纯 fs 毫秒级（次要红利）</li>
+    <li>锁竞争测试断言锁内零网络即可测</li>
+  </ul>
+  <div class="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900"><b>钢人修正</b>：原卡以「锁竞争串行化写者」为主要论据——被驳（单用户点不出并发写，竞争罕见）。存活腿是<b>网络墙钟</b>：happy path 秒级白等是实测会被感知的。ADR-0009 登记语义逐字不动；ADR-0012 读分类路由照旧——访问器是它的消费端不是替代品。</div>
+</article>
+
+<!-- ─────────── C3 ─────────── -->
+<article id="c3" class="rounded-xl border border-emerald-300 bg-white p-6 space-y-4">
+  <div class="flex items-start justify-between gap-4">
+    <h3 class="font-serif text-xl font-bold">C3 · 收藏 stale 检查改走 cache-only</h3>
+    <div class="flex gap-2 shrink-0"><span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">Strong</span><span class="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs">in-process</span></div>
+  </div>
+  <p class="font-mono text-sm text-slate-600">main.jsx:2852-2878（lookupLive 不传 probeMode → 服务端缺省 full）· market.ts:817, 838-875</p>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-red-600 font-semibold mb-2">Before · 重 interface 回答轻问题</div>
+      <div class="mermaid">
+flowchart TD
+  A["收藏区访问 / 每次切换后 800ms"] --> B["每条收藏 1 个 market 查询<br/>probeMode 缺省 = full"]
+  B --> C["服务端: 5MB 解析+adapt+merge<br/>+ 每命中条 latest 探测扇出"]
+  C --> D["UI 只用布尔值: 还在不在目录里<br/>latest 字段全丢弃"]
+      </div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-4">
+      <div class="text-xs uppercase tracking-wider text-emerald-600 font-semibold mb-2">After · 问什么付什么</div>
+      <div class="mermaid">
+flowchart TD
+  A["收藏区访问"] --> B["market 查询 + probeMode:'cache-only'<br/>（ADR-0013 第一段模式，零网络零探测）"]
+  B --> C["成员判定布尔值，语义不变"]
+      </div>
+    </div>
+  </div>
+  <p class="text-sm"><span class="font-semibold">Problem：</span>收藏（Favorites）的 stale 判定只需要「id 还在不在」，却穿透富 market interface 触发探测模式 full 段——既加重 C1 的每请求管线，又给每命中条发起 npm/github latest 探测，产物全部丢弃。existence 判定 = items 成员判定，与 latest 无关。</p>
+  <p class="text-sm"><span class="font-semibold">Solution：</span>lookupLive 传 <code class="font-mono text-xs">probeMode:'cache-only'</code>（latestComplete=false 在此无害）；可选叠加客户端 stale 结果 TTL 缓存（self-check.js 30min 同款）。一个参数 + favorites.js 池的参数断言测试。</p>
+  <ul class="text-sm grid md:grid-cols-2 gap-x-6 gap-y-1 list-disc list-inside">
+    <li>收藏访问：N 重查询 → N 零网络查询</li>
+    <li>顺带少触发 C1 的整段管线 N 次</li>
+    <li>「full 探测暖 latest 缓存」的反驳不成立：搭便车不是理由</li>
+  </ul>
+</article>
+
+<!-- ─────────── C4 附带红利 ─────────── -->
+<article id="c4" class="rounded-xl border border-slate-300 bg-white p-5 space-y-3">
+  <div class="flex items-start justify-between gap-4">
+    <h3 class="font-serif text-lg font-bold">附带红利 · 零增量提交守卫（不依赖任何测量结论）</h3>
+    <div class="flex gap-2 shrink-0"><span class="px-2 py-1 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">Strong</span><span class="px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs">in-process</span></div>
+  </div>
+  <p class="font-mono text-sm text-slate-600">main.jsx:710-728（fetchPage .then 无条件 setData）· market-state.js:288-307（mergeLatestFields 的引用稳定性无人消费）</p>
+  <p class="text-sm"><span class="font-semibold">Problem/Solution：</span>phase-2 与每次 reload 都用全新容器对象调 <code class="font-mono text-xs">setData</code>，即使条目逐字节相同（toggle 后 refreshViews 的四连响应常态如此）。数据层精心维持的引用稳定性，一个 setData 就蒸发。守卫 = 内容等价则不提交（ZoneChips setGeom 同款纪律，纯函数可 Node 测）。这是首轮 C3 渲染卡里唯一便宜且确定的半边；另半边（React.memo 卡片边界）已被钢人降级为「先测量」——memo 会被 cardOf 现造的 badges 数组/inline icon 元素击穿，真实工作量远超表面。</p>
+</article>
+
+</section>
+
+<!-- ============ 已裁决否决 ============ -->
+<section class="rounded-xl border border-slate-300 bg-white p-5">
+  <h2 class="text-xs uppercase tracking-wider text-slate-400 mb-3">已裁决否决（首轮 9 卡中出局的 6 项 · 现状最强辩护存档）</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-xs border-collapse">
+      <thead><tr class="text-left text-slate-500 border-b border-slate-200"><th class="py-2 pr-3">原候选</th><th class="py-2 pr-3">现状的最强辩护</th><th class="py-2">裁决</th></tr></thead>
+      <tbody class="divide-y divide-slate-100 align-top">
+        <tr><td class="py-2 pr-3 font-medium">评分单遍化（原 C2）</td><td class="py-2 pr-3 text-slate-600">「搜索已 250ms debounce，165ms 节省无人感知；单独发版是噪声」</td><td class="py-2 text-emerald-700">折入 C1 作第一刀</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">卡片渲染边界（原 C3 主体）</td><td class="py-2 pr-3 text-slate-600">「React reconcile 2000 元素是 5–20ms 级、估算未经实测；memo 会被现造 props 击穿，工作量远超表面；changelog 里的渲染问题是循环 bug 不是速度」</td><td class="py-2 text-slate-500">先测量（React Profiler / 渲染计数探针）再决定；零增量守卫半边已提取为附带红利</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">图标 IO 门控（原 C4 半张）</td><td class="py-2 pr-3 text-slate-600">「h=96 webp 才 2–5KB、确定性 URL 缓存命中高；预加载视口外图标 = 滚动到哪图已就绪，是特性；8s 守卫已兜底」</td><td class="py-2 text-slate-500">仅在与页面请求争带宽被实测时再做</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">Profile 状态视图（原 C5）</td><td class="py-2 pr-3 text-slate-600">「事务路径被 2–20s pnpm spawn 主导，省毫秒级文件读是给没有门的房子铺门垫；四把解析器重复是可维护性问题，不在性能镜头内」</td><td class="py-2 text-slate-500">出局（性能镜头下）；其 deletion test 论证留给未来非性能轮次</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">探测单飞 + 粘性 sidecar（原 C7）</td><td class="py-2 pr-3 text-slate-600">「重叠探测需两个消费者同时在 phase-2，用户一次只看一个面板；粘性路由今日 1ms、封顶 2MiB」</td><td class="py-2 text-slate-500">Speculative，归附录</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">面板会话存储（原 C8）</td><td class="py-2 pr-3 text-slate-600">「重开的 5–6 请求里 installedUpdates ttl=0 是 ADR-0008 故意的新鲜度、self-check 有 30min TTL——重开成本大半是被选择的新鲜；缓存视图恰是这套代码一以贯之拒绝的东西」</td><td class="py-2 text-slate-500">出局：与新鲜度哲学相抵，无实测痛点撑腰</td></tr>
+        <tr><td class="py-2 pr-3 font-medium">ZoneChips 生产者稳定（原 C9）</td><td class="py-2 pr-3 text-slate-600">「四道防线已收敛、有测试锚定；生产者代价是对象分配级零实测成本；『带电陷阱』是对未来 effect 的假设」</td><td class="py-2 text-slate-500">出局：健壮性条目，非性能条目</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ VERIFIED FINE ============ -->
+<section class="rounded-xl border border-slate-200 bg-white p-5">
+  <h2 class="text-xs uppercase tracking-wider text-slate-400 mb-3">已核实无虞（勿重查）</h2>
+  <ul class="text-sm space-y-1 list-disc list-inside text-slate-600">
+    <li>ensureLatestCacheSwept 已按 (namespace,profile) promise 记忆化——非每请求 fs（latest-cache.ts:92-105）。</li>
+    <li>npm-route 的 readFileSync 仅冷路径；决策内存化 + 60s 回退 TTL + single-flight 正确（npm-route.ts:145-162）。</li>
+    <li>8 worker 探测池 + deadline 预算 + GitHub 被动限额窗（25/req、50/h）实现正确（market.ts:272-290, versions.ts:306-342, 447-466）。</li>
+    <li>registry SWR 后台 flight 已按 namespace§profile§cacheKey 去重（registry.ts:917-962）。</li>
+    <li>两段快照本身便宜（60KB+2KB+1KB）且是已定案保证；体检零 spawn 零网络、农场测活走查有界。</li>
+    <li>搜索框 250ms debounce + IME 守卫；客户端无 4000 条内存问题（≤96/页）；灯箱预取有界去重。</li>
+    <li>ustar.ts 与 patch-yaml.ts 通过 deletion test——小而深的纯函数 module，别动。</li>
+  </ul>
+</section>
+
+<!-- ============ TOP RECOMMENDATION ============ -->
+<section id="top-recommendation" class="rounded-xl deepbox text-white p-7 space-y-3">
+  <div class="text-xs uppercase tracking-wider text-emerald-300">Top recommendation</div>
+  <h2 class="font-serif text-2xl font-bold"><a href="#c1" class="underline decoration-emerald-400 underline-offset-4">C1 · 合并市场物化</a> —— 钢人之后反而更硬的一张</h2>
+  <p class="text-sm text-slate-200 leading-relaxed">性能问题的架构根源只有一个：领域概念「合并市场（Merged Market）」在 GLOSSARY 里有名，在代码里无主。每次请求重付 5MB 解析 + 4,400 条 adapt + 全量 merge（实测 65–180ms，搜索再加 330ms 冷评分），而且是<b>同步阻塞宿主事件循环</b>——市场每翻一页，整个 DSH 宿主的对话流与工具调用停摆。物化 module 一处落子，同时吃掉数据通路五个摩擦点与安装路径的重复 adapt，让 search-relevance 的 WeakMap 护栏第一次真正跨请求生效（40×），并消解 market↔community import 环。钢人逼出的关键澄清：ADR-0006 否决的是探测值缓存（真值在远端），本卡物化的是本地文件的派生数据（失效键 = 确定性文件身份）——两类东西，伤疤不遗传。</p>
+  <p class="text-xs text-slate-400">攻击顺序：C3 收藏 cache-only + 零增量守卫（当天可合）→ C1（旗舰；第一刀 = 评分单遍化）→ C2 packument 访问器（网络腿）。</p>
+</section>
+
+<footer class="text-center text-xs text-slate-400 pb-6">dsh-m @ 0.9.67 · 钢人过滤版 · 三路独立子代理 + 主审实测交叉验证，出局项辩护存档于「已裁决否决」· 实测环境：本机 Node 22，社区目录 catalog-2026.1009.4947（4,460 plugins, 4.87MB）</footer>
+</main>
+</body>
+</html>
