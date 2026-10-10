@@ -2,7 +2,7 @@
 
 市场面板（`.dshm-panel`）自 0.7.7 起有了窗口化形态（最大化/还原 + `dshm-panel-fullscreen` 记忆），但还原态下位置恒为 overlay flex 居中，用户无法摆放。本卡为它补上窗口的最后一半语义：按住头部（`.dshm-head`）自由拖拽、释放位置记忆、下次打开还原。四条硬性需求（需求方原话）：① 头部现有菜单点击零影响；② 性能 OK 跟手跟鼠标；③ 全屏后不允许移动；④ 运动范围 web profile 受浏览器约束、desktop profile 避开壳层系统按钮区——第 ④ 条正是 dsh-quota-watch 胶囊悬浮框踩过的坑（`-webkit-app-region:drag` 带按布局吞点击、无视 z-index，胶囊停进去就再也抓不回来，quota-watch 0.1.20 以 `titlebarTopInset` 契约修复）。
 
-设计走 `/grill-with-docs` 三轮对齐（Q1–Q9 全部按推荐锁定，Q9 因需求方实测 openbmc 皮肤下 quota-watch 胶囊拖拽变半透明而修订为「计算值固化强制实心」）；实施计划 `docs/plans/2026-10-10-panel-drag-position-implementation-plan.md` 经独立评审 Agent 三轮对抗审核（R1-1～R1-10、R2-1～R2-3 共 13 条，全部「修改并复核通过」，含版本基线陈旧、CJS/ESM 误判、`!important` 定长算术、rAF 残帧竞态、grabbing 光标死代码五个实质缺陷）后执行。参考实现：`dsh-quota-watch` 的 `prefs.mjs`/`drag.mjs`/`client.mjs attachDrag`（公式契约自 0.1.20 引入，参照核对于 0.1.24——版本标签只作溯源不作对齐依据）。
+设计走 `/grill-with-docs` 三轮对齐（2026-10-10；Q1–Q9 全部按推荐锁定，Q9 因需求方实测 openbmc 皮肤下 quota-watch 胶囊拖拽变半透明而修订为「计算值固化强制实心」）；实施计划 `docs/plans/2026-10-10-panel-drag-position-implementation-plan.md` 经独立评审 Agent 三轮对抗审核（R1-1～R1-10、R2-1～R2-3 共 13 条，全部「修改并复核通过」，含版本基线陈旧、CJS/ESM 误判、`!important` 定长算术、rAF 残帧竞态、grabbing 光标死代码五个实质缺陷）后执行；执行结果另经同评审 Agent 逐项复核（E1-1 latest-ref 镜像同步时序竞态为唯一阻断项，已修复并以结构锚钉住 render 期赋值规格）。参考实现：`dsh-quota-watch` 的 `prefs.mjs`/`drag.mjs`/`client.mjs attachDrag`（公式契约自 0.1.20 引入，参照核对于 0.1.24——版本标签只作溯源不作对齐依据）。
 
 ## 决策
 

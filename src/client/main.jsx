@@ -3193,19 +3193,23 @@ function MarketPanel({ onClose }) {
   // null = 无记录 → 保持 overlay flex 居中，渲染与旧版逐字节一致。
   const panelRef = useRef(null);
   const headRef = useRef(null);
-  const fullRef = useRef(full);
   const draggingRef = useRef(false);
   const suppressClickRef = useRef(false);
-  const [pos, setPos] = useState(() =>
-    loadPanelPos(typeof window !== "undefined" && window.localStorage ? window.localStorage : null),
-  );
+  const [pos, setPos] = useState(() => {
+    try {
+      return loadPanelPos(typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
+    } catch {
+      // 阻止 Cookie 等隐私模式下 localStorage getter 本身抛错（评审 E1-3；与 FS_KEY 同款防御）
+      return null;
+    }
+  });
+  // latest-ref 镜像用 render 期赋值（计划规格原文）：同一 commit 内 layout effect 与事件处理器
+  // 读到的恒为本次 render 的值。禁改 useEffect 同步——全屏→还原 commit 上 layout 的 reclamp
+  // 会先于 passive 同步执行，读到旧 fullRef=true 被守卫静默跳过（评审 E1-1 实证复现）。
+  const fullRef = useRef(full);
+  fullRef.current = full;
   const posRef = useRef(pos);
-  useEffect(() => {
-    fullRef.current = full;
-  }, [full]);
-  useEffect(() => {
-    posRef.current = pos;
-  }, [pos]);
+  posRef.current = pos;
   // 重夹紧：还原态渲染后（挂载/全屏往返）与窗口 resize 时，把记忆位置收回当前视口 + titlebar
   // 带内；全屏态与拖拽中跳过（拖拽帧有实时 clamp，全屏无位置语义）。
   const reclamp = useCallback(() => {
@@ -3291,7 +3295,11 @@ function MarketPanel({ onClose }) {
       panel.style.willChange = "";
       panel.style.transform = "";
       panel.style.removeProperty("--dshm-drag-bg");
-      savePanelPos(window.localStorage, final);
+      try {
+        savePanelPos(window.localStorage, final);
+      } catch {
+        // localStorage getter 抛错（隐私模式）：位置退化为会话级，烘焙照常生效（评审 E1-3）
+      }
       suppressClickRef.current = true;
       setPos(final);
     };

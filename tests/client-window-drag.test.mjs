@@ -156,4 +156,9 @@ describe("main.jsx 拖拽接线结构锚", () => {
   it("负向锚：POS_KEY 字面量只允许活在 window-drag.js（恒绿 tripwire，不计入失败数对账）", () => {
     assert.equal(src.includes('"dshm-panel-pos"'), false, "main.jsx 不得硬编码存储键字面量");
   });
+  it("latest-ref 镜像为 render 期赋值（评审 E1-1：useEffect 同步会让还原 commit 的 reclamp 读到旧守卫被静默跳过）", () => {
+    assert.ok(src.includes("fullRef.current = full;"), "fullRef 必须 render 期镜像赋值");
+    assert.ok(src.includes("posRef.current = pos;"), "posRef 必须 render 期镜像赋值");
+    assert.equal(/useEffect\(\(\) => \{\s*fullRef\.current = full;/.test(src), false, "禁止 useEffect 同步 fullRef（layout/passive 顺序竞态）");
+  });
 });
