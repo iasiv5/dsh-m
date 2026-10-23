@@ -236,6 +236,17 @@
       "npm": "dsh-mermaid",
       "github": "MrmoLabs/dsh-mermaid",
       "homepage": "https://github.com/MrmoLabs/dsh-mermaid"
+    },
+    {
+      "id": "dsh-mcp-tools",
+      "name": "MCP Tools",
+      "description": "MCP 工具管理器：添加 MCP 服务器（HTTP / stdio）、配请求头、存前测连通性、逐工具开关。",
+      "category": "watchlist",
+      "tags": ["MCP", "工具集成", "设置"],
+      "source": "npm",
+      "npm": "dsh-mcp-tools",
+      "github": "hxlog/dsh-mcp-tools",
+      "homepage": "https://github.com/hxlog/dsh-mcp-tools"
     }
   ]
 }
