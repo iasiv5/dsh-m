@@ -251,7 +251,7 @@
     {
       "id": "dsh-archive-trash",
       "name": "DSH Archive Trash",
-      "description": "归档会话清理：会话行内一键删、批量清空、可还原回收站，僵尸条目自动清理。",
+      "description": "会话删除：任意会话行内一键删、批量清空、可还原回收站，僵尸条目自动清理。",
       "category": "watchlist",
       "tags": ["会话管理", "归档", "回收站", "清理"],
       "source": "npm",
