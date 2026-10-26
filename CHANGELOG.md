@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.20 修复：恢复对账改判行丢版本变迁（入队 from 持久化 + 改判回填 meta.to）+ golden 语料「同运行时」契约显式化
+
+- **症状（2026-10-26 真机实录）**：面板自升级 dsh-m 被换装重载打断后，操作记录经恢复对账改判为「完成」，但行内版本串裸奔——「升级 dsh-m 15m29s」，原/新版本号双缺；同日对照机上 Agent 工具通道记录与 5s 内完成的记录均正常带 `v旧→v新`。
+- **根因**：0.10.3 恢复记账对账的改判分支只写 `toVersion`/`reconciledAfterRestart`；展示键 `meta.from`/`meta.to` 的唯一写入时机是泵执行器成功返回时并入 opMeta（0.9.75）——而 dsh-m 自升级恰会杀掉自己的面板，落账被打断；入队时只持久化了比对键 `toVersion`（0.10.3），`from` 入队时明知却未存，重启后不可考。
+- **修法**：① 三处升级站点（角标 chip / 已装列表 / 市场卡）入队 meta 增 `from` = 入队时实装版（`version` / `it.version` / `it.installedVersion`）——原版本号先于任何重启持久化；② `restoreRecords` 改判分支 `meta.to` 同步回填实装版（`opRowVm` 渲染 v旧→v新 只认 from/to），旧残留无 `from` 不造键（渲染回退「→v新」），失败路径零 meta 改写；③ 单测四例（改判回填 / 旧残留不造键 / opRowVm 端到端 v旧→v新 回归锚 / 失败不改账）+ 0.10.3 三站点源码锚同步翻新。
+- **顺带（tests/search-relevance）**：golden 冻结语料在 Unicode 16.0 数据运行时（node22+ICU77）红 2 例（U+0CDC / U+088F）——两码点 Unicode 17.0 起才赋值为字母，`\p{L}` 判定随运行时 ICU 数据漂移，属实现「同谓词同运行时」契约内预期而非实现漂移（node24+ICU78 同 fixture 实测 20/20 绿）。测试按 `process.versions.unicode` 辖域化：匹配 CI 基线（node24/17.0）恒钉住，不匹配带理由跳过（附再生命令，基线切换必须显式）；fixture 与实现零改动。
+- **验证**：目标套件 131/131；全量 npm test **1755 过 + 1 跳过（运行时辖域）+ 0 败**（node22.21.1 实测）；typecheck 0；跨运行时对照（node22.21.1/ICU77.1 vs node24.20.0/ICU78.3）与 stash 对照（干净 main 同红）双重排除实现回归。
+
 ### 0.10.19 依赖大版本适配：undici 8 绝对式代理 + TS 7 无 JS API 守卫桥接（Dependabot #16/#17 挂账清账，issue #20）
 
 - **背景**：Dependabot 首波大版本 bump 两项红挂账（issue #20）：undici 7.30.0→8.12.3（PR #16，2/1752 红全在代理链路）、typescript ^5.6.0→7.0.2（PR #17，check-client-imports 崩 + typecheck 假绿）。适配经 PR #21 落地并经两轮独立评审（对抗式深评 + delta 复核）对齐至统一 approve。
@@ -790,6 +798,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.20 Fix: reconcile-re-judged rows losing version transition (enqueue-time `from` persistence + reconcile back-fill of `meta.to`) + explicit "same-runtime" contract for the golden corpus
+
+- **Symptom (2026-10-26, live incident)**: after a panel-initiated dsh-m self-upgrade was interrupted by its own bundle-swap reload, the operation record got re-judged as done by the restore reconciliation — but the row showed no version transition at all ("升级 dsh-m 15m29s", both old and new versions missing); on a peer machine the same day, Agent-tool channel records and a 5-second panel upgrade all displayed `vOld→vNew` normally.
+- **Root cause**: the 0.10.3 restore-reconcile branch only writes `toVersion`/`reconciledAfterRestart`; the display keys `meta.from`/`meta.to` are only ever written when the pump merges opMeta from the executor's successful return (0.9.75) — and a dsh-m self-upgrade kills its own panel, interrupting that final write. Enqueue only persisted the comparison key `toVersion` (0.10.3); `from` was known at enqueue time but never stored, and is unrecoverable after the restart.
+- **Changes**: ① the three upgrade sites (version chip / installed list / market card) now persist `from` = the installed version at enqueue time (`version` / `it.version` / `it.installedVersion`) — the old version survives any restart; ② the `restoreRecords` re-judge branch back-fills `meta.to` with the installed version (`opRowVm` renders vOld→vNew from from/to only); legacy leftovers without `from` get no key (display falls back to "→vNew"); the failure path leaves meta untouched; ③ four unit tests (reconcile back-fill / no-key for legacy leftovers / opRowVm end-to-end vOld→vNew regression anchor / failure path writes nothing) + the 0.10.3 three-site source anchors refreshed.
+- **Side fix (tests/search-relevance)**: the golden frozen corpus went red on Unicode 16.0-data runtimes (node22+ICU77) with 2/3888 cases (U+0CDC / U+088F) — both code points are only assigned as letters since Unicode 17.0, so `\p{L}` drifts with the runtime's ICU data; this is within the implementation's documented "same predicate, same runtime" contract, not implementation drift (node24+ICU78 measures 20/20 green on the same fixture). The test is now scoped by `process.versions.unicode`: pinned whenever it matches the CI baseline (node24/17.0), skipped with a reason (including the regeneration command) otherwise — fixture and implementation untouched.
+- **Verification**: targeted suites 131/131; full `npm test` **1755 pass + 1 skipped (runtime-scoped) + 0 fail** (measured on node22.21.1); typecheck clean; cross-runtime comparison (node22.21.1/ICU77.1 vs node24.20.0/ICU78.3) plus a stash comparison (clean main is equally red) doubly rule out an implementation regression.
 
 ### 0.10.19 Dependency major-version adaptation: undici 8 absolute-form proxy + TS 7 no-JS-API guard bridge (Dependabot #16/#17 debt cleared, issue #20)
 
