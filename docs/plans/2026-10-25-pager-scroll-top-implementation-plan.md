@@ -31,7 +31,7 @@
 - 测试文化：`node:test`、直接 import 源文件、不依赖 DOM/React；不引入 jsdom / 浏览器自动化。
 - SSR 安全：所有新 effect 内对 `bodyRef.current` 做 null 守卫，`renderToString` 冒烟必须保持绿。
 - 版本纪律：`package.json` 版本号不动，随下一次常规发版走。
-- 命令环境：web 机 Linux + bash 工具；仓库惯例 `npm run build` / `npm test`（`pretest` 自动 build）/ `npm run typecheck`。构建类命令（esbuild 家族会 spawn 子进程）需 danger-full-access 会话执行。
+- 命令环境：web 机 Linux + bash 工具；仓库惯例 `npm run build` / `npm test`（`pretest` 自动 build）/ `npm run typecheck`。构建类命令（esbuild 家族会 spawn 子进程）需 完全权限（full-access） 会话执行。
 - 分支纪律：仓库当前在 `main`；开始实现前向主人确认分支策略（worktree / 直接 main），未确认不动第一刀。
 - 非范围（grill Q8，一律不做）：顶部页码器副本、读屏公告 / 翻页后焦点移交、收藏区内部滚动行为改造、无限滚动 / load-more 模式。
 

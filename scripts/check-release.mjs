@@ -9,7 +9,7 @@
  * 用法：bump 版本 → 建 tag → `npm run check-release` → push。任一项不符 exit 1。
  */
 import { readFileSync } from 'node:fs'
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -42,11 +42,11 @@ check(`CHANGELOG 中文顶条含 ${version}`, Boolean(zhTop && zhTop.includes(ve
 check(`CHANGELOG English 顶条含 ${version}`, Boolean(enTop && enTop.includes(version)), enTop ?? '（未找到条目）')
 
 let tagHead = ''
-try {
-  tagHead = execSync(`git rev-parse "v${version}^{commit}"`, { cwd: root, encoding: 'utf8' }).trim()
-} catch {
-  /* tag 不存在 → 留空，下方判 ✗ */
+const tagRev = spawnSync('git', ['rev-parse', `v${version}^{commit}`], { cwd: root, encoding: 'utf8' })
+if (tagRev.status === 0 && typeof tagRev.stdout === 'string') {
+  tagHead = tagRev.stdout.trim()
 }
+/* status ≠ 0 → tag 不存在，留空，下方判 ✗ */
 const head = execSync('git rev-parse HEAD', { cwd: root, encoding: 'utf8' }).trim()
 check(
   `tag v${version} 存在且指向 HEAD`,
