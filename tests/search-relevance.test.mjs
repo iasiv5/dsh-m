@@ -113,11 +113,22 @@ describe('relevanceScore — 多词约束与 memoize', () => {
   })
 })
 
+// 0.10.20 补：fixture「同运行时」契约显式化（2026-10-26 真机实证：node22 红 / node24 绿，3888 例仅 2 例不合）。
+// 实现（src/core/search-relevance.ts 头注）对版本敏感码点回退 WORD_RE——\p{L} 判定随运行时 Unicode 数据
+// 漂移：U+0CDC / U+088F 在 Unicode 16.0（node22+ICU77）未赋值、17.0（node24+ICU78）起赋值为字母，fuzz
+// 边界字节不合属预期行为而非实现漂移。fixture 冻结于 Unicode 17.0 数据运行时，据此辖域化：数据版本匹配
+// （CI node 24）恒钉住；更老运行时带理由跳过——基线切换必须显式再生，绝不静默。
+const FIXTURE_RUNTIME_UNICODE = '17.0'
+
 describe('normalizeSearchText — golden 差分语料（2026-10-16 计划 Task 1）', () => {
   const fixture = JSON.parse(
     readFileSync(new URL('./fixtures/search-normalize-corpus.json', import.meta.url), 'utf8'),
   )
-  it(`golden 冻结语料字节等价（${fixture.cases.length} 条，catalog ${fixture.catalogVersion}，seed ${fixture.seed}）`, () => {
+  it(`golden 冻结语料字节等价（${fixture.cases.length} 条，catalog ${fixture.catalogVersion}，seed ${fixture.seed}）`, {
+    skip:
+      process.versions.unicode !== FIXTURE_RUNTIME_UNICODE &&
+      `fixture 冻结于 Unicode ${FIXTURE_RUNTIME_UNICODE} 数据运行时，当前运行时 Unicode ${process.versions.unicode || '未知'}——跨运行时 \\p{L} 漂移属实现「同谓词同运行时」契约内预期；如切换基线：npm run build && node scripts/gen-search-normalize-corpus.mjs（再生纪律见脚本头注）`,
+  }, () => {
     assert.ok(Array.isArray(fixture.cases) && fixture.cases.length >= 3800, 'fixture 条数下限 3800')
     const bad = []
     for (let i = 0; i < fixture.cases.length; i++) {
