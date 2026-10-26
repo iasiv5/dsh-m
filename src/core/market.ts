@@ -25,7 +25,7 @@ import {
   listInstalledPlugins as defaultListInstalledPlugins,
   type InstalledPlugin,
 } from './installed.js'
-import { attachInstalledIconDataUris } from './installed-icon.js'
+import { attachEntryIconDataUris, attachInstalledIconDataUris } from './installed-icon.js'
 import { setLivePluginDisabled, loaderHost, type LoaderEntry } from './live-plugin.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { PROTECTED_MODULES, composeEnablement, type PluginEnablement } from './enablement.js'
@@ -109,6 +109,8 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   latestErrorCode?: LatestErrorCode
   /** 社区收录条目标记（M1 Task 5）；主清单条目不带 */
   community?: true
+  /** 本机声明图标 data URI（ADR-0025 增补：页内 matched 已装条目 join，主人修订 2026-10-27） */
+  iconDataUri?: string | null
   /** 以下为社区旁路字段（Q44：能力披露/截图只进详情折叠区，卡片不打标） */
   stars?: number | null
   downloads?: number | null
@@ -680,6 +682,9 @@ export async function listMarket(
   // 0.9.68（ADR-0016 决策 5 同款思路，FP5 2026-10-15）：已装索引每查询建一次，页内条目 O(1) 查表
   const installedIndex = buildInstalledIndex(installedItems)
   const items: MarketItem[] = ordered.slice(offset, offset + limit).map((entry) => toMarketItem(entry, installedIndex))
+  // ADR-0025 增补（主人修订 2026-10-27）：页内 matched 已装条目 join 本机声明图标——logo 在本机盘上
+  // 就不因清单数据未推送而空转链①。读盘页面级有界（≤页大小、仅 matched），全局约束 4 按此修订。
+  await attachEntryIconDataUris(items, installedItems)
 
   let latestComplete = true
   let latestTimedOut = false

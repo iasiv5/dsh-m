@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listInstalledWithMeta } from '../lib/core/market.js'
+import { listInstalledWithMeta, listMarket } from '../lib/core/market.js'
 import { listInstalledPlugins, readProfileDeps, readInstalledPluginReadme } from '../lib/core/installed.js'
 import { githubRepoFromRepository } from '../lib/core/installed.js'
 
@@ -346,5 +346,47 @@ describe('listInstalledWithMeta icon 接线（ADR-0025 T3.4，market 级）', ()
     writeFileSync(join(pkgDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
     const res = await listInstalledWithMeta({}, { namespace: 'host', probeMode: 'none' }, iconWiringDeps(wiringItems(pkgDir)))
     assert.equal(res.items[0]?.iconDataUri, undefined)
+  })
+})
+
+describe('listMarket 市场条目 icon join（ADR-0025 增补，主人修订）', () => {
+  const regEntry = (id, npm) => ({ id, name: id, description: 'd', category: 'tools', tags: [], source: 'npm', npm })
+
+  function marketDeps(items) {
+    const ts = '2026-10-27T00:00:00.000Z' // 独立 fetchedAt：identityKey 含 fetchedAt（不含 registry 内容），防同进程代际键互串
+    return {
+      loadRegistry: async () => ({
+        configuredAddress: '', activeAddress: 'https://example.com/mkt.json', source: 'default-raw', status: 'ready',
+        isDefault: true, stale: false, fetchedAt: ts, errors: [], count: 2, registry: { version: 1, plugins: [regEntry('dsh-iconic', 'dsh-iconic'), regEntry('dsh-other', 'dsh-other')] },
+      }),
+      listInstalledPlugins: async () => ({ items, others: 0, complete: true, profileDir: '/tmp/icon-market' }),
+      fetchCommunityCatalog: async () => ({
+        state: { enabled: true, status: 'ready', version: 'v0-market', checkedAt: ts, fetchedAt: ts, route: 'jsdelivr', count: 0, errors: [], warnings: [] },
+        catalog: { name: 'x', url: 'https://x.example', source: 'https://x.example/repo', updated: '2026-10-26', count: 0, categories: {}, plugins: [] },
+      }),
+      npmLatest: async (pkg) => ({ version: '9.9.9', integrity: 'sha512-x', tarball: `https://example.com/${pkg}.tgz` }),
+      githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
+    }
+  }
+
+  it('页内 matched 已装条目 → iconDataUri；未装条目 → 无键；接线被删则此测试红', async () => {
+    process.env.DSHM_CACHE_DIR = mkdtempSync(join(tmpdir(), 'dshm-icon-mkt-'))
+    try {
+      const pkgDir = join(dir, 'node_modules', 'dsh-iconic')
+      mkdirSync(pkgDir, { recursive: true })
+      writeFileSync(join(pkgDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+      const items = [{ pkg: 'dsh-iconic', name: 'dsh-iconic', version: '1.0.0', description: '', homepage: '', spec: '1.0.0', source: 'npm', dsh: true, path: pkgDir, manifestIcon: './icon.svg' }]
+      const res = await listMarket({}, { namespace: 'host', limit: 10 }, marketDeps(items))
+      const dump = JSON.stringify({ total: res.total, ids: res.items.map((i) => i.id) })
+      const iconic = res.items.find((i) => i.id === 'dsh-iconic')
+      const other = res.items.find((i) => i.id === 'dsh-other')
+      assert.ok(iconic, `items dump: ${dump} | total ${res.total}`)
+      assert.equal(iconic.installed, true, `dump: ${dump}`)
+      assert.match(String(iconic.iconDataUri), /^data:image\/svg\+xml;base64,/)
+      assert.equal(other?.iconDataUri, undefined)
+    } finally {
+      rmSync(process.env.DSHM_CACHE_DIR, { recursive: true, force: true })
+      delete process.env.DSHM_CACHE_DIR
+    }
   })
 })

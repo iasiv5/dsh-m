@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
-import { manifestIconToDataUri, attachInstalledIconDataUris, MAX_ICON_BYTES } from '../lib/core/installed-icon.js'
+import { manifestIconToDataUri, attachInstalledIconDataUris, attachEntryIconDataUris, MAX_ICON_BYTES } from '../lib/core/installed-icon.js'
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 const PNG_1PX = Buffer.from(
@@ -119,5 +119,29 @@ describe('attachInstalledIconDataUris（T3 富化）', () => {
     assert.equal(items[1].iconDataUri, null, '解析失败 → 显式 null')
     assert.equal(items[2].iconDataUri, undefined, '未声明 → undefined')
     assert.deepEqual(items.map((i) => i.pkg), ['good', 'bad', 'none'], '保序')
+  })
+})
+
+describe('attachEntryIconDataUris（市场 join 增补）', () => {
+  it('matched 已装条目 → iconDataUri；未匹配/无声明 → undefined；installedItems 空 → 短路零读盘', async () => {
+    const good = makeRealPkg()
+    const none = makeRealPkg(false)
+    const entries = [
+      { installedPkg: 'good', iconDataUri: null },
+      { installedPkg: 'none', iconDataUri: null },
+      { installedPkg: 'missing', iconDataUri: null },
+      { iconDataUri: null },
+    ]
+    const installed = [
+      { pkg: 'good', path: good, manifestIcon: './icon.svg' },
+      { pkg: 'none', path: none },
+    ]
+    await attachEntryIconDataUris(entries, installed)
+    assert.ok(entries[0].iconDataUri?.startsWith('data:image/svg+xml;base64,'), 'matched+有声明 → data URI')
+    assert.equal(entries[1].iconDataUri, null, 'matched+无声明 → null（尝试过）')
+    assert.equal(entries[2].iconDataUri, null, '指向不存在的已装 → null（不在已装表 → 跳过）')
+    assert.equal(entries[3].iconDataUri, null, '无 installedPkg → 不动')
+    await attachEntryIconDataUris([{ installedPkg: 'good' }], [])
+    assert.equal('iconDataUri' in { installedPkg: 'good' }, false, '空已装表短路不抛')
   })
 })

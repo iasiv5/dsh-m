@@ -25,3 +25,8 @@
 - 精选清单已为 16/23 条目补 icon（jsDelivr pin 精确版本、逐条 HEAD 200 + image/* 验证；其余 7 条包内无图标文件，落头像，不硬造——缺席名单：modsearch、browser-skill-dsh-plugin、dsh-weknora、dsh-auth、dsh-server-deck、ds-bot、dsh-mermaid）；上游 dsh-plugin-catalog 长出 icon 字段时，需在 community-adapter 封闭白名单（L209-234）补一行透传方入链①，客户端 https 过滤届时已就位。
 - 同插件双面图标可能不同源：市场详情弹窗走目录 URL、已装页走 data URI——B2/B3 的固有结果，观感上均为「声明图标」。
 - 后续可选项（不在本期）：exports 解析加固；「非法 icon 单条降级而非整份拒绝」属 validateRegistry 行为变更、需主人单独立决。
+
+## 增补（2026-10-27，本机体验反馈）
+
+1. **市场/精选/社区页 join 本机声明图标（主人修订全局约束 4）**：本机体验发现「已装插件在已装页有 logo、精选页却落头像」的割裂——声明图标明明在本机盘上，不该因清单数据未推送而空转链①。解法：listMarket 页内 matched 已装条目 join iconDataUri（`attachEntryIconDataUris`，读盘页面级有界：≤页大小、仅 matched 条目）。客户端候选序不变：目录 icon URL 优先、本机 data URI 次之——registry.json 推送后精选自然过渡到目录图标，无行为跳变。测试：helper 单测 + listMarket 接线测试（接线行被删必红）。
+2. **B1 显示侧底板**：细线稿 SVG 在字母兜底的淡紫粉渐变底上对比度不足（pastel on pastel）。拆分：渐变底保留给字母态（div.dshm-icon），img 态垫主题底板（`var(--dsw-alias-bg-layer-1)`，亮色≈浅灰白、暗色≈深底）。素材治本（描边加粗/提饱和/glyph 顶满 viewBox）另行走插件素材改造，不在本 ADR 范围。

@@ -166,3 +166,22 @@ export async function attachInstalledIconDataUris<T extends { pkg: string; path:
     it.iconDataUri = await manifestIconToDataUri(it.path, it.manifestIcon, it.pkg)
   }))
 }
+
+/**
+ * 市场条目 join 本机声明图标（ADR-0025 增补，主人修订 2026-10-27）：精选/社区页对「恰好已装本机」
+ * 的条目补 iconDataUri——logo 在本机盘上就不该因清单数据未推送而空转链①。
+ * 读盘页面级有界：仅返回页内 matched 条目（≤页大小）触发读盘（全局约束 4 修订后的边界）。
+ * 客户端候选序不变：目录 icon URL 优先、本机 data URI 次之（icon-view.js 契约）。
+ */
+export async function attachEntryIconDataUris<T extends { installedPkg?: string; iconDataUri?: string | null }>(
+  entries: T[],
+  installedItems: ReadonlyArray<{ pkg: string; path: string; manifestIcon?: string }>,
+): Promise<void> {
+  if (installedItems.length === 0) return
+  const byPkg = new Map(installedItems.map((it) => [it.pkg, it]))
+  await Promise.all(entries.map(async (e) => {
+    const inst = e.installedPkg !== undefined ? byPkg.get(e.installedPkg) : undefined
+    if (!inst?.manifestIcon) return
+    e.iconDataUri = await manifestIconToDataUri(inst.path, inst.manifestIcon, inst.pkg)
+  }))
+}
