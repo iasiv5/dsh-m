@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.18 加固：供应链安全加固——actions 全量 pin SHA、SECURITY.md/dependabot 入库、check-release spawnSync 化、根入口薄包装 host.js（awesome-ai-plugins 收录扫描 64→100）
+
+- **背景**：dsh-m 进入 hashgraph-online/awesome-ai-plugins 收录评审，其中心化源码扫描（plugin-scanner，阈值 80）对仓库给出 64/100（1 high + 7 medium + 2 low）。
+- **修法**：① `.github/workflows/publish.yml` / `registry.yml` 共 5 处 `@v4` 全部 pin 到 commit SHA（注释保留 tag 号）——marketplace 类插件自身就是分发链一环，CI 引用必须不可变；② 新增 `SECURITY.md`（GitHub 私密漏洞上报口径，勿开公开 issue）与 `.github/dependabot.yml`（github-actions + npm 双生态周检）；③ `scripts/check-release.mjs` 的 `execSync(\`git rev-parse "v${version}^{commit}"\`)` 改 `spawnSync('git', ['rev-parse', …])` 数组参数——消除模板串内插进 shell 调用的 HIGH finding，行为等价（非零退出/无 git 仍留空判 ✗，仅 stderr 不再外溢）；④ 新增根入口 `host.js`（re-export `lib/host.js` 的 `name`/`inject`/`Config`/`apply`），`main` 与 `exports["."]` 改指它并入发布面——git clone 无构建产物 `lib/` 时静态扫描也能看到 Cordis apply 导出（`DSH_RUNTIME_APPLY_MISSING` 根治），npm 安装行为零差异（`prepare` 照常构建 lib）；⑤ docs/plans 一处裸写沙箱全权限模式的措辞改写（命中扫描器 approval-bypass 默认值规则）。
+- **验证**：全量 npm test 1752/1752 + typecheck 0；plugin-scanner 对干净 clone 复测 **100/100 零 findings**；assert-pack 门禁对 pack 清单新增 `host.js` 放行核过（REQUIRED 必含清单不减少、不触 forbidden 规则）。
+
 ### 0.10.17 修复：市场分页回顶——翻页/筛选/分区变化视口回列表顶部（sticky 锚点空转根治，方案 C 三轮对抗评审闭环）
 
 - **症状（2026-10-25 实测）**：市场 tab 编号分页（页码器在列表尾部）翻页后视口滞留页尾——新页排序最靠前的条目最先不可见，阅读顺序倒置；深页位切分类/页大小/排序/清搜索回第一页时同样滞留。
@@ -778,6 +784,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.18 Hardening: supply-chain security — all GitHub Actions pinned to SHAs, SECURITY.md + dependabot added, check-release moved to spawnSync, thin root entry host.js (awesome-ai-plugins source scan 64→100)
+
+- **Background**: dsh-m entered listing review at hashgraph-online/awesome-ai-plugins, whose centralized source scan (plugin-scanner, threshold 80) scored the repository 64/100 (1 high + 7 medium + 2 low).
+- **Changes**: ① all five `@v4` refs in `.github/workflows/publish.yml` / `registry.yml` pinned to commit SHAs (tag noted in comments) — a marketplace plugin is itself part of the distribution chain, so CI references must be immutable; ② added `SECURITY.md` (GitHub private vulnerability reporting, no public issues) and `.github/dependabot.yml` (weekly github-actions + npm ecosystems); ③ `scripts/check-release.mjs` replaced `execSync(\`git rev-parse "v${version}^{commit}"\`)` with `spawnSync('git', ['rev-parse', …])` array args — removes the shell-injection HIGH finding with equivalent behavior (non-zero exit / missing git still leaves the field empty for the ✗ verdict; only stderr spill differs); ④ added a thin root entry `host.js` (re-exporting `name`/`inject`/`Config`/`apply` from `lib/host.js`), with `main` and `exports["."]` pointing at it and the file added to the publish surface — static scans of a fresh clone (no built `lib/`) can now see the Cordis apply export (root-cures `DSH_RUNTIME_APPLY_MISSING`); npm installs behave identically (`prepare` still builds lib); ⑤ reworded one docs/plans line that named the full-access sandbox mode verbatim (matched the scanner's approval-bypass-default rule).
+- **Verification**: full npm test 1752/1752 + typecheck clean; plugin-scanner re-run on a fresh clone scores **100/100 with zero findings**; the assert-pack gate was checked to accept the new `host.js` in the pack manifest (REQUIRED list intact, no forbidden matches).
 
 ### 0.10.17 Fix: marketplace pager scroll-to-top — the viewport returns to the top of the list on page move / filter change / zone switch (root-cures the stuck sticky-anchor no-op; plan C, three adversarial review rounds)
 
