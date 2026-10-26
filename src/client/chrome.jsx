@@ -81,8 +81,9 @@ function Icon({ entry }) {
   const chain = useImgChain(current !== null && !isData ? current : "", { h: 96, active: show });
   // 候选间降级：本 URL 双层（weserv+原图）耗尽 → 下一候选（渲染期 setState，Discarding render）
   if (chain.failed && idx < candidates.length - 1) setIdx(idx + 1);
-  // 渲染层短路：未可见（IO 门控，SSR 恒 false）/ 无候选 / 当前候选耗尽 → 字母占位（ref 恒挂，首帧必经）
-  if (!show || candidates.length === 0 || chain.failed) {
+  // 渲染层短路：未可见（IO 门控，SSR 恒 false）/ 无候选 / 候选越界（评审 R2-Q4：data 末位候选失败
+  // 时 idx 可越到 len，链喂空串停在退化态——并入字母占位）/ 当前候选耗尽 → 字母占位（ref 恒挂，首帧必经）
+  if (!show || candidates.length === 0 || current === null || chain.failed) {
     return h("div", { className: "dshm-icon", "aria-hidden": "true", ref }, letter);
   }
   if (isData) {
