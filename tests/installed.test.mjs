@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { listInstalledWithMeta } from '../lib/core/market.js'
 import { listInstalledPlugins, readProfileDeps, readInstalledPluginReadme } from '../lib/core/installed.js'
 import { githubRepoFromRepository } from '../lib/core/installed.js'
 
@@ -287,7 +288,7 @@ describe('manifestIcon 透传（ADR-0025，T2）：sanitize 白名单 + 双臂�
       const res = await listInstalledPlugins(dir, opts)
       const iconic = res.items.find((i) => i.pkg === 'dsh-iconic')
       const plain = res.items.find((i) => i.pkg === 'dsh-plain')
-      assert.equal(iconic.manifestIcon, './icon.svg', `wantPatch=${!opts?.patchRows === false ? 'false' : 'true'} 臂`)
+      assert.equal(iconic.manifestIcon, './icon.svg', `wantPatch=${opts?.patchRows === false ? 'patchRows:false' : 'default'} 臂`)
       assert.equal(plain.manifestIcon, undefined)
     }
   })
@@ -302,5 +303,48 @@ describe('manifestIcon 透传（ADR-0025，T2）：sanitize 白名单 + 双臂�
     assert.equal(byPkg['dsh-bad-icon'], undefined)
     assert.equal(byPkg['dsh-empty-icon'], undefined)
     assert.equal(byPkg['dsh-long-icon'], './' + 'a'.repeat(298))
+  })
+})
+
+describe('listInstalledWithMeta icon 接线（ADR-0025 T3.4，market 级）', () => {
+  /** market-golden 同款 deps 桩形态：空主清单 + 空社区目录 → 无匹配无探测，items 原样流经富化点。 */
+  function iconWiringDeps(items) {
+    const ts = '2026-10-26T00:00:00.000Z'
+    return {
+      loadRegistry: async () => ({
+        configuredAddress: '', activeAddress: 'https://example.com/r.json', source: 'default-raw', status: 'ready',
+        isDefault: true, stale: false, fetchedAt: ts, errors: [], count: 0, registry: { version: 1, plugins: [] },
+      }),
+      listInstalledPlugins: async () => ({ items, others: 0, complete: true, profileDir: '/tmp/icon-wiring' }),
+      fetchCommunityCatalog: async () => ({
+        state: { enabled: true, status: 'ready', version: 'v0', checkedAt: ts, fetchedAt: ts, route: 'jsdelivr', count: 0, errors: [], warnings: [] },
+        catalog: { name: 'x', url: 'https://x.example', source: 'https://x.example/repo', updated: '2026-10-26', count: 0, categories: {}, plugins: [] },
+      }),
+      npmLatest: async (pkg) => ({ version: '9.9.9', integrity: 'sha512-x', tarball: `https://example.com/${pkg}.tgz` }),
+      githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
+    }
+  }
+
+  function wiringItems(pkgDir) {
+    return [{
+      pkg: 'dsh-iconic', name: 'dsh-iconic', version: '1.0.0', description: '', homepage: '',
+      spec: '1.0.0', source: 'npm', dsh: true, path: pkgDir, manifestIcon: './icon.svg',
+    }]
+  }
+
+  it('icon:true → item 产出 iconDataUri（data URI）；接线被删则此测试红', async () => {
+    const pkgDir = join(dir, 'node_modules', 'dsh-iconic')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    const res = await listInstalledWithMeta({}, { namespace: 'host', probeMode: 'none', icon: true }, iconWiringDeps(wiringItems(pkgDir)))
+    assert.match(String(res.items[0]?.iconDataUri), /^data:image\/svg\+xml;base64,/)
+  })
+
+  it('缺省（不传 icon）→ 不产出 iconDataUri 键', async () => {
+    const pkgDir = join(dir, 'node_modules', 'dsh-iconic')
+    mkdirSync(pkgDir, { recursive: true })
+    writeFileSync(join(pkgDir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    const res = await listInstalledWithMeta({}, { namespace: 'host', probeMode: 'none' }, iconWiringDeps(wiringItems(pkgDir)))
+    assert.equal(res.items[0]?.iconDataUri, undefined)
   })
 })

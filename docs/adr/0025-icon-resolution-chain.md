@@ -22,6 +22,6 @@
 - 三面板 + 详情弹窗 + 收藏区 + 聊天工具卡六个消费方共用同一 Icon 候选链：market 页候选 = 目录 icon → 头像 → 字母；installed 页候选 = iconDataUri → 头像 → 字母。
 - 回归防线：tests/installed-icon.test.mjs（两面 realpath + symlink 双场景）、tests/client-icon-view.test.mjs（候选序纯逻辑）、tests/registry-icon-url.test.mjs（https 守卫）、tests/installed.test.mjs（manifestIcon 双臂透传）、client-render-smoke（SSR 字母占位、走链覆盖由 Probe 断言独立承担）+ client-img-chain / source-anchor-hygiene 既有防线；实机冒烟判据 `listInstalledWithMeta(cfg, { icon: true })` → withIcon ≥ 7（2026-10-26 本机盘点基线，执行时按现场重估）。
 - 已知偏离：exports `<specifier>/icon` 兜底依赖 import.meta.resolve（best-effort，bundler 改写或 resolve 失败时该类插件已装页落头像）；manifestIcon 300 字符截断（homepage 字段惯例；官方对路径无长度限制，超长合法路径截坏后解析 null 落头像，行为安全）。
-- 精选清单已为 16/23 条目补 icon（jsDelivr pin 精确版本、逐条 HEAD 200 + image/* 验证；其余 7 条无图标文件，落头像，不硬造）；上游 dsh-plugin-catalog 长出 icon 字段时，需在 community-adapter 封闭白名单（L209-234）补一行透传方入链①，客户端 https 过滤届时已就位。
+- 精选清单已为 16/23 条目补 icon（jsDelivr pin 精确版本、逐条 HEAD 200 + image/* 验证；其余 7 条包内无图标文件，落头像，不硬造——缺席名单：modsearch、browser-skill-dsh-plugin、dsh-weknora、dsh-auth、dsh-server-deck、ds-bot、dsh-mermaid）；上游 dsh-plugin-catalog 长出 icon 字段时，需在 community-adapter 封闭白名单（L209-234）补一行透传方入链①，客户端 https 过滤届时已就位。
 - 同插件双面图标可能不同源：市场详情弹窗走目录 URL、已装页走 data URI——B2/B3 的固有结果，观感上均为「声明图标」。
 - 后续可选项（不在本期）：exports 解析加固；「非法 icon 单条降级而非整份拒绝」属 validateRegistry 行为变更、需主人单独立决。
