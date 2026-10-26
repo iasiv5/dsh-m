@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Test (build via pretest)
+        run: |
+          set -o pipefail
+          npm ci --no-audit --no-fund 2>&1 | tee install.log
+          npm test 2>&1 | tee test.log
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Diagnostics (always)
+        if: always()
+        run: |
+          {
+            echo '### install.log tail'
+            echo '```'
+            tail -40 install.log 2>/dev/null || echo '(no install.log)'
+            echo '```'
+            echo '### test.log tail'
+            echo '```'
+            tail -60 test.log 2>/dev/null || echo '(no test.log)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

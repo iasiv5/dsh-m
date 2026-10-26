@@ -21,7 +21,7 @@ const run = (cmd, tries = 1) => {
       return execSync(cmd, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
     } catch (err) {
       if (i === tries) throw err
-      execSync('ping -n 6 127.0.0.1 > nul', { cwd: root }) // 5s 退避
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000) // 5s 退避（跨平台；原 `ping -n` 为 Windows 专供，Linux 重试路径必炸——2026-10-26 retro）
     }
   }
 }
