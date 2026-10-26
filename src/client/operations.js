@@ -321,6 +321,8 @@ export function writeReconcileNotified(storage, keys) {
  *   0.10.3 挂账 1：中断升级的账实复读缝——返回 rec.target 的实装版本（未知/缺席 = undefined）。
  *   0.10.6 匹配放宽：升级类 running 残留若账面「已到或已超过」meta.toVersion（reachedVersion），
  *   改判 done（meta.reconciledAfterRestart 留痕、toVersion 落为实装版）；否则保持「进程重启中断」原语义。
+ *   0.10.20：改判时 meta.to 同步回填实装版（展示键）；meta.from 沿用三站点入队持久化值
+ *   （chip=version、已装列表=it.version、市场卡=it.installedVersion），旧残留缺席则不造键。
  * @returns {Promise<OperationRecord[]>} 改标后的记录列表（不落库；由调用方 replaceAll）
  */
 export async function restoreRecords(records, stillApplies, installedVersionOf) {
@@ -365,12 +367,15 @@ export async function restoreRecords(records, stillApplies, installedVersionOf) 
         }
         // 0.10.6（0.10.5 dogfood 实证）：匹配放宽为「已到或已超过」（reachedVersion，rc-aware ≥）——
         // 跨版本滞后记录也能收口；meta.toVersion 落为实装版——补报文案数据源不再显示滞后值。
+        // 0.10.20：meta.to（展示键，opRowVm 渲染 v旧→v新 只认 from/to）同步回填实装版；meta.from 沿用
+        // 三站点入队持久化值（旧残留缺席时不造键，渲染回退「→v新」）——改判行不再丢版本变迁
+        //（2026-10-26 真机实证：dsh-m 0.10.18→0.10.19 自升级中断经对账改判后行内版本串裸奔）。
         if (installed !== undefined && reachedVersion(installed, rec.meta.toVersion)) {
           out.push({
             ...rec,
             status: 'done',
             error: undefined,
-            meta: { ...rec.meta, toVersion: installed, reconciledAfterRestart: true },
+            meta: { ...rec.meta, to: installed, toVersion: installed, reconciledAfterRestart: true },
             updatedAt: Date.now(),
           })
           continue

@@ -68,11 +68,13 @@ function DshmVersionChip({ version, notify, initialCheck, ops }) {
       // 的全部入口（头部角标 + 已装/市场卡片通用升级按钮 + Agent 工具）经服务端 core 缝改道
       // （SELF_PKG 单点，SELF_PKG='dsh-m'），0.9.6-0.9.94 间「desktop 自升级不可用」状态自此终结。
       // 0.10.3（挂账 1 数据面）：toVersion 随 enqueue 落 meta——中断恢复对账的比对依据。
+      // 0.10.20：from（当前实装版）随 enqueue 持久化——中断恢复对账改判后渲染 v旧→v新 的原版本号数据源
+      //（2026-10-26 真机实证：改判行此前只回填 toVersion，展示键 from/to 双缺 →「升级 dsh-m」无版本串）。
       const res = await (ops
         ? ops.runOp("upgrade", "dsh-m", async () => {
             const r = await api("self-upgrade");
             return { ...r, opMeta: { from: version, to: r.version || "latest" } };
-          }, { npm: "dsh-m", toVersion: state.latest })
+          }, { npm: "dsh-m", from: version, toVersion: state.latest })
         : api("self-upgrade"));
       clearSelfCheckCache(typeof window !== "undefined" && window.localStorage ? window.localStorage : null);
       // 升级成功：缓存已清、本地判回最新态；重启横幅由 notify 的 needsRestart 通道给出（builds 段 0.9.94 换 op-outcome）

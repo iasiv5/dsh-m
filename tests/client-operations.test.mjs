@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, reachedVersion, readReconcileNotified, writeReconcileNotified, RECONCILE_NOTIFIED_KEY, OP_STORAGE_KEY, upgradeNotify, TERMINAL_CLEARABLE, REGISTRY_DEFAULT_TARGET } from '../src/client/operations.js'
-import { groupOpsByDay } from '../src/client/operations-view.js'
+import { groupOpsByDay, opRowVm } from '../src/client/operations-view.js'
 
 /** localStorage mock（可注入故障）。 */
 function memStorage() {
@@ -497,6 +497,42 @@ describe('restoreRecords 对账匹配放宽（0.10.6 挂账 1 收口）', () => 
     assert.equal(out[0].status, 'done', '滞后记录收口（不再反复打扰）')
     assert.equal(out[0].meta.toVersion, '0.10.5', '补报文案数据源 = 实装版')
     assert.equal(out[0].meta.reconciledAfterRestart, true)
+  })
+})
+
+// ---------- 0.10.20（2026-10-26 真机实证）：对账改判行丢版本变迁——meta.to 回填实装版 + 入队 from 持久化 ----------
+
+describe('restoreRecords 对账改判回填展示键（0.10.20：toVersion 之外的 meta.from / meta.to）', () => {
+  const running = (over = {}) => rec({ id: 'r1', kind: 'upgrade', target: 'pkg-a', status: 'running', meta: { from: '1.0.0', toVersion: '2.0.0' }, ...over })
+  const ivo = (v) => async () => v
+
+  it('⑤ 改判 done：meta.from（入队持久化）原样保留、meta.to 回填实装版——展示键齐备', async () => {
+    const out = await restoreRecords([running()], ivo('2.0.0'), ivo('2.0.0'))
+    assert.equal(out[0].status, 'done')
+    assert.equal(out[0].meta.from, '1.0.0', 'from = 入队时实装版（对账不得改写/丢失）')
+    assert.equal(out[0].meta.to, '2.0.0', 'to = 对账实读的实装版（展示键回填）')
+    assert.equal(out[0].meta.toVersion, '2.0.0', '比对键照旧落实装版（0.10.6 语义不变）')
+    assert.equal(out[0].meta.reconciledAfterRestart, true)
+  })
+
+  it('⑥ 旧残留无 meta.from → 改判不造 from 键，仅回填 to（渲染回退「→v新」）', async () => {
+    const out = await restoreRecords([running({ meta: { toVersion: '2.0.0' } })], ivo('2.0.0'), ivo('2.0.0'))
+    assert.equal(out[0].status, 'done')
+    assert.equal('from' in out[0].meta, false, '不得出现 from: undefined（persist 序列化噪音）')
+    assert.equal(out[0].meta.to, '2.0.0')
+  })
+
+  it('⑦ 端到端：改判输出喂 opRowVm 渲染出 v旧→v新（0.10.18→0.10.19 行裸奔的回归锚）', async () => {
+    const out = await restoreRecords([running({ meta: { from: '0.10.18', toVersion: '0.10.19' } })], ivo('0.10.19'), ivo('0.10.19'))
+    assert.equal(out[0].status, 'done')
+    assert.equal(opRowVm(out[0]).version, 'v0.10.18→v0.10.19')
+  })
+
+  it('⑧ 账面未到目标版 → 仍走「进程重启中断」，meta 不回填展示键（失败行不改账）', async () => {
+    const out = await restoreRecords([running()], ivo('2.0.0'), ivo('1.0.0'))
+    assert.equal(out[0].status, 'failed')
+    assert.equal(out[0].error, '进程重启中断')
+    assert.equal('to' in out[0].meta, false, '失败路径零 meta 改写')
   })
 })
 

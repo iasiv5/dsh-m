@@ -129,23 +129,24 @@ describe('降级恢复站点接线（0.10.0 Task 10：市场卡 + 已装列表�
 })
 
 // ---------- 0.10.3（挂账 1 数据面）：升级目标版随 enqueue 落 meta（中断恢复对账的比对依据） ----------
+// 0.10.20（2026-10-26 真机实证）：增 from（入队时实装版）——中断恢复对账改判后行内渲染 v旧→v新 的原版本号数据源
 // ADR-0023 T10：chip 站点锚（:97）随 DshmVersionChip 迁 version-chip.jsx；其余站点留 main.jsx
-describe('升级 enqueue meta 携带 toVersion（0.10.3：三站点单行锚；ADR-0023 T11：站点随 Tab/chip 出仓分锚）', () => {
+describe('升级 enqueue meta 携带 toVersion + from（0.10.3 单行锚；0.10.20 增 from；ADR-0023 T11：站点随 Tab/chip 出仓分锚）', () => {
   const versionChipSrc = readFileSync(new URL('../src/client/version-chip.jsx', import.meta.url), 'utf8')
   const marketTabSrc = readFileSync(new URL('../src/client/market-tab.jsx', import.meta.url), 'utf8')
   const installedTabSrc = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
   const src = marketTabSrc + '\n' + installedTabSrc
   const count = (needle) => src.split(needle).length - 1
 
-  it('① chip 静默升级以运行时探测的 latest 为目标版（version-chip.jsx——ADR-0023 T10）', () => {
-    assert.equal(versionChipSrc.split('{ npm: "dsh-m", toVersion: state.latest }').length - 1, 1)
+  it('① chip 静默升级以运行时探测的 latest 为目标版、运行中版本为 from（version-chip.jsx——ADR-0023 T10）', () => {
+    assert.equal(versionChipSrc.split('{ npm: "dsh-m", from: version, toVersion: state.latest }').length - 1, 1)
   })
 
-  it('② 已装列表以 updates 合并的 latestVersion 为目标版（installed-tab.jsx）', () => {
-    assert.equal(installedTabSrc.split('{ toVersion: it.latestVersion }').length - 1, 1)
+  it('② 已装列表以 updates 合并的 latestVersion 为目标版、当前实装 it.version 为 from（installed-tab.jsx）', () => {
+    assert.equal(installedTabSrc.split('{ from: it.version, toVersion: it.latestVersion }').length - 1, 1)
   })
 
-  it('③ 市场卡以卡片 latest 为目标版（升级站点 meta 原为空对象，第 4 参落 meta；market-tab.jsx）', () => {
-    assert.equal(marketTabSrc.split('{ toVersion: it.latest }').length - 1, 1, '市场卡 doUpgrade meta 锚')
+  it('③ 市场卡以卡片 latest 为目标版、当前实装 it.installedVersion 为 from（升级站点 meta 原为空对象，第 4 参落 meta；market-tab.jsx）', () => {
+    assert.equal(marketTabSrc.split('{ from: it.installedVersion, toVersion: it.latest }').length - 1, 1, '市场卡 doUpgrade meta 锚')
   })
 })

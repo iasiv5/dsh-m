@@ -178,11 +178,12 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
     try {
       // 0.9.75：升级结果版本变迁（from/to，github 源回退 sha 前 7 位）经 opMeta 落账进操作记录
       // 0.10.3（挂账 1 数据面）：toVersion 随 enqueue 落 meta（中断恢复对账的比对依据）
+      // 0.10.20：from（当前实装版 it.installedVersion）随 enqueue 持久化——恢复对账改判后渲染 v旧→v新 的数据源
       const res = await ops.runOp("upgrade", it.installedPkg, async () => {
         const r = await api("upgrade", { pkg: it.installedPkg });
         const m = opUpgradeMeta(r);
         return m ? { ...r, opMeta: m } : r;
-      }, { toVersion: it.latest });
+      }, { from: it.installedVersion, toVersion: it.latest });
       // 0.10.0 R4：降级恢复结局（升级失败但已自动回装旧版）→ warn 投影，绝不进成功臂（「升级成功 vX→vY」与回滚事实相反）
       const degraded = oc.degradedOutcome(res);
       if (degraded) {
