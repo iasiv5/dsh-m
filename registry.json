@@ -12,6 +12,7 @@
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0.10.20/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-m"
     },
     {
@@ -25,6 +26,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1.5.18/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-skins"
     },
     {
@@ -36,6 +38,7 @@
       "source": "npm",
       "npm": "@deepseek-harness-tui/dsh-tui",
       "github": "ccch1mneyyy/dsh-TUI",
+      "icon": "https://cdn.jsdelivr.net/npm/@deepseek-harness-tui/dsh-tui@0.17.0/assets/plugin-icon.svg",
       "homepage": "https://github.com/ccch1mneyyy/dsh-TUI"
     },
     {
@@ -48,6 +51,7 @@
       "source": "npm",
       "npm": "dsh-better-sidebar",
       "github": "omdsh-dev/DSH-better-sidebar",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-better-sidebar@0.28.1/icon.svg",
       "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
     },
     {
@@ -60,6 +64,7 @@
       "source": "npm",
       "npm": "dshmarket",
       "github": "dsh-market/dsh-market",
+      "icon": "https://cdn.jsdelivr.net/npm/dshmarket@1.70.2/assets/logo.svg",
       "homepage": "https://github.com/dsh-market/dsh-market"
     },
     {
@@ -72,6 +77,7 @@
       "source": "npm",
       "npm": "dsh-context",
       "github": "bowenliang123/dsh-context",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-context@0.77.0/icon.svg",
       "homepage": "https://github.com/bowenliang123/dsh-context"
     },
     {
@@ -94,6 +100,7 @@
       "source": "npm",
       "npm": "dsh-ops",
       "github": "T-Auto/dsh-ops",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-ops@0.4.1/docs/assets/icon.png",
       "homepage": "https://github.com/T-Auto/dsh-ops"
     },
     {
@@ -106,6 +113,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skip-browser-auth",
       "github": "iasiv5/dsh-skip-browser-auth",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skip-browser-auth@0.4.5/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-skip-browser-auth"
     },
     {
@@ -118,6 +126,7 @@
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1.2.23/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
     },
     {
@@ -130,6 +139,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-quota-watch",
       "github": "iasiv5/dsh-quota-watch",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0.1.36/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-quota-watch"
     },
     {
@@ -143,6 +153,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-surf",
       "github": "iasiv5/dsh-surf",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-surf@0.1.6/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-surf"
     },
     {
@@ -156,6 +167,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-obmc-web",
       "github": "iasiv5/dsh-obmc-web",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-obmc-web@0.1.7/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-obmc-web"
     },
     {
@@ -169,6 +181,7 @@
       "source": "npm",
       "npm": "@inventec/dsh-onetree-log",
       "github": "iasiv5/dsh-onetree-log",
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-onetree-log@0.1.7/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-onetree-log"
     },
     {
@@ -235,6 +248,7 @@
       "source": "npm",
       "npm": "dsh-chat-manager",
       "github": "WSL043/dsh-chat-manager",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-chat-manager@1.5.18/assets/icon.svg",
       "homepage": "https://github.com/WSL043/dsh-chat-manager"
     },
     {
@@ -257,6 +271,7 @@
       "source": "npm",
       "npm": "dsh-mcp-tools",
       "github": "hxlog/dsh-mcp-tools",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-mcp-tools@1.0.2/icon.svg",
       "homepage": "https://github.com/hxlog/dsh-mcp-tools"
     },
     {
@@ -268,6 +283,7 @@
       "source": "npm",
       "npm": "dsh-archive-trash",
       "github": "hongdougao111/dsh-archive-trash",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-archive-trash@0.4.0/icon.svg",
       "homepage": "https://github.com/hongdougao111/dsh-archive-trash"
     }
   ]
