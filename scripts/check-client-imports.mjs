@@ -8,13 +8,16 @@
  * 被引用标识符必须落在 文件内声明（任意作用域，含参数/解构/catch）/ import / require 解构 /
  * 全局白名单 四者之一，否则 exit 1。
  *
- * 实现：TypeScript AST（node_modules/typescript，构建同款依赖，零新增）。按 Identifier
+ * 实现：TypeScript AST（issue #20 起 `typescript` devDep 升 7.x——TS 7 是 Go 原生重写，
+ * 官方不再随包发布进程内 JS API，`ts.createSourceFile/ScriptTarget` 均不存在；故 AST 解析
+ * 固定走 `typescript6` 别名（npm:typescript@^6，TS 6 桥线，同款旧 API），`tsc` CLI 仍走
+ * typescript@7 原生二进制。按 Identifier
  * 节点的父节点类型剔除「名字位」（声明位/属性位/成员位），其余计为引用——字符串、模板串、
  * 注释、对象键（非简写）天然不进引用面。
  *
  * 用法：npm test 链首自动运行（package.json "test"），也可单跑 `node scripts/check-client-imports.mjs`。
  */
-import ts from 'typescript'
+import ts from 'typescript6'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'

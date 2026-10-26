@@ -410,14 +410,40 @@ async function withL0Env(overrides, fn) {
   }
 }
 
-/** CONNECT 中继代理：实证 undici EnvHttpProxyAgent 对一切目标（含 http）走 CONNECT；
- * 收到 CONNECT 即计数，回 200 后在客户端与目标端口间裸中继字节（真·代理语义）。 */
+/** 双方言转发代理（issue #20 undici v8 适配）：
+ * - undici 7.x：一切目标（含 http）走 CONNECT 隧道；
+ * - undici 8.x：http 目标改发绝对式请求（`GET http://host/path` 直发代理，标准 forward-proxy
+ *   形态），https 仍 CONNECT。
+ * 两种方言都计一次代理命中且请求真实到达目标：CONNECT 回 200 后在客户端与目标端口间裸中继
+ * 字节；绝对式请求向源站真实转发并回传响应。origin-form（非绝对式 URL）不该出现在此链路，回 405。 */
 async function startForwardProxy() {
   let hits = 0
   const server = createServer((req, res) => {
+    if (!/^[a-z][a-z\d+.-]*:\/\//iu.test(req.url ?? '')) {
+      res.writeHead(405)
+      res.end('unexpected origin-form request')
+      return
+    }
     hits += 1
-    res.writeHead(405)
-    res.end('unexpected absolute-form request')
+    const fwd = l0ForwardRequest(new URL(req.url), {
+      method: req.method,
+      headers: (() => {
+        const h = { ...req.headers }
+        delete h.host // 由转发目标 URL 重设，避免绝对式请求携带的代理侧 Host 污染源站
+        delete h.connection
+        delete h['proxy-authorization']
+        return h
+      })(),
+    })
+    fwd.on('response', (pres) => {
+      res.writeHead(pres.statusCode, pres.headers)
+      pres.pipe(res)
+    })
+    fwd.on('error', () => {
+      res.writeHead(502)
+      res.end('proxy forward failed')
+    })
+    req.pipe(fwd)
   })
   server.on('connect', (req, socket, head) => {
     hits += 1
