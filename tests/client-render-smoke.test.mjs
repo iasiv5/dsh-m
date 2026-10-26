@@ -315,13 +315,18 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     )
   })
 
-  // 0.9.61 Icon 走链（Q10）：github 头像 SSR 即渲染 tier0 weserv（h=96，avatar 桶）
-  it('Icon 走链：community 条目头部图标 src=weserv + h=96（query 随 URL 编码）', () => {
+  // ADR-0025 T5：Icon 懒加载门控下 SSR（useEffect 不执行、show 恒 false）→ 字母占位、无 img src；
+  // 走链初始 src 的 SSR 覆盖由上方 Probe 断言独立承担（评审 R-2Q2）。
+  it('Icon SSR：懒加载未可见 → 字母占位 div（aria-hidden），不产出头像 weserv src', () => {
     const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg', community: true, github: 'elysia395/dsh-wallpaper-engine' }
     const html = renderToString(h(components.__DetailModal, { it: entry, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }))
     assert.ok(
-      html.includes('url=github.com%2Felysia395.png%3Fsize%3D64&amp;h=96&amp;fit=inside&amp;we=1&amp;output=webp&amp;q=80'),
-      `Icon 头像应走 weserv h=96：${html.slice(0, 120)}`,
+      html.includes('aria-hidden="true">D</div>'),
+      `Icon SSR 应渲染字母占位 D：${html.slice(0, 160)}`,
+    )
+    assert.ok(
+      !html.includes('images.weserv.nl/?url=github.com'),
+      `SSR 不应产出头像 weserv src：${html.slice(0, 160)}`,
     )
   })
 })

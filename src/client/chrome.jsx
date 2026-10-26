@@ -33,6 +33,7 @@ import { createMarkdown } from "./markdown.js";
 import { backdropCloseHandlers } from "./backdrop.js";
 import { lbStep, lbNeighbors, swipeDir } from "./lightbox.js";
 import { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } from "./img-chain.js";
+import { iconCandidates } from "./icon-view.js";
 import { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } from "./restart-wait.js";
 import { DetailModal } from "./detail-modal.jsx";
 
@@ -41,21 +42,70 @@ const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
 
 function Icon({ entry }) {
   const letter = String(entry.name || entry.id || "?").charAt(0).toUpperCase();
-  const url = entry.icon || (entry.github ? `https://github.com/${entry.github.split("/")[0]}.png?size=64` : null);
-  // 0.9.61 图片加载链（Q10）：weserv(h=96)→原图→双败字母渐变兜底（github.com 头像 → avatar 桶）。
-  // url 为空时传 ""（serviceBucketOf 防御归 raw，src 不会被渲染——下方 !url 分支先返回）。
-  const chain = useImgChain(url || "", { h: 96 });
-  if (!url || chain.failed) {
-    return h("div", { className: "dshm-icon", "aria-hidden": "true" }, letter);
+  // ADR-0025 图标解析链（T4/T5）：候选序 = 目录声明(仅 https URL) → 已装官方 data URI → GitHub 头像
+  // （icon-view.js）。每个候选 URL 仍走 useImgChain 投递（weserv h=96 → 原图 → 败）。
+  // R-2Q1：hooks 全量无条件调用、禁止 hook 前提前 return——已装页 key=pkg 复用实例，插件升级使
+  // 候选从无到有时 hook 数变化会崩子树；「无候选零 IO 零计时器」由渲染层短路 + useImgChain !url 守卫达成。
+  const candidates = useMemo(() => iconCandidates(entry), [entry]);
+  const [idx, setIdx] = useState(0);
+  const candidateKey = candidates.join("|");
+  const [prevKey, setPrevKey] = useState(candidateKey);
+  if (prevKey !== candidateKey) {
+    // 候选集变化（换 entry）→ 渲染期 derived-state 重置（useImgChain prevUrl 同款，无中间帧）
+    setPrevKey(candidateKey);
+    setIdx(0);
+  }
+  const current = candidates[idx] ?? null;
+  const isData = current !== null && current.startsWith("data:");
+  const [show, setShow] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setShow(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShow(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  // R-2Q3：data:/无候选喂空串——useImgChain 对 !url 不挂 8s 计时器，也不白算 weservUrl 编码
+  const chain = useImgChain(current !== null && !isData ? current : "", { h: 96, active: show });
+  // 候选间降级：本 URL 双层（weserv+原图）耗尽 → 下一候选（渲染期 setState，Discarding render）
+  if (chain.failed && idx < candidates.length - 1) setIdx(idx + 1);
+  // 渲染层短路：未可见（IO 门控，SSR 恒 false）/ 无候选 / 当前候选耗尽 → 字母占位（ref 恒挂，首帧必经）
+  if (!show || candidates.length === 0 || chain.failed) {
+    return h("div", { className: "dshm-icon", "aria-hidden": "true", ref }, letter);
+  }
+  if (isData) {
+    // 已装官方 meta.icon（base64 data URI）：不走 weserv，直连渲染；失败静默降下一候选
+    return h("img", {
+      className: "dshm-icon",
+      src: current,
+      alt: "",
+      loading: "lazy",
+      referrerPolicy: "no-referrer",
+      decoding: "async",
+      onError: () => setIdx(idx + 1),
+    });
   }
   return h("img", {
     className: "dshm-icon",
     src: chain.src,
     alt: "",
-    onError: chain.onError,
-    onLoad: chain.onLoad,
+    loading: "lazy",
     referrerPolicy: "no-referrer",
     decoding: "async",
+    onError: chain.onError,
+    onLoad: chain.onLoad,
   });
 }
 
