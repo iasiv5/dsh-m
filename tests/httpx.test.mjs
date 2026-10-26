@@ -415,7 +415,9 @@ async function withL0Env(overrides, fn) {
  * - undici 8.x：http 目标改发绝对式请求（`GET http://host/path` 直发代理，标准 forward-proxy
  *   形态），https 仍 CONNECT。
  * 两种方言都计一次代理命中且请求真实到达目标：CONNECT 回 200 后在客户端与目标端口间裸中继
- * 字节；绝对式请求向源站真实转发并回传响应。origin-form（非绝对式 URL）不该出现在此链路，回 405。 */
+ * 字节；绝对式请求向源站真实转发并回传响应。origin-form（非绝对式 URL）不该出现在此链路，回 405。
+ * hits 语义：经代理的真实物理请求恰计 1；malformed 绝对式（合成侧不可达，仅防御手搓客户端）
+ * 回 400 不计——它不是一次代理转发。 */
 async function startForwardProxy() {
   let hits = 0
   const server = createServer((req, res) => {
@@ -424,8 +426,16 @@ async function startForwardProxy() {
       res.end('unexpected origin-form request')
       return
     }
+    let target
+    try {
+      target = new URL(req.url)
+    } catch {
+      res.writeHead(400)
+      res.end('malformed absolute-form request')
+      return
+    }
     hits += 1
-    const fwd = l0ForwardRequest(new URL(req.url), {
+    const fwd = l0ForwardRequest(target, {
       method: req.method,
       headers: (() => {
         const h = { ...req.headers }
@@ -437,11 +447,14 @@ async function startForwardProxy() {
     })
     fwd.on('response', (pres) => {
       res.writeHead(pres.statusCode, pres.headers)
+      pres.on('error', () => res.destroy()) // 上游中途截断：断开客户端，不让其静默挂到自身超时
       pres.pipe(res)
     })
     fwd.on('error', () => {
-      res.writeHead(502)
-      res.end('proxy forward failed')
+      if (!res.headersSent) {
+        res.writeHead(502)
+        res.end('proxy forward failed')
+      }
     })
     req.pipe(fwd)
   })

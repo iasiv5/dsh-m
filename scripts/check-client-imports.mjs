@@ -11,7 +11,11 @@
  * 实现：TypeScript AST（issue #20 起 `typescript` devDep 升 7.x——TS 7 是 Go 原生重写，
  * 官方不再随包发布进程内 JS API，`ts.createSourceFile/ScriptTarget` 均不存在；故 AST 解析
  * 固定走 `typescript6` 别名（npm:typescript@^6，TS 6 桥线，同款旧 API），`tsc` CLI 仍走
- * typescript@7 原生二进制。按 Identifier
+ * typescript@7 原生二进制。
+ * 桥生命周期（PR #21 评审 F-5/F-6）：别名只许在 ^6 范围内演进（6.x 是最后的进程内 JS API
+ * 线，禁人肉或越范围升 7.x——那里没有 JS API，本守卫会响亮崩红挡下，不会静默劣化）；
+ * TS 7 的 `typescript/unstable/ast` 已有 AST 表示与 is* 守卫但尚无解析器入口，待其稳定出
+ * createSourceFile 后本桥可退役。按 Identifier
  * 节点的父节点类型剔除「名字位」（声明位/属性位/成员位），其余计为引用——字符串、模板串、
  * 注释、对象键（非简写）天然不进引用面。
  *
