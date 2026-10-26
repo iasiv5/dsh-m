@@ -6,9 +6,24 @@
       "name": "DSH Marketplace",
       "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 DSH 0.2.1-rc.3，支持 web 与 desktop 双 profile，详见仓库。",
       "category": "essentials",
-      "alsoCategories": ["self-dev"],
-      "tags": ["市场", "插件管理"],
-      "verified": ["0.1.2-rc.1", "0.1.5-rc.1", "0.1.5-rc.2", "0.1.7-rc.1", "0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3"],
+      "alsoCategories": [
+        "self-dev"
+      ],
+      "tags": [
+        "市场",
+        "插件管理"
+      ],
+      "verified": [
+        "0.1.2-rc.1",
+        "0.1.5-rc.1",
+        "0.1.5-rc.2",
+        "0.1.7-rc.1",
+        "0.1.7-rc.2",
+        "0.2.0-rc.1",
+        "0.2.0-rc.2",
+        "0.2.1-rc.2",
+        "0.2.1-rc.3"
+      ],
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
@@ -19,9 +34,21 @@
       "name": "DSH Skins",
       "description": "DSH 侧栏多皮肤热切换，一键回官方；需 DSH ≥0.2.0-rc.1；Web 与 Desktop 均已测 0.2.1-rc.3。",
       "category": "essentials",
-      "alsoCategories": ["self-dev"],
-      "tags": ["皮肤", "主题", "美化", "界面"],
-      "verified": ["0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3"],
+      "alsoCategories": [
+        "self-dev"
+      ],
+      "tags": [
+        "皮肤",
+        "主题",
+        "美化",
+        "界面"
+      ],
+      "verified": [
+        "0.2.0-rc.1",
+        "0.2.0-rc.2",
+        "0.2.1-rc.2",
+        "0.2.1-rc.3"
+      ],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
@@ -32,7 +59,11 @@
       "name": "DSH TUI",
       "description": "终端 TUI 客户端：把 DeepSeek Harness 会话搬进终端，基于 DSH 客户端契约远程连接使用。",
       "category": "cui-picks",
-      "tags": ["终端", "TUI", "远程"],
+      "tags": [
+        "终端",
+        "TUI",
+        "远程"
+      ],
       "source": "npm",
       "npm": "@deepseek-harness-tui/dsh-tui",
       "github": "ccch1mneyyy/dsh-TUI",
@@ -43,8 +74,15 @@
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
       "category": "essentials",
-      "alsoCategories": ["cui-picks"],
-      "tags": ["侧边栏", "文件编辑", "终端", "Git"],
+      "alsoCategories": [
+        "cui-picks"
+      ],
+      "tags": [
+        "侧边栏",
+        "文件编辑",
+        "终端",
+        "Git"
+      ],
       "source": "npm",
       "npm": "dsh-better-sidebar",
       "github": "omdsh-dev/DSH-better-sidebar",
@@ -55,8 +93,14 @@
       "name": "DSH Market",
       "description": "可视化插件市场：浏览、搜索社区插件并一键安装，主题一键热切换，详见仓库。",
       "category": "essentials",
-      "alsoCategories": ["cui-picks"],
-      "tags": ["市场", "插件管理", "主题"],
+      "alsoCategories": [
+        "cui-picks"
+      ],
+      "tags": [
+        "市场",
+        "插件管理",
+        "主题"
+      ],
       "source": "npm",
       "npm": "dshmarket",
       "github": "dsh-market/dsh-market",
@@ -67,8 +111,15 @@
       "name": "DSH Context",
       "description": "上下文透视：Context 仪表盘、侧栏面板与 /context 命令，查看上下文组成、演进趋势与压缩剪枝等事件，支持跨会话用量统计。",
       "category": "essentials",
-      "alsoCategories": ["cui-picks"],
-      "tags": ["上下文", "Token 统计", "可视化", "仪表盘"],
+      "alsoCategories": [
+        "cui-picks"
+      ],
+      "tags": [
+        "上下文",
+        "Token 统计",
+        "可视化",
+        "仪表盘"
+      ],
       "source": "npm",
       "npm": "dsh-context",
       "github": "bowenliang123/dsh-context",
@@ -79,7 +130,11 @@
       "name": "ModSearch",
       "description": "免费网页搜索、X 搜索与页面抓取插件，支持 Firecrawl、Tavily、Exa 等引擎自动故障切换。",
       "category": "essentials",
-      "tags": ["搜索", "网页抓取", "X"],
+      "tags": [
+        "搜索",
+        "网页抓取",
+        "X"
+      ],
       "source": "npm",
       "npm": "@liustack/modsearch",
       "github": "liustack/modsearch",
@@ -90,7 +145,12 @@
       "name": "DSH Ops",
       "description": "Windows DSH 底层操作工具：文件读取、工具发现与 Shell 执行，Rust 紧凑输出降 Token，亦支持 Linux/macOS，详见仓库。",
       "category": "essentials",
-      "tags": ["文件读取", "Shell", "文档解析", "Token 优化"],
+      "tags": [
+        "文件读取",
+        "Shell",
+        "文档解析",
+        "Token 优化"
+      ],
       "source": "npm",
       "npm": "dsh-ops",
       "github": "T-Auto/dsh-ops",
@@ -101,8 +161,23 @@
       "name": "DSH Skip Browser Auth",
       "description": "跳过 BrowserAuth，替换官方 Connection，免 Token；已测 Web 0.2.1-rc.3。Desktop 自动休眠。",
       "category": "self-dev",
-      "tags": ["BrowserAuth", "连接", "安全", "工具"],
-      "verified": ["0.1.2-rc.1", "0.1.5-rc.1", "0.1.5-rc.2", "0.1.7-rc.1", "0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3"],
+      "tags": [
+        "BrowserAuth",
+        "连接",
+        "安全",
+        "工具"
+      ],
+      "verified": [
+        "0.1.2-rc.1",
+        "0.1.5-rc.1",
+        "0.1.5-rc.2",
+        "0.1.7-rc.1",
+        "0.1.7-rc.2",
+        "0.2.0-rc.1",
+        "0.2.0-rc.2",
+        "0.2.1-rc.2",
+        "0.2.1-rc.3"
+      ],
       "source": "npm",
       "npm": "@iasiv5/dsh-skip-browser-auth",
       "github": "iasiv5/dsh-skip-browser-auth",
@@ -113,8 +188,19 @@
       "name": "DSH Copilot Auth",
       "description": "Copilot 登录注销页与开箱路由；桌面不支持目录刷新。需 DSH ≥0.1.7-rc.2；Web 已测 0.2.1-rc.3。",
       "category": "self-dev",
-      "tags": ["Copilot", "认证", "模型接入", "工具"],
-      "verified": ["0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3"],
+      "tags": [
+        "Copilot",
+        "认证",
+        "模型接入",
+        "工具"
+      ],
+      "verified": [
+        "0.1.7-rc.2",
+        "0.2.0-rc.1",
+        "0.2.0-rc.2",
+        "0.2.1-rc.2",
+        "0.2.1-rc.3"
+      ],
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
@@ -125,7 +211,12 @@
       "name": "DSH Quota Watch",
       "description": "GLM/Copilot 额度胶囊、详情与侧栏卡；宿主解析凭据。版本无关，详见仓库。",
       "category": "self-dev",
-      "tags": ["配额", "悬浮球", "GLM", "Copilot"],
+      "tags": [
+        "配额",
+        "悬浮球",
+        "GLM",
+        "Copilot"
+      ],
       "decoupled": true,
       "source": "npm",
       "npm": "@iasiv5/dsh-quota-watch",
@@ -137,7 +228,12 @@
       "name": "DSH Surf",
       "description": "网络冲浪入口：设置一级菜单一键打开 Selkies/Chrome 远程桌面，视频流直连；需自建容器与认证反代。版本无关，详见仓库。",
       "category": "self-dev",
-      "tags": ["浏览器", "远程桌面", "Selkies", "网络冲浪"],
+      "tags": [
+        "浏览器",
+        "远程桌面",
+        "Selkies",
+        "网络冲浪"
+      ],
       "decoupled": true,
       "audience": "internal",
       "source": "npm",
@@ -150,7 +246,12 @@
       "name": "DSH OBMC Web",
       "description": "OpenBMC 控制台：SSH 隧道代理，一键开启；需 SSH 跳板连 BMC。新版宿主需插件 ≥0.1.4，版本无关，详见仓库。",
       "category": "self-dev",
-      "tags": ["OpenBMC", "远程管理", "SSH 隧道", "KVM"],
+      "tags": [
+        "OpenBMC",
+        "远程管理",
+        "SSH 隧道",
+        "KVM"
+      ],
       "decoupled": true,
       "audience": "internal",
       "source": "npm",
@@ -163,7 +264,12 @@
       "name": "OneTree Log",
       "description": "OneTree/dreport 日志包上传解包，14 域清单与预览；可登记服务器本地路径。新版宿主需插件 ≥0.1.4，版本无关，详见仓库。",
       "category": "self-dev",
-      "tags": ["日志", "OneTree", "诊断", "工具"],
+      "tags": [
+        "日志",
+        "OneTree",
+        "诊断",
+        "工具"
+      ],
       "decoupled": true,
       "audience": "internal",
       "source": "npm",
@@ -176,7 +282,11 @@
       "name": "BrowserSkill",
       "description": "浏览器自动化：把 BrowserSkill 的 browser_* 工具暴露给模型，让模型在对话中操作浏览器，详见仓库。",
       "category": "tencent-lighthouse",
-      "tags": ["浏览器", "自动化", "工具调用"],
+      "tags": [
+        "浏览器",
+        "自动化",
+        "工具调用"
+      ],
       "source": "npm",
       "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
       "github": "Tencent/BrowserSkill",
@@ -187,7 +297,12 @@
       "name": "WeKnora",
       "description": "知识库检索：把 WeKnora 接入模型，提供语义搜索、文档阅读与 RAG 问答等工具，可用自有知识库，详见仓库。",
       "category": "tencent-lighthouse",
-      "tags": ["知识库", "RAG", "检索", "工具"],
+      "tags": [
+        "知识库",
+        "RAG",
+        "检索",
+        "工具"
+      ],
       "source": "npm",
       "npm": "@wxg-prc-cpg/dsh-weknora",
       "github": "Tencent/WeKnora",
@@ -198,7 +313,11 @@
       "name": "DSH Auth",
       "description": "DSH Web 管理员认证：Argon2id 口令与可撤销会话，经 Caddy forward_auth 保护页面、API、下载、SSE 与 WebSocket。",
       "category": "tencent-lighthouse",
-      "tags": ["认证", "安全", "工具"],
+      "tags": [
+        "认证",
+        "安全",
+        "工具"
+      ],
       "source": "npm",
       "npm": "dsh-auth",
       "github": "hxy91819/dsh-auth",
@@ -209,7 +328,12 @@
       "name": "DSH Server Deck",
       "description": "服务器卡片仪表盘：实时 CPU/内存/磁盘与趋势图（1h~30d），点卡片进 xterm 终端；可选集成 better-sidebar。",
       "category": "watchlist",
-      "tags": ["服务器", "监控", "终端", "趋势图"],
+      "tags": [
+        "服务器",
+        "监控",
+        "终端",
+        "趋势图"
+      ],
       "source": "npm",
       "npm": "dsh-server-deck",
       "github": "meyaomiao/dsh-server-deck",
@@ -220,7 +344,12 @@
       "name": "DS Bot",
       "description": "多 Bot 协作：把 DSH 变成常驻 Bot 团队，支持主 Bot、Bot 间消息与群聊。",
       "category": "watchlist",
-      "tags": ["Bot", "群聊", "多 Agent", "协作"],
+      "tags": [
+        "Bot",
+        "群聊",
+        "多 Agent",
+        "协作"
+      ],
       "source": "npm",
       "npm": "ds-bot",
       "github": "Fei2411/DeepSeek-Bot",
@@ -231,7 +360,12 @@
       "name": "DSH Chat Manager",
       "description": "会话管理器：在原生侧边栏搜索归档聊天、恢复会话并安全永久删除；需按内核版本选装，详见仓库。",
       "category": "watchlist",
-      "tags": ["会话管理", "归档", "聊天记录", "恢复"],
+      "tags": [
+        "会话管理",
+        "归档",
+        "聊天记录",
+        "恢复"
+      ],
       "source": "npm",
       "npm": "dsh-chat-manager",
       "github": "WSL043/dsh-chat-manager",
@@ -242,7 +376,12 @@
       "name": "DSH Mermaid",
       "description": "Mermaid 图表渲染：代码块转 SVG，支持源码切换、全屏缩放与导出。",
       "category": "watchlist",
-      "tags": ["图表", "可视化", "流程图", "SVG"],
+      "tags": [
+        "图表",
+        "可视化",
+        "流程图",
+        "SVG"
+      ],
       "source": "npm",
       "npm": "dsh-mermaid",
       "github": "MrmoLabs/dsh-mermaid",
@@ -253,7 +392,11 @@
       "name": "MCP Tools",
       "description": "MCP 工具管理器：添加 MCP 服务器（HTTP / stdio）、配请求头、存前测连通性、逐工具开关。",
       "category": "watchlist",
-      "tags": ["MCP", "工具集成", "设置"],
+      "tags": [
+        "MCP",
+        "工具集成",
+        "设置"
+      ],
       "source": "npm",
       "npm": "dsh-mcp-tools",
       "github": "hxlog/dsh-mcp-tools",
@@ -264,11 +407,34 @@
       "name": "DSH Archive Trash",
       "description": "会话删除：任意会话行内一键删、多选批量清空、可还原回收站；删和还原都立刻生效不用重启。",
       "category": "watchlist",
-      "tags": ["会话管理", "归档", "回收站", "清理"],
+      "tags": [
+        "会话管理",
+        "归档",
+        "回收站",
+        "清理"
+      ],
       "source": "npm",
       "npm": "dsh-archive-trash",
       "github": "hongdougao111/dsh-archive-trash",
       "homepage": "https://github.com/hongdougao111/dsh-archive-trash"
+    },
+    {
+      "id": "dsh-chatlock",
+      "name": "DSH Chatlock",
+      "description": "给会话上密码锁，并把目录整体加密成保险箱，锁定后磁盘上只有密文。",
+      "category": "watchlist",
+      "tags": [
+        "隐私",
+        "加密",
+        "锁"
+      ],
+      "verified": [
+        "0.2.1-rc.3"
+      ],
+      "source": "github",
+      "github": "xevil3301/dsh-chatlock",
+      "homepage": "https://github.com/xevil3301/dsh-chatlock",
+      "icon": "https://raw.githubusercontent.com/xevil3301/dsh-chatlock/main/assets/icon-180.png"
     }
   ]
 }
