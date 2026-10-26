@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.19 依赖大版本适配：undici 8 绝对式代理 + TS 7 无 JS API 守卫桥接（Dependabot #16/#17 挂账清账，issue #20）
+
+- **背景**：Dependabot 首波大版本 bump 两项红挂账（issue #20）：undici 7.30.0→8.12.3（PR #16，2/1752 红全在代理链路）、typescript ^5.6.0→7.0.2（PR #17，check-client-imports 崩 + typecheck 假绿）。适配经 PR #21 落地并经两轮独立评审（对抗式深评 + delta 复核）对齐至统一 approve。
+- **修法**：① undici 8 起 `EnvHttpProxyAgent` 对 http 目标改发绝对式请求（标准 forward-proxy 形态；https 仍 CONNECT），「经代理到达」语义不变、生产交接层零分叉；测试假代理升级为双方言真转发代理（CONNECT 裸中继 + 绝对式向源站真实转发），断言版本无关，undici 7/8 双绿实测；② TS 7（Go 原生重写）官方不再随包发布进程内 JS API，守卫 AST 解析固定走新增 devDep `typescript6`（`npm:typescript@^6.0.2` 别名，TS 6 桥线），`tsc` CLI 走 `typescript@7` 原生二进制——typecheck 从假绿转正为真门槛；③ `engines.node` `>=22` → `>=22.19.0`（对齐 undici 8.12.3 engines 地板，声明面收口）；④ 双方言桩三处防御收口：malformed 绝对式 400 不计 hits、fwd error 回调 `headersSent` guard、上游响应 error 断开客户端。
+- **验证**：`npm ci` 零 ERESOLVE → `npm test` **1752/1752** 全绿（含原红两条）→ `typecheck` 0；产物与基线零 diff（同源码跨编译器 49 个 lib 文件 sha256 全一致）；CI + Registry check 双 workflow 绿；守卫在 TS 5.9.3 vs 6.0.3 双版本解析零漂移。
+
 ### 0.10.18 加固：供应链安全加固——actions 全量 pin SHA、SECURITY.md/dependabot 入库、check-release spawnSync 化、根入口薄包装 host.js（awesome-ai-plugins 收录扫描 64→100）
 
 - **背景**：dsh-m 进入 hashgraph-online/awesome-ai-plugins 收录评审，其中心化源码扫描（plugin-scanner，阈值 80）对仓库给出 64/100（1 high + 7 medium + 2 low）。
@@ -784,6 +790,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.19 Dependency major-version adaptation: undici 8 absolute-form proxy + TS 7 no-JS-API guard bridge (Dependabot #16/#17 debt cleared, issue #20)
+
+- **Background**: two red items from Dependabot's first wave of major-version bumps were parked in issue #20: undici 7.30.0→8.12.3 (PR #16, 2/1752 failures all in the proxy path) and typescript ^5.6.0→7.0.2 (PR #17, check-client-imports crash + typecheck false green). The adaptation landed via PR #21 and went through two independent review rounds (adversarial deep review + delta re-check) to a unified approve.
+- **Changes**: ① undici 8's `EnvHttpProxyAgent` now sends absolute-form requests for http targets (standard forward-proxy semantics; https still uses CONNECT) — "reached via proxy" semantics are unchanged and the production hand-off layer needed no fork; the test fake proxy was upgraded to a dual-dialect real forwarding proxy (CONNECT byte relay + true absolute-form forwarding to the origin), keeping assertions version-agnostic, verified green under both undici 7 and 8; ② TypeScript 7 (Go-native rewrite) no longer ships an in-process JS API, so the guard's AST parsing now rides a new devDep `typescript6` (`npm:typescript@^6.0.2` alias, the TS 6 bridge line) while the `tsc` CLI uses the `typescript@7` native binary — typecheck turns from false green into a real gate; ③ `engines.node` `>=22` → `>=22.19.0` (aligns with undici 8.12.3's engines floor, closing the declaration gap); ④ three defensive tightenings on the dual-dialect stub: malformed absolute-form URLs answer 400 without counting a hit, the fwd error callback guards `headersSent` before writing 502, and an upstream response error destroys the client connection.
+- **Verification**: `npm ci` with zero ERESOLVE → `npm test` **1752/1752** green (including both previously red cases) → `typecheck` clean; build output is byte-identical to baseline (cross-compiler same-source comparison: all 49 lib files sha256-equal); CI + Registry check workflows green; the guard shows zero parsing drift between TS 5.9.3 and 6.0.3.
 
 ### 0.10.18 Hardening: supply-chain security — all GitHub Actions pinned to SHAs, SECURITY.md + dependabot added, check-release moved to spawnSync, thin root entry host.js (awesome-ai-plugins source scan 64→100)
 
