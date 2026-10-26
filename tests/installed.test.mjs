@@ -277,3 +277,30 @@ describe('githubRepoFromRepository（0.9.49 尾部放宽）', () => {
     assert.equal(githubRepoFromRepository('https://gitlab.com/g/p'), null)
   })
 })
+
+describe('manifestIcon 透传（ADR-0025，T2）：sanitize 白名单 + 双臂同步', () => {
+  it('manifest 带 icon → 双臂 item.manifestIcon 均为原始字符串；不带 → undefined', async () => {
+    manifest({ dependencies: { 'dsh-iconic': '1.0.0', 'dsh-plain': '2.0.0' } })
+    pkgJson('dsh-iconic', { name: 'dsh-iconic', version: '1.0.0', dsh: {}, icon: './icon.svg' })
+    pkgJson('dsh-plain', { name: 'dsh-plain', version: '2.0.0', dsh: {} })
+    for (const opts of [undefined, { patchRows: false }]) {
+      const res = await listInstalledPlugins(dir, opts)
+      const iconic = res.items.find((i) => i.pkg === 'dsh-iconic')
+      const plain = res.items.find((i) => i.pkg === 'dsh-plain')
+      assert.equal(iconic.manifestIcon, './icon.svg', `wantPatch=${!opts?.patchRows === false ? 'false' : 'true'} 臂`)
+      assert.equal(plain.manifestIcon, undefined)
+    }
+  })
+
+  it('icon 非字符串 / 空串 → undefined；超长截断 300', async () => {
+    manifest({ dependencies: { 'dsh-bad-icon': '1.0.0', 'dsh-empty-icon': '1.0.0', 'dsh-long-icon': '1.0.0' } })
+    pkgJson('dsh-bad-icon', { name: 'dsh-bad-icon', dsh: {}, icon: 123 })
+    pkgJson('dsh-empty-icon', { name: 'dsh-empty-icon', dsh: {}, icon: '   ' })
+    pkgJson('dsh-long-icon', { name: 'dsh-long-icon', dsh: {}, icon: './' + 'a'.repeat(400) + '.svg' })
+    const res = await listInstalledPlugins(dir)
+    const byPkg = Object.fromEntries(res.items.map((i) => [i.pkg, i.manifestIcon]))
+    assert.equal(byPkg['dsh-bad-icon'], undefined)
+    assert.equal(byPkg['dsh-empty-icon'], undefined)
+    assert.equal(byPkg['dsh-long-icon'], './' + 'a'.repeat(298))
+  })
+})

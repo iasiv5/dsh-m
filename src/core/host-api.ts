@@ -573,6 +573,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             profileDir: profile.dir,
             profile: profile.name,
             probeMode: body.probe === false ? 'none' : 'full',
+            icon: true,
             signal,
           })
           payload = { ...result }
@@ -589,6 +590,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             profileDir: profile.dir,
             profile: profile.name,
             probeMode: 'only',
+            icon: false,
             signal,
           })
           payload = {

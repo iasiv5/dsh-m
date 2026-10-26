@@ -35,6 +35,8 @@ export interface InstalledPlugin {
   githubRepo?: string | null
   /** 包内 cordis.patch.yml（dsh.bundle.patch 层）的行枚举——开关粒度判定原料；文件缺失 → readable:false */
   patchRows?: BundlePatchRows
+  /** package.json 顶层 icon 原始字符串（未校验，ADR-0025 声明图标链①原料；未声明 → undefined） */
+  manifestIcon?: string
 }
 
 export interface InstalledPluginsResult {
@@ -86,6 +88,8 @@ interface PkgJson {
   homepage?: unknown
   dsh?: unknown
   repository?: unknown
+  /** 顶层声明图标（ADR-0025；原样透传 manifestIcon，解析与校验在 installed-icon.ts） */
+  icon?: unknown
 }
 
 /** 从 repository 字段（字符串或 {url}，git+/ssh/https 形态）提取 github owner/repo。
@@ -190,6 +194,8 @@ function sanitizePkgJson(raw: PkgJson, fallbackName: string): Omit<InstalledPlug
     homepage: typeof raw.homepage === 'string' && /^https?:\/\//i.test(raw.homepage) ? raw.homepage.slice(0, 300) : '',
     path: '',
     githubRepo: githubRepoFromRepository(raw.repository),
+    // ADR-0025：manifest.icon 原始值透传（未校验；解析在 installed-icon.ts）。截断 300 对齐 homepage 惯例。
+    manifestIcon: typeof raw.icon === 'string' ? raw.icon.trim().slice(0, 300) || undefined : undefined,
   }
 }
 
@@ -227,6 +233,7 @@ async function classifyDep(root: string, pkg: string, spec: string, wantPatch: b
         dsh: true,
         path: dir,
         githubRepo: info.githubRepo,
+        manifestIcon: info.manifestIcon,
       },
     }
   }
@@ -246,6 +253,7 @@ async function classifyDep(root: string, pkg: string, spec: string, wantPatch: b
       dsh: true,
       path: dir,
       githubRepo: info.githubRepo,
+      manifestIcon: info.manifestIcon,
       patchRows,
     },
   }

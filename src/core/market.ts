@@ -25,6 +25,7 @@ import {
   listInstalledPlugins as defaultListInstalledPlugins,
   type InstalledPlugin,
 } from './installed.js'
+import { attachInstalledIconDataUris } from './installed-icon.js'
 import { setLivePluginDisabled, loaderHost, type LoaderEntry } from './live-plugin.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { PROTECTED_MODULES, composeEnablement, type PluginEnablement } from './enablement.js'
@@ -240,6 +241,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestErrorCode?: LatestErrorCode
   /** 命中社区收录条目（主清单未收录；M1 Task 5） */
   community?: true
+  /** 本机声明图标 data URI（ADR-0025：官方 iconOf 语义自读；仅详情路径 icon:true 时产出） */
+  iconDataUri?: string | null
 }
 
 export interface InstalledResult {
@@ -853,7 +856,7 @@ export async function existingMarketIds(
 
 export async function listInstalledWithMeta(
   cfg: RegistryConfig = {},
-  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean; profileDir?: string; probeMode?: 'full' | 'none' | 'only' } = {},
+  opts: RegistryRuntimeOptions & { deadlineMs?: number; force?: boolean; profileDir?: string; probeMode?: 'full' | 'none' | 'only'; icon?: boolean } = {},
   deps: Partial<MarketDeps> = {},
 ): Promise<InstalledResult> {
   const d: MarketDeps = { ...marketDeps(), ...deps }
@@ -885,6 +888,9 @@ export async function listInstalledWithMeta(
     outdated: false,
     ...(enablement.get(it.pkg) ?? { pkg: it.pkg, enabled: true, phase: null, granularity: 'bundle' as const, toggleable: false, lockReason: 'no-entry' as const }),
   }))
+  // ADR-0025：声明图标读盘仅限显式 icon:true 的详情路径（'installedUpdates' 与市场查询热路径豁免，
+  // 全局约束 4）。置于 registry deadline 判定之前——两条返回臂都消费同一 items。
+  if (opts.icon) await attachInstalledIconDataUris(items)
 
   let loaded: LoadedRegistry | 'deadline'
   try {
