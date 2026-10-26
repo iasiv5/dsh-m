@@ -27,6 +27,8 @@ const USER_AGENT = 'dsh-m (personal marketplace)'
  * 且暴露于宿主 undici 全局 dispatcher 污染（dsh-market net.ts #742 实录）。
  * 代理解析：标准 env 小写优先，npm_config_* 兜底——EnvHttpProxyAgent 自身只读
  * http(s)_proxy，npm 命名空间的代理必须显式交接，否则静默直连而报错却声称走过代理。
+ * undici 7→8 语义变化（issue #20 实证）：7.x 对一切目标走 CONNECT 隧道，8.x 起 http
+ * 目标改发绝对式请求（https 仍 CONNECT）——「经代理到达」语义不变，交接层无需分叉。
  */
 export function resolveProxyConfig(): { http: string | null; https: string | null } {
   const pick = (raw: string | undefined): string | null => {
@@ -154,8 +156,8 @@ export async function fetchLimited(url: string, opts: FetchOptions & { method?: 
     opts.onRequest?.(current.toString())
     let res: Response
     try {
-      // 实证（undici 7.30）：redirect:'manual' 返回真实 3xx + Location（type=basic），
-      // 现有手动跳循环原样保留；每跳 assertSafeUrl / 上限 / 循环检测不动。
+      // 实证（undici 7.30 与 8.12，issue #20 适配全量复核）：redirect:'manual' 返回真实
+      // 3xx + Location（type=basic），现有手动跳循环原样保留；每跳 assertSafeUrl / 上限 / 循环检测不动。
       res = await wireFetch(current, {
         redirect: 'manual',
         signal,
