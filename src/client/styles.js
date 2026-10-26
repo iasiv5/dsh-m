@@ -252,7 +252,9 @@ const CSS = `
 
 .dshm-card{display:flex;gap:12px;align-items:flex-start;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.04));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;padding:12px;cursor:pointer;text-align:left;width:100%;box-sizing:border-box;min-width:0;font:inherit;color:var(--dsw-alias-label-primary,inherit);transition:border-color .16s,background .16s}
 .dshm-card:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06));border-color:var(--dsw-alias-label-dimmed,#c7d2fe)}
-.dshm-icon{width:40px;height:40px;border-radius:10px;object-fit:contain;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);flex-shrink:0;background:linear-gradient(135deg,#c7d2fe,#fbcfe8);display:grid;place-items:center;font-weight:700;font-size:16px;color:#374151}
+.dshm-icon{width:40px;height:40px;border-radius:10px;object-fit:contain;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);flex-shrink:0;display:grid;place-items:center;font-weight:700;font-size:16px;color:#374151}
+div.dshm-icon{background:linear-gradient(135deg,#c7d2fe,#fbcfe8)}
+img.dshm-icon{background:var(--dsw-alias-bg-layer-1,#f5f6f8)}
 .dshm-meta{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
 .dshm-top{display:flex;align-items:center;gap:8px;min-width:0}
 .dshm-name{flex:1;min-width:0;font-weight:600;font-size:14px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
