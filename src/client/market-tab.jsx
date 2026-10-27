@@ -402,7 +402,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
         it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
         // 「社区收录」仅在跨区搜索结果中有区分度（与精选结果区分来源）；社区区浏览态是同义反复，且徽章拥挤挤压卡名
         searching && it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
-        it.primaryOverlap === true ? h("span", { className: "dshm-badge info", key: "cur" }, lookup("badge.inCurated")) : null,
+        it.primaryOverlap === true ? h("span", { className: "dshm-badge curated", key: "cur" }, lookup("badge.inCurated")) : null,
         searching && it.community !== true ? h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")) : null,
         h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
       ],
