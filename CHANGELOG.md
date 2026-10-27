@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.21 特性：图标解析链——声明图标 → 头像兜底 → 字母占位（ADR-0025），已装面板与官方面板逐字节同源
+
+- **背景**：主人诉求「GitHub 头像降为兜底、优先与官方面板同源」+ 几千插件图标的显示性能顾虑（量级事实：服务端分页每页 32/上限 96，同屏图标 ≤96——纯前端懒加载即可，不建代理、不预爬入库）。经 grill-with-docs 共识 → 实施计划 → 设计/实施双轮独立代理评审（10+4 问题全闭环，含 1 阻断）后落地，决策与已知偏离见 `docs/adr/0025-icon-resolution-chain.md`。
+- **修法**：① 解析链：新增 `installed-icon.ts` 复刻官方 iconOf 语义（相对路径强制、root/target 两面 realpath 包内 containment——symlink 安装活例实证、扩展名白名单、256KiB stat+读后双重校验、isFile；exports `<pkg>/icon` best-effort），已装面板解焊 `icon:null` 改喂宿主同源 data URI；② 精选清单：`icon` 字段生效（仅认 https URL——validateRegistry 现状强拒绝 + 客户端纵深过滤 + 守卫测试三层生效），16/23 条目补齐（jsDelivr pin 精确版本、逐条 HEAD 200+image/* 验证），市场/精选/社区页对页内 matched 已装条目 join 本机 data URI（读盘页面级有界，清单推送后自然过渡到目录图标）；③ 性能：Icon IO 懒加载（IntersectionObserver rootMargin 200px + `loading=lazy`，8s 计时门控复用截图缩略图先例），市场查询热路径零新增 IO；④ 视觉：`object-fit:contain`、img 态主题底板（细线稿 SVG 对比度提升）、字母态渐变底保留 40×40 容器不变；⑤ 韧性：候选间静默降级、hooks 恒调（防已装页复用实例下的条件 hook 崩溃）、候选越界并入字母占位短路。
+- **验证**：全量 npm test **1783/1783**（新增 installed-icon（两面 realpath+symlink 双 fixture）/client-icon-view/registry-icon-url https 守卫/market·installed 接线测试）、typecheck 0；实机冒烟 15 已装 12 出声明图标（判据 ≥7）；发布前经独立评审代理三轮亲跑复核（1779→1781→1783 全绿）+ 红灯复演成立。
+
 ### 0.10.20 修复：恢复对账改判行丢版本变迁（入队 from 持久化 + 改判回填 meta.to）+ golden 语料「同运行时」契约显式化
 
 - **症状（2026-10-26 真机实录）**：面板自升级 dsh-m 被换装重载打断后，操作记录经恢复对账改判为「完成」，但行内版本串裸奔——「升级 dsh-m 15m29s」，原/新版本号双缺；同日对照机上 Agent 工具通道记录与 5s 内完成的记录均正常带 `v旧→v新`。
@@ -798,6 +804,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.21 Feature: icon resolution chain — declared icon → avatar fallback → letter placeholder (ADR-0025); installed panel byte-identical with the official panel
+
+- **Background**: the owner asked for "GitHub avatars demoted to fallback, declared icons on par with the official installed panel", worried about rendering performance across thousands of plugins (scale facts: server-side pagination 32/page, cap 96, ≤96 icons per viewport — pure front-end lazy loading suffices; no proxy, no pre-crawl). Shipped via a grill-with-docs consensus → implementation plan → two independent agent review rounds (10+4 issues all closed, 1 blocker); decisions and known deviations in `docs/adr/0025-icon-resolution-chain.md`.
+- **Changes**: ① chain: new `installed-icon.ts` replicates the official iconOf semantics (relative-path enforcement, two-sided realpath containment — proven against a symlink-installed plugin, extension whitelist, 256KiB double check, isFile; exports `<pkg>/icon` best-effort); the installed panel drops its hardwired `icon:null` and now consumes host-equivalent data URIs; ② curated registry: the `icon` field goes live (https URLs only — enforced by validateRegistry as-is + client-side defense + a guard test), populated for 16/23 entries (jsDelivr exact-version pins, each HEAD-verified 200 + image/*); market/curated/community pages join the local data URI for page-matched installed entries (page-bounded disk reads); ③ performance: icon IO lazy loading (IntersectionObserver rootMargin 200px + `loading=lazy`, 8s timer gating reused from the screenshot precedent), zero added IO on the market query hot path; ④ visuals: `object-fit:contain`, themed plate behind img icons (contrast boost for thin-stroke SVGs), letter-state gradient retained, 40×40 container unchanged; ⑤ resilience: silent candidate-to-candidate degradation, unconditional hooks (prevents conditional-hook crashes on reused installed-tab instances), out-of-range candidates fold into the letter placeholder.
+- **Verification**: full npm test **1783/1783** (new installed-icon (two-sided realpath + symlink fixtures) / client-icon-view / registry-icon-url https guard / market·installed wiring tests), typecheck 0; live smoke 12 of 15 installed plugins emit declared icons (criterion ≥7); pre-release independent reviewer ran three rounds live (1779→1781→1783 all green) with red-light re-enactments.
 
 ### 0.10.20 Fix: reconcile-re-judged rows losing version transition (enqueue-time `from` persistence + reconcile back-fill of `meta.to`) + explicit "same-runtime" contract for the golden corpus
 
