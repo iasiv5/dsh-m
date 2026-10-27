@@ -375,7 +375,8 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   // 卡片渲染单例（0.9.25）：浏览态单列表与搜索态两段分组共用同一映射；搜索态给非社区卡补「精选」徽章
   const cardOf = (it) =>
     Card({
-      key: it.id,
+      // id-让位镜像条目与主条目同 id（设计 2026-10-27）：key 分域防 React 重排歧义
+      key: it.primaryOverlap === true ? `x:${it.id}` : it.id,
       icon: h(Icon, { entry: it }),
       name: it.name,
       badges: [
@@ -400,6 +401,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
         it.outdated ? h("span", { className: "dshm-badge warn", key: "u" }, lookup("badge.update")) : null,
         it.installed ? h("span", { className: "dshm-badge", key: "i" }, lookup("badge.installed")) : null,
         it.community === true ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community")) : null,
+        it.primaryOverlap === true ? h("span", { className: "dshm-badge info", key: "cur" }, lookup("badge.inCurated")) : null,
         searching && it.community !== true ? h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")) : null,
         h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
       ],

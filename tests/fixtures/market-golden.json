@@ -94,6 +94,30 @@
         "community": true
       },
       {
+        "id": "o1--dup",
+        "name": "dup",
+        "description": "dup 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-npm-a",
+        "github": "o1/dup",
+        "homepage": "https://github.com/o1/dup",
+        "stars": null,
+        "downloads": 100,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "dup golden en",
+        "owner": "o1",
+        "primaryOverlap": true,
+        "installed": true,
+        "outdated": false,
+        "installedPkg": "gold-npm-a",
+        "installedVersion": "1.0.0",
+        "community": true
+      },
+      {
         "id": "g2--keepb",
         "name": "keepb",
         "description": "keepb golden en",
@@ -115,9 +139,31 @@
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
         "community": true
+      },
+      {
+        "id": "goldown--keepc",
+        "name": "keepc",
+        "description": "keepc 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-community-c",
+        "github": "goldown/keepc",
+        "homepage": "https://github.com/goldown/keepc",
+        "stars": null,
+        "downloads": 10,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "keepc golden en",
+        "owner": "goldown",
+        "primaryOverlap": true,
+        "installed": false,
+        "outdated": false,
+        "community": true
       }
     ],
-    "total": 7,
+    "total": 9,
     "offset": 0,
     "limit": 80,
     "categoryCounts": {
@@ -130,11 +176,11 @@
       "ui": 1,
       "search": 1,
       "market": 1,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 4,
-      "community": 3
+      "community": 5
     },
     "registryState": {
       "configuredAddress": "",
@@ -165,7 +211,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -227,7 +273,7 @@
         "outdated": false
       }
     ],
-    "total": 7,
+    "total": 9,
     "offset": 1,
     "limit": 2,
     "categoryCounts": {
@@ -240,11 +286,11 @@
       "ui": 1,
       "search": 1,
       "market": 1,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 4,
-      "community": 3
+      "community": 5
     },
     "registryState": {
       "configuredAddress": "",
@@ -275,7 +321,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -438,7 +484,7 @@
       "ui": 1,
       "search": 1,
       "market": 1,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 4,
@@ -473,7 +519,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -549,6 +595,30 @@
         "community": true
       },
       {
+        "id": "o1--dup",
+        "name": "dup",
+        "description": "dup 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-npm-a",
+        "github": "o1/dup",
+        "homepage": "https://github.com/o1/dup",
+        "stars": null,
+        "downloads": 100,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "dup golden en",
+        "owner": "o1",
+        "primaryOverlap": true,
+        "installed": true,
+        "outdated": false,
+        "installedPkg": "gold-npm-a",
+        "installedVersion": "1.0.0",
+        "community": true
+      },
+      {
         "id": "g2--keepb",
         "name": "keepb",
         "description": "keepb golden en",
@@ -570,9 +640,31 @@
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
         "community": true
+      },
+      {
+        "id": "goldown--keepc",
+        "name": "keepc",
+        "description": "keepc 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-community-c",
+        "github": "goldown/keepc",
+        "homepage": "https://github.com/goldown/keepc",
+        "stars": null,
+        "downloads": 10,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "keepc golden en",
+        "owner": "goldown",
+        "primaryOverlap": true,
+        "installed": false,
+        "outdated": false,
+        "community": true
       }
     ],
-    "total": 3,
+    "total": 5,
     "offset": 0,
     "limit": 80,
     "categoryCounts": {
@@ -581,11 +673,11 @@
       "self-dev": 0,
       "tencent-lighthouse": 0,
       "watchlist": 0,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 0,
-      "community": 3
+      "community": 5
     },
     "registryState": {
       "configuredAddress": "",
@@ -616,7 +708,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -749,6 +841,31 @@
         "community": true
       },
       {
+        "id": "o1--dup",
+        "name": "dup",
+        "description": "dup 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-npm-a",
+        "github": "o1/dup",
+        "homepage": "https://github.com/o1/dup",
+        "stars": null,
+        "downloads": 100,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "dup golden en",
+        "owner": "o1",
+        "primaryOverlap": true,
+        "installed": true,
+        "outdated": true,
+        "installedPkg": "gold-npm-a",
+        "installedVersion": "1.0.0",
+        "community": true,
+        "latestVersion": "9.9.9"
+      },
+      {
         "id": "g2--keepb",
         "name": "keepb",
         "description": "keepb golden en",
@@ -771,9 +888,32 @@
         "installedVersion": "1.2.0",
         "community": true,
         "latestVersion": "9.9.9"
+      },
+      {
+        "id": "goldown--keepc",
+        "name": "keepc",
+        "description": "keepc 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-community-c",
+        "github": "goldown/keepc",
+        "homepage": "https://github.com/goldown/keepc",
+        "stars": null,
+        "downloads": 10,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "keepc golden en",
+        "owner": "goldown",
+        "primaryOverlap": true,
+        "installed": false,
+        "outdated": false,
+        "community": true,
+        "latestVersion": "9.9.9"
       }
     ],
-    "total": 7,
+    "total": 9,
     "offset": 0,
     "limit": 96,
     "categoryCounts": {
@@ -786,11 +926,11 @@
       "ui": 1,
       "search": 1,
       "market": 1,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 4,
-      "community": 3
+      "community": 5
     },
     "registryState": {
       "configuredAddress": "",
@@ -821,7 +961,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -948,6 +1088,30 @@
         "community": true
       },
       {
+        "id": "o1--dup",
+        "name": "dup",
+        "description": "dup 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-npm-a",
+        "github": "o1/dup",
+        "homepage": "https://github.com/o1/dup",
+        "stars": null,
+        "downloads": 100,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "dup golden en",
+        "owner": "o1",
+        "primaryOverlap": true,
+        "installed": true,
+        "outdated": false,
+        "installedPkg": "gold-npm-a",
+        "installedVersion": "1.0.0",
+        "community": true
+      },
+      {
         "id": "g2--keepb",
         "name": "keepb",
         "description": "keepb golden en",
@@ -969,9 +1133,31 @@
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
         "community": true
+      },
+      {
+        "id": "goldown--keepc",
+        "name": "keepc",
+        "description": "keepc 金牌中文",
+        "category": "c-ui",
+        "tags": [],
+        "source": "npm",
+        "npm": "gold-community-c",
+        "github": "goldown/keepc",
+        "homepage": "https://github.com/goldown/keepc",
+        "stars": null,
+        "downloads": 10,
+        "capabilities": [],
+        "capabilityRedLines": [],
+        "screenshots": [],
+        "descriptionEn": "keepc golden en",
+        "owner": "goldown",
+        "primaryOverlap": true,
+        "installed": false,
+        "outdated": false,
+        "community": true
       }
     ],
-    "total": 7,
+    "total": 9,
     "offset": 0,
     "limit": 96,
     "categoryCounts": {
@@ -984,11 +1170,11 @@
       "ui": 1,
       "search": 1,
       "market": 1,
-      "c-ui": 3
+      "c-ui": 5
     },
     "sourceCounts": {
       "primary": 4,
-      "community": 3
+      "community": 5
     },
     "registryState": {
       "configuredAddress": "",
@@ -1019,7 +1205,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -1144,7 +1330,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
@@ -1273,7 +1459,7 @@
       "errors": [],
       "warnings": [
         "zh 描述缺省回退 en：1 条",
-        "2 条社区条目与主清单重复，已让位（主清单恒优先）"
+        "2 条社区条目同时被主清单收录（社区列表中标注）"
       ],
       "categoryLabels": {
         "agi": "AGI 架构探索",
