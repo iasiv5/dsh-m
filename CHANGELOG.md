@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.22 特性：社区浏览镜像——让位条目保留可见 + 「精选收录」徽章（搜索与安装语义零变化）
+
+- **背景**：主清单恒优先的合并语义会把「精选 ∧ 社区」双收录条目从社区区丢弃——社区翻页永远翻不到它们（主人 2026-10-27 发现）。经已批设计（docs/specs/2026-10-27-community-zone-displaced-entries-design.md）+ 计划独立评审（两轮 10 项全闭环）+ 实施独立评审（4 项全闭环）落地。
+- **修法**：① `mergeRegistries` 让位条目改「保留并打标 `primaryOverlap`」（判定顺序规范：主清单身份撞先于社区内部去重；npm 段内 primaryNpm 先于 seenNpm——段序读法①锚定；社区内部重复维持丢弃并单列计数）；② `mergedIndex` 身份解析域排除打标条目——findById/lookupInstalled 今日契约维持，三条回归锚零改动绿（安装/升级路径零变化）；③ `listMarket` 搜索池排除打标条目——浏览态镜像、搜索态零变化；④ client 社区卡片「精选收录」徽章（紫罗兰变体，与 npm 靛蓝区分）+ cardOf key 分域防 id-让位镜像双卡 key 冲突；⑤ 「社区收录」徽章限跨区搜索结果渲染（社区浏览态同义反复且挤压卡名——本机体验反馈）。
+- **顺带**：GLOSSARY 新增「让位（Displacement）」术语；identityKey 内容指纹备案维持独立软项不入本版。
+- **验证**：全量 npm test **1791/1791**（新增打标 4 用例 + 视图 3 用例 + 徽章接线源码锚；三条身份解析回归锚零改动绿；红灯复演 5 红/10 绿真实可达）、typecheck 0；golden 8 场景按三类白名单逐项核对（浏览态 items+计数、installed warnings、market-search 零变化）；实机 link 态体验通过（镜像/徽章/搜索单显）。
+
 ### 0.10.21 特性：图标解析链——声明图标 → 头像兜底 → 字母占位（ADR-0025），已装面板与官方面板逐字节同源
 
 - **背景**：主人诉求「GitHub 头像降为兜底、优先与官方面板同源」+ 几千插件图标的显示性能顾虑（量级事实：服务端分页每页 32/上限 96，同屏图标 ≤96——纯前端懒加载即可，不建代理、不预爬入库）。经 grill-with-docs 共识 → 实施计划 → 设计/实施双轮独立代理评审（10+4 问题全闭环，含 1 阻断）后落地，决策与已知偏离见 `docs/adr/0025-icon-resolution-chain.md`。
@@ -804,6 +811,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.22 Feature: community browse mirror — displaced entries stay visible + "Curated" badge (search & install semantics unchanged)
+
+- **Background**: the primary-first merge semantics dropped entries collected by BOTH the curated registry and the community catalog from the community zone — unfindable by paging (owner, 2026-10-27). Shipped via an approved design (docs/specs/2026-10-27-community-zone-displaced-entries-design.md) + two independent review rounds (10 plan issues + 4 implementation issues, all closed).
+- **Changes**: ① `mergeRegistries` retains displaced entries with a `primaryOverlap` mark (judgment order: primary identity clash before community-internal dedup; primaryNpm before seenNpm within the npm segment — segment-order reading ① anchored; community-internal duplicates still dropped and counted separately); ② `mergedIndex` identity-resolution domain excludes marked entries — findById/lookupInstalled contracts intact, three regression anchors green with zero modifications (install/upgrade paths untouched); ③ `listMarket` search pool excludes marked entries — browse mirrors, search unchanged; ④ client "Curated" badge on community cards (violet variant, distinct from npm indigo) + cardOf key domain-split to avoid duplicate-key collisions for id-displaced mirror cards; ⑤ the "Community" badge now renders only in cross-zone search results (tautological in the community browse view, and badge crowding squeezed card names — live feedback).
+- **Also**: GLOSSARY gains "让位（Displacement）"; the identityKey content-fingerprint note remains an independent soft item, not in this release.
+- **Verification**: full npm test **1791/1791** (4 new marking cases + 3 view cases + badge wiring source anchor; three identity regression anchors green with zero modifications; red-light replay 5 red / 10 green), typecheck 0; golden 8 scenarios reviewed against the three-category whitelist (browse items+counts, installed warnings, market-search zero change); live link-mode experience passed.
 
 ### 0.10.21 Feature: icon resolution chain — declared icon → avatar fallback → letter placeholder (ADR-0025); installed panel byte-identical with the official panel
 
