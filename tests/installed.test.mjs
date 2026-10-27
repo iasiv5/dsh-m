@@ -353,7 +353,9 @@ describe('listMarket 市场条目 icon join（ADR-0025 增补，主人修订）'
   const regEntry = (id, npm) => ({ id, name: id, description: 'd', category: 'tools', tags: [], source: 'npm', npm })
 
   function marketDeps(items) {
-    const ts = '2026-10-27T00:00:00.000Z' // 独立 fetchedAt：identityKey 含 fetchedAt（不含 registry 内容），防同进程代际键互串
+    // 与 iconWiringDeps 共享 fetchedAt（2026-10-27 备案修复后 identityKey 含 registry 内容指纹，
+    // 同 fetchedAt 不同内容不再串代）——本 describe 与 icon 接线测试同进程共跑即该修复的集成证明
+    const ts = '2026-10-26T00:00:00.000Z'
     return {
       loadRegistry: async () => ({
         configuredAddress: '', activeAddress: 'https://example.com/mkt.json', source: 'default-raw', status: 'ready',

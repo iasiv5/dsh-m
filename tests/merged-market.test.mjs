@@ -335,3 +335,20 @@ describe('社区浏览镜像 vs 搜索池（设计 2026-10-27 视图语义）', 
     assert.equal(res.items.some((i) => i.primaryOverlap === true), false)
   })
 })
+
+describe('identityKey 内容指纹（2026-10-27 备案修复）', () => {
+  beforeEach(() => {
+    _resetMergedMarketForTests()
+  })
+
+  it('同 fetchedAt 不同 registry 内容 → 不串代：新内容重建代并包含主清单条目', async () => {
+    // 复现 2026-10-27 让位条目实施实录：同进程先空清单后带条目清单（fetchedAt 相同）
+    // → 旧实现键不含内容，后者命中前者空代（merged 缺主清单条目）
+    const empty = await call({ registry: readyRegistry([]) })
+    assert.equal(empty.merged.length, 3, '空主清单：仅社区 kept+打标 3 条')
+    const second = await call({ registry: readyRegistry(PRIMARY) })
+    assert.equal(second.merged.length, 6, '主清单 3 + 社区 3 = 6（串代则仍为 3）')
+    assert.ok(second.merged.some((e) => e.id === 'p-1'), '主清单条目必须在 merged 中')
+    assert.equal(_mergedMarketStatsForTests().builds, 2, '内容指纹不同 → 两次建代（不命中旧代）')
+  })
+})

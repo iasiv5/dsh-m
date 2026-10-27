@@ -29,6 +29,25 @@ import type { RegistryCacheNamespace, RegistryConfig, RegistryEntry, LoadedRegis
 import type { CommunityCatalog, CommunityCatalogState, CommunityStatus, LoadedCommunity } from './community.js'
 import { adaptCommunityCatalog, type CommunityEntry } from './community-adapter.js'
 import type { InstalledPlugin } from './installed.js'
+import { createHash } from 'node:crypto'
+
+/**
+ * registry 内容短指纹（2026-10-27 备案修复）：identityKey 原以 fetchedAt 代内容——
+ * 「同 fetchedAt ⇒ 同文档」的约定写在 registry.ts 且无断言维护，同 fetchedAt 不同内容
+ * 会无声串代（让位条目实施实录：同进程测试桩内容不同、fetchedAt 相同 → 命中空代）。
+ * 键内追加内容指纹后该跨模块约定不再被依赖。纯函数、无 IO；plugins 体量（精选 ~30KB）
+ * 下 stringify+sha256 为微秒级，不构成查询路径负担。
+ */
+function registryContentFingerprint(registry: LoadedRegistry): string {
+  const h = createHash('sha256')
+  for (const e of registry.registry.plugins) {
+    h.update(e.id)
+    h.update('\u0000')
+    h.update(JSON.stringify(e))
+    h.update('\u0001')
+  }
+  return h.digest('hex').slice(0, 16)
+}
 
 // ---------- 迁入：COMMUNITY_CATEGORY_LABELS（标签单一事实源，0.7.0 Task 4） ----------
 
@@ -369,6 +388,7 @@ function identityKey(
     state.version ?? 'off',
     pin,
     cfg.communityCatalog === false ? 'off' : 'on',
+    registryContentFingerprint(registry),
   ].join('§')
 }
 
