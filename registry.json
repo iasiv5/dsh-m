@@ -280,7 +280,7 @@
       "source": "github",
       "github": "xevil3301/dsh-chatlock",
       "homepage": "https://github.com/xevil3301/dsh-chatlock",
-      "icon": "https://raw.githubusercontent.com/xevil3301/dsh-chatlock/main/assets/icon-180.png"
+      "icon": "https://cdn.jsdelivr.net/gh/xevil3301/dsh-chatlock@0f1d77d11c9429a657a07703fcf275aadc667432/assets/icon-180.png"
     }
   ]
 }
