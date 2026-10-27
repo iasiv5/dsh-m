@@ -97,7 +97,7 @@
 
 ### T4：golden 重生成 + GLOSSARY + 提交
 
-1. `UPDATE_GOLDEN=1 npm run build && node --test tests/market-golden.test.mjs` 重生成基线；`git diff tests/fixtures/market-golden.json` 人工审查按**三类白名单**（评审 R2-Q4——golden 捕获 8 场景全量返回，计数/文案衍生变化是镜像语义的必然 diff 面，不判漂移）：① 5 个浏览态场景：items 新增 `dup`/`keepc`（带 `primaryOverlap`、downloads 混排），且 total / categoryCounts / sourceCounts.community 同步 +2；② installed-none/installed-full：community.summary.warnings 双行文案变化；③ market-search（query:'gold'）：**零变化**（B2 的 golden 级验证项——dup 今天不在搜索池，打标后仍被排除）。白名单之外无其他漂移（github-撞维度由 merged-market.test 的 `dualrepo` 夹具覆盖，评审 R1-Q3）。
+1. `UPDATE_GOLDEN=1 npm run build && node --test tests/market-golden.test.mjs` 重生成基线；`git diff tests/fixtures/market-golden.json` 人工审查按**三类白名单**（评审 R2-Q4——golden 捕获 8 场景全量返回，计数/文案衍生变化是镜像语义的必然 diff 面，不判漂移）：① 5 个浏览态场景：items 新增 `dup`/`keepc`（带 `primaryOverlap`、downloads 混排），且 total / categoryCounts / sourceCounts.community 同步 +2；② installed-none/installed-full：community.summary.warnings 双行文案变化；③ market-search（query:'gold'）：**items / total / sourceCounts 零变化**（B2 搜索语义核心承诺的 golden 级验证项——dup 今天不在搜索池，打标后仍被排除）；categoryCounts（zoned 派生，镜像语义必然 +2）与 warnings 文案的衍生变化按 R2-Q4 总则不判漂移（评审 R2-Q4/P1 口径统一）。白名单之外无其他漂移（github-撞维度由 merged-market.test 的 `dualrepo` 夹具覆盖，评审 R1-Q3）。
 2. `GLOSSARY.md` 新增术语：
 
    > **让位（Displacement）**:

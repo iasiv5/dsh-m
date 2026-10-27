@@ -924,6 +924,8 @@ export async function listInstalledWithMeta(
   if (loaded === 'deadline' || loaded.status === 'unavailable') {
     // registry 不可用：不做 matching/探测（原行为），但社区 summary 照常携带（CLI outdated 双源判定）
     const registryState = loaded === 'deadline' ? timeoutRegistryState(cfg) : stateOf(loaded)
+    // communityOutcome 全仓库唯一消费点（评审 R2-Q5）：merged 自 0.10.22 起含打标让位条目，
+    // 此臂有意丢弃（安装/升级语义零变化——设计 2026-10-27「关键边界 3」）
     void community.merged
     return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
   }

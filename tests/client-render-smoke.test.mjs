@@ -543,3 +543,18 @@ describe('ADR-0023 T12 扩面：MarketTab / OperationsCard 代表性 props 变�
     assert.ok(typeof html === 'string' && html.includes('dsvm-oprow'), '记录行渲染在')
   })
 })
+
+// ── 评审 P2（displaced-impl 实施评审）：「精选收录」徽章接线源码锚——
+// primaryOverlap 条件 → badge.inCurated 徽章的接线无 SSR 出口（cardOf 为 MarketTab 内部件，
+// 需重 props 不可轻渲染），按计划 T3.3「或源码锚」形态钉死接线；键名漂移由 client-i18n
+// 直接量↔字典自动审计兜底，本锚钉「条件与键名同时在位」。
+describe('评审 P2 源码锚：primaryOverlap → 精选收录徽章接线', () => {
+  it('market-tab 徽章条件与 i18n 键同时在位（条件改写/键改名任一即红）', () => {
+    const cond = 'it.primaryOverlap === true ? h("span", { className: "dshm-badge info", key: "cur" }, lookup("badge.inCurated")) : null'
+    assert.ok(
+      marketTabSrc.includes(cond),
+      'cardOf 徽章接线漂移：primaryOverlap → badge.inCurated 条件未在 market-tab.jsx 找到',
+    )
+    assert.ok(i18nSrc.includes('"badge.inCurated": "精选收录"') && i18nSrc.includes('"badge.inCurated": "In curated"'), 'i18n 双语键缺失')
+  })
+})

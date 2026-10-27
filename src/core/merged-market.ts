@@ -399,7 +399,9 @@ function buildGeneration(primary: RegistryEntry[], catalog: CommunityCatalog): M
   }
 }
 
-// ---------- 迁入：communityOutcome（原样、无 memo；getCommunitySummary 与 registry-deadline 降级路径专用） ----------
+// ---------- 迁入：communityOutcome（原样、无 memo；唯一消费点 = listInstalledWithMeta deadline 臂；
+//  getCommunitySummary 0.9.87 起改道 mergedOutcome 只取 summary。其 merged 自 0.10.22 起含打标让位条目——
+//  唯一消费点有意 void 丢弃，安装/升级语义零变化，设计 2026-10-27「关键边界 3」） ----------
 
 /**
  * 社区 loader waiter 收敛（v9/v10 waiter-scoped 契约）：共享 flight 不接收调用者 deadline，
