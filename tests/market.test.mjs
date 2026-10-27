@@ -841,7 +841,7 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
 })
 
 describe('M1 Task 5：合并市场', () => {
-  it('① 去重主恒优先：npm 名/github/id 三键撞名 → 社区条目让位并计数进 warnings', async () => {
+  it('① 三键撞名 → 社区条目保留打标进社区镜像（设计 2026-10-27：主清单恒优先的代表制只约束搜索态）', async () => {
     const primary = [
       { id: 'p-a', name: 'A', description: 'da', category: 'tools', tags: [], source: 'npm', npm: 'pkg-a' },
       { id: 'own--name', name: 'N', description: 'dn', category: 'ui', tags: [], source: 'github', github: 'own/name' },
@@ -855,14 +855,17 @@ describe('M1 Task 5：合并市场', () => {
       communityRaw('keep', 'o2'),                         // 无撞 → 收录
     ]))
     const res = await listMarket(cfg, { withLatest: false }, deps)
+    // 浏览镜像：撞名条目保留出现（id-让位形态与主条目同 id → 列表含两份 'own--name'，client key 分域）
     const ids = res.items.map((it) => it.id)
-    assert.deepEqual(ids, ['p-a', 'own--name', 'o2--keep'])
-    assert.equal(res.community.displaced, 2)
-    assert.ok(res.community.warnings.some((w) => w.includes('2')))
+    assert.deepEqual(ids, ['p-a', 'own--name', 'o1--dup-npm', 'o2--keep', 'own--name'])
+    const marked = res.items.filter((it) => it.primaryOverlap === true)
+    assert.deepEqual(marked.map((it) => it.id).sort(), ['o1--dup-npm', 'own--name'])
+    assert.equal(marked.length, res.community.displaced, 'displaced = 打标条目总数')
+    assert.ok(res.community.warnings.some((w) => w.includes('2') && w.includes('同时被主清单收录')))
     assert.equal(ccalls.n, 1)
   })
 
-  it('①-b 0.9.51 补全：社区 npm 条目经 github 碰撞让位（npm 名不撞、repo 撞）', async () => {
+  it('①-b 0.9.51 补全：社区 npm 条目经 github 碰撞 → 保留打标（npm 名不撞、repo 撞；设计 2026-10-27）', async () => {
     const primary = [
       { id: 'p-g', name: 'G', description: 'dg', category: 'tools', tags: [], source: 'npm', npm: 'pkg-g', github: 'own/g-repo' },
     ]
@@ -872,7 +875,10 @@ describe('M1 Task 5：合并市场', () => {
       communityRaw('other', 'o2'),                         // 无撞 → 收录
     ]))
     const res = await listMarket(cfg, { withLatest: false }, deps)
-    assert.deepEqual(res.items.map((it) => it.id), ['p-g', 'o2--other'])
+    const gRepo = res.items.find((it) => it.id === 'own--g-repo')
+    assert.ok(gRepo, 'github 撞条目保留在社区镜像')
+    assert.equal(gRepo.primaryOverlap, true)
+    assert.deepEqual(res.items.map((it) => it.id), ['p-g', 'own--g-repo', 'o2--other'])
     assert.equal(res.community.displaced, 1)
   })
 

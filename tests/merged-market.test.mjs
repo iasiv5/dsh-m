@@ -201,8 +201,11 @@ describe('L2 物化合并市场（ADR-0016）', () => {
       installed({ pkg: 'dualrepo-pkg', name: '', spec: '^1.0.0' }),                          // displaced 条目（R2-3 核心：merged 域 miss、全量域命中）
       installed({ pkg: 'clash-keepc-pkg', name: '', spec: '^1.0.0' }),                       // id-让位条目（同上）
     ]
+    // 等价域 = mergedIndex 排除打标条目（设计 2026-10-27「关键边界 3」）：merged 列表扩容后，
+    // 读路径断言两侧必须同域，否则 displaced 夹具必红——预期适配点，非回归（评审 R1-Q2）
+    const readDomain = outcome.merged.filter((e) => e.primaryOverlap !== true)
     for (const it of installedSet) {
-      const readExpected = outcome.merged.find((e) => matchInstalledByEntry(e, [it]) !== undefined)
+      const readExpected = readDomain.find((e) => matchInstalledByEntry(e, [it]) !== undefined)
       const installExpected = fullDomain.find((e) => matchInstalledByEntry(e, [it]) !== undefined)
       assert.equal(outcome.lookupInstalled(it)?.id, readExpected?.id, `读路径等价（pkg=${it.pkg}）`)
       assert.equal(outcome.lookupInstalledAll(it)?.id, installExpected?.id, `安装路径等价（pkg=${it.pkg}）`)
@@ -244,5 +247,91 @@ describe('L2 物化合并市场（ADR-0016）', () => {
     assert.equal(stats2.builds, 1, '第二次同身份 → 代命中不重建')
     assert.ok(stats2.hits >= 1, `集成命中（实际 hits=${stats2.hits}）`)
     assert.deepEqual(second, first, '两次结果逐字段等价（toMarketItem 展开产生新对象属预期，不比较引用）')
+  })
+})
+
+describe('让位条目保留打标（设计 2026-10-27：社区镜像 + 身份域排除）', () => {
+  beforeEach(() => {
+    _resetMergedMarketForTests()
+  })
+
+  it('①主清单重叠让位条目保留并打标；kept 条目无标；displaced=主清单重叠口径', () => {
+    const adapted = adaptCommunityCatalog(communityTaskValue(COMMUNITY_RAW).catalog).entries
+    const merge = mergeRegistries(PRIMARY, adapted)
+    const marked = merge.items.filter((e) => e.primaryOverlap === true)
+    assert.deepEqual(marked.map((e) => e.id).sort(), ['clashown--keepc', 'own--dualrepo'], '双撞条目打标保留')
+    const plain = merge.items.find((e) => e.id === 'nh--namehit')
+    assert.equal(plain?.primaryOverlap, undefined, 'kept 条目不打标')
+    assert.equal(merge.displaced, 2, 'displaced = 打标条目总数（主清单重叠口径）')
+    assert.ok(merge.warnings.some((w) => w.includes('同时被主清单收录')), 'warnings 含精选重叠行')
+  })
+
+  it('②内部去重维持丢弃且段序读法①钉死：seenNpm 短路先于 github 撞打标', () => {
+    const community = [
+      communityRaw('internal-a', 'ix', { npm: 'internal-dup' }),
+      communityRaw('internal-b', 'ix', { npm: 'internal-dup', url: 'https://github.com/own/dual' }), // github 撞 p-2
+    ]
+    const adapted = adaptCommunityCatalog(communityTaskValue(community).catalog).entries
+    const merge = mergeRegistries(PRIMARY, adapted)
+    assert.equal(merge.displaced, 0, '内部重复不算主清单重叠')
+    assert.ok(merge.items.some((e) => e.id === 'ix--internal-a'), '首条收录')
+    assert.equal(merge.items.some((e) => e.id === 'ix--internal-b'), false, '次条仍被丢弃（github 撞打标不得反序抢跑）')
+    assert.ok(merge.warnings.some((w) => w.includes('内部重复')), 'warnings 含内部去重行')
+  })
+
+  it('④组合：主清单有 npm X + 两条社区同 npm X → 双打标、displaced=2', () => {
+    const primary = [{ id: 'cx', name: 'CX', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'combo-x' }]
+    const community = [
+      communityRaw('combo-a', 'cz', { npm: 'combo-x' }),
+      communityRaw('combo-b', 'cz', { npm: 'combo-x' }),
+    ]
+    const adapted = adaptCommunityCatalog(communityTaskValue(community).catalog).entries
+    const merge = mergeRegistries(primary, adapted)
+    const marked = merge.items.filter((e) => e.primaryOverlap === true)
+    assert.equal(marked.length, 2, '双打标（镜像语义：主清单撞先于内部去重）')
+    assert.equal(merge.displaced, 2)
+  })
+
+  it('⑤mergedIndex 身份域排除：lookupInstalled 对打标条目 undefined、findById primary 恒优先、merged 列表含打标条目', async () => {
+    const outcome = await call()
+    const displacedTarget = installed({ pkg: 'dualrepo-pkg', name: '', spec: '^1.0.0' })
+    assert.equal(outcome.lookupInstalled(displacedTarget)?.id, undefined, 'mergedIndex 不含打标条目（今日契约）')
+    assert.equal(outcome.findById('clashown--keepc')?.npm, 'pkg-3', 'id-让位：primary 同 id 恒优先（打标条目不覆盖）')
+    assert.equal(outcome.merged.filter((e) => e.primaryOverlap === true).length, 2, 'merged 列表含打标条目（镜像）')
+  })
+})
+
+describe('社区浏览镜像 vs 搜索池（设计 2026-10-27 视图语义）', () => {
+  beforeEach(() => {
+    _resetMergedMarketForTests()
+  })
+  const mkDeps = () => ({
+    loadRegistry: async () => readyRegistry(PRIMARY),
+    listInstalledPlugins: async () => ({ items: [], others: 0, complete: true, profileDir: '/tmp/gold-profile' }),
+    npmLatest: async () => ({ version: '9.9.9' }),
+    githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
+    fetchCommunityCatalog: async () => communityTaskValue(COMMUNITY_RAW),
+  })
+  const cfg = { timeoutMs: 500 }
+
+  it('浏览镜像：社区区（无 query）含打标让位条目且计数全量', async () => {
+    const { listMarket } = await import('../lib/core/market.js')
+    const res = await listMarket(cfg, { withLatest: false, source: 'community' }, mkDeps())
+    const dual = res.items.find((i) => i.id === 'own--dualrepo')
+    assert.ok(dual, '社区区含让位条目')
+    assert.equal(dual.primaryOverlap, true)
+    assert.equal(res.total, 3, '社区区全量镜像（kept 1 + 打标 2）')
+  })
+
+  it('搜索池：query 命中名称 → 打标条目不出现（搜索态零变化）', async () => {
+    const { listMarket } = await import('../lib/core/market.js')
+    const res = await listMarket(cfg, { withLatest: false, query: 'dualrepo' }, mkDeps())
+    assert.equal(res.items.some((i) => i.id === 'own--dualrepo'), false, '搜索不含打标条目')
+  })
+
+  it('精选区：source=primary 不含打标条目（现状不变）', async () => {
+    const { listMarket } = await import('../lib/core/market.js')
+    const res = await listMarket(cfg, { withLatest: false, source: 'primary' }, mkDeps())
+    assert.equal(res.items.some((i) => i.primaryOverlap === true), false)
   })
 })

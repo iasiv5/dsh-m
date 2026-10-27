@@ -109,6 +109,8 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   latestErrorCode?: LatestErrorCode
   /** 社区收录条目标记（M1 Task 5）；主清单条目不带 */
   community?: true
+  /** 主清单重叠标记（设计 2026-10-27）：社区浏览镜像可见、搜索池排除；client 据此渲染「精选收录」徽章 */
+  primaryOverlap?: true
   /** 本机声明图标 data URI（ADR-0025 增补：页内 matched 已装条目 join，主人修订 2026-10-27） */
   iconDataUri?: string | null
   /** 以下为社区旁路字段（Q44：能力披露/截图只进详情折叠区，卡片不打标） */
@@ -652,6 +654,8 @@ export async function listMarket(
     const also = (entry as RegistryEntry).alsoCategories ?? []
     if (cat && entry.category !== cat && !also.includes(cat as RegistryEntry['category'])) return false
     if (terms.length === 0) return true
+    // 搜索态排除主清单重叠打标条目（设计 2026-10-27「搜索态零变化」）：浏览态镜像、搜索态维持今日结果
+    if ((entry as CommunityEntry).primaryOverlap === true) return false
     const score = relevanceScore(entry, terms)
     if (score <= 0) return false
     scoreByEntry.set(entry, score)

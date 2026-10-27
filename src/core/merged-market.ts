@@ -118,19 +118,30 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   const primaryNpm = new Set(primary.filter((e) => e.npm).map((e) => e.npm as string))
   const primaryGithub = new Set(primary.filter((e) => e.github).map((e) => e.github as string))
   const primaryIds = new Set(primary.map((e) => e.id))
-  const displaced: string[] = []
+  // displaced 计数 = 主清单重叠口径（打标条目总数）；内部重复单列 internalDup（设计 2026-10-27）
+  let displaced = 0
+  let internalDup = 0
   const kept: CommunityEntry[] = []
   const seenNpm = new Set<string>()
   for (const c of community) {
+    // 判定顺序规范（评审 R2-Q6 + 终审建议 1 段序锚定）：npm 段内 primaryNpm 先于 seenNpm；
+    // github/id 段维持现状段序（seenNpm 短路仍先于 github 撞打标——读法①，内部撞不因撞主清单改判）
     if (c.npm !== undefined) {
-      if (primaryNpm.has(c.npm) || seenNpm.has(c.npm)) {
-        displaced.push(c.id)
+      if (primaryNpm.has(c.npm)) {
+        displaced += 1
+        kept.push({ ...c, primaryOverlap: true })
+        continue
+      }
+      if (seenNpm.has(c.npm)) {
+        internalDup += 1
         continue
       }
       seenNpm.add(c.npm)
     }
     if ((c.github !== undefined && primaryGithub.has(c.github)) || primaryIds.has(c.id)) {
-      displaced.push(c.id)
+      // github/id 段撞：主清单重叠 → 打标保留（社区镜像；不进 mergedIndex/搜索池——「关键边界 3」）
+      displaced += 1
+      kept.push({ ...c, primaryOverlap: true })
       continue
     }
     kept.push(c)
@@ -142,8 +153,10 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
     if (da !== db) return db - da
     return a.name.localeCompare(b.name)
   })
-  const warnings = displaced.length > 0 ? [`${displaced.length} 条社区条目与主清单重复，已让位（主清单恒优先）`] : []
-  return { items: [...primary, ...sorted], displaced: displaced.length, warnings }
+  const warnings: string[] = []
+  if (displaced > 0) warnings.push(`${displaced} 条社区条目同时被主清单收录（社区列表中标注）`)
+  if (internalDup > 0) warnings.push(`${internalDup} 条社区内部重复条目已去重`)
+  return { items: [...primary, ...sorted], displaced, warnings }
 }
 
 // ---------- 迁入：summary 组装（单一产地；summary 永不入代——每调用现算） ----------
@@ -379,7 +392,9 @@ function buildGeneration(primary: RegistryEntry[], catalog: CommunityCatalog): M
     },
     adaptWarnings: [...adapted.warnings, ...merge.warnings],
     categoryLabelsEn,
-    mergedIndex: buildMatchIndex(merge.items),
+    // 身份解析域排除打标条目（设计 2026-10-27「关键边界 3」）：findById/lookupInstalled 今日契约维持
+    // （回归锚：tests/merged-market.test.mjs「merged 域不含 displaced」等三断言）
+    mergedIndex: buildMatchIndex(merge.items.filter((e) => (e as CommunityEntry).primaryOverlap !== true)),
     fullIndex: buildMatchIndex([...primary, ...adapted.entries]),
   }
 }

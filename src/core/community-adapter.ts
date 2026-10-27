@@ -43,6 +43,9 @@ export interface CommunityEntry extends Omit<RegistryEntry, 'category'> {
   downloadsEnd?: string
   downloadsCheckedAt?: string
   version?: string
+  /** 主清单重叠标记（设计 2026-10-27）：mergeRegistries 物化层打标——该条目同时被主清单收录，
+   * 保留在社区浏览列表（徽章展示），但不进 mergedIndex 身份解析域与搜索池。非上游字段。 */
+  primaryOverlap?: true
 }
 
 export interface AdaptCommunityResult {
