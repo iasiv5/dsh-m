@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.23 修复：合并市场身份键追加 registry 内容指纹——同 fetchedAt 不同内容不再无声串代（2026-10-27 备案修复）
+
+- **背景**：物化合并市场（ADR-0016）L2 代缓存的身份键由 namespace / profile / configuredAddress / fetchedAt / 社区目录版本 / pin / 社区开关七段拼接，不含 registry 内容指纹——正确性依赖「同 fetchedAt ⇒ 同文档」这条写在 registry.ts、无注释无断言维护的跨模块约定。2026-10-27 让位条目实施实录踩中：同进程两个不同内容的清单桩（fetchedAt 相同）→ 后者命中前者空代，市场查询无声返回 0 条。
+- **修法**：identityKey 追加第 8 段 registry 内容短指纹（逐条目 id+JSON 的 sha256 截 16 位；纯函数无 IO，精选清单 ~30KB 体量下微秒级，查询路径零负担）。生产语义今天即等价（fetchedAt 每次成功拉取重盖，内容变 ⇒ 键变），本修复移除对该跨模块约定的正确性依赖，防未来 fetchedAt 语义调整引发无声过期；测试侧「独立 fetchedAt」workaround 一并移除（原碰撞场景转为集成证明）。
+- **验证**：新增回归测试（同 fetchedAt 空/带条目两清单先后建代——基线实现红：新内容命中旧空代缺主清单条目；修复后绿：重建代含全量 6 条、builds=2）；全量 npm test **1792/1792**、typecheck 0。
+
 ### 0.10.22 特性：社区浏览镜像——让位条目保留可见 + 「精选收录」徽章（搜索与安装语义零变化）
 
 - **背景**：主清单恒优先的合并语义会把「精选 ∧ 社区」双收录条目从社区区丢弃——社区翻页永远翻不到它们（主人 2026-10-27 发现）。经已批设计（docs/specs/2026-10-27-community-zone-displaced-entries-design.md）+ 计划独立评审（两轮 10 项全闭环）+ 实施独立评审（4 项全闭环）落地。
@@ -811,6 +817,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.23 Fix: merged-market identity key gains a registry content fingerprint — same fetchedAt with different content no longer silently collides (2026-10-27 filed note)
+
+- **Background**: the merged-market (ADR-0016) L2 generation cache keyed generations by namespace / profile / configuredAddress / fetchedAt / community version / pin / switch — with no fingerprint of the registry content itself. Correctness relied on a "same fetchedAt ⇒ same document" invariant documented nowhere and asserted nowhere in registry.ts. Hit live on 2026-10-27 while shipping the displaced-entries feature: two in-process registry stubs with different content but the same fetchedAt → the second call hit the first call's empty generation and the market query silently returned 0 rows.
+- **Fix**: identityKey gains an 8th segment — a short content fingerprint of the registry (per-entry id+JSON sha256 truncated to 16 hex chars; pure function, no IO, microsecond-level for a ~30KB curated registry, zero burden on the query path). Production semantics are equivalent today (fetchedAt is re-stamped on every successful fetch, so content changes already changed the key); this removes the correctness dependence on that cross-module invariant, guarding against silent staleness if fetchedAt semantics ever shift. The "unique fetchedAt" test workaround is removed — the original collision scenario now serves as the integration proof.
+- **Verification**: new regression test (empty / populated registries built back-to-back with the same fetchedAt — red on baseline: the second call hit the stale generation missing primary entries; green after the fix: rebuilt generation contains all 6 rows); full npm test **1792/1792**, typecheck 0.
 
 ### 0.10.22 Feature: community browse mirror — displaced entries stay visible + "Curated" badge (search & install semantics unchanged)
 
