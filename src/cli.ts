@@ -173,14 +173,14 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
 
 只读命令：
   dshm search [关键词] [--query 关键词] [--category essentials|cui-picks|self-dev|tencent-lighthouse|watchlist|<社区slug>] [--source primary|community|all] [--limit N] [--offset N]
-                                        （首个位置参数等价 --query，--query 缺值时也回退它，多余位置参数忽略；source 分区：community=社区目录 4000+ 条 / primary=精选策展 / all=默认；limit 默认 10；offset 翻页）
+                                        （首个位置参数等价 --query，--query 缺值时也回退它，多余位置参数忽略；source 分区：community=社区目录 6000+ 条 / primary=精选策展 / all=默认；limit 默认 10；offset 翻页）
   dshm list                          列出 web profile 已装插件（含市场标注/可升级）
   dshm outdated                      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
   dshm doctor [--json] [--profile web|desktop]  profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1；--profile desktop 为 doctor 专属例外）
 
-变更命令（必须 --yes）：
-  dshm install --id <收录id> [--version 1.2.3] [--force]   （--force：确认兼容风险后跳过预检拦截）
+变更命令（除 install 外必须 --yes）：
+  dshm install --id <收录id> [--version 1.2.3] [--force]   （无需 --yes；--force：确认兼容风险后跳过预检拦截）
   dshm upgrade --pkg <包名> --yes [--force]
   dshm uninstall --pkg <包名> --yes
   dshm toggle --pkg <包名> --on|--off --yes   （切换运行状态；文件级编辑，重启生效）
@@ -188,7 +188,8 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
 profile 目标（0.9.0）：CLI 恒作用于 web profile；--profile web 为显式声明，
-  --profile desktop 会被拒绝——Desktop profile 的插件管理走官方 Desktop 插件管理页。
+  其余命令的 --profile desktop 会被拒绝——Desktop profile 的插件管理走官方 Desktop 插件管理页；
+  唯一例外：dshm doctor --profile desktop（只读体检，ADR-0011）。
 
 环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR、
   DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）、

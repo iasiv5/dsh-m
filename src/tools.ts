@@ -125,7 +125,7 @@ export function registerTools(
   ctx.tools.register(defineTool({
     name: 'dshm_search',
     description:
-      'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~22 hand-curated 精选 entries plus a 4,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. Cards may carry audience="internal" (作者自用; do not proactively recommend to general users unless the user names one or asks about internal rollout) and decoupled=true (版本无关, survives DSH upgrades without per-release adaptation). After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
+      'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~23 hand-curated 精选 entries plus a 6,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. Cards may carry audience="internal" (作者自用; do not proactively recommend to general users unless the user names one or asks about internal rollout) and decoupled=true (版本无关, survives DSH upgrades without per-release adaptation). After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
     parameters: {
       query: { type: 'string', description: 'Main keyword, e.g. 主题 or 搜索. Optional; omit to browse.' },
       category: {
@@ -134,7 +134,7 @@ export function registerTools(
       },
       source: {
         type: 'string',
-        description: 'Zone filter: "community" (4,000+ community catalog), "primary" (hand-curated 精选), or "all" (default).',
+        description: 'Zone filter: "community" (6,000+ community catalog), "primary" (hand-curated 精选), or "all" (default).',
       },
       limit: { type: 'number', description: 'Cards in this batch. Default 10, clamp 1-80.' },
       offset: { type: 'number', description: 'Pagination offset (0-based). Pass nextOffset from the previous result to fetch the next batch.' },

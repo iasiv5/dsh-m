@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH Web](https://img.shields.io/badge/DSH%20Web-0.1.2--rc.1%20%E2%86%92%200.2.1--rc.3-2563eb)](#compatibility--faq)
+[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.3%20verified-2563eb)](#compatibility--faq)
 
 English · [中文](./README.md)
 
@@ -17,15 +17,15 @@ In DSH's official **Plugin Manager → Add plugin**, enter `dsh-m`, select an in
 
 ![Installing dsh-m with DSH's official plugin manager](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/official-plugin-install.webp)
 
-On a headless Web host, you can also run `dsh plugin --profile web add dsh-m`. Requires Node.js ≥ 22; see the [compatibility table](#compatibility--faq). `npm install -g dsh-m` installs **only the standalone `dshm` CLI**, not the marketplace plugin in a DSH profile.
+On a headless Web host, you can also run `dsh plugin --profile web add dsh-m`. Requires Node.js ≥ 22.19.0; see the [compatibility table](#compatibility--faq). `npm install -g dsh-m` installs **only the standalone `dshm` CLI**, not the marketplace plugin in a DSH profile.
 
 > In-place update support in the official plugin manager depends on the host version. If it explicitly says updates are unsupported, follow its guidance to uninstall the old version and install the new one. Uninstall does not silently erase plugin data.
 
 ## Browse, search, install
 
-- **Community + Curated**: the community directory is on by default, with 4,000+ listings. Curated picks are organized into Essentials / Cui's Picks / iasi In-house / Tencent Lighthouse / Watchlist. Curated entries win when both catalogs list the same plugin; the community zone doesn't duplicate them.
-- **Zoned browsing, global search**: each zone remembers its own category, sort, and pagination. A Chinese or English query searches both catalogs and shows their separate hit counts. Favorites provide a shortcut within the local profile.
-- **Inspect before installing**: cards show origin, installation status, and version; details show the description, compatibility information, and installation entry point. npm installs pin an **exact version with integrity verification**; GitHub installs pin a **commit SHA**. Peer-incompatible installs require explicit risk acknowledgment.
+- **Community + Curated**: the community directory is on by default, with 6,000+ listings (grows with the upstream catalog; the panel shows the live count). Curated picks are organized into Essentials / Cui Picks / iasi Self-dev / Tencent Lighthouse / Watchlist. Curated wins for same-name entries: cross-catalog search shows only the curated version, while Community browsing keeps such entries marked with a "Curated" badge.
+- **Zoned browsing, global search**: each zone remembers its own category, sort (the Community zone sorts by downloads / stars / date added), and pagination. A Chinese or English query searches both catalogs and shows their separate hit counts. Favorites live in browser localStorage — they are not part of the profile or the server.
+- **Inspect before installing**: cards show origin, installation status, and version; icons prefer the declared catalog/package icon and fall back to the GitHub avatar. Details show the description, compatibility information, and installation entry point. Badges like "Author's own" and "Version-independent" are audience/adaptation hints, not security or quality endorsements. npm installs pin an **exact version with integrity verification**; GitHub installs pin a **commit SHA**. Peer-incompatible installs require explicit risk acknowledgment.
 
 | Community categories | Curated buckets |
 |---|---|
@@ -35,11 +35,11 @@ On a headless Web host, you can also run `dsh plugin --profile web add dsh-m`. R
 
 ![Plugin details: category, version, origin, install command, and install action](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/plugin-detail.webp)
 
-> **Community listing is not a security review.** With 4,000+ entries from varied sources, inspect the author, code, and requested capabilities before installing. Missing capability data means “not scanned,” **not** “no risks found.”
+> **Community listing is not a security review.** With 6,000+ entries from varied sources, inspect the author, code, and requested capabilities before installing. Missing capability data means “not scanned,” **not** “no risks found.”
 
 ## Installed plugins & settings
 
-**Installed** reflects the current host profile's actual packages: marketplace/non-marketplace origin, runtime phase, available updates, toggles, upgrades, and confirmed uninstall. Operation progress and results are tracked together. A toggle may apply live or require a restart; follow the returned result. Uninstall removes the package reference without silently deleting user data and reports possible leftover paths separately.
+**Installed** reflects the current host profile's actual packages: marketplace/non-marketplace origin, runtime phase, available updates, toggles, upgrades, "Update all", and confirmed uninstall — batch updates run serially, stop at the first real failure, and always upgrade dsh-m itself last. Operation progress and results are tracked together. A toggle may apply live or require a restart; follow the returned result. Uninstall removes the package reference without silently deleting user data and reports possible leftover paths separately.
 
 ![Installed plugins: version, origin, runtime state, toggles; local profile path redacted](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/installed.webp)
 
@@ -62,6 +62,8 @@ A custom registry may come from HTTPS, a local absolute path, or `file://` (HTTP
 dshm search --query theme --source all
 dshm list
 dshm outdated
+dshm registry
+dshm doctor                # read-only health check; --profile desktop targets the desktop profile
 dshm install --id dsh-web-search
 dshm upgrade --pkg dsh-web-search --yes
 dshm uninstall --pkg dsh-web-search --yes
@@ -69,7 +71,7 @@ dshm toggle --pkg dsh-web-search --off --yes
 dshm restart --yes
 ```
 
-The GUI and Agent tools manage the **current host profile** (Web or Desktop). The standalone CLI, by contrast, **always targets the web profile** and rejects `--profile desktop`. `--force` may be used with install/upgrade after the user accepts a peer-compatibility risk. If the catalog is unavailable, `registry`, `search`, and `outdated` fail explicitly while `list` still lists installed packages. See the [design document](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) for full parameters and runtime policy.
+The GUI and Agent tools manage the **current host profile** (Web or Desktop). The standalone CLI, by contrast, targets the web profile; the only exception is the read-only `dshm doctor --profile desktop` health check — other commands reject `--profile desktop`, and Desktop plugin management goes through the official plugin page. `--force` may be used with install/upgrade after the user accepts a peer-compatibility risk. If the catalog is unavailable, `registry`, `search`, and `outdated` fail explicitly while `list` still lists installed packages. See the [design document](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) for full parameters and runtime policy.
 
 ## Compatibility & FAQ
 
@@ -80,17 +82,19 @@ The GUI and Agent tools manage the **current host profile** (Web or Desktop). Th
 | `0.1.7-rc.1 / rc.2` | `.volatile()` + `settings.update` | Checked |
 | `0.2.0-rc.1 / rc.2` | Same as 0.1.7 | rc.2 and restart path live-tested |
 | `0.2.1-rc.2` | Same as 0.2.0 | Install/upgrade and D3 self-upgrade dogfooded (0.10.x line) |
-| `0.2.1-rc.3` | Same as 0.2.0 | 0.10.11 fix line link-installed live test: 1719/1719 tests green + seven-item compatibility checklist |
+| `0.2.1-rc.3` | Same as 0.2.0 | Last fully verified on dsh-m 0.10.11 (link-installed: 1719/1719 tests green + seven-item compatibility checklist); newer versions not re-verified |
+
+> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3. Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
 
 **Is Desktop identical to Web?** No. Desktop browsing, new-package installation, and toggles act on the desktop profile. Upgrades and uninstalls require capabilities from the official host `pluginManager`; if absent, dsh-m returns a structured refusal and guidance. Desktop uses the official app lifecycle rather than Web's one-click restart; quit and reopen as instructed. Favorites, operations, and installed states are separate between profiles.
 
-**When do installs or updates take effect?** On Web, follow the activation result: a client-only update needs a refresh; operations marked restart-required need consent before the host restarts, followed by background reconnection. systemd deployments need `Restart=on-failure` or `Restart=always`; otherwise use your deployment's restart method.
+**When do installs or updates take effect?** On Web, follow the activation result: a client-only update needs a refresh; operations marked restart-required need consent before the host restarts, followed by background reconnection. Restarts hand control back to the service manager, which restarts per its Restart policy; systemd deployments should configure `Restart=on-failure` or `Restart=always`, and other deployments use their own restart method.
 
 **Why don't GitHub updates follow `main`?** Intermediate commits may be unstable. dsh-m tracks releases/tags and pins their commit SHAs. Because anonymous GitHub API quota is limited, an incomplete passive check is labeled as such rather than “all up to date.”
 
 **What if my custom registry goes down?** Its last successful cache is used first. Without any cache, the registry is reported unavailable while installed plugins remain manageable. Fix the address or restore the default in Settings.
 
-Full history: [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md). Architecture and development details: [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md), [ADRs](https://github.com/iasiv5/dsh-m/tree/main/docs/adr). Screenshots were taken from a Web instance; panel version, catalog counts, and installation states vary over time and by profile. To reproduce from the source checkout, run `npm install && npm run capture:readme` with dsh-m installed on the Web host. The development-only capture script is not distributed in the npm plugin package.
+Full history: [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md). Architecture and development details: [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md), [ADRs](https://github.com/iasiv5/dsh-m/tree/main/docs/adr). Coding and test discipline (required reading for reviews): [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md). Screenshots were taken from a Web instance; panel version, catalog counts, and installation states vary over time and by profile. To reproduce from the source checkout, run `npm install && npm run capture:readme` with dsh-m installed on the Web host. The development-only capture script is not distributed in the npm plugin package.
 
 ## License
 
