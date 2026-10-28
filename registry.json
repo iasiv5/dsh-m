@@ -285,6 +285,18 @@
       "github": "hongdougao111/dsh-archive-trash",
       "icon": "https://cdn.jsdelivr.net/npm/dsh-archive-trash@0.4.0/icon.svg",
       "homepage": "https://github.com/hongdougao111/dsh-archive-trash"
+    },
+    {
+      "id": "dsh-chatlock",
+      "name": "DSH Chatlock",
+      "description": "给会话上密码锁，并把目录整体加密成保险箱，锁定后磁盘上只有密文。",
+      "category": "watchlist",
+      "tags": ["隐私", "加密", "锁"],
+      "verified": ["0.2.1-rc.3"],
+      "source": "github",
+      "github": "xevil3301/dsh-chatlock",
+      "homepage": "https://github.com/xevil3301/dsh-chatlock",
+      "icon": "https://cdn.jsdelivr.net/gh/xevil3301/dsh-chatlock@0f1d77d11c9429a657a07703fcf275aadc667432/assets/icon-180.png"
     }
   ]
 }
