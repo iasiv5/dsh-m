@@ -9,7 +9,7 @@ import { api } from "./hooks.js";
 import { lookup } from "./i18n.js";
 import { installedViewModel } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
-import { applyInstalledUpdates, batchUpgradeOrder } from "./installed-updates.js";
+import { applyInstalledUpdates, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch } from "./installed-updates.js";
 import { opUpgradeMeta } from "./operations-view.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, LinksRow, ProgressLine, ReadmeBlock } from "./chrome.jsx";
@@ -89,7 +89,8 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
     }
   };
 
-  // issue #10 修复②：返回逐项成败（true=成功含降级恢复/良性跳过；false=失败）——批量循环据此短路。
+  // issue #10 修复② + ADR-0026 三态化：返回 'ok'（成功含降级恢复/良性跳过）/ 'target'（目标级
+  // 失败——批量跳过继续）/ 'systemic'（系统性失败——批量短路，issue #10 语义保留）。
   // 单点升级按钮不看返回值，行为零变化；transport 语义零特判（R6 不变，见 installed-view 锚测试）。
   const doUpgrade = async (it) => {
     try {
@@ -112,12 +113,14 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
         notify({ kind: "ok", needsRestart: restartBannerDecision("upgrade", res).needsRestart, text: ok.text });
       }
       await (onMutation ? onMutation() : reload());
-      return true;
+      return "ok";
     } catch (e) {
       // 0.9.94 变更结局描述（op-outcome）：guard/superseded/plain 合一（今日 guard 在前，互斥分支语义等价）
       const m = oc.mutationFailed(e, { verb: "upgrade", target: it.pkg });
       notify({ kind: m.kind, text: m.text });
-      return m.kind !== "err"; // superseded（前提消失良性跳过）不中断批量；真实失败返回 false
+      // ADR-0026：superseded（前提消失良性跳过）归 ok 不中断；真实失败按 failureClass 三态
+      //（e.failureClass 由 hooks api() 透传，Task 6；字段缺席缺省 target——评审 F1）
+      return m.kind !== "err" ? "ok" : classifyBatchOutcome(e);
     }
   };
 
@@ -146,14 +149,34 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
               className: "dshm-btn primary sm",
               disabled: activeMutateTarget != null,
               onClick: async () => {
-                // issue #10 修复①②：逐项 await 串行 + 失败短路（旧实现一次性 void 丢 Promise 全发——
+                // issue #10 修复①②：逐项 await 串行 + systemic 短路（旧实现一次性 void 丢 Promise 全发——
                 // 后端事务 FIFO 虽串行，但市场插件自换装（宿主重载本体）夹在普通项之间时，后续项
                 // 的事务/frozen 复验在刚变过的 profile 上必炸，0.10.8/0.10.13 实机实证「一项成功一项
-                // exit 1、单项重试即愈」；失败短路同时避免在 manual-repair 半残 profile 上继续后续项。
+                // exit 1、单项重试即愈」；短路同时避免在 manual-repair 半残 profile 上继续后续项。
                 // 定序：batchUpgradeOrder——dsh-m 收尾，自换装永无后续项。
                 // 失败项的「哪一项 + 错误原文」由 doUpgrade 既有 per-item 通知保留（串行后不再互相淹没）。
+                // ADR-0026（issue #30）：三态收集——target 失败跳过继续（B4），systemic 失败短路
+                //（issue #10 语义保留）；unsupported 项已被 batchUpgradeOrder 排除、零请求直入汇总。
+                const outcomes = [];
+                let stoppedAt = null;
                 for (const it of batch.targets) {
-                  if (!(await doUpgrade(it))) break;
+                  const outcome = await doUpgrade(it);
+                  outcomes.push({ pkg: it.pkg, outcome });
+                  if (outcome === "systemic") {
+                    stoppedAt = it.pkg;
+                    break;
+                  }
+                }
+                const summary = summarizeBatch(outcomes, batch.unsupported.length);
+                // B8 行为零变化：全成功 + 无 unsupported = 无新增横幅；有失败/跳过才汇总（非对称 notify：失败必须响）
+                if (summary.targetFailed > 0) {
+                  notify({ kind: "warn", text: lookup("installed.upgradeBatch.targetFailed", { n: summary.targetFailed }) });
+                }
+                if (summary.stopped && stoppedAt) {
+                  notify({ kind: "err", text: lookup("installed.upgradeBatch.stopped", { target: stoppedAt }) });
+                }
+                if (summary.skippedUnsupported > 0) {
+                  notify({ kind: "warn", text: lookup("installed.upgradeBatch.skippedUnsupported", { n: summary.skippedUnsupported }) });
                 }
               },
             },

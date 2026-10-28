@@ -54,3 +54,8 @@ describe('i18n 审计自身健全性', () => {
     }
   })
 })
+
+// ADR-0026（评审 F5 连带②）：ZH/EN 键集配对断言——dictKeys 是并集、单语漂移不红，此处补防
+it('ADR-0026：ZH 与 EN 键集逐键相等（中英同步防回归门）', () => {
+  assert.deepEqual([...Object.keys(ZH)].sort(), [...Object.keys(EN)].sort())
+})

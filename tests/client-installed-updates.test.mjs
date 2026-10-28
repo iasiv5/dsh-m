@@ -185,3 +185,15 @@ describe('升级 enqueue meta 携带 toVersion + from（0.10.3 单行锚；0.10.
     assert.equal(marketTabSrc.split('{ from: it.installedVersion, toVersion: it.latest }').length - 1, 1, '市场卡 doUpgrade meta 锚')
   })
 })
+
+// ADR-0026：面板批量三态接线源锚（as-built：installed-tab.jsx 经 classifyBatchOutcome/
+// summarizeBatch 消费 failureClass——failureClass 字面读取单源在 installed-updates.js）
+describe('ADR-0026：installed-tab 批量三态接线（源结构锚，出现次数语义）', () => {
+  const src = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
+  it('classifyBatchOutcome 接线 ≥1', () => {
+    assert.ok(src.split('classifyBatchOutcome').length - 1 >= 1, `实得 ${src.split('classifyBatchOutcome').length - 1}`)
+  })
+  it('summarizeBatch 接线 ≥1', () => {
+    assert.ok(src.split('summarizeBatch').length - 1 >= 1, `实得 ${src.split('summarizeBatch').length - 1}`)
+  })
+})
