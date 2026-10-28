@@ -241,7 +241,10 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
   }
   if (err instanceof DesktopOpsError) {
     // 0.9.0：Desktop adapter 失败（no-manager/install-refused/enable-failed/verify-failed）
-    return { status: 409, payload: { ok: false, error: err.message, code: err.code } }
+    // ADR-0026 failureClass（评审 F1）：等待期/升级不支持/目标拒绝属单包目标级 → target；
+    // 基建回退码（no-manager/remove-failed/verify-failed/rollback-failed 等）与其余未知 code → systemic
+    const failureClass = (err.code === 'upgrade-unsupported' || err.code === 'release-age-wait' || err.code === 'install-refused') ? 'target' : 'systemic'
+    return { status: 409, payload: { ok: false, error: err.message, code: err.code, failureClass } }
   }
   if (err instanceof ToggleError) {
     const status = err.code === 'protected' ? 403 : err.code === 'not-installed' ? 404 : 409
@@ -250,27 +253,32 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
   if (err instanceof InstallGuardError) {
     // 装后守卫拦截（M2 Task 3）：结构化投影含 needsRestart/restartSafe/kind——GUI 一键重启只读 restartSafe；
     // 0.9.93 起线格式单源于 toWire（信封 ok/error 本端自拼）
+    // ADR-0026：守卫拦截污染变更环境 → systemic（批量短路，issue #10 语义）
     return {
       status: 409,
       payload: {
         ok: false,
         error: err.message,
+        failureClass: 'systemic',
         ...err.toWire(),
       },
     }
   }
   if (err instanceof IncompatibleError) {
     // 结构化 issue：GUI 据此弹「仍要安装」确认（forceIncompatible 重试）
-    return { status: 409, payload: { ok: false, error: err.message, issue: err.issue } }
+    // ADR-0026：peer 不兼容属单包目标级 → target
+    return { status: 409, payload: { ok: false, error: err.message, issue: err.issue, failureClass: 'target' } }
   }
   if (err instanceof TransactionError) {
     // detail 白名单投影：结构化事实，不含 raw output（GUI 只读 error，零改动）
+    // ADR-0026：事务半残污染 profile → systemic（批量短路）
     const r = err.result
     return {
       status: 500,
       payload: {
         ok: false,
         error: err.message,
+        failureClass: 'systemic',
         detail: {
           status: r.status,
           kind: r.kind,
@@ -282,7 +290,9 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
       },
     }
   }
-  return { status: 500, payload: { ok: false, error: err instanceof Error ? err.message : String(err) } }
+  // ADR-0026（评审 F1）：缺省 target——单包网络错（npmLatest/githubLatestTag 裸 Error）、
+  // UpgradePathUnsupportedError、integrity 缺失等一切未具名错误属目标级（B4：跳过继续，不整批停止）
+  return { status: 500, payload: { ok: false, error: err instanceof Error ? err.message : String(err), failureClass: 'target' } }
 }
 
 export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage, res: ServerResponse) => Promise<void> {

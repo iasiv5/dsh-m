@@ -31,6 +31,8 @@ async function api(method, params, signal) {
     if (data && typeof data === "object" && data.kind && Array.isArray(data.violations)) {
       err.guard = { kind: data.kind, violations: data.violations, compensation: data.compensation, needsRestart: data.needsRestart === true, restartSafe: data.restartSafe === true, repairBasis: data.repairBasis };
     }
+    // ADR-0026（issue #30）：批量升级三态分流依据——服务端 failureClass 透传（缺省按 target）
+    if (data && typeof data === "object" && typeof data.failureClass === "string") err.failureClass = data.failureClass;
     throw err;
   }
   return data;

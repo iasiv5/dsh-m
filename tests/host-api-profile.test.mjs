@@ -382,3 +382,65 @@ describe('host-api profile 能力表路由（Task 8）', () => {
     assert.equal(calls.toggle.length, 1)
   })
 })
+
+// ---------- ADR-0026：升级失败信封 failureClass（缺省 target、systemic 显式白名单，评审 F1） ----------
+import { InstallGuardError, UpgradePathUnsupportedError } from '../lib/core/market-mutation.js'
+import { TransactionError } from '../lib/core/profile-transaction.js'
+import { DesktopOpsError } from '../lib/core/profile-ops.js'
+import { readFileSync } from 'node:fs'
+
+describe('ADR-0026：upgrade 失败信封 failureClass', () => {
+  const guardErr = () => new InstallGuardError({
+    kind: 'compensated',
+    message: '安装违例，已自动卸载',
+    violations: [{ pkg: 'p', code: 'NO_DSH_MARKER', detail: 'd' }],
+    needsRestart: true,
+    restartSafe: true,
+    compensation: { status: 'committed', note: 'compensated:p' },
+  })
+  const txErr = () => new TransactionError({
+    kind: 'install-npm', healActions: [], output: '', status: 'rejected', ok: false,
+    failure: { code: 'ABORTED', note: 'aborted' },
+    snapshotRestoreVerified: false, profileConverged: false,
+  })
+
+  async function upgradeFailure(err) {
+    const { dispatcher } = setupTrust({ trust: () => undefined, overrides: { upgradePlugin: async () => { throw err } } })
+    return callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'p' } })
+  }
+
+  it('① 裸网络错（npmLatest ENOTFOUND 类）→ target（B4：单包网络错跳过继续，绝不整批停止）', async () => {
+    const r = await upgradeFailure(new Error('getaddrinfo ENOTFOUND registry.npmjs.org'))
+    assert.equal(r.body.failureClass, 'target')
+  })
+
+  it('② InstallGuardError（装后守卫拦截）→ systemic', async () => {
+    const r = await upgradeFailure(guardErr())
+    assert.equal(r.body.failureClass, 'systemic')
+  })
+
+  it('③ TransactionError（事务半残）→ systemic', async () => {
+    const r = await upgradeFailure(txErr())
+    assert.equal(r.body.failureClass, 'systemic')
+  })
+
+  it('④ DesktopOpsError(release-age-wait) → target（等待期属单包目标级）', async () => {
+    const r = await upgradeFailure(new DesktopOpsError('release-age-wait', '目标版本仍在等待期内'))
+    assert.equal(r.body.failureClass, 'target')
+  })
+
+  it('⑤ DesktopOpsError(no-manager) → systemic（基建回退码白名单）', async () => {
+    const r = await upgradeFailure(new DesktopOpsError('no-manager', '官方 pluginManager 服务不可用'))
+    assert.equal(r.body.failureClass, 'systemic')
+  })
+
+  it('⑥ UpgradePathUnsupportedError（本地链接/非线上来源）→ target（B5 结构化指引）', async () => {
+    const r = await upgradeFailure(new UpgradePathUnsupportedError('p', '本地开发安装（file:../p）不从线上更新'))
+    assert.equal(r.body.failureClass, 'target')
+  })
+
+  it('⑦ 源结构锚：hooks.js api() 透传 failureClass（赋值表达式出现次数语义）', async () => {
+    const src = readFileSync(new URL('../src/client/hooks.js', import.meta.url), 'utf8')
+    assert.equal(src.split('err.failureClass = data.failureClass').length - 1, 1, `hooks.js 透传赋值恰 1 处，实得 ${src.split('err.failureClass = data.failureClass').length - 1}`)
+  })
+})
