@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { listMarket, listInstalledWithMeta, existingMarketIds } from '../lib/core/market.js'
-import { installFromRegistry, upgradePlugin, uninstallPlugin, capturePreMutationState, derivePrior, withMutationSession, selfUpgrade } from '../lib/core/market-mutation.js'
+import { installFromRegistry, upgradePlugin, uninstallPlugin, capturePreMutationState, derivePrior, withMutationSession, selfUpgrade, synthesizeInstallableEntry, UpgradePathUnsupportedError } from '../lib/core/market-mutation.js'
 import { communityOutcome, _resetMergedMarketForTests, _mergedMarketStatsForTests } from '../lib/core/merged-market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
@@ -1054,4 +1054,51 @@ describe('0.9.20 mutation → latest 缓存定向失效', () => {
 })
 
 // ---------- 0.9.45 市场页两段加载（ADR-0013）：probeMode 两态 + force peek 重探 ----------
+
+// ---------- ADR-0026 合成条目（issue #30）：synthesizeInstallableEntry 五分支 ----------
+// 自带夹具（CODING-STANDARDS：新 describe 不引用兄弟 describe 闭包）。
+describe('synthesizeInstallableEntry（ADR-0026 合成条目）', () => {
+  const mk = (over = {}) => ({ pkg: 'p', name: 'P', version: '1.0.0', description: '', homepage: '', spec: '^1.0.0', source: 'npm', dsh: true, path: '/x', ...over })
+
+  it('① npm 源 → 合成 npm 条目（id=installed:<pkg>，npm 名取已装包名）', () => {
+    const e = synthesizeInstallableEntry(mk({ pkg: 'foo', spec: '^1.0.0' }))
+    assert.deepEqual(e, { id: 'installed:foo', source: 'npm', npm: 'foo' })
+  })
+
+  it('② github 源 → 解析 spec 锁定仓库合成 github 条目（#sha 尾不进 github 字段）', () => {
+    const e = synthesizeInstallableEntry(mk({ pkg: 'bar', source: 'github', spec: 'github:owner/repo#abc1234' }))
+    assert.deepEqual(e, { id: 'installed:bar', source: 'github', github: 'owner/repo' })
+  })
+
+  it('③ npm 源但 file: spec → 抛 UpgradePathUnsupportedError（本地开发安装不从线上更新）', () => {
+    assert.throws(
+      () => synthesizeInstallableEntry(mk({ pkg: 'baz', spec: 'file:../baz' })),
+      (err) => err instanceof UpgradePathUnsupportedError && err.upgradePath === 'unsupported' && /本地/.test(err.message),
+    )
+  })
+
+  it('④ npm 源但 link: spec → 同③抛不支持（大小写不敏感前缀）', () => {
+    assert.throws(
+      () => synthesizeInstallableEntry(mk({ pkg: 'baz', spec: 'LINK:../baz' })),
+      (err) => err instanceof UpgradePathUnsupportedError && err.upgradePath === 'unsupported',
+    )
+  })
+
+  it('⑤ github 源但 spec 不匹配 GITHUB_SPEC_RE → 抛不支持（禁止产出双分支都落空的条目）', () => {
+    assert.throws(
+      () => synthesizeInstallableEntry(mk({ pkg: 'qux', source: 'github', spec: 'not-a-github-spec' })),
+      (err) => err instanceof UpgradePathUnsupportedError && err.upgradePath === 'unsupported' && /owner\/repo/.test(err.message),
+    )
+  })
+
+  it('⑥ 非 npm/github 源（unknown/link/file）→ 抛不支持（PluginSource 五值兜底臂）', () => {
+    for (const source of ['unknown', 'link', 'file']) {
+      assert.throws(
+        () => synthesizeInstallableEntry(mk({ pkg: 'corge', source, spec: 'whatever' })),
+        (err) => err instanceof UpgradePathUnsupportedError && err.upgradePath === 'unsupported' && /不可线上解析/.test(err.message),
+        `source=${source} 应走兜底臂`,
+      )
+    }
+  })
+})
 
