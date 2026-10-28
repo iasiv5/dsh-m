@@ -425,19 +425,47 @@ describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', 
     )
   })
 
-  it('非收录插件（主清单与社区目录都 miss）→ install-refused', async () => {
-    const { service } = managerStub()
-    await assert.rejects(
-      () => desktopUpgradeFromRegistry('pkg-foreign', {}, {}, upgradeDeps(service, { installed: [{ pkg: 'pkg-foreign', name: 'F', version: '1.0.0' }] })),
-      (err) => err instanceof DesktopOpsError && err.code === 'install-refused' && /收录/.test(err.message),
-    )
+  // ADR-0026 改写（原「非收录插件 → install-refused」）：主清单+社区 miss 不再硬拒——
+  // github 已装项经合成条目重锁 HEAD；installBundle 收到 github:<repo>#<sha> 精确 spec。
+  it('主清单与社区均 miss 的 github 已装项 → 合成条目重锁 HEAD（installBundle 收到 github spec）', async () => {
+    const { service, calls } = managerStub({
+      bundles: [{ name: 'owner-repo', installed: true, enabled: true }],
+      change: { changed: true, application: 'applied', stage: 'install', bundle: 'owner-repo', packageResult: { exitCode: 0 } },
+    })
+    const deps = {
+      getService: () => service,
+      loadRegistry: async () => registryWith([]),
+      listInstalled: async () => ({ items: [{ pkg: 'owner-repo', name: 'owner-repo', version: '0.1.0', source: 'github', spec: `github:owner/repo#${'d'.repeat(40)}` }] }),
+      githubLatestTag: async () => ({ tag: 'v2.0.0', sha: 'c'.repeat(40) }),
+      precheck: async () => null,
+    }
+    const res = await desktopUpgradeFromRegistry('owner-repo', {}, {}, deps)
+    assert.deepEqual(calls.installBundle.map((c) => c.spec), [`github:owner/repo#${'c'.repeat(40)}`])
+    assert.equal(res.fromVersion, '0.1.0')
+    assert.equal(res.needsRestart, true)
   })
 
-  it('收录清单不可用 → install-refused', async () => {
+  // ADR-0026 改写（原「收录清单不可用 → install-refused」）：unavailable 不再硬抛——
+  // npm 已装项经合成条目继续升级（条目查找 = 元数据增强，非前置条件）。
+  it('收录清单不可用 → npm 已装项经合成条目升级成功（installBundle 收到 pkg@latest）', async () => {
+    const { service, calls } = managerStub()
+    const res = await desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, {
+      loadRegistry: async () => ({ ...registryWith([]), status: 'unavailable' }),
+      installed: [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0', source: 'npm', spec: '^1.0.0' }],
+    }))
+    assert.deepEqual(calls.installBundle.map((c) => c.spec), ['pkg-a@1.2.3'])
+    assert.equal(res.version, '1.2.3')
+    assert.equal(res.fromVersion, '1.0.0')
+  })
+
+  it('本地 file: spec 已装项 → upgrade-unsupported（B5 边界，结构化指引）', async () => {
     const { service } = managerStub()
     await assert.rejects(
-      () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, { loadRegistry: async () => ({ ...registryWith([]), status: 'unavailable' }) })),
-      (err) => err instanceof DesktopOpsError && err.code === 'install-refused' && /不可用/.test(err.message),
+      () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, {
+        entries: [],
+        installed: [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0', source: 'npm', spec: 'file:../pkg-a' }],
+      })),
+      (err) => err instanceof DesktopOpsError && err.code === 'upgrade-unsupported' && /本地/.test(err.message),
     )
   })
 

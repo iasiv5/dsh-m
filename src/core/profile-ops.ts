@@ -21,7 +21,7 @@
  * 禁止事项：desktop 路径零 Web fallback——不做文件级装后守卫（app.asar 探测盲区）、
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
-import { withMutationSession, resolveRegistryEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
+import { withMutationSession, resolveRegistryEntry, synthesizeInstallableEntry, UpgradePathUnsupportedError, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
 import { matchInstalledByEntry } from './merged-market.js'
 import { mergedOutcome } from './merged-market.js'
 import { WEB_PROFILE } from './env.js'
@@ -1079,33 +1079,45 @@ async function desktopUpgradeLocked(
     })
   }
   const loaded = await (deps.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
-  if (loaded.status === 'unavailable') {
-    throw new DesktopOpsError('install-refused', `收录清单不可用，无法升级 ${pkg}；请检查 registry 配置或网络后重试`)
-  }
+  // ADR-0026（issue #30）：条目查找降级为元数据增强——registry unavailable 不再硬阻断升级；
+  // 主清单+社区均 miss 时经合成条目走同一委派管线，本地/非线上来源转译为结构化 upgrade-unsupported。
+  const registryUsable = loaded.status !== 'unavailable'
   const { items } = await (deps.listInstalled ?? defaultListInstalled)(opts.profileDir)
   const target = items.find((it) => it.pkg === pkg)
   if (!target) throw new DesktopOpsError('install-refused', `desktop profile 未安装该插件: ${pkg}（升级目标必须是已装插件）`)
-  let entry: InstallableEntry | undefined = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
-  if (!entry) {
+  let entry: InstallableEntry | undefined
+  if (registryUsable) {
     // 0.5.1 同语义：主清单 miss 查社区目录（合并市场安装的社区条目同样可升级）。
     // 0.9.68（ADR-0016 / R2-3）：经物化合并市场全量域 lookupInstalledAll（含 displaced 让位条目，
     // min-ord = 今日「先主清单后社区 adapt 全量」合成语义）；reject 透传由窄 catch 吞为 miss。
-    try {
-      const communityTask = (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-      const outcome = await mergedOutcome({
-        namespace: opts.namespace ?? 'host',
-        profile: opts.profile ?? WEB_PROFILE,
-        cfg,
-        registry: loaded,
-        communityTask,
-        deadlineAt: Date.now() + DEFAULT_COMMUNITY_DEADLINE_MS,
-      })
-      entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
-    } catch {
-      entry = undefined
+    entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
+    if (!entry) {
+      try {
+        const communityTask = (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+        const outcome = await mergedOutcome({
+          namespace: opts.namespace ?? 'host',
+          profile: opts.profile ?? WEB_PROFILE,
+          cfg,
+          registry: loaded,
+          communityTask,
+          deadlineAt: Date.now() + DEFAULT_COMMUNITY_DEADLINE_MS,
+        })
+        entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
+      } catch {
+        entry = undefined
+      }
     }
   }
-  if (!entry) throw new DesktopOpsError('install-refused', `「${pkg}」不是经 dsh-m 收录的插件；desktop 升级请在官方 Desktop 插件页操作`)
+  if (!entry) {
+    try {
+      entry = synthesizeInstallableEntry(target)
+    } catch (err) {
+      if (err instanceof UpgradePathUnsupportedError) {
+        throw new DesktopOpsError('upgrade-unsupported', err.message)
+      }
+      throw err
+    }
+  }
 
   let spec: string
   let version: string | undefined
