@@ -54,6 +54,7 @@ import {
   matchInstalledByEntry,
   mergedOutcome,
   GITHUB_SPEC_RE,
+  isLocalSpec,
   type CommunityRegistrySummary,
   type MergedOutcome,
 } from './merged-market.js'
@@ -247,6 +248,23 @@ export interface InstalledItem extends InstalledPlugin {
   community?: true
   /** 本机声明图标 data URI（ADR-0025：官方 iconOf 语义自读；仅详情路径 icon:true 时产出） */
   iconDataUri?: string | null
+  /** 升级通路投影（ADR-0026）：catalog=收录命中；synthesized=合成条目可升级；unsupported=本地/非线上来源 */
+  upgradePath?: 'catalog' | 'synthesized' | 'unsupported'
+}
+
+/** 升级通路三态（ADR-0026 GLOSSARY「来源自证更新」）。 */
+export type UpgradePath = 'catalog' | 'synthesized' | 'unsupported'
+
+/**
+ * 升级通路投影（ADR-0026，B6）：判据单源——registryId 命中 → catalog；本地 spec
+ * （file:/link:，merged-market isLocalSpec）或 source ∉ {npm,github} → unsupported；
+ * 其余 → synthesized。与 synthesizeInstallableEntry 的分支口径逐点一致（评审 F8）。
+ */
+export function upgradePathFor(item: { registryId?: string; spec?: string; source?: string }): UpgradePath {
+  if (item.registryId) return 'catalog'
+  if (isLocalSpec(typeof item.spec === 'string' ? item.spec : '')) return 'unsupported'
+  if (item.source !== 'npm' && item.source !== 'github') return 'unsupported'
+  return 'synthesized'
 }
 
 export interface InstalledResult {
@@ -927,12 +945,16 @@ export async function listInstalledWithMeta(
     // communityOutcome 全仓库唯一消费点（评审 R2-Q5）：merged 自 0.10.22 起含打标让位条目，
     // 此臂有意丢弃（安装/升级语义零变化——设计 2026-10-27「关键边界 3」）
     void community.merged
+    // ADR-0026 投影落点①：早退臂不经 matchInstalled，registryId 必空——逐项按 spec/source 判定
+    for (const it of items) it.upgradePath = upgradePathFor(it)
     return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
   }
 
   const registryState = stateOf(loaded)
 
   matchInstalled(items, community.merged, community.lookupInstalled)
+  // ADR-0026 投影落点②：健康臂在 registryId 写入后装配（catalog 判定可达）
+  for (const it of items) it.upgradePath = upgradePathFor(it)
   // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
   // 'only' 面板第二段 ttlMin=0 永远新鲜（readLatestCache(key,0) 先删共享条目再重探：host ns 下浏览页/
   // 工具的 TTL 命中被刷新为更新值，预算消耗速率上升、上限不变，超限走 latestError 降级）。

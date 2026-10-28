@@ -307,6 +307,14 @@ function buildMatchIndex(domain: Array<RegistryEntry | CommunityEntry>): MatchIn
 /** github spec 的 owner/repo 提取（matchInstalledByEntry 与 market.ts 已装索引共用单一事实源；2026-10-15 导出）。 */
 export const GITHUB_SPEC_RE = /^github:([^#]+)/
 
+/** 本地开发安装 spec 前缀（大小写不敏感）：file:/link: 不从线上更新（ADR-0026）。合成条目与投影共用此判据。 */
+export const LOCAL_SPEC_PREFIX_RE = /^(?:file|link):/i
+
+/** spec 是否本地开发安装形态（file:/link: 前缀）。 */
+export function isLocalSpec(spec: string): boolean {
+  return typeof spec === 'string' && LOCAL_SPEC_PREFIX_RE.test(spec)
+}
+
 /** 三候选（npm[pkg] / npm[name] / github[spec]（仅 source==='github'））取域序最前者胜——与 matchInstalledByEntry 逐点等价。 */
 function lookupInIndex(index: MatchIndex, installed: InstalledPlugin): RegistryEntry | CommunityEntry | undefined {
   const candidates: OrdEntry[] = []

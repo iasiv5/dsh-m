@@ -61,6 +61,8 @@ export type DesktopOpsErrorCode =
   | 'release-age-wait'
   // 0.10.0：两步升级兜底回装也失败 → 缺席硬错误（details: pkg/previousVersion/addDiagnostic/pendingBuilds?）
   | 'rollback-failed'
+  // ADR-0026：本地/非线上来源不从线上升级（合成条目 fail-closed 的结构化转译，B5 边界）
+  | 'upgrade-unsupported'
 
 // 0.9.19：等待期失败翻译移入 release-age.ts（describeReleaseAgeFailure）——全量违规解析 +
 // 目标/旁包分述。0.9.10 版只取第一条违规并把旁包名字当成本次目标、给「改用 DSH Web」的

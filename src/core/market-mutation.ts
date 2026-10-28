@@ -47,6 +47,7 @@ import {
   matchInstalledByEntry,
   mergedOutcome,
   GITHUB_SPEC_RE,
+  isLocalSpec,
   type CommunityRegistrySummary,
   type MergedOutcome,
 } from './merged-market.js'
@@ -190,9 +191,6 @@ export type InstallableEntry = Pick<RegistryEntry, 'id' | 'source' | 'npm' | 'gi
 
 // ---------- ADR-0026 合成条目（issue #30）：更新与收录解耦 ----------
 
-/** 本地形态 spec 前缀（大小写不敏感）：file:/link: 的本地开发安装不从线上更新。 */
-const LOCAL_SPEC_PREFIX_RE = /^(?:file|link):/i
-
 /**
  * 升级通路不支持错误（ADR-0026 边界）：本地开发安装（file:/link:）与非 npm/github
  * 源不从线上自动升级——结构化指引（upgradePath='unsupported'），不落普通 Error。
@@ -209,14 +207,14 @@ export class UpgradePathUnsupportedError extends Error {
  * 从已装项自身来源合成最小可安装条目（ADR-0026「合成条目」，GLOSSARY）：
  * 条目查找 miss 时的升级兜底——仅服务当次升级、不进任何清单、不携带策展元数据。
  * 身份口径与 matchInstalledByEntry 同源：npm 名取已装包名、github 仓取 spec 锁定仓库。
- * 非线上来源一律 fail-closed 抛 UpgradePathUnsupportedError：本地 spec（file:/link:）、
- * github spec 解析不出 owner/repo、PluginSource 其余值（link/file/unknown——
- * installed.ts 五值域；穿透会命中 installEntryLocked 尾行普通 Error「缺少可安装来源」，
- * 违反 B5 结构化指引，故在此拦死）。
+ * 非线上来源一律 fail-closed 抛 UpgradePathUnsupportedError：本地 spec（file:/link:，
+ * 判据单源 merged-market isLocalSpec，与 upgradePathFor 共用）、github spec 解析不出
+ * owner/repo、PluginSource 其余值（link/file/unknown——installed.ts 五值域；穿透会命中
+ * installEntryLocked 尾行普通 Error「缺少可安装来源」，违反 B5 结构化指引，故在此拦死）。
  */
 export function synthesizeInstallableEntry(target: InstalledPlugin): InstallableEntry {
   const spec = typeof target.spec === 'string' ? target.spec : ''
-  if (LOCAL_SPEC_PREFIX_RE.test(spec)) {
+  if (isLocalSpec(spec)) {
     throw new UpgradePathUnsupportedError(target.pkg, `本地开发安装（${spec}）不从线上更新；如需线上版本请先卸载后经 dsh-m 安装`)
   }
   if (target.source === 'npm') {

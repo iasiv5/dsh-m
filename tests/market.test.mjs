@@ -9,7 +9,7 @@ import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, existingMarketIds } from '../lib/core/market.js'
+import { listMarket, listInstalledWithMeta, existingMarketIds, upgradePathFor } from '../lib/core/market.js'
 import { communityOutcome } from '../lib/core/merged-market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
@@ -446,6 +446,49 @@ describe('listInstalledWithMeta', () => {
     assert.equal(res.items[0].outdated, true)
     assert.ok(calls.npm.includes('pkg-1'))
     assert.equal(res.registryState.status, 'ready')
+  })
+})
+
+// ---------- ADR-0026：upgradePath 投影（issue #30，双落点装配 + 直测） ----------
+describe('ADR-0026：upgradePath 投影', () => {
+  const mkInstalled = (items) => ({ items, others: 0, complete: true, profileDir: '/tmp/profile' })
+  const mkItem = (over = {}) => ({ pkg: 'x', name: 'X', version: '1.0.0', description: '', homepage: '', spec: '^1.0.0', source: 'npm', dsh: true, path: '/tmp/x', ...over })
+
+  it('健康臂：收录命中 → catalog；ready 但 miss 的 npm 项 → synthesized（matchInstalled 后装配）', async () => {
+    const { deps } = fakeDeps({
+      listInstalledPlugins: async () => mkInstalled([
+        mkItem({ pkg: 'pkg-1' }),
+        mkItem({ pkg: 'pkg-other' }),
+      ]),
+    })
+    const res = await listInstalledWithMeta(cfg, { probeMode: 'none' }, deps)
+    const byPkg = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePath]))
+    assert.equal(byPkg['pkg-1'], 'catalog', 'registryId 命中 → catalog')
+    assert.equal(byPkg['pkg-other'], 'synthesized', 'registry ready 但未命中 → synthesized')
+  })
+
+  it('早退臂：registry unavailable → 非收录 npm 项 synthesized、file: 项 unsupported（不经 matchInstalled）', async () => {
+    const { deps, calls } = fakeDeps({
+      loadRegistry: async () => unavailableLoaded(),
+      listInstalledPlugins: async () => mkInstalled([
+        mkItem({ pkg: 'pkg-1' }),
+        mkItem({ pkg: 'pkg-local', spec: 'file:../local' }),
+        mkItem({ pkg: 'pkg-mystery', source: 'unknown', spec: 'whatever' }),
+      ]),
+    })
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    const byPkg = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePath]))
+    assert.equal(byPkg['pkg-1'], 'synthesized', 'unavailable 早退臂：registryId 必空 + npm 非本地 spec → synthesized')
+    assert.equal(byPkg['pkg-local'], 'unsupported', 'file: spec → unsupported')
+    assert.equal(byPkg['pkg-mystery'], 'unsupported', 'source 兜底（评审 F8）→ unsupported')
+    assert.equal(calls.npm.length, 0)
+  })
+
+  it('upgradePathFor 直测四行（判据单源：registryId / 本地 spec / source 兜底 / github 缺省）', () => {
+    assert.equal(upgradePathFor({ registryId: 'p-1', pkg: 'a', spec: '^1.0.0', source: 'npm' }), 'catalog')
+    assert.equal(upgradePathFor({ pkg: 'b', spec: 'file:../b', source: 'npm' }), 'unsupported')
+    assert.equal(upgradePathFor({ pkg: 'c', spec: 'whatever', source: 'unknown' }), 'unsupported')
+    assert.equal(upgradePathFor({ pkg: 'd', spec: 'github:o/r#abc', source: 'github' }), 'synthesized')
   })
 })
 
