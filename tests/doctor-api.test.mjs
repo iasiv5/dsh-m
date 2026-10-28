@@ -7,7 +7,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -116,5 +116,10 @@ describe('doctor method', () => {
     assert.equal(body.report.profileDir, desk)
     assert.equal(body.report.layout, 'hoisted')
     assert.equal(body.report.summary.accountChecked, 1)
+  })
+
+  it('接线锚（issue #32）：doctor runtimeVersion = readLauncherPackageVersion() ?? readAppAsarVersion()', () => {
+    const src = readFileSync(new URL('../src/core/host-api.ts', import.meta.url), 'utf8')
+    assert.equal(src.split('readLauncherPackageVersion() ?? readAppAsarVersion()').length - 1, 1)
   })
 })
