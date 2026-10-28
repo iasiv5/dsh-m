@@ -131,16 +131,9 @@ describe('install/upgrade：unavailable 抛业务错误', () => {
     )
   })
 
-  it('upgradePlugin unavailable 时业务报错', async () => {
-    const { deps } = fakeDeps({
-      loadRegistry: async () => unavailableLoaded(),
-      listInstalledPlugins: async () => installed,
-    })
-    await assert.rejects(
-      () => upgradePlugin('pkg-1', cfg, {}, deps),
-      (err) => err instanceof Error && /不可用/.test(err.message),
-    )
-  })
+  // ADR-0026 改写：原「upgradePlugin unavailable 时业务报错」钉的是收录硬阻断——升级已与收录
+  // 解耦，unavailable 不再硬抛；新语义用例整体迁至下方 ADR-0026 describe（unavailable → 合成条目
+  // 升级成功）。installFromRegistry 的 unavailable 硬抛保留（安装仍收录门禁，B5）。
 })
 
 // ---------- Task 3：npm 分支事务桥接 ----------
@@ -843,16 +836,49 @@ packages:
     }
   })
 
-  it('主清单与社区均未命中 → 维持「不是经 dsh-m 收录」报错', async () => {
-    const deps = {
-      loadRegistry: async () => readyLoaded([]),
-      listInstalledPlugins: async () => ({ items: [{ pkg: 'pkg-x', name: 'pkg-x', version: '1.0.0', source: 'npm', spec: 'pkg-x@1.0.0' }], others: 0, complete: true, profileDir: '/tmp/profile' }),
-      fetchCommunityCatalog: async () => communityLoaded([]),
+  // ADR-0026 改写（原「维持『不是经 dsh-m 收录』报错」）：主清单+社区均 miss 不再硬拒——
+  // npm 已装项经合成条目走同一安装管线；新断言钉合成 id 与升级成功。
+  it('主清单与社区均未命中 → ADR-0026：npm 已装项经合成条目升级成功（id=installed:<pkg>）', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { 'pkg-x': '1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  pkg-x@1.0.0:
+    resolution: {integrity: ${sha512('old')}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { 'pkg-x': '2.0.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  pkg-x@2.0.0:
+    resolution: {integrity: ${sha512('good')}}
+`)
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const deps = {
+        loadRegistry: async () => readyLoaded([]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: 'pkg-x', name: 'pkg-x', version: '1.0.0', source: 'npm', spec: 'pkg-x@1.0.0' }], others: 0, complete: true, profileDir }),
+        npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: async () => communityLoaded([]),
+        transaction: { runner: () => runner, profileDir },
+        classifyActivation: async () => 'unknown',
+      }
+      const res = await upgradePlugin('pkg-x', cfg, {}, deps)
+      assert.equal(res.version, '2.0.0')
+      assert.equal(res.id, 'installed:pkg-x', '未命中任何清单 → 合成条目 id')
+      assert.equal(res.fromVersion, '1.0.0')
+      assert.equal(calls.add.length, 1)
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
     }
-    await assert.rejects(
-      () => upgradePlugin('pkg-x', cfg, {}, deps),
-      (err) => err instanceof Error && /不是经 dsh-m 收录/.test(err.message),
-    )
   })
 })
 
@@ -1054,6 +1080,109 @@ describe('0.9.20 mutation → latest 缓存定向失效', () => {
 })
 
 // ---------- 0.9.45 市场页两段加载（ADR-0013）：probeMode 两态 + force peek 重探 ----------
+
+// ---------- ADR-0026 升级与收录解耦（issue #30）：web upgradePlugin ----------
+// 自含夹具（不引用兄弟 describe 闭包；原 unavailable 硬抛用例改写迁入此处）。
+describe('ADR-0026：upgradePlugin 与收录解耦（web）', () => {
+  const communityDisabled = () => ({ state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null })
+
+  it('① registry unavailable + 非收录 npm 已装项 → 合成条目升级成功（不再硬抛「收录清单不可用」）', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { 'non-catalog-pkg': '1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  non-catalog-pkg@1.0.0:
+    resolution: {integrity: ${sha512('old')}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { runner, calls } = mockTxRunner({
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { 'non-catalog-pkg': '2.0.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  non-catalog-pkg@2.0.0:
+    resolution: {integrity: ${sha512('good')}}
+`)
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      }, profileDir)
+      const res = await upgradePlugin('non-catalog-pkg', cfg, {}, {
+        loadRegistry: async () => unavailableLoaded(),
+        listInstalledPlugins: async () => ({ items: [{ pkg: 'non-catalog-pkg', name: 'non-catalog-pkg', version: '1.0.0', source: 'npm', spec: '^1.0.0' }], others: 0, complete: true, profileDir }),
+        npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: communityDisabled,
+        transaction: { runner: () => runner, profileDir },
+        classifyActivation: async () => 'unknown',
+      })
+      assert.equal(res.pkg, 'non-catalog-pkg')
+      assert.equal(res.version, '2.0.0')
+      assert.equal(res.fromVersion, '1.0.0')
+      assert.equal(res.id, 'installed:non-catalog-pkg', '合成条目 id 语义（评审 F3）')
+      assert.equal(calls.add.length, 1)
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('② registry ready 但主清单+社区均 miss 的 github 已装项 → 合成条目重锁 HEAD（githubLatestTag 收到 owner/repo）', async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { 'owner-repo': `github:owner/repo#${'b'.repeat(40)}` } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  owner-repo:
+    resolution: {commit: ${'b'.repeat(40)}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const ghCalls = []
+    const newSha = 'a'.repeat(40)
+    try {
+      const runner = {
+        add: async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { 'owner-repo': `github:owner/repo#${newSha}` } }, null, 2) + '\n')
+          writeInstalledMarkerPkg(profileDir, 'owner-repo')
+          return { class: 'ok', output: 'gh-add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        },
+        remove: async () => ({ class: 'ok', output: 'ok' }),
+        frozenInstall: async () => ({ class: 'ok', output: 'ok' }),
+        rebuildInstall: async () => ({ class: 'ok', output: 'ok' }),
+      }
+      const res = await upgradePlugin('owner-repo', cfg, {}, {
+        loadRegistry: async () => readyLoaded([]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: 'owner-repo', name: 'owner-repo', version: '0.1.0', source: 'github', spec: `github:owner/repo#${'b'.repeat(40)}` }], others: 0, complete: true, profileDir }),
+        githubLatestTag: async (repo) => {
+          ghCalls.push(repo)
+          return { tag: 'v2.0.0', sha: newSha }
+        },
+        candidateKey: async () => 'owner-repo',
+        fetchCommunityCatalog: communityDisabled,
+        transaction: { runner: () => runner, profileDir },
+      })
+      assert.deepEqual(ghCalls, ['owner/repo'], '合成条目 github 仓 = spec 解析出的 owner/repo')
+      assert.ok(new RegExp(`^github:owner/repo#${newSha}$`).test(res.spec), `spec 应重锁 HEAD，实得 ${res.spec}`)
+      assert.equal(res.fromVersion, '0.1.0')
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it('③ 本地 file: spec 已装项 → UpgradePathUnsupportedError（结构化不支持，B5 边界）', async () => {
+    await assert.rejects(
+      () => upgradePlugin('baz', cfg, {}, {
+        loadRegistry: async () => readyLoaded([]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: 'baz', name: 'baz', version: '1.0.0', source: 'npm', spec: 'file:../baz' }], others: 0, complete: true, profileDir: '/tmp/profile' }),
+        fetchCommunityCatalog: communityDisabled,
+      }),
+      (err) => err instanceof UpgradePathUnsupportedError && err.upgradePath === 'unsupported',
+    )
+  })
+})
 
 // ---------- ADR-0026 合成条目（issue #30）：synthesizeInstallableEntry 五分支 ----------
 // 自带夹具（CODING-STANDARDS：新 describe 不引用兄弟 describe 闭包）。
