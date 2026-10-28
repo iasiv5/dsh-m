@@ -387,7 +387,11 @@ button.dshm-dshchip:disabled{cursor:default;opacity:.75}
 .dshm-switch.locked{opacity:.45;cursor:not-allowed}
 .dshm-switch-slider{position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
 .dshm-switch.on .dshm-switch-slider{left:17px}
-.dshm-compat-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:60}
+/* 兼容确认遮罩 z 层（issue #31，0.10.24）：阻断式顶层弹层须压过自家面板(2147483000)/
+   详情 Modal(2147483100)/灯箱(2147483200)——0.10.23 及以前 z-index:60 是自家 z 方案离群值，
+   dsh-mobile 移动层（235–250）亦能压过它；组件侧已 portal 挂 body（market-tab.jsx），
+   fixed 在 body 层恢复视口定界。 */
+.dshm-compat-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:2147483300}
 .dshm-compat-dialog{max-width:420px;width:calc(100% - 32px);background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#1c2230));background:color-mix(in srgb,var(--dsw-alias-bg-base,#1c2230) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--dsw-alias-border-l2,#333b4d);border-radius:12px;padding:16px}
 .dshm-compat-title{font-weight:600;margin-bottom:8px;color:#f87171}
 .dshm-compat-body{font-size:12px;margin-bottom:6px}

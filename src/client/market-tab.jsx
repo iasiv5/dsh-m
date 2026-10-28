@@ -3,6 +3,7 @@
  * 成员：MarketTab
  */
 import React from "react";
+import rd from "react-dom";
 const ZONE_TABS = [
   { id: "community", labelKey: "zone.community" },
   { id: "primary", labelKey: "zone.primary" },
@@ -205,7 +206,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
     }
   };
 
-  const CompatDialog = compatConfirm
+  const compatOverlay = compatConfirm
     ? h(
         "div",
         { className: "dshm-compat-overlay", ...backdropCloseHandlers(() => setCompatConfirm(null)) },
@@ -248,6 +249,14 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
         ),
       )
     : null;
+  // issue #31（移动端 compat 遮罩盖屏无法关闭）：compat 确认是阻断式顶层弹层，portal 挂
+  // body——灯箱 v2（0.9.60）同款先例，逃出 .dshm-panel backdrop-filter 包含块（否则
+  // position:fixed 退化为面板定界）与 dsh-mobile 对面板子树的重排/堆叠上下文改写；
+  // z 层见 styles.js（2147483300）。SSR（typeof document 为假）回落内联渲染，渲染冒烟不变。
+  const CompatDialog =
+    compatOverlay && typeof document !== "undefined" && document.body && typeof rd.createPortal === "function"
+      ? rd.createPortal(compatOverlay, document.body)
+      : compatOverlay;
 
   // 收藏详情打开（0.7.2 修复）：两分区当前页内存直查 → market API 按 id 精确查 → 快照兜底
   //（收藏快照字段不全；解析出完整条目，详情 Modal 才有最新版本/已装状态等）

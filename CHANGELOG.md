@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.10.24 修复：移动端（dsh-mobile WebView）兼容确认遮罩盖屏无法关闭——触摸关闭 + z 层跃升 + portal 挂 body（issue #31）
+
+- **症状（issue #31 实测）**：dsh-mobile App/WebView 内安装/升级触发 peer 兼容性确认时，`.dshm-compat-overlay`（`rgba(0,0,0,.45)`）盖住整个内容区且点按无法关闭，页面整体偏暗约 48%（内容区实测像素 128/247 ≈ 48.2% 黑色叠加，暗区边界与 WebView 视口吻合）；移除 dsh-m 立即恢复。同 URL 系统浏览器正常，桌面端无感。
+- **根因**：① 触摸链缺失——`backdropCloseHandlers` 只认 `mousedown→click` 双落序列，移动端 WebView 部分场景（内核手势启发式等）不产生匹配序列，`pressedOnBackdrop` 恒为 false，遮罩无法点按关闭；② z 层离群——`.dshm-compat-overlay{z-index:60}` 是自家 z 方案（面板 2147483000 / 详情 Modal 2147483100 / 灯箱 2147483200）的离群值，低于 dsh-mobile 移动层（235–250）；③ `.dshm-panel` 带 `backdrop-filter`，是面板内所有 `position:fixed` 后代的包含块——遮罩实为面板定界而非视口定界，与灯箱 0.9.60 修过的病灶同类（灯箱已 portal 挂 body，compat 遮罩被落下）。
+- **修法**：① `src/client/backdrop.js` 触摸路径：`onTouchStart/onTouchEnd` 以同一双落语义镜像鼠标路径，关闭判定落在 `touchend` 即刻完成（合成 click 缺位也立关）；紧随的合成 click 用「吞一次」门闩挡下防双关，门闩在下一手势 `touchStart` 作废；触摸未关不设门闩，鼠标路径（含混合设备）行为逐字节同 0.9.27。② `src/client/styles.js` 遮罩 z-index 60 → 2147483300（压过自家三层与移动层）。③ `src/client/market-tab.jsx` CompatDialog portal 挂 body（灯箱 v2 同款，`typeof document` 为假回落内联渲染，SSR 冒烟不变）。三处均为弹层通用件：详情 Modal、灯箱、面板自身的遮罩关闭同步获得触摸支持。
+- **验证**：`tests/client-backdrop.test.mjs` 新增触摸路径 6 用例（双关门闩 / 无合成 click 的 WebView / 双向拖拽不误关 / 门闩不跨手势残留 / 畸形事件安全；老 5 用例零改动绿）；新增 `tests/client-compat-overlay.test.mjs` 源锚（z 值字面量 + portal 接线）；两处接线锚经单点变异验证可红（改坏 → 2 红 → 恢复逐字节一致 → 2 绿）；全量 `npm test` **1800/1800**（1792 基线 + 8 新用例，pretest 构建含内）、typecheck 0。
+
 ### 0.10.23 修复：合并市场身份键追加 registry 内容指纹——同 fetchedAt 不同内容不再无声串代（2026-10-27 备案修复）
 
 - **背景**：物化合并市场（ADR-0016）L2 代缓存的身份键由 namespace / profile / configuredAddress / fetchedAt / 社区目录版本 / pin / 社区开关七段拼接，不含 registry 内容指纹——正确性依赖「同 fetchedAt ⇒ 同文档」这条写在 registry.ts、无注释无断言维护的跨模块约定。2026-10-27 让位条目实施实录踩中：同进程两个不同内容的清单桩（fetchedAt 相同）→ 后者命中前者空代，市场查询无声返回 0 条。
@@ -817,6 +824,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.10.24 Fix: compat-confirm overlay dimmed & unclosable on mobile (dsh-mobile WebView) — touch close + z-layer bump + portal to body (issue #31)
+
+- **Symptom (issue #31 field data)**: inside the dsh-mobile Android app / WebView, whenever install/upgrade triggered the peer-compat confirm, `.dshm-compat-overlay` (`rgba(0,0,0,.45)`) covered the whole content area and tapping could not dismiss it — the page rendered ~48% darker (measured content pixel 128/247 ≈ 48.2% black overlay; the dim region's bounds exactly matched the WebView viewport). Removing dsh-m restored it instantly. The same URL in the system browser was fine; desktop was unaffected.
+- **Root cause**: ① no touch path — `backdropCloseHandlers` only honored the `mousedown→click` double-hit sequence; some mobile WebView scenarios never produce a matching pair, so `pressedOnBackdrop` stayed false and the overlay could not be tap-dismissed. ② outlier z-layer — `.dshm-compat-overlay{z-index:60}` was the outlier of dsh-m's own z scheme (panel 2147483000 / detail modal 2147483100 / lightbox 2147483200), below dsh-mobile's mobile layers (235–250). ③ `.dshm-panel` carries `backdrop-filter`, making it the containing block for every `position:fixed` descendant — the overlay was panel-bounded, not viewport-bounded; same disease the lightbox already had fixed in 0.9.60 by portaling to body (the compat overlay was left behind).
+- **Fix**: ① `src/client/backdrop.js` gains a touch path: `onTouchStart`/`onTouchEnd` mirror the mouse path's double-hit semantics; the close decision completes at `touchend` (fires even when the synthetic click never arrives); the trailing synthetic click is swallowed once via a latch (reset at the next gesture's `touchStart`) to prevent double-close; a non-closing touch sets no latch — the mouse path (incl. hybrid devices) stays byte-identical to 0.9.27. ② `src/client/styles.js` overlay z-index 60 → 2147483300 (above our own three layers and the mobile layers). ③ `src/client/market-tab.jsx` portals the CompatDialog to body (lightbox-v2 pattern; falls back to inline rendering when `typeof document` is false, so SSR smoke is unchanged). All three are shared overlay primitives: the detail modal, lightbox and panel backdrop-close gain touch support too.
+- **Verification**: `tests/client-backdrop.test.mjs` adds 6 touch-path cases (double-hit latch / click-less WebView / both drag directions stay closed / latch never leaks across gestures / malformed events; the original 5 cases untouched and green); new `tests/client-compat-overlay.test.mjs` source anchors (z-value literal + portal wiring); both wiring anchors proven failable via single-point mutation (broken → 2 red → byte-identical restore → 2 green); full `npm test` **1800/1800** (1792 baseline + 8 new cases, pretest build included), typecheck 0.
 
 ### 0.10.23 Fix: merged-market identity key gains a registry content fingerprint — same fetchedAt with different content no longer silently collides (2026-10-27 filed note)
 
