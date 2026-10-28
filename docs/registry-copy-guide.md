@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 当前 21 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；策展五桶：essentials/cui-picks/self-dev/tencent-lighthouse/watchlist）。
+> 管辖范围：`registry.json` 当前 24 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；策展五桶：essentials/cui-picks/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。

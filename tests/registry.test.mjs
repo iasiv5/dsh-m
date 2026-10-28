@@ -64,7 +64,7 @@ describe('validateRegistry：官方清单', () => {
     const parsed = validateRegistry(raw)
     assert.equal(parsed.ok, true, parsed.errors.join('; '))
     assert.ok(parsed.registry)
-    assert.equal(parsed.registry.plugins.length, 23) // 1eaf44d 起 20 条；2026-10-23 dsh-mcp-tools 入 watchlist 后 21 条；2026-10-24 dsh-archive-trash 入 watchlist 后 22 条；同日 dsh-ops 入 essentials 后 23 条
+    assert.equal(parsed.registry.plugins.length, 24) // 1eaf44d 起 20 条；2026-10-23 dsh-mcp-tools 入 watchlist 后 21 条；2026-10-24 dsh-archive-trash 入 watchlist 后 22 条；同日 dsh-ops 入 essentials 后 23 条；2026-10-28 dsh-chatlock 入 watchlist 后 24 条
   })
 })
 
