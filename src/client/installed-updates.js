@@ -58,20 +58,61 @@ export const BATCH_SELF_PKG = 'dsh-m'
  * 「全部更新」批量目标排序（issue #10 修复①③，pure）：outdated 项中 dsh-m 自身固定收尾，
  * 其余项保持列表序在前。依据：自升级事务 committed 后宿主换装/重载市场插件本体，同批
  * 后续项在刚变过的 profile 上做事务与 frozen 复验必炸（0.10.8/0.10.13 实机实证——一项成功
- * 一项 exit 1，单项重试即愈）；排最后 = 自换装永无后续项。批量循环自身负责逐项 await +
- * 失败短路（installed-tab onClick）；本函数只定序，不做任何 IO/React。
- * 返回 { targets, selfIncluded }：targets 为已排序的升级队列（引用原 item 对象），
- * selfIncluded 供按钮旁提示。非数组/垃圾项安全降级为空队列。
+ * 一项 exit 1、单项重试即愈）；排最后 = 自换装永无后续项。
+ * ADR-0026（issue #30）：upgradePath==='unsupported'（本地链接/非线上来源）的 outdated 项
+ * 不发起请求——排除出队列、单独收集进 unsupported 供汇总通知（零请求直入汇总）。
+ * 返回 { targets, selfIncluded, unsupported }：targets 为已排序的升级队列（引用原 item
+ * 对象），selfIncluded 供按钮旁提示，unsupported 为被排除项。非数组/垃圾项安全降级空队列。
  */
 export function batchUpgradeOrder(items) {
   const arr = Array.isArray(items) ? items : []
   const normal = []
   const self = []
+  const unsupported = []
   for (const it of arr) {
     if (!it || typeof it !== 'object' || it.outdated !== true) continue
     if (typeof it.pkg !== 'string' || it.pkg === '') continue
+    if (it.upgradePath === 'unsupported') {
+      unsupported.push(it)
+      continue
+    }
     if (it.pkg === BATCH_SELF_PKG) self.push(it)
     else normal.push(it)
   }
-  return { targets: [...normal, ...self], selfIncluded: self.length > 0 }
+  return { targets: [...normal, ...self], selfIncluded: self.length > 0, unsupported }
+}
+
+/**
+ * 批量升级单项结局三态（ADR-0026，评审 F1）：ok = 成功；systemic = 服务端显式标注系统性
+ * 失败（守卫拦截/事务半残）→ 批量短路；target = 其余一切（显式 target、字段缺席缺省、
+ * build 审批等待）→ 跳过继续。字段缺席按 target——单包网络错走裸 Error 兜底臂，
+ * 缺省 systemic 会把 B4 主诉场景（单包网络错跳过继续）变成整批停止。
+ */
+export function classifyBatchOutcome(res) {
+  if (res && res.ok === true) return 'ok'
+  if (res && res.failureClass === 'systemic') return 'systemic'
+  return 'target'
+}
+
+/**
+ * 批量结局汇总（ADR-0026）：outcomes = Array<{ pkg, outcome: 'ok'|'target'|'systemic' }>
+ * （由批量循环把 classifyBatchOutcome 结果按 pkg 收集而成，评审 N4 形状）；
+ * skippedUnsupported 计数由调用方取 batchUpgradeOrder().unsupported.length 传入；
+ * stopped = 出现任一 systemic（循环短路旁证）。
+ */
+export function summarizeBatch(outcomes, skippedUnsupported = 0) {
+  const arr = Array.isArray(outcomes) ? outcomes : []
+  let targetFailed = 0
+  let systemic = 0
+  for (const o of arr) {
+    if (!o || typeof o !== 'object') continue
+    if (o.outcome === 'systemic') systemic += 1
+    else if (o.outcome === 'target') targetFailed += 1
+  }
+  return {
+    targetFailed,
+    systemic,
+    skippedUnsupported: Number.isFinite(skippedUnsupported) ? skippedUnsupported : 0,
+    stopped: systemic > 0,
+  }
 }

@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { applyInstalledUpdates, installedUpdateStats, batchUpgradeOrder, BATCH_SELF_PKG } from '../src/client/installed-updates.js'
+import { applyInstalledUpdates, installedUpdateStats, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, BATCH_SELF_PKG } from '../src/client/installed-updates.js'
 
 const base = { pkg: 'a', name: 'A', version: '1.0.0' }
 const upd = (over = {}) => ({
@@ -79,7 +79,7 @@ describe('batchUpgradeOrder（issue #10：dsh-m 收尾定序；自换装永无�
 
   it('② 无 dsh-m：targets 全部按列表序，selfIncluded=false（提示不渲染）', () => {
     const items = [{ pkg: 'x', outdated: true }, { pkg: 'y', outdated: true }]
-    assert.deepEqual(batchUpgradeOrder(items), { targets: items, selfIncluded: false })
+    assert.deepEqual(batchUpgradeOrder(items), { targets: items, selfIncluded: false, unsupported: [] })
   })
 
   it('③ 只有 dsh-m outdated：targets 仅含自身，selfIncluded=true（批量退化为单点收尾升级）', () => {
@@ -90,13 +90,48 @@ describe('batchUpgradeOrder（issue #10：dsh-m 收尾定序；自换装永无�
   })
 
   it('④ 非数组/垃圾项/非 outdated 安全降级', () => {
-    assert.deepEqual(batchUpgradeOrder(null), { targets: [], selfIncluded: false })
-    assert.deepEqual(batchUpgradeOrder('nope'), { targets: [], selfIncluded: false })
-    assert.deepEqual(batchUpgradeOrder([null, 'x', { pkg: 'a', outdated: false }, { outdated: true }]), { targets: [], selfIncluded: false })
+    assert.deepEqual(batchUpgradeOrder(null), { targets: [], selfIncluded: false, unsupported: [] })
+    assert.deepEqual(batchUpgradeOrder('nope'), { targets: [], selfIncluded: false, unsupported: [] })
+    assert.deepEqual(batchUpgradeOrder([null, 'x', { pkg: 'a', outdated: false }, { outdated: true }]), { targets: [], selfIncluded: false, unsupported: [] })
   })
 
   it('⑤ BATCH_SELF_PKG 单点常量 = dsh-m（与 core profile-ops SELF_PKG 同值；客户端字面唯一处）', () => {
     assert.equal(BATCH_SELF_PKG, 'dsh-m')
+  })
+})
+
+// ---------- ADR-0026：批量三态纯逻辑（issue #30，评审 F1/F2/N4） ----------
+describe('ADR-0026：batchUpgradeOrder 排除 unsupported + classifyBatchOutcome + summarizeBatch', () => {
+  it('① unsupported outdated 项不入 targets、进 unsupported；普通项与 self 收尾定序不变', () => {
+    const a = { pkg: 'a', outdated: true }
+    const b = { pkg: 'b', outdated: true, upgradePath: 'unsupported' }
+    const self = { pkg: 'dsh-m', outdated: true }
+    const { targets, selfIncluded, unsupported } = batchUpgradeOrder([a, b, self, { pkg: 'c', outdated: false }])
+    assert.deepEqual(targets, [a, self], 'unsupported 排除后普通项 + dsh-m 收尾')
+    assert.deepEqual(unsupported, [b])
+    assert.equal(selfIncluded, true)
+  })
+
+  it('② classifyBatchOutcome 五例（评审 F1：字段缺席缺省 target，systemic 须显式）', () => {
+    assert.equal(classifyBatchOutcome({ ok: true }), 'ok')
+    assert.equal(classifyBatchOutcome({ failureClass: 'systemic' }), 'systemic')
+    assert.equal(classifyBatchOutcome({ failureClass: 'target' }), 'target')
+    assert.equal(classifyBatchOutcome({}), 'target', '字段缺席（服务端未标注）→ target')
+    assert.equal(classifyBatchOutcome({ needsBuildApproval: true }), 'target', 'build 审批等待属目标级')
+  })
+
+  it('③ summarizeBatch：systemic>0 → stopped；skippedUnsupported 由调用方传入（N4 形状）', () => {
+    const ok = { pkg: 'a', outcome: 'ok' }
+    const tgt = { pkg: 'b', outcome: 'target' }
+    const sys = { pkg: 'c', outcome: 'systemic' }
+    assert.deepEqual(
+      summarizeBatch([ok, tgt, sys], 2),
+      { targetFailed: 1, systemic: 1, skippedUnsupported: 2, stopped: true },
+    )
+    assert.deepEqual(
+      summarizeBatch([ok, tgt], 0),
+      { targetFailed: 1, systemic: 0, skippedUnsupported: 0, stopped: false },
+    )
   })
 })
 
