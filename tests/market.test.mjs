@@ -1367,6 +1367,39 @@ describe('M1 Task 7：agent 工具契约', () => {
     assert.ok(title.includes('检查未完成'), `标题不得写「全部最新」：${title}`)
   })
 
+  it('ADR-0026：dshm_list/dshm_outdated items 携带 upgradePath，unsupported 项双渲染标注本地链接', async () => {
+    const installedResult = {
+      items: [
+        { pkg: 'p-1', name: 'P1', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false, upgradePath: 'catalog' },
+        { pkg: 'p-local', name: 'PLocal', version: '1.0.0', source: 'npm', spec: 'file:../p-local', outdated: true, latestVersion: '9.9.9', upgradePath: 'unsupported' },
+      ],
+      others: 0,
+      profileDir: '/tmp/p',
+      registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 2 },
+      community: { enabled: true, status: 'ready', version: 'v', checkedAt: 't', fetchedAt: 't', route: 'r', acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
+    }
+    const { registered } = await loadToolsWith({ installedResult })
+    const list = registered.find((t) => t.name === 'dshm_list')
+    const out = await list.execute({})
+    assert.equal(out.items[0].upgradePath, 'catalog')
+    assert.equal(out.items[1].upgradePath, 'unsupported')
+    const listText = list.output.render({}, out)[0].text
+    assert.ok(listText.includes('本地链接安装'), `renderList 应标注 unsupported 项：${listText}`)
+    const outdated = registered.find((t) => t.name === 'dshm_outdated')
+    const out2 = await outdated.execute({})
+    assert.equal(out2.items[1].upgradePath, 'unsupported')
+    const outdatedText = outdated.output.render({}, out2)[0].text
+    assert.ok(outdatedText.includes('本地链接安装——不参与自动升级'), `renderOutdated 应标注：${outdatedText}`)
+  })
+
+  it('ADR-0026：源结构锚——tools.ts 双渲染与 cli.ts outdated 各带本地链接标注（出现次数语义）', async () => {
+    const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8')
+    const toolsSrc = read('../src/tools.ts')
+    const cliSrc = read('../src/cli.ts')
+    assert.ok(toolsSrc.split('本地链接安装').length - 1 >= 2, `tools.ts 标注 ≥2（renderList + renderOutdated），实得 ${toolsSrc.split('本地链接安装').length - 1}`)
+    assert.ok(cliSrc.split('本地链接安装').length - 1 >= 1, `cli.ts 标注 ≥1，实得 ${cliSrc.split('本地链接安装').length - 1}`)
+  })
+
   it('⑩ installed-view 视图模型含 latestError 标注字段', async () => {
     const { installedViewModel } = await import('../src/client/installed-view.js')
     const base = { pkg: 'p', spec: '1.0.0', source: 'npm' }

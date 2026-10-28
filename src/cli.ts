@@ -345,7 +345,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         return 0
       }
       for (const it of outdated) {
-        out(`• ${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}`)
+        out(`• ${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}${it.upgradePath === 'unsupported' ? ' · 本地链接安装——不参与自动升级' : ''}`)
       }
       if (incomplete.length) {
         out(`\n另有 ${incomplete.length} 项检查未完成：`)

@@ -257,6 +257,7 @@ export function registerTools(
           version: it.version,
           source: it.source,
           registryId: it.registryId ?? null,
+          upgradePath: it.upgradePath ?? null,
           latestVersion: it.latestVersion ?? null,
           outdated: it.outdated,
           latestError: it.latestError ?? null,
@@ -417,6 +418,7 @@ export function registerTools(
         name: it.name,
         version: it.version,
         source: it.source,
+        upgradePath: it.upgradePath ?? null,
         latestVersion: it.latestVersion ?? null,
         latestTag: it.latestTag ?? null,
         outdated: it.outdated,
@@ -537,7 +539,7 @@ interface SearchOut {
   nextOffset?: number | null
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; latestError?: string | null; latestErrorCode?: string | null }>
+  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; latestError?: string | null; latestErrorCode?: string | null }>
   incompleteCount?: number
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }
@@ -613,6 +615,7 @@ function renderList(out: ListOut): string {
   const lines = out.items.map((it, i) => {
     const marks = [
       it.registryId ? '市场' : '非市场',
+      it.upgradePath === 'unsupported' ? '本地链接安装' : null,
       it.outdated && it.latestVersion ? `可升级 → v${it.latestVersion}` : null,
     ].filter(Boolean).join('，')
     return `${i + 1}. ${it.name} (${it.pkg}) v${it.version || '?'} · ${it.source}${marks ? ` · ${marks}` : ''}`
@@ -664,7 +667,7 @@ function renderOutdated(out: ListOut): string {
   if (outdated.length) {
     head.push(
       `${outdated.length}/${out.items.length} 个插件可升级：`,
-      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}`).join('\n'),
+      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}${it.upgradePath === 'unsupported' ? ' · 本地链接安装——不参与自动升级' : ''}`).join('\n'),
     )
   } else {
     head.push(`全部 ${out.items.length} 个插件均已是最新版本。`)
