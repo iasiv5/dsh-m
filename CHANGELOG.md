@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.0 特性：更新与收录解耦——非收录插件可直接升级，批量升级按失败类别分流（issue #30 / ADR-0026）
+
+- **症状（issue #30）**：未经 dsh-m 收录的已装插件「检测得到新版本、点升级必失败」（硬拒「不是经 dsh-m 收录的插件」）；收录清单加载失败时一切升级全断；面板「全部更新」任一项失败即中断后续所有项。
+- **根因**：升级入口（web `upgradePluginLocked` / desktop `desktopUpgradeLocked`）把收录条目匹配当升级前置条件，与检测侧语义断裂——`probeLatest` 早已按已装来源自证探测（非收录 npm 包直查 dist-tag）；批量循环 boolean 短路不分类别。上游 dshmarket 生产模型对照：更新 = 按已装 spec 自身来源重解析（npm dist-tag / git HEAD），目录只把守装新/预检/本地恢复三处。
+- **做法（ADR-0026）**：① 条目查找降级为元数据增强——registry unavailable 不再硬阻断升级；主清单+社区均 miss 时经「合成条目」（`synthesizeInstallableEntry`，从已装项来源本地合成最小可装条目，身份口径与 `matchInstalledByEntry` 同源）走与市场安装同一条管线，desktop 两步升级/降级恢复/守卫安全网零改动继承；② 边界 fail-closed——`file:`/`link:` 本地开发安装与非 npm/github 源抛结构化不支持（web `UpgradePathUnsupportedError` / desktop `DesktopOpsError('upgrade-unsupported')`）；③ 升级通路投影——`upgradePath`（catalog/synthesized/unsupported）三端同源（`dshm_list` / `dshm_outdated` / CLI / 已装页），unsupported 项标注「本地链接安装」；④ 批量三态——失败信封 `failureClass`（**缺省 target**，systemic 白名单 = 装后守卫拦截/事务半残/基建回退码）：目标级失败（单包网络错、等待期、peer 不兼容）跳过继续 + 末尾汇总，系统性失败维持短路（issue #10 语义不变）；unsupported 项零请求直入汇总；全部成功零新增横幅（行为零变化）。
+- **验证**：合成条目五分支、web/desktop 双 miss→合成成功（github 重锁 HEAD / npm latest）、本地 spec 拒绝、投影双落点（registry 早退臂 + 健康臂）、failureClass 六例、批量三态纯逻辑、面板接线源锚、ZH/EN 键集相等守卫等新增/改写用例；金样重生成恰 6 处 `upgradePath` 增量（零其他漂移）；关键锚变异红绿闭环（github 合成分支变异 → 三例真红，还原复绿）；全量 **1842/1842**、typecheck 0；独立评审两轮通过（计划评审 F1-F10 全闭、实施评审零阻断零重要）。
+
 ### 0.10.25 修复：桌面 peer 预检运行时版本改读应用自身 app.asar——PATH 残留旧 CLI 不再劫持兼容判定（issue #32）
 
 - **症状（issue #32 实测）**：DSH Desktop（Electron）上升级带 `@deepseek-ai/dsh*` peer 的插件一律被拦「与 DSH 0.1.0-rc.6 不兼容」，而真实运行时是 0.2.1-rc.3——报错里的版本来自 PATH 上残留的旧全局 CLI（早年 `npm i -g` 装的 shim）；无 dsh 系 peer 的插件同批正常升级，拦截精确落在带 peer 的那一批。
@@ -831,6 +838,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.0 Feature: updates decoupled from catalog membership — non-catalog plugins upgrade directly; batch upgrades triage failures by class (issue #30 / ADR-0026)
+
+- **Symptom (issue #30)**: an installed plugin not listed in dsh-m's catalogs could *detect* a newer version but *upgrading* always failed hard ("not a dsh-m cataloged plugin"); when the registry itself failed to load, every upgrade broke; and the panel's "update all" aborted all remaining items the moment one item failed.
+- **Root cause**: both upgrade entry points (web `upgradePluginLocked` / desktop `desktopUpgradeLocked`) treated catalog-entry matching as a precondition for upgrading — semantically disjoint from the detection side, where `probeLatest` had long resolved updates from the installed source itself (querying the dist-tag for non-catalog npm packages); the batch loop short-circuited on a plain boolean with no failure classification. The upstream dshmarket production model was the reference: an update re-resolves the installed spec against its own source (npm dist-tag / git HEAD), and the catalog only gates fresh installs, prechecks, and local-development restore.
+- **Fix (ADR-0026)**: ① catalog lookup demoted to metadata enrichment — an unavailable registry no longer blocks upgrades; on a full miss (primary + community), a **synthesized entry** (`synthesizeInstallableEntry`: minimal installable entry derived locally from the installed item's own source, identity aligned with `matchInstalledByEntry`) flows down the exact same install pipeline as catalog installs — desktop's two-step upgrade / degraded-restore / guard safety nets inherited with zero changes. ② Boundaries stay fail-closed — `file:`/`link:` local development installs and non-npm/github sources raise a structured unsupported error (web `UpgradePathUnsupportedError` / desktop `DesktopOpsError('upgrade-unsupported')`). ③ Upgrade-path projection — `upgradePath` (catalog/synthesized/unsupported) surfaced consistently across all three surfaces (`dshm_list` / `dshm_outdated` / CLI / installed page), with unsupported items labeled as local-linked installs. ④ Batch triage — failure envelopes carry `failureClass` (**defaults to target**; the systemic whitelist = post-install guard, half-committed transaction, infrastructure rollback codes): target-level failures (per-package network error, release-age wait, peer incompatibility) skip-and-continue with an end-of-batch summary, while systemic failures keep the hard short-circuit (issue #10 semantics unchanged); unsupported items never issue a request and land straight in the summary; a fully successful batch adds zero new banners (behavior unchanged).
+- **Verification**: new/rewritten cases covering the five-branch synthesizer, web/desktop double-miss→synthesized success (github HEAD re-lock / npm latest), local-spec rejection, dual-point projection (registry early-exit arm + healthy arm), six failureClass cases, batch tri-state pure logic, panel wiring source anchors, and a ZH/EN key-set parity guard; golden fixture regenerated with exactly 6 `upgradePath` additions (zero other drift); mutation red→green replay on the key anchor (github synthesis branch mutated → three tests red; restored → green); full suite **1842/1842**, typecheck 0; two independent review rounds passed (plan review F1-F10 all closed; implementation review zero blocking / zero major).
 
 ### 0.10.25 Fix: desktop peer precheck now reads the runtime version from the app's own app.asar — a stale global CLI on PATH no longer hijacks the compat gate (issue #32)
 
