@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.1 修复：壳接管哨兵退役——市场入口恒在场（issue #33）
+
+- **症状（issue #33）**：与 dsh-better-workspace 等「负 priority 遮蔽 `sidebar.workspaces` 座位」的插件共存时，市场入口整行消失且无任何报错/日志（dsh-m 0.10.25 + better-workspace 0.36.13 + DSH Desktop 0.2.1-rc.3 实测）；ds-bot 0.2.4 Bot 模式同潜伏误伤（接管条目无 locale/id/key，白名单结构性够不着）。
+- **根因**：2026-10-13（0.9.81）ds-bot 页脚错乱裁定引入的壳接管哨兵，以「workspaces 槽出现负 priority 占位者」推断「页脚被接管、入口会错乱」——官方契约原文（dsh-client-ui-sidebar 0.2.1-rc.3/rc.4 双版核实）是「中段区域归注册者，页脚恒由官方壳无条件渲染」，旧注释系截断误读；页脚脱离官方之手的唯一方式是整壳经 `sidebar` 槽被替换，此时 footer.action 条目根本不挂载、天然隐身，无需让位。locale 白名单（issue #4 分档）对无声明字段的接管者结构性失效；ds-bot 0.1.7（#164）起上游已自愈原伤害。
+- **做法（ADR-0027）**：① 门控退役——`MarketEntry` 删 `shellTakeover()`，市场入口在一切壳形态下恒在场（接管视图下以 order 9 照常参与页脚排序）；② 判定降级——`isNativeFootShell` 收敛改名 `hasShellTakeover`（只判负 priority 占位者存在），接管环境下 `console.info` 至多一条（会话级 flag），晚挂载补打点为尽力而为语义；③ `COOPERATIVE_SHELL_LOCALES` 白名单删除，「敌意/合作换壳」分档退役；④ 备案两条入档（可见性探针挂账 / 不建敌意名单）；order 注释第二处哨兵叙事同步更新；GLOSSARY 新增「壳接管」词条。
+- **验证**：测试套件全文重写（存在判定 5 it + 退役源锚 4 it：门控移除/计数锚/白名单双文件清零/DOM-free）；红灯 → 中间态 7 绿 2 红 → 终态 9/9 逐段实测；关键接线锚单点变异红绿留证（恰 1 红 → 还原 9/9）；全量 **1841/1841**（基线 1842 − 1，Δ=9−10）、typecheck 0；独立评审 6 项（1 阻断 + 2 重要 + 3 建议）全闭环。
+
 ### 0.11.0 特性：更新与收录解耦——非收录插件可直接升级，批量升级按失败类别分流（issue #30 / ADR-0026）
 
 - **症状（issue #30）**：未经 dsh-m 收录的已装插件「检测得到新版本、点升级必失败」（硬拒「不是经 dsh-m 收录的插件」）；收录清单加载失败时一切升级全断；面板「全部更新」任一项失败即中断后续所有项。
@@ -838,6 +845,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.1 Fix: shell-takeover sentinel retired — the market entry is always present (issue #33)
+
+- **Symptom (issue #33)**: alongside plugins that shadow the `sidebar.workspaces` seat at negative priority (dsh-better-workspace), the market entry vanished entirely with no error and no log (observed on dsh-m 0.10.25 + better-workspace 0.36.13 + DSH Desktop 0.2.1-rc.3); ds-bot 0.2.4's Bot mode carried the same latent misfire (its takeover entry declares no locale/id/key, structurally out of reach for the whitelist).
+- **Root cause**: the shell-takeover sentinel introduced on 2026-10-13 (0.9.81) after a ds-bot footer-mangling incident inferred "the foot is taken over, the entry will mangle" from "a negative-priority occupant holds the workspaces slot" — the official contract verbatim (verified against dsh-client-ui-sidebar 0.2.1-rc.3 and rc.4) reads "the region between global panel rows and the foot belongs to the registrant, while the foot is rendered unconditionally by the official shell"; the old comment truncated that sentence and inverted its meaning. The only way the foot leaves official hands is a full-shell replacement via the `sidebar` slot — under which footer.action entries never mount at all and hide themselves, no yielding logic needed. The locale whitelist (the issue #4 tiering) structurally cannot name takers that declare no fields; ds-bot 0.1.7 (#164) had already healed the original harm upstream.
+- **Fix (ADR-0027)**: ① the gate is retired — `MarketEntry` drops `shellTakeover()`, so the market entry is present in every shell shape (in takeover views it takes part in footer ordering at order 9 as usual); ② the verdict is demoted to diagnostics — `isNativeFootShell` is consolidated into `hasShellTakeover` (existence of a negative-priority occupant only), logging at most one `console.info` in a takeover environment (session-level flag; late-landing coverage is best-effort); ③ the `COOPERATIVE_SHELL_LOCALES` whitelist is deleted and the hostile/cooperative tiering retired; ④ two dossier items recorded (a visibility probe on hold / no hostile list); the second sentinel narrative in the order comment updated in step; GLOSSARY gains the "Shell Takeover" entry.
+- **Verification**: the test suite rewritten in full (5 existence cases + 4 retirement source anchors: gate removal / count anchor / whitelist zeroed in both files / DOM-free); red → intermediate 7 green / 2 red → final 9/9 measured stage by stage; the key wiring anchor mutation-proven red→green (exactly 1 red → restored 9/9); full suite **1841/1841** (baseline 1842 − 1, Δ=9−10), typecheck 0; independent review closed all 6 issues (1 blocking + 2 major + 3 minor).
 
 ### 0.11.0 Feature: updates decoupled from catalog membership — non-catalog plugins upgrade directly; batch upgrades triage failures by class (issue #30 / ADR-0026)
 
