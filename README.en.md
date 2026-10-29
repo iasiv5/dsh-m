@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.3%20verified-2563eb)](#compatibility--faq)
+[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.4%20verified-2563eb)](#compatibility--faq)
 
 English · [中文](./README.md)
 
@@ -83,8 +83,9 @@ The GUI and Agent tools manage the **current host profile** (Web or Desktop). Th
 | `0.2.0-rc.1 / rc.2` | Same as 0.1.7 | rc.2 and restart path live-tested |
 | `0.2.1-rc.2` | Same as 0.2.0 | Install/upgrade and D3 self-upgrade dogfooded (0.10.x line) |
 | `0.2.1-rc.3` | Same as 0.2.0 | Last fully verified on dsh-m 0.10.11 (link-installed: 1719/1719 tests green + seven-item compatibility checklist); newer versions not re-verified |
+| `0.2.1-rc.4` | Same as 0.2.0 | Dogfood host of the 0.11.x line (dsh-m 0.11.0 resident on the local web profile); 0.11.1 shipped with 1841/1841 tests green + release gates all green; official contract verified against both rc.3/rc.4 (ADR-0027) |
 
-> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3. Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
+> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3, and the 0.11.x line against 0.2.1-rc.4. Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
 
 **Is Desktop identical to Web?** No. Desktop browsing, new-package installation, and toggles act on the desktop profile. Upgrades and uninstalls require capabilities from the official host `pluginManager`; if absent, dsh-m returns a structured refusal and guidance. Desktop uses the official app lifecycle rather than Web's one-click restart; quit and reopen as instructed. Favorites, operations, and installed states are separate between profiles.
 
