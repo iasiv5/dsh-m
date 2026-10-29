@@ -25,7 +25,7 @@ test("0.9.83 头部两行重排（共识 Q4/Q6/Q8）", () => {
   assert.ok(stylesSrc.includes(".dshm-spacer{order:1}"), "spacer order 在");
   assert.ok(stylesSrc.includes(".dshm-head>.dshm-dshchip{order:2}"), "chip order 在（版本 chip 与 profile 徽标都靠右）");
   assert.ok(stylesSrc.includes(".dshm-winctl{order:3}"), "winctl order 在");
-  assert.ok(!/\@container \(max-width:720px\)\{[^@]*\.dshm-winctl button\{height:36px\}/.test(stylesSrc), "winctl 触控 36 不再挂容器断点（0.9.89：按钮大小不随两行/单行跳变）");
+  assert.ok(!/@container \(max-width:720px\)\{[^@]*\.dshm-winctl button\{height:36px\}/.test(stylesSrc), "winctl 触控 36 不再挂容器断点（0.9.89：按钮大小不随两行/单行跳变）");
   assert.ok(stylesSrc.includes("@media (pointer:coarse){.dshm-winctl{height:38px}.dshm-winctl button{height:36px}}"), "winctl 触控 36 随输入方式（coarse）在");
   assert.ok(stylesSrc.includes(".dshm-seg{order:4;flex:1 1 100%}"), "seg 换行拉通在");
   assert.ok(stylesSrc.includes(".dshm-seg button{flex:1;justify-content:center;white-space:nowrap;padding:0 10px;height:36px}"), "seg 均分/nowrap/36px 在");

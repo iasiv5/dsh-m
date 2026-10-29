@@ -367,7 +367,7 @@ describe('M1 Task 6：社区配置接线', () => {
     const controller = createRegistryController({ registryUrl: file })
     controller.attachStore(store)
     await controller.ensureReady()
-    const snap = controller.snapshot()
+    const _snap = controller.snapshot()
     assert.equal(controller.config.communityCatalog, false)
     assert.equal(controller.config.communityCatalogPin, '1.2.3')
     controller.dispose()

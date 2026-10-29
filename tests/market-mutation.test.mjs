@@ -10,9 +10,9 @@ import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, existingMarketIds } from '../lib/core/market.js'
-import { installFromRegistry, upgradePlugin, uninstallPlugin, capturePreMutationState, derivePrior, withMutationSession, selfUpgrade, synthesizeInstallableEntry, UpgradePathUnsupportedError } from '../lib/core/market-mutation.js'
-import { communityOutcome, _resetMergedMarketForTests, _mergedMarketStatsForTests } from '../lib/core/merged-market.js'
+import { listMarket, listInstalledWithMeta } from '../lib/core/market.js'
+import { installFromRegistry, upgradePlugin, uninstallPlugin, capturePreMutationState, derivePrior, synthesizeInstallableEntry, UpgradePathUnsupportedError } from '../lib/core/market-mutation.js'
+import { _resetMergedMarketForTests, _mergedMarketStatsForTests } from '../lib/core/merged-market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
 import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
 import { _setProjectionIoForTests } from '../lib/core/generation-projection.js'
@@ -481,7 +481,7 @@ function communityLoaded(plugins, stateOverrides = {}, categories = {}) {
 }
 
 /** 注入社区 loader（记录调用与 opts）；base = fakeDeps() 产物。 */
-function withCommunity(base, loaded, overrides = {}) {
+function _withCommunity(base, loaded, overrides = {}) {
   const ccalls = { n: 0, opts: [] }
   const deps = {
     ...base.deps,

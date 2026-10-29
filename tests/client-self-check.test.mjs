@@ -180,7 +180,7 @@ describe('0.10.2 静默自升级（结构序钉；0.10.1 确认框按主人体�
 // ---------- 0.10.4（0.10.3 dogfood 挂账）：对账改判补横幅——成功/未完成都不再随面板重载静默 ----------
 describe('0.10.4 对账改判补横幅（结构钉 + 文案键双字典）', () => {
   const src = readFileSync(new URL('../src/client/version-chip.jsx', import.meta.url), 'utf8')
-  const count = (needle) => src.split(needle).length - 1
+  const _count = (needle) => src.split(needle).length - 1
 
   it('① chip self-check 消费 intentResolved：ok → 成功横幅；未完成 → warn 横幅（单行锚）', () => {
     assert.ok(src.includes('const ir = data.intentResolved;'), 'intentResolved 消费在')

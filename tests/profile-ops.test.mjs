@@ -20,7 +20,7 @@ import {
 } from '../lib/core/profile-ops.js'
 import { _resetReleaseAgeCachesForTests } from '../lib/core/release-age.js'
 import { readUpgradeIntent } from '../lib/core/upgrade-intent.js'
-import { ToggleError } from '../lib/core/toggle.js'
+import '../lib/core/toggle.js';
 import { IncompatibleError } from '../lib/core/compat-check.js'
 import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
 // R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
@@ -1296,11 +1296,11 @@ describe('ADR-0009 排除条目治理 + 供应链等待期（治理/预检/双�
   })
 
   it('两次双码 → 翻译一次，治理短语出现在 message（挂点3 已落盘编辑必须留痕）', async () => {
-    let attempt = 0
+    let _attempt = 0
     const { service, calls } = managerStub({
       installBundle: async (spec, options) => {
         calls.installBundle.push({ spec, options })
-        attempt += 1
+        _attempt += 1
         return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
       },
     })
@@ -1389,11 +1389,11 @@ describe('ADR-0009 排除条目治理 + 供应链等待期（治理/预检/双�
 
   it('评审执行轮：hook1 clean + 挂点3 changed（重试仍败）→ message 含挂点3 治理短语', async () => {
     let governCalls = 0
-    let attempt = 0
+    let _attempt = 0
     const { service, calls } = managerStub({
       installBundle: async (spec, options) => {
         calls.installBundle.push({ spec, options })
-        attempt += 1
+        _attempt += 1
         return { application: 'failed', error: { code: 'operation-error', diagnostic: DUAL } }
       },
     })

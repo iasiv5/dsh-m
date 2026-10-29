@@ -27,7 +27,7 @@ const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
 const OVERRIDE = { '@deepseek-ai/dsh-credentials-local': '0.1.1-rc.2' }
 
 const CONFIG_MISMATCH = '命令失败 (exit 1): ERR_PNPM_LOCKFILE_CONFIG_MISMATCH Cannot proceed with the frozen installation. The current "overrides" configuration doesn\'t match the value found in the lockfile'
-const OUTDATED_LOCKFILE = '命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date'
+const _OUTDATED_LOCKFILE = '命令失败 (exit 1): ERR_PNPM_OUTDATED_LOCKFILE Cannot install with "frozen-lockfile" because pnpm-lock.yaml is not up to date'
 const NO_MATCHING = '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION No matching version found for pkg-a@1.2.3'
 
 function lockFile({ pkg = 'existing', version = '1.0.0', integrity = sha512('old'), overrides = OVERRIDE, withOverrides = true } = {}) {
@@ -827,7 +827,7 @@ describe('原语加固：snapshotFiles / atomicWriteFile（内部 fsOps 注入�
     await assert.rejects(
       () => atomicWriteFile(target, Buffer.from('new'), {
         open: async () => { throw Object.assign(new Error('exists'), { code: 'EEXIST' }) },
-        rm: async (p, o) => { rms.push(p) },
+        rm: async (p, _o) => { rms.push(p) },
       }),
       (err) => err.code === 'EEXIST',
     )
@@ -1229,7 +1229,7 @@ describe('uninstall 门', () => {
       { kind: 'uninstall', pkg: 'pkg-a' },
       baseTx(dir, runner, {
         setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return true },
-        stripPatchedEntries: (profileDir, pkg) => {
+        stripPatchedEntries: (_profileDir, _pkg) => {
           // 先真实改写一半，再抛
           writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - .\npatchedDependencies:\n  pkg-a: patches/a.patch\n')
           throw new Error('strip crashed mid-way')
@@ -1558,7 +1558,7 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
       ],
       frozen: [ok('frozen-ok')],
     })
-    const warm = async (pkg, signal) => {
+    const warm = async (_pkg, _signal) => {
       await sleep(30)
       ac.abort()
       const err = new Error('fetch aborted')
@@ -1603,7 +1603,7 @@ describe('终审复审 R4：mutation 后取消不得提交', () => {
   })
 
   it('makeNpmWarmPackument：取消异常上抛，普通预热失败仍吞错（R4c）', async () => {
-    const fetcher = async (pkg, timeoutMs, signal) => {
+    const fetcher = async (pkg, _timeoutMs, _signal) => {
       if (pkg === 'cancel') {
         const err = new Error('user aborted')
         err.name = 'AbortError'

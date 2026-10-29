@@ -60,7 +60,7 @@ function ghHandler(opts = {}) {
   }
 }
 
-function npmThousand() {
+function _npmThousand() {
   const CATEGORIES = ['market', 'tools', 'ui', 'search', 'other']
   return Array.from({ length: 1000 }, (_, i) => ({
     id: `p-${i}`,
@@ -499,10 +499,10 @@ describe('npmPackumentReadme（0.9.45 U10b 兜底 + 0.9.50 /latest 阶梯）', (
   })
 })
 
-function localGithubServer(handler) {
+function _localGithubServer(handler) {
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
-      const hits = req.socket.localPort
+      const _hits = req.socket.localPort
       handler(req, res)
     })
     server.listen(0, '127.0.0.1', () => resolve(server))

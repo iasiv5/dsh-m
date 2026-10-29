@@ -46,7 +46,7 @@ function reg(plugins, extra = {}) {
   return { version: 1, plugins, ...extra }
 }
 
-function validateOrThrow(raw) {
+function _validateOrThrow(raw) {
   // parseRegistryAddress 契约是“非法即 throw”；这里帮地址测试收敛断言
   return raw
 }

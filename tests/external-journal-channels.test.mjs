@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { installFromRegistry, upgradePlugin, selfUpgrade } from '../lib/core/market-mutation.js'
-import { togglePlugin } from '../lib/core/toggle.js'
+import '../lib/core/toggle.js';
 import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from '../lib/core/profile-ops.js'
 import { listExternalOperations, journalFile } from '../lib/core/external-journal.js'
 import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'

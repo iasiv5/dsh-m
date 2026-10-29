@@ -650,7 +650,7 @@ describe('host-api：method 响应', () => {
 
 // ---------- Task 7：self-upgrade 走事务 + 互斥锁收编 ----------
 
-const committedUpgrade = {
+const _committedUpgrade = {
   kind: 'install-npm',
   status: 'committed',
   ok: true,
@@ -668,7 +668,7 @@ const committedUpgrade = {
 describe('host-api：self-upgrade 事务委派（Task 7）', () => {
   it('锁收编：dispatcher 不再接受 onMutation，install 直接委派 market', async () => {
     const { dispatcher } = setup({
-      installFromRegistry: async (id, cfg2, opts) => ({
+      installFromRegistry: async (id, _cfg2, _opts) => ({
         id, pkg: 'pkg-1', spec: 'pkg-1@1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: 'ok',
       }),
     })

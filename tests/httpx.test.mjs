@@ -291,7 +291,7 @@ describe('fetchBytesLimited（M1 Task 1）', () => {
 })
 
 describe('onRequest 钩子（M1 Task 1，wire 层逐物理请求计数）', () => {
-  const jsonHandler = (req, res, u) => {
+  const jsonHandler = (req, res, _u) => {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end('{"ok":true}')
   }

@@ -3,7 +3,7 @@
  * Task 3 桥接：transaction 注入与 legacy 槽位逐操作回退。
  * 运行：npm run build && node --test tests/market.test.mjs
  */
-import { describe, it, beforeEach, afterEach, after } from 'node:test'
+import { describe, it, beforeEach, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,8 +11,8 @@ import { join } from 'node:path'
 
 import { listMarket, listInstalledWithMeta, existingMarketIds, upgradePathFor } from '../lib/core/market.js'
 import { communityOutcome } from '../lib/core/merged-market.js'
-import { IncompatibleError } from '../lib/core/compat-check.js'
-import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
+import '../lib/core/compat-check.js';
+import { resetLatestCacheForTest } from '../lib/core/latest-cache.js'
 import { _resetMergedMarketForTests, _mergedMarketStatsForTests } from '../lib/core/merged-market.js'
 import { _setProjectionIoForTests } from '../lib/core/generation-projection.js'
 // R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）

@@ -34,7 +34,7 @@ function resultOf(items) {
 }
 
 async function runSearch(listMarketImpl) {
-  const { code, text, captured } = await runSearchCapture(['search', '--query', 'surf'], listMarketImpl)
+  const { code, text, _captured } = await runSearchCapture(['search', '--query', 'surf'], listMarketImpl)
   return { code, text }
 }
 

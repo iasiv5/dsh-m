@@ -8,7 +8,6 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-  DEFAULT_MINIMUM_RELEASE_AGE_MIN,
   _resetReleaseAgeCachesForTests,
   describeReleaseAgeFailure,
   excludeMatch,

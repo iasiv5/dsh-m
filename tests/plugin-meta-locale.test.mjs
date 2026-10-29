@@ -23,7 +23,7 @@ function readLocale(language) {
 }
 
 function metaOf(language) {
-  const { file, parsed } = readLocale(language)
+  const { _file, parsed } = readLocale(language)
   const meta = parsed.meta
   assert.ok(meta && typeof meta === 'object' && !Array.isArray(meta), `locale/${language}.json 缺 meta 对象`)
   for (const field of ['title', 'description']) {

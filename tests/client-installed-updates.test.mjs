@@ -140,7 +140,7 @@ describe('降级恢复站点接线（0.10.0 Task 10：市场卡 + 已装列表�
   const marketTabSrc = readFileSync(new URL('../src/client/market-tab.jsx', import.meta.url), 'utf8')
   const installedTabSrc = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
   const both = marketTabSrc + '\n' + installedTabSrc
-  const src = both
+  const _src = both
   const count = (needle) => both.split(needle).length - 1
 
   it('① 两处升级站点都先问降级分支（恰两处）', () => {
@@ -171,7 +171,7 @@ describe('升级 enqueue meta 携带 toVersion + from（0.10.3 单行锚；0.10.
   const marketTabSrc = readFileSync(new URL('../src/client/market-tab.jsx', import.meta.url), 'utf8')
   const installedTabSrc = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
   const src = marketTabSrc + '\n' + installedTabSrc
-  const count = (needle) => src.split(needle).length - 1
+  const _count = (needle) => src.split(needle).length - 1
 
   it('① chip 静默升级以运行时探测的 latest 为目标版、运行中版本为 from（version-chip.jsx——ADR-0023 T10）', () => {
     assert.equal(versionChipSrc.split('{ npm: "dsh-m", from: version, toVersion: state.latest }').length - 1, 1)

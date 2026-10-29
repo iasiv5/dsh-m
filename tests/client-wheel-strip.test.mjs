@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { shotWheelAction } from '../src/client/wheel-strip.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const mainSrc = readFileSync(join(here, '../src/client/main.jsx'), 'utf8')
+const _mainSrc = readFileSync(join(here, '../src/client/main.jsx'), 'utf8')
 
 // 满行溢出的基准行：内容 1400px、视口 688px、当前滚到 100px（deltaX=0 = 裸滚轮形态）
 const OVERFLOW_ROW = { deltaX: 0, scrollWidth: 1400, clientWidth: 688, scrollLeft: 100 }

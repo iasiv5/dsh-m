@@ -8,9 +8,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
+import 'node:os';
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -24,11 +24,11 @@ const stylesSrc = readFileSync(join(root, 'src/client/styles.js'), 'utf8')
 const chromeSrc = readFileSync(join(root, 'src/client/chrome.jsx'), 'utf8')
 const cardSrc = readFileSync(join(root, 'src/client/card.jsx'), 'utf8')
 const zoneChipsSrc = readFileSync(join(root, 'src/client/zone-chips.jsx'), 'utf8')
-const versionChipSrc = readFileSync(join(root, 'src/client/version-chip.jsx'), 'utf8')
+const _versionChipSrc = readFileSync(join(root, 'src/client/version-chip.jsx'), 'utf8')
 // ADR-0023 T11：批次二出仓组件锚改读新文件
 const detailModalSrc = readFileSync(join(root, 'src/client/detail-modal.jsx'), 'utf8')
 const marketTabSrc = readFileSync(join(root, 'src/client/market-tab.jsx'), 'utf8')
-const installedTabSrc = readFileSync(join(root, 'src/client/installed-tab.jsx'), 'utf8')
+const _installedTabSrc = readFileSync(join(root, 'src/client/installed-tab.jsx'), 'utf8')
 const settingsTabSrc = readFileSync(join(root, 'src/client/settings-tab.jsx'), 'utf8')
 // 入口必须与 main.jsx 同目录（相对 require ./market-state.js 等才能解析）；构建后即删
 const dir = join(root, 'src/client')

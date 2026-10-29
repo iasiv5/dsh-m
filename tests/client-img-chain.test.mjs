@@ -23,7 +23,7 @@ import {
 } from '../src/client/img-chain.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const mainSrc = readFileSync(join(here, '../src/client/main.jsx'), 'utf8')
+const _mainSrc = readFileSync(join(here, '../src/client/main.jsx'), 'utf8')
 // ADR-0023 第一刀：词典面断言改读 i18n.js；CSS 面（含切片）改读 styles.js；T10：Shot/useImgChain/Lightbox 面改读 chrome.jsx
 const i18nSrc = readFileSync(join(here, '../src/client/i18n.js'), 'utf8')
 const stylesSrc = readFileSync(join(here, '../src/client/styles.js'), 'utf8')

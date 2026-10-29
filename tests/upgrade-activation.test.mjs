@@ -24,10 +24,10 @@ process.env.DSHM_CACHE_DIR = testCacheRoot
 // 0.9.79：直调变更入口会以 'external' 兜底落外部操作日志——同款纪律隔离 journal
 process.env.DSHM_EXTERNAL_JOURNAL_FILE = join(testCacheRoot, 'external-operations.json')
 afterEach(() => {})
-const cleanup = () => {}
+const _cleanup = () => {}
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const cfg = { timeoutMs: 50 }
 
 function readyLoaded(plugins) {

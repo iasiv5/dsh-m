@@ -22,7 +22,7 @@ describe('dsh-version：parseDshVersionOutput', () => {
   it('空 / 垃圾输入 → null', () => {
     assert.equal(parseDshVersionOutput(''), null)
     assert.equal(parseDshVersionOutput('not a version'), null)
-    assert.equal(parseDshVersionOutput(undefined ?? ''), null)
+    assert.equal(parseDshVersionOutput(''), null)
   })
 })
 

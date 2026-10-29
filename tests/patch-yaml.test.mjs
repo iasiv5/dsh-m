@@ -143,7 +143,7 @@ describe('planRowOverride：保注释覆盖编辑', () => {
     assert.equal(plan.text.includes('# 手写配置块（脱敏样本）'), true)
     assert.equal(plan.text.includes('# 开关覆盖区'), true)
     assert.equal(plan.text.includes('cwd: "/opt/demo"'), true)
-    assert.equal(/id: skins\n  disabled: true/.test(plan.text), true)
+    assert.equal(/id: skins\n {2}disabled: true/.test(plan.text), true)
     // 其他行不被改写
     assert.equal(plan.text.includes('name: agentchat-web-channel'), true)
   })

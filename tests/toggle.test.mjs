@@ -50,13 +50,13 @@ function profilePatch(text) {
 
 const SINGLE_PATCH = '- insert: [{id: demo-row, name: demo-pkg}]\n'
 const MULTI_PATCH = '- id: web\n  config:\n    searchProvider: demo\n- insert:\n    - id: demo-seam\n      name: demo-multi\n'
-const SINGLE_MULTI = '- insert: [{id: multi-row, name: demo-multi}]\n'
+const _SINGLE_MULTI = '- insert: [{id: multi-row, name: demo-multi}]\n'
 
 function loaderHostWith(entries) {
   return { loader: { entries: () => entries } }
 }
 
-function serviceStub(rows, calls = []) {
+function _serviceStub(rows, calls = []) {
   return {
     async listPlugins() {
       return typeof rows === 'function' ? rows() : rows
@@ -192,7 +192,7 @@ describe('togglePlugin：降级路径', () => {
     assert.equal(res.via, 'fallback')
     const text = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
     assert.equal(text.includes('# 手写区'), true)
-    assert.equal(/id: demo-row\n  disabled: true/.test(text), true)
+    assert.equal(/id: demo-row\n {2}disabled: true/.test(text), true)
     assert.equal(text.includes('id: keep'), true)
   })
 

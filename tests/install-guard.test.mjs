@@ -5,7 +5,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, chmodSync, readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 

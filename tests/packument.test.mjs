@@ -152,7 +152,7 @@ describe('缓存：single-flight / TTL / cap / 负缓存 / route-switch', () => 
     }
   })
   it('cap=4：第 5 键写入淘汰最旧，旧键再访问重取', async () => {
-    const w = stubWire({ npmjs: (url) => doc() })
+    const w = stubWire({ npmjs: (_url) => doc() })
     for (const p of ['cap1', 'cap2', 'cap3', 'cap4']) await packumentTimes(p, 12_000, undefined, { fetchJsonLimited: w.fn })
     assert.equal(w.calls.npmjs, 4)
     await packumentTimes('cap5', 12_000, undefined, { fetchJsonLimited: w.fn })
@@ -218,7 +218,7 @@ describe('packumentDocViewsActive：生效源单腿带缓存（readme 兜底腿�
     let mirrorDoc = { throw: 'mirror down' }
     const w = stubWire({
       npmjs: { throw: 'npmjs down' },
-      mirror: (url) => {
+      mirror: (_url) => {
         if (mirrorDoc.throw) throw new Error(mirrorDoc.throw)
         return mirrorDoc
       },

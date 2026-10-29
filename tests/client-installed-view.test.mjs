@@ -101,7 +101,7 @@ describe('installedViewModel：0.4.0 相位/开关字段（Task 17）', () => {
 
 // ---------- 0.10.0 Task 11 ④：入口回归钉——已装列表升级对 dsh-m 零客户端特判（R6：改道唯一执行点在服务端 core 缝） ----------
 describe('已装列表升级入口零特判（0.10.0 Task 11 ④）', () => {
-  const src = readFileSync(new URL('../src/client/main.jsx', import.meta.url), 'utf8')
+  const _src = readFileSync(new URL('../src/client/main.jsx', import.meta.url), 'utf8')
 
   it('已装列表 doUpgrade 走通用 upgrade API，零 self-upgrade/SELF_PKG/dsh-m 特判（ADR-0023 T11：切片随 Tab 出仓分文件）', () => {
     const mt = readFileSync(new URL('../src/client/market-tab.jsx', import.meta.url), 'utf8')
