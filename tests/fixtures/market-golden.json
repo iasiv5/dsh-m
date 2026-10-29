@@ -1257,7 +1257,8 @@
         "lockReason": "no-entry",
         "registryId": "gold-npm",
         "registryGithub": null,
-        "registryIcon": null
+        "registryIcon": null,
+        "upgradePath": "catalog"
       },
       {
         "name": "gold-community-b",
@@ -1278,7 +1279,8 @@
         "registryId": "g2--keepb",
         "registryGithub": "g2/keepb",
         "registryIcon": null,
-        "community": true
+        "community": true,
+        "upgradePath": "catalog"
       },
       {
         "name": "Y Pkg",
@@ -1299,7 +1301,8 @@
         "lockReason": "no-entry",
         "registryId": "gold-gh",
         "registryGithub": "own/gold-repo",
-        "registryIcon": null
+        "registryIcon": null,
+        "upgradePath": "catalog"
       }
     ],
     "others": 0,
@@ -1383,6 +1386,7 @@
         "registryId": "gold-npm",
         "registryGithub": null,
         "registryIcon": null,
+        "upgradePath": "catalog",
         "latestVersion": "9.9.9"
       },
       {
@@ -1405,6 +1409,7 @@
         "registryGithub": "g2/keepb",
         "registryIcon": null,
         "community": true,
+        "upgradePath": "catalog",
         "latestVersion": "9.9.9"
       },
       {
@@ -1427,6 +1432,7 @@
         "registryId": "gold-gh",
         "registryGithub": "own/gold-repo",
         "registryIcon": null,
+        "upgradePath": "catalog",
         "latestTag": "v9.9.9",
         "latestSha": "ffffffffffffffffffffffffffffffffffffffff"
       }

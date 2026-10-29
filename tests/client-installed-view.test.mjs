@@ -129,9 +129,9 @@ describe('全部更新批量接线（issue #10）', () => {
     assert.equal(itSrc.split('void doUpgrade(').length - 1, 0, '批量旧实现已删；逐项 await 是唯一发起方式')
   })
 
-  it('② 批量循环逐项 await + 失败短路（单处）', () => {
+  it('② 批量循环逐项 await + systemic 短路（单处；ADR-0026 改写：target 失败跳过继续）', () => {
     assert.equal(itSrc.split('for (const it of batch.targets) {').length - 1, 1, '串行循环唯一')
-    assert.equal(itSrc.split('if (!(await doUpgrade(it))) break;').length - 1, 1, '失败即停，不在半残 profile 上继续')
+    assert.equal(itSrc.split('if (outcome === "systemic") {').length - 1, 1, 'systemic 即停（守卫拦截/事务半残不在半残 profile 上继续；目标级失败由循环继续 + 末尾汇总）')
   })
 
   it('③ 批量定序单源 batchUpgradeOrder（计数/可见性/循环共用一份）', () => {
@@ -140,13 +140,13 @@ describe('全部更新批量接线（issue #10）', () => {
     assert.ok(itSrc.includes('batch.selfIncluded'), '自升级收尾提示接线在')
   })
 
-  it('④ doUpgrade 逐项成败契约：成功 return true；失败按结局分类（superseded 良性跳过不中断批量）', () => {
+  it('④ doUpgrade 三态契约（ADR-0026 改写）：成功臂返回 "ok"；失败臂按 failureClass 分类', () => {
     const start = itSrc.indexOf('const doUpgrade = async (it) => {')
     const end = itSrc.indexOf('if (loading && !data) return', start)
     assert.ok(end > start, 'doUpgrade 切片边界在')
     const body = itSrc.slice(start, end)
-    assert.ok(body.includes('return true;'), '成功臂返回 true')
-    assert.ok(body.includes('return m.kind !== "err";'), '失败臂按结局分类返回')
+    assert.ok(body.includes('return "ok";'), '成功臂（含降级恢复/良性跳过面）返回 ok')
+    assert.ok(body.includes('classifyBatchOutcome(e)'), '失败臂按 failureClass 三态（superseded 良性跳过归 ok；字段缺席缺省 target）')
   })
 
   it('⑤ 收尾提示文案双字典在位（i18n.js zh/en 各一枚）', () => {
