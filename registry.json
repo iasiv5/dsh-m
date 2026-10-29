@@ -26,7 +26,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1.5.18/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-skins"
     },
     {
