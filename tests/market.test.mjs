@@ -474,6 +474,7 @@ describe('ADR-0026：upgradePath 投影', () => {
         mkItem({ pkg: 'pkg-1' }),
         mkItem({ pkg: 'pkg-local', spec: 'file:../local' }),
         mkItem({ pkg: 'pkg-mystery', source: 'unknown', spec: 'whatever' }),
+        mkItem({ pkg: 'pkg-gh-bad', source: 'github', spec: 'not-a-github-spec' }),
       ]),
     })
     const res = await listInstalledWithMeta(cfg, {}, deps)
@@ -481,14 +482,16 @@ describe('ADR-0026：upgradePath 投影', () => {
     assert.equal(byPkg['pkg-1'], 'synthesized', 'unavailable 早退臂：registryId 必空 + npm 非本地 spec → synthesized')
     assert.equal(byPkg['pkg-local'], 'unsupported', 'file: spec → unsupported')
     assert.equal(byPkg['pkg-mystery'], 'unsupported', 'source 兜底（评审 F8）→ unsupported')
+    assert.equal(byPkg['pkg-gh-bad'], 'unsupported', 'github 畸形 spec → unsupported（判据对齐修订：投影与合成一致）')
     assert.equal(calls.npm.length, 0)
   })
 
-  it('upgradePathFor 直测四行（判据单源：registryId / 本地 spec / source 兜底 / github 缺省）', () => {
+  it('upgradePathFor 直测五行（判据单源：registryId / 本地 spec / source 兜底 / github 可解析性）', () => {
     assert.equal(upgradePathFor({ registryId: 'p-1', pkg: 'a', spec: '^1.0.0', source: 'npm' }), 'catalog')
     assert.equal(upgradePathFor({ pkg: 'b', spec: 'file:../b', source: 'npm' }), 'unsupported')
     assert.equal(upgradePathFor({ pkg: 'c', spec: 'whatever', source: 'unknown' }), 'unsupported')
     assert.equal(upgradePathFor({ pkg: 'd', spec: 'github:o/r#abc', source: 'github' }), 'synthesized')
+    assert.equal(upgradePathFor({ pkg: 'e', spec: 'not-a-github-spec', source: 'github' }), 'unsupported', 'github 畸形 spec：投影与合成判据对齐')
   })
 })
 

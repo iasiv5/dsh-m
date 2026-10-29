@@ -31,3 +31,7 @@ dsh-m issue #30（chenjiang2025，2026-10-27）：「不是经 dsh-m 收录的�
 - **术语兑现**：GLOSSARY「市场安装 / 非市场安装」的升级承诺自此为真；新增「来源自证更新」「合成条目」「目标级失败 / 系统性失败」三词条。
 - **上游对照锚**：dsh-market 自 0.1.0 起「更新 = 按已装来源重解析」模型生产验证十年未变；后续可参照其 UPDATE-API-V1 的失败码纪律（`DOWNGRADE_DETECTED` / `RESOLVED_VERSION_MISMATCH`、操作记录与恢复点）演进本仓的升级终态报告。
 - 实施计划（分刀顺序、测试锚、验证门）另立 `docs/plans/` 文档，遵循 CODING-STANDARDS 的测试锚与证据规则。
+
+## 修订（2026-10-29，实施评审终审建议落地）
+
+**投影/合成判据完全对齐**：`upgradePathFor` 对 github 源补 spec 可解析性判据——spec 不匹配 `GITHUB_SPEC_RE` 的项投影 `unsupported`（此前判 `synthesized`，实际升级会在合成步抛 target 级不支持）。对齐后批量排除对该类项零请求生效，投影如实。判据单源不变：`GITHUB_SPEC_RE` 与 `isLocalSpec` 均出自 merged-market。v0.11.0 发布后的独立小修订，不影响已发布语义（畸形 github 项本就不会被判 outdated——`probeLatest` 对不匹配 spec 的 github 项不探测）。
