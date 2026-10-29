@@ -34,7 +34,7 @@ const { createFavoritesStore, partitionStale } = require("./favorites.js");
 const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
 const { shouldShowInstallCmd } = require("./install-cmd.js");
 const { createOpOutcome } = require("./op-outcome.js");
-const { isNativeFootShell } = require("./shell-takeover.js");
+const { hasShellTakeover } = require("./shell-takeover.js");
 
 // ---------- i18n（ADR-0023 第一刀：词典与取值函数出仓 src/client/i18n.js，main.jsx 仅保留装配） ----------
 const { lookup, browserLang, communityLabels, ZH, EN } = require("./i18n.js");
@@ -934,32 +934,39 @@ function MarketIcon() {
   );
 }
 
-// ---------- 壳接管哨兵（2026-10-13 ds-bot 视图页脚整行让位；2026-10-24 issue #4 分档） ----------
-// sidebar.workspaces 座位属于占领者（ui-sidebar 官方注释："the foot is the
-// sidebar.workspaces registrant's"）：官方工作区树以缺省 priority 0 注册
-// （ui-workspace），负 priority 占位者即"换壳"插件。判定拆分档：敌意换壳
-// （原生页脚不消费 footer.action 槽，ds-bot -10 档）→ 市场入口整行让位；
-// 合作换壳（接管者页脚自己渲染 footer.action 槽条目，dsh-codex-ui 档）→
-// 照常在场——issue #4 主案：codex-ui 的 .dcu-foot 逐条渲染 footer.action，
-// 旧的一刀切让位把市场按钮整没了。判别与名单在 shell-takeover.js（DOM-free
-// 纯函数 + 直测；fail-safe：未列名的负 priority 接管仍让位）。
-// 读：SidebarRoot 本身订阅 sidebar.workspaces（它渲染那个槽），壳接管翻转
-// 必然级联重渲染页脚并重读此处。耦合点是官方槽位契约（sidebar.workspaces
-// 的声明与台账），不是任何换壳插件内部实现。
+// ---------- 壳接管诊断（2026-10-30 哨兵退役，issue #33；裁定史、契约勘误与备案见 shell-takeover.js 模块头 + docs/adr/0027） ----------
+// 旧哨兵（负 priority 接管即整行让位）地基两处不成立：① 官方契约被截断误读——
+// SidebarRoot 原文是「工作区中段区域归 workspaces 注册者，页脚（settings +
+// footer.action）恒由官方壳渲染」（rc.3/rc.4 注释与渲染两证），页脚从不移交；
+// 整壳替换场景下 footer.action 条目根本不挂载，天然隐身，无需让位。② locale
+// 白名单对无声明字段的接管者（ds-bot 0.2.4，freePriority 动态取位）结构性失效，
+// 两次误伤在案（issue #4 codex-ui、issue #33 better-workspace）。现仅诊断：
+// MarketEntry 每次 render 后的 useEffect 打点，会话级一次性 flag 防重复；
+// 晚挂载接管能否补打点取决于宿主侧槽订阅（尽力而为：漏报仅少一条诊断信息，
+// 首挂载即检出已覆盖主场景，不涉行为正确性）。
 let dshmSlotsRef = null;
-const shellTakeover = () => {
+let takeoverDiagnosticShown = false;
+const diagnoseShellTakeover = () => {
+  if (takeoverDiagnosticShown) return;
+  let taken = false;
   try {
-    return isNativeFootShell(
+    taken = hasShellTakeover(
       (dshmSlotsRef && dshmSlotsRef.entries ? dshmSlotsRef.entries("sidebar.workspaces") : []) || [],
     );
   } catch {
-    return false;
+    taken = false;
+  }
+  if (taken) {
+    takeoverDiagnosticShown = true;
+    console.info("[dsh-m] 侧栏工作区座位被外部接管（负 priority），市场入口照常在场");
   }
 };
 
 function MarketEntry(props) {
   useEffect(() => ensureCss(), []);
-  if (shellTakeover()) return null;
+  useEffect(() => {
+    diagnoseShellTakeover();
+  });
   const rail = !(props && props.wide);
   return h(
     "button",
@@ -1146,11 +1153,12 @@ function apply(ctx) {
   slots.inject("sidebar.footer.action", () =>
     safeRegister(
       slots,
-      // 页脚 order 维持正数工具位（9）：bot 视图的让位由壳接管哨兵负责（该视图
-      // 下 MarketEntry 整行不渲染），order 只影响官方 harness 页脚的排序——那里
-      // DS Bot 入口（-200）应在本工具行之上。2026-10-13 曾试装深负 order
-      // （-400/-500）让 ds-bot 集群贴底，哨兵上线后该做法只剩 harness 视图副作用
-      // （DS Bot 入口沉底），已回撤（裁定：哨兵管让位，order 管排序，各司其职）。
+      // 页脚 order 维持正数工具位（9）：order 只影响页脚条目排序——官方 harness
+      // 页脚与接管视图（ds-bot Bot 模式等）读同一台账，DS Bot 入口（-200）恒在
+      // 本工具行之上。2026-10-13 曾试装深负 order（-400/-500）让 ds-bot 集群贴底，
+      // 壳接管哨兵上线后该做法只剩 harness 视图副作用（DS Bot 入口沉底），已回撤
+      // （裁定：让位归哨兵、排序归 order）。2026-10-30 哨兵退役（ADR-0027）：接管
+      // 视图下入口照常在场，order 9 照常参与排序（工具行贴在 DS Bot 条目之后）。
       { name: "sidebar.footer.action", id: "dshm-market", key: "dshm-market", order: 9, locale: "dshm", label: () => lookup("market.title") },
       function DshmMarketEntry(actionProps) {
         return h(MarketEntry, actionProps);
