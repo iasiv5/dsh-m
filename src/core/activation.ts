@@ -167,3 +167,41 @@ export function upgradeEffectLine(activation: ActivationClassification | undefin
   if (activation === 'unknown') return '生效判定未完成；建议重启 DSH Web 生效：dshm restart --yes'
   return '需要重启 DSH Web 生效：dshm restart --yes'
 }
+
+// ---------- #34：升级链 post-executor 单点（两 Locked 尾段生效判定块收编，ADR-0007 出处） ----------
+
+export interface UpgradeActivationOutcome {
+  /** 三态分类；npm 门不过（非 npm 源 / 版本缺失或空串）时缺席，调用方 return 组装照旧条件展开。 */
+  activation: ActivationClassification | undefined
+  /** client-only 分类将调用方初值压为 false；其余（含 fail-open unknown）维持初值。 */
+  needsRestart: boolean
+}
+
+/**
+ * 升级生效判定 post-executor（#34 收编，样板 = ADR-0028 resolveUpgradeTarget）：
+ * npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态。
+ * needsRestart 初值由调用方传入（web = 安装事务判定 result.needsRestart、desktop = 恒 true），
+ * toVersion 来源亦为 backend 边缘事实（web = result.version、desktop = 局部 version）。
+ * 门为真值判定（对齐 web 现场；desktop toVersion 空串场景不进门 → activation 缺席——
+ * 主人 2026-10-30 裁决 B：省一次必败探测，CHANGELOG 归因）。零行为收编：块体自两 Locked
+ * 尾段逐字迁移，接线行为由 tests/upgrade-activation.test.mjs 零 diff 钉住。
+ */
+export async function resolveUpgradeActivation(
+  entry: { source: string; npm?: string },
+  fromVersion: string | undefined,
+  toVersion: string | undefined,
+  needsRestartInitial: boolean,
+  classify?: (pkg: string, fromVersion: string, toVersion: string) => Promise<ActivationClassification>,
+): Promise<UpgradeActivationOutcome> {
+  let activation: ActivationClassification | undefined
+  let needsRestart = needsRestartInitial
+  if (entry.source === 'npm' && entry.npm && fromVersion && toVersion) {
+    try {
+      activation = await (classify ?? classifyUpgradeActivation)(entry.npm, fromVersion, toVersion)
+      if (activation === 'client-only') needsRestart = false
+    } catch {
+      activation = 'unknown'
+    }
+  }
+  return { activation, needsRestart }
+}

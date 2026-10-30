@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildTarGz } from './fixtures/tar-builder.mjs'
 
-import { classifyUpgradeActivation, upgradeEffectLine } from '../lib/core/activation.js'
+import { classifyUpgradeActivation, upgradeEffectLine, resolveUpgradeActivation } from '../lib/core/activation.js'
 
 const pkgJson = (version, over = {}) => JSON.stringify({
   name: 'p',
@@ -199,5 +199,65 @@ describe('upgradeEffectLine：CLI 行文案', () => {
   it('restart-required 与 undefined → 现状文案', () => {
     assert.equal(upgradeEffectLine('restart-required'), '需要重启 DSH Web 生效：dshm restart --yes')
     assert.equal(upgradeEffectLine(undefined), '需要重启 DSH Web 生效：dshm restart --yes')
+  })
+})
+
+// ---------- #34：resolveUpgradeActivation（升级链 post-executor 单点，两 Locked 尾段收编） ----------
+// 自带夹具：注入 classify 捕获调用（缺省臂 = 真 classifyUpgradeActivation，网络路径由
+// upgrade-activation.test.mjs 接线套件覆盖，此处不测）。
+describe('resolveUpgradeActivation（#34 post-executor）', () => {
+  const npmEntry = { source: 'npm', npm: 'p' }
+  const ghEntry = { source: 'github', github: 'o/r' }
+  const clientOnly = async () => 'client-only'
+
+  it('① github 源 → 分类器零调用、activation 缺席、needsRestart 透传初值', async () => {
+    let calls = 0
+    const r = await resolveUpgradeActivation(ghEntry, '1.0.0', '2.0.0', true, async () => { calls += 1; return 'client-only' })
+    assert.equal(calls, 0)
+    assert.equal(r.activation, undefined)
+    assert.equal(r.needsRestart, true)
+  })
+
+  it('② npm 门 + from/to undefined 各案 → 零调用 + 透传', async () => {
+    let calls = 0
+    const classify = async () => { calls += 1; return 'client-only' }
+    const r1 = await resolveUpgradeActivation(npmEntry, undefined, '2.0.0', true, classify)
+    const r2 = await resolveUpgradeActivation(npmEntry, '1.0.0', undefined, false, classify)
+    assert.equal(calls, 0)
+    assert.equal(r1.activation, undefined)
+    assert.equal(r1.needsRestart, true)
+    assert.equal(r2.activation, undefined)
+    assert.equal(r2.needsRestart, false)
+  })
+
+  it("③ toVersion '' → 零调用 + activation 缺席（裁决 B：钉住 desktop 边角新语义，防隐性漂移）", async () => {
+    let calls = 0
+    const r = await resolveUpgradeActivation(npmEntry, '1.0.0', '', true, async () => { calls += 1; return 'client-only' })
+    assert.equal(calls, 0)
+    assert.equal(r.activation, undefined)
+    assert.equal(r.needsRestart, true)
+  })
+
+  it('④ npm 门全真 + client-only → needsRestart 压为 false', async () => {
+    const r = await resolveUpgradeActivation(npmEntry, '1.0.0', '2.0.0', true, clientOnly)
+    assert.equal(r.activation, 'client-only')
+    assert.equal(r.needsRestart, false)
+  })
+
+  it('⑤ restart-required → 初值维持', async () => {
+    const r = await resolveUpgradeActivation(npmEntry, '1.0.0', '2.0.0', true, async () => 'restart-required')
+    assert.equal(r.activation, 'restart-required')
+    assert.equal(r.needsRestart, true)
+  })
+
+  it('⑥ classify 抛错 → fail-open unknown + 初值维持（绝不影响升级成功态）', async () => {
+    const r = await resolveUpgradeActivation(npmEntry, '1.0.0', '2.0.0', true, async () => { throw new Error('boom') })
+    assert.equal(r.activation, 'unknown')
+    assert.equal(r.needsRestart, true)
+  })
+
+  it('⑦ 初值 false + 非 client-only → 维持 false', async () => {
+    const r = await resolveUpgradeActivation(npmEntry, '1.0.0', '2.0.0', false, async () => 'restart-required')
+    assert.equal(r.needsRestart, false)
   })
 })
