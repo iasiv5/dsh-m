@@ -26,6 +26,7 @@ import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
 import { upgradeEffectLine } from './core/activation.js'
+import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { pathToFileURL } from 'node:url'
 import { realpathSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -345,7 +346,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         return 0
       }
       for (const it of outdated) {
-        out(`• ${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}${it.upgradePath === 'unsupported' ? ' · 本地链接安装——不参与自动升级' : ''}`)
+        out(`• ${it.name} (${it.pkg})：v${it.version} → ${it.latestVersion || '最新'}${it.upgradePath === 'unsupported' ? ` · ${unsupportedCauseLabel(it.upgradePathReason)}——不参与自动升级` : ''}`)
       }
       if (incomplete.length) {
         out(`\n另有 ${incomplete.length} 项检查未完成：`)

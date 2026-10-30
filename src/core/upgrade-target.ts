@@ -59,6 +59,16 @@ export function stampUpgradeProjection(item: { registryId?: string; spec?: strin
   if (reason) item.upgradePathReason = reason.code
 }
 
+/** unsupported 成因短标签（#35，CLI/tools 渲染消费；client 走 i18n 键系不经此）。default 臂防投影字段缺席或 null。 */
+export function unsupportedCauseLabel(code: UnsupportedReasonCode | null | undefined): string {
+  switch (code) {
+    case 'local-spec': return '本地链接安装'
+    case 'github-spec-unparseable': return 'github spec 无法解析'
+    case 'source-unresolvable': return '来源不支持线上升级'
+    default: return '不支持线上升级'
+  }
+}
+
 /**
  * 升级通路不支持错误（ADR-0026 边界）：本地开发安装（file:/link:）与非 npm/github
  * 源不从线上自动升级——结构化指引（upgradePath='unsupported'），不落普通 Error。

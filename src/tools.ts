@@ -21,6 +21,7 @@ import type { CommunityRegistrySummary } from './core/merged-market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS, INSTALLED_CORE_DEADLINE_MS } from './core/market-query.js'
+import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
@@ -617,7 +618,7 @@ function renderList(out: ListOut): string {
   const lines = out.items.map((it, i) => {
     const marks = [
       it.registryId ? '市场' : '非市场',
-      it.upgradePath === 'unsupported' ? '本地链接安装' : null,
+      it.upgradePath === 'unsupported' ? unsupportedCauseLabel(it.upgradePathReason) : null,
       it.outdated && it.latestVersion ? `可升级 → v${it.latestVersion}` : null,
     ].filter(Boolean).join('，')
     return `${i + 1}. ${it.name} (${it.pkg}) v${it.version || '?'} · ${it.source}${marks ? ` · ${marks}` : ''}`
@@ -669,7 +670,7 @@ function renderOutdated(out: ListOut): string {
   if (outdated.length) {
     head.push(
       `${outdated.length}/${out.items.length} 个插件可升级：`,
-      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}${it.upgradePath === 'unsupported' ? ' · 本地链接安装——不参与自动升级' : ''}`).join('\n'),
+      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}${it.upgradePath === 'unsupported' ? ` · ${unsupportedCauseLabel(it.upgradePathReason)}——不参与自动升级` : ''}`).join('\n'),
     )
   } else {
     head.push(`全部 ${out.items.length} 个插件均已是最新版本。`)

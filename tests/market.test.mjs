@@ -1410,12 +1410,39 @@ describe('M1 Task 7：agent 工具契约', () => {
     assert.ok(outdatedText.includes('本地链接安装——不参与自动升级'), `renderOutdated 应标注：${outdatedText}`)
   })
 
-  it('ADR-0026：源结构锚——tools.ts 双渲染与 cli.ts outdated 各带本地链接标注（出现次数语义）', async () => {
+  it('ADR-0026/#35：unsupported 成因按码标注——github-spec 场景不再误标本地链接（行级断言）', async () => {
+    const installedResult = {
+      items: [
+        { pkg: 'p-gh', name: 'PGh', version: '1.0.0', source: 'github', spec: 'not-a-github-spec', outdated: true, latestVersion: '9.9.9', upgradePath: 'unsupported', upgradePathReason: 'github-spec-unparseable' },
+      ],
+      others: 0,
+      profileDir: '/tmp/p',
+      registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 1 },
+      community: { enabled: true, status: 'ready', version: 'v', checkedAt: 't', fetchedAt: 't', route: 'r', acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
+    }
+    const { registered } = await loadToolsWith({ installedResult })
+    const outdated = registered.find((t) => t.name === 'dshm_outdated')
+    const out = await outdated.execute({})
+    const outdatedText = outdated.output.render({}, out)[0].text
+    const ghLine = outdatedText.split('\n').find((l) => l.includes('p-gh'))
+    assert.ok(ghLine, `renderOutdated 应含 p-gh 行：${outdatedText}`)
+    assert.ok(ghLine.includes('github spec 无法解析——不参与自动升级'), `github 项行级成因标注：${ghLine}`)
+    assert.ok(!ghLine.includes('本地链接安装'), `github 项不得误标本地链接：${ghLine}`)
+    const list = registered.find((t) => t.name === 'dshm_list')
+    const outL = await list.execute({})
+    const listText = list.output.render({}, outL)[0].text
+    const ghLineL = listText.split('\n').find((l) => l.includes('p-gh'))
+    assert.ok(ghLineL && ghLineL.includes('github spec 无法解析') && !ghLineL.includes('本地链接安装'), `renderList 行级成因标注：${ghLineL}`)
+  })
+
+  it('ADR-0026/#35：源结构锚——成因标签单源 upgrade-target，tools/cli 按码消费（出现次数语义）', async () => {
     const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8')
+    const targetSrc = read('../src/core/upgrade-target.ts')
     const toolsSrc = read('../src/tools.ts')
     const cliSrc = read('../src/cli.ts')
-    assert.ok(toolsSrc.split('本地链接安装').length - 1 >= 2, `tools.ts 标注 ≥2（renderList + renderOutdated），实得 ${toolsSrc.split('本地链接安装').length - 1}`)
-    assert.ok(cliSrc.split('本地链接安装').length - 1 >= 1, `cli.ts 标注 ≥1，实得 ${cliSrc.split('本地链接安装').length - 1}`)
+    assert.ok(targetSrc.split('本地链接安装').length - 1 >= 1, `三码标签字面应迁往 upgrade-target 单源，实得 ${targetSrc.split('本地链接安装').length - 1}`)
+    assert.ok(toolsSrc.split('unsupportedCauseLabel').length - 1 >= 2, `tools.ts 消费 ≥2（renderList + renderOutdated），实得 ${toolsSrc.split('unsupportedCauseLabel').length - 1}`)
+    assert.ok(cliSrc.split('unsupportedCauseLabel').length - 1 >= 1, `cli.ts 消费 ≥1，实得 ${cliSrc.split('unsupportedCauseLabel').length - 1}`)
   })
 
   it('⑩ installed-view 视图模型含 latestError 标注字段', async () => {
