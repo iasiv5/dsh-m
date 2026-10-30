@@ -81,6 +81,8 @@ export function synthesizeInstallableEntry(target: InstalledPlugin): Installable
   const m = GITHUB_SPEC_RE.exec(spec)
   if (!m || !m[1]) {
     // 不可达：unsupportedReasonFor 已放行 github 可解析形态（fail-closed 兜底，与 ADR-0026 同旨）。
+    // 若本兜底未来可达（如 GITHUB_SPEC_RE 被改坏引入状态性 flag），desktop 边缘 catch 会将其
+    // 保真翻译为 upgrade-unsupported 信封（评审 W2），web 边缘本就以此为信封。
     throw new UpgradePathUnsupportedError(target.pkg, 'github spec 可解析性复核失败（不可达兜底）')
   }
   return { id: `installed:${target.pkg}`, source: 'github', github: m[1] }

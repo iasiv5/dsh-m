@@ -22,7 +22,7 @@
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
 import { withMutationSession, resolveRegistryEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
-import { resolveUpgradeTarget } from './upgrade-target.js'
+import { resolveUpgradeTarget, UpgradePathUnsupportedError } from './upgrade-target.js'
 import { loadRegistry as defaultLoadRegistry } from './registry.js'
 import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
@@ -1084,7 +1084,15 @@ async function desktopUpgradeLocked(
   // 不阻断升级的 ADR-0026 语义由壳继承）。unsupported 在边缘翻译为既有 DesktopOpsError 信封
   // （'upgrade-unsupported' + 完整 message，字节与原 synthesize 抛出经 catch 翻译链一致）；
   // web/desktop 共享单一判定产地。
-  const resolution = await resolveUpgradeTarget(target, cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile, signal: opts.signal }, { loaded, loadRegistry: deps.loadRegistry, fetchCommunityCatalog: deps.fetchCommunityCatalog })
+  const resolution = await resolveUpgradeTarget(target, cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile, signal: opts.signal }, { loaded, loadRegistry: deps.loadRegistry, fetchCommunityCatalog: deps.fetchCommunityCatalog }).catch((err) => {
+    // ADR-0028 评审 W2：信封保真——desktop 的 unsupported 对外形态恒为 DesktopOpsError('upgrade-unsupported')。
+    // 正常路径 unsupported 经判别联合返回（下方翻译）；此 catch 兜住任何 future UpgradePathUnsupportedError
+    // （如判据原子 GITHUB_SPEC_RE 被改坏使壳内不可达兜底变得可达），与旧梯 catch-all 翻译深度等价。
+    if (err instanceof UpgradePathUnsupportedError) {
+      throw new DesktopOpsError('upgrade-unsupported', err.message)
+    }
+    throw err
+  })
   if (resolution.kind === 'unsupported') {
     throw new DesktopOpsError('upgrade-unsupported', resolution.reason.message)
   }

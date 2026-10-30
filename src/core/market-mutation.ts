@@ -37,7 +37,8 @@ import {
 } from './community.js'
 // 0.9.68（ADR-0016）：合并层迁入 merged-market.ts（communityOutcome/mergeRegistries/communitySummary/
 // deadlineRace/matchInstalledByEntry/isCommunityEntry/COMMUNITY_CATEGORY_LABELS）——market↔community
-// import 环自此断开；re-export 保既有消费方（tools.ts 的类型、profile-ops 的 matchInstalledByEntry）零改动。
+// import 环自此断开；消费方（tools/profile-ops 等）直连 merged-market.js，本文件仅 import 自用
+//（历史 re-export 已由 ADR-0024 清理；ADR-0028 T4 后 profile-ops 亦不再经此消费 matchInstalledByEntry）。
 import {
   communityOutcome,
   communityTimeoutSummary,
