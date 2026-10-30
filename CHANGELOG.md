@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.2 重构：升级目标解析单源（ADR-0028）——「已装项 → 可装条目/unsupported」判定全仓唯一产地
+
+- **背景**：GLOSSARY「来源自证更新」「合成条目」有名有 ADR，判定实现却无 owning module——同一语义三处并存：web 升级梯（market-mutation `upgradePluginLocked`）与 desktop 升级梯（profile-ops `desktopUpgradeLocked`）近逐字双份（六周内 0.5.1 / ADR-0016 / ADR-0026 三次语义事件均双落地、commit 标题以「同构」自证），读侧投影 `upgradePathFor` 靠「分支口径逐点一致」评审纪律对齐；c9faf21 整个 commit 即读写判据漂移的修正实录。2026-10-30 架构复审（钢人裁决版）唯一选中任务。
+- **做法（ADR-0028）**：① 新增 `src/core/upgrade-target.ts` 唯一判定产地——判定原子 `unsupportedReasonFor`（分支序固定：local-spec → npm → github-spec-unparseable → source-unresolvable；detail 文案逐字冻结）+ `upgradePathFor` / `synthesizeInstallableEntry` / `UpgradePathUnsupportedError` 迁入，全部改由单源驱动，「口径逐点一致」由构造保证；② `resolveUpgradeTarget` async 壳收编双梯 I/O 编排（registryUsable 门 → 主清单匹配 → 物化合并市场全量域（窄 catch 吞 miss）→ 合成/unsupported 判别联合），web/desktop 两梯改道消费之；信封映射留各 backend 边缘：web 重抛既有错误类、desktop 翻译 `upgrade-unsupported`（message 字节不变）并加边缘 catch 保真（评审 W2，防判据原子未来改坏时穿透信封）；③ 社区解析 deadline 归一为壳常量 `UPGRADE_COMMUNITY_DEADLINE_MS = 60_000`（desktop 私有副本删除）；④ 测试面收敛：新表驱动套件 20 用例，双 backend 镜像套件确认为「接线 + 信封映射」薄层并加防重繁殖护栏注释；⑤ 文档：GLOSSARY 新增「升级目标解析」词条、AGENTS.md 导航补行、ADR-0028 与实施计划入库。
+- **验证**：零行为轮——`tests/market-mutation.test.mjs` / `tests/profile-ops.test.mjs` 零 diff 全绿；冻结面（金样/client/tools/cli/host-api）对开工 ref `git diff --exit-code` = 0；全量 **1855/1855**、typecheck 0、lint 0；运行时等价探针 30/30（lib 产物 vs 旧源码文案逐字节 ===）；计划独立评审 8 项（1 阻断 + 1 重要 + 6 建议）与实施产出独立评审 2 项建议全闭环。
+
 ### 0.11.1 修复：壳接管哨兵退役——市场入口恒在场（issue #33）
 
 - **症状（issue #33）**：与 dsh-better-workspace 等「负 priority 遮蔽 `sidebar.workspaces` 座位」的插件共存时，市场入口整行消失且无任何报错/日志（dsh-m 0.10.25 + better-workspace 0.36.13 + DSH Desktop 0.2.1-rc.3 实测）；ds-bot 0.2.4 Bot 模式同潜伏误伤（接管条目无 locale/id/key，白名单结构性够不着）。
@@ -845,6 +851,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.2 Refactor: single-source upgrade-target resolution (ADR-0028) — one judge for "installed → installable / unsupported"
+
+- **Background**: GLOSSARY had the terms ("Source-owned Update", "Synthesized Entry") and the ADRs, but the judgment had no owning module — one semantic lived in three places: the web upgrade ladder (`upgradePluginLocked`) and the desktop ladder (`desktopUpgradeLocked`) were near-verbatim twins (three semantic events in six weeks each landed twice; commit titles literally said "isomorphic"), while the read-side projection `upgradePathFor` was aligned only by review discipline ("branch-by-branch identical"); commit c9faf21 exists solely to fix one real read/write drift. Sole pick of the 2026-10-30 steelmanned architecture review.
+- **Changes (ADR-0028)**: ① new `src/core/upgrade-target.ts` as the sole judge — the decision atom `unsupportedReasonFor` (fixed branch order: local-spec → npm → github-spec-unparseable → source-unresolvable; detail copy frozen verbatim) plus `upgradePathFor` / `synthesizeInstallableEntry` / `UpgradePathUnsupportedError` moved in and re-driven from it; ② the `resolveUpgradeTarget` shell absorbs both ladders' I/O choreography (registryUsable gate → primary match → materialized merged-market full domain (narrow catch swallows miss) → synthesized/unsupported discriminated union); both backends consume it, and envelope mapping stays at each edge — web rethrows the existing error class, desktop translates `upgrade-unsupported` (message bytes unchanged) with an edge catch for fidelity (review W2); ③ the community deadline is normalized to `UPGRADE_COMMUNITY_DEADLINE_MS = 60_000` (desktop private copy deleted); ④ test surface converged: a new 20-case table-driven suite; both mirror suites confirmed as thin "wiring + envelope" layers with anti-regrowth guard comments; ⑤ docs: GLOSSARY "Upgrade-target Resolution" entry, AGENTS.md navigation line, ADR-0028 and the implementation plan committed.
+- **Verification**: zero-behavior round — `tests/market-mutation.test.mjs` / `tests/profile-ops.test.mjs` green with zero diff; frozen surface (golden/client/tools/cli/host-api) `git diff --exit-code` = 0 against the starting ref; full suite **1855/1855**, typecheck 0, lint 0; runtime equivalence probe 30/30 (built lib vs old source, byte-for-byte); plan review closed 8 issues (1 blocking + 1 major + 6 minor), implementation review closed 2 minors.
 
 ### 0.11.1 Fix: shell-takeover sentinel retired — the market entry is always present (issue #33)
 
