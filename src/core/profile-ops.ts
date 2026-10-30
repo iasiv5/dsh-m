@@ -22,7 +22,7 @@
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
 import { withMutationSession, resolveRegistryEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
-import { resolveUpgradeTarget, UpgradePathUnsupportedError } from './upgrade-target.js'
+import { resolveUpgradeTarget, UpgradePathUnsupportedError, type UnsupportedReasonCode } from './upgrade-target.js'
 import { loadRegistry as defaultLoadRegistry } from './registry.js'
 import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
@@ -68,11 +68,14 @@ export class DesktopOpsError extends Error {
   readonly code: DesktopOpsErrorCode
   /** 0.9.19：结构化细节（release-age：violations/targetViolating/splitState；precheck：blockers）。 */
   readonly details?: Record<string, unknown>
-  constructor(code: DesktopOpsErrorCode, message: string, details?: Record<string, unknown>) {
+  /** #35：upgrade-unsupported 的结构化成因（闭集码 + detail），host-api envelope 透出；其余码缺席。 */
+  readonly reason?: { code: UnsupportedReasonCode; detail: string }
+  constructor(code: DesktopOpsErrorCode, message: string, details?: Record<string, unknown>, reason?: { code: UnsupportedReasonCode; detail: string }) {
     super(message)
     this.name = 'DesktopOpsError'
     this.code = code
     if (details !== undefined) this.details = details
+    if (reason !== undefined) this.reason = reason
   }
 }
 
@@ -1079,6 +1082,10 @@ async function desktopUpgradeLocked(
   const { items } = await (deps.listInstalled ?? defaultListInstalled)(opts.profileDir)
   const target = items.find((it) => it.pkg === pkg)
   if (!target) throw new DesktopOpsError('install-refused', `desktop profile 未安装该插件: ${pkg}（升级目标必须是已装插件）`)
+  // #35（评审 #2 修订/交接 impl-review 建议 1）：unsupported 信封单点映射——联合臂与 W2 边缘
+  // catch 共用此函数，防双处硬编码漂移；reason 结构化透出（message 直取保字节）。
+  const desktopUnsupportedError = (reason: { code: UnsupportedReasonCode; detail: string; message: string }): DesktopOpsError =>
+    new DesktopOpsError('upgrade-unsupported', reason.message, undefined, { code: reason.code, detail: reason.detail })
   // ADR-0028：升级目标解析收编 resolveUpgradeTarget（编排序与原内联梯逐点一致：registryUsable 门
   // → 主清单匹配 → 物化合并市场全量域（窄 catch 吞 miss）→ 合成/unsupported；registry unavailable
   // 不阻断升级的 ADR-0026 语义由壳继承）。unsupported 在边缘翻译为既有 DesktopOpsError 信封
@@ -1089,12 +1096,12 @@ async function desktopUpgradeLocked(
     // 正常路径 unsupported 经判别联合返回（下方翻译）；此 catch 兜住任何 future UpgradePathUnsupportedError
     // （如判据原子 GITHUB_SPEC_RE 被改坏使壳内不可达兜底变得可达），与旧梯 catch-all 翻译深度等价。
     if (err instanceof UpgradePathUnsupportedError) {
-      throw new DesktopOpsError('upgrade-unsupported', err.message)
+      throw desktopUnsupportedError({ code: err.reason.code, detail: err.reason.detail, message: err.message })
     }
     throw err
   })
   if (resolution.kind === 'unsupported') {
-    throw new DesktopOpsError('upgrade-unsupported', resolution.reason.message)
+    throw desktopUnsupportedError(resolution.reason)
   }
   const entry = resolution.entry
 

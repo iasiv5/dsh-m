@@ -460,14 +460,17 @@ describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', 
     assert.equal(res.fromVersion, '1.0.0')
   })
 
-  it('本地 file: spec 已装项 → upgrade-unsupported（B5 边界，结构化指引）', async () => {
+  it('本地 file: spec 已装项 → upgrade-unsupported（B5 边界，结构化指引 + #35 reason 透出）', async () => {
     const { service } = managerStub()
     await assert.rejects(
       () => desktopUpgradeFromRegistry('pkg-a', {}, {}, upgradeDeps(service, {
         entries: [],
         installed: [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0', source: 'npm', spec: 'file:../pkg-a' }],
       })),
-      (err) => err instanceof DesktopOpsError && err.code === 'upgrade-unsupported' && /本地/.test(err.message),
+      (err) => err instanceof DesktopOpsError && err.code === 'upgrade-unsupported' && /本地/.test(err.message)
+        && err.reason !== undefined
+        && err.reason.code === 'local-spec'
+        && err.reason.detail === '本地开发安装（file:../pkg-a）不从线上更新；如需线上版本请先卸载后经 dsh-m 安装',
     )
   })
 

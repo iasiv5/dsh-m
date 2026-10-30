@@ -245,7 +245,8 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     // ADR-0026 failureClass（评审 F1）：等待期/升级不支持/目标拒绝属单包目标级 → target；
     // 基建回退码（no-manager/remove-failed/verify-failed/rollback-failed 等）与其余未知 code → systemic
     const failureClass = (err.code === 'upgrade-unsupported' || err.code === 'release-age-wait' || err.code === 'install-refused') ? 'target' : 'systemic'
-    return { status: 409, payload: { ok: false, error: err.message, code: err.code, failureClass } }
+    // #35：upgrade-unsupported 携带结构化 reason 时透出（与 web 臂同构）；其余码字段缺席、信封零变化。
+    return { status: 409, payload: { ok: false, error: err.message, code: err.code, failureClass, ...(err.reason !== undefined ? { reason: err.reason } : {}) } }
   }
   if (err instanceof UpgradePathUnsupportedError) {
     // #35：web 梯 unsupported 信封升级——从 default 500 兜底臂升为 409 结构化信封，与 desktop

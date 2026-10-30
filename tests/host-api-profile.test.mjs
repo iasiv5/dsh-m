@@ -458,6 +458,17 @@ describe('ADR-0026：upgrade 失败信封 failureClass', () => {
     }
   })
 
+  it('⑥-c DesktopOpsError(upgrade-unsupported) reason 透出 + 无 reason 构造字段缺席（#35 desktop 对称）', async () => {
+    const r = await upgradeFailure(new DesktopOpsError('upgrade-unsupported', '「p」无法自动升级：d', undefined, { code: 'local-spec', detail: 'd' }))
+    assert.equal(r.status, 409)
+    assert.equal(r.body.code, 'upgrade-unsupported')
+    assert.equal(r.body.failureClass, 'target')
+    assert.deepEqual(r.body.reason, { code: 'local-spec', detail: 'd' })
+    const r2 = await upgradeFailure(new DesktopOpsError('release-age-wait', '目标版本仍在等待期内'))
+    assert.equal(r2.status, 409)
+    assert.equal(r2.body.reason, undefined, '既有信封零变化：无 reason 构造 → 字段缺席（既有用例③④⑤ 不受扰）')
+  })
+
   it('⑦ 源结构锚：hooks.js api() 透传 failureClass（赋值表达式出现次数语义）', async () => {
     const src = readFileSync(new URL('../src/client/hooks.js', import.meta.url), 'utf8')
     assert.equal(src.split('err.failureClass = data.failureClass').length - 1, 1, `hooks.js 透传赋值恰 1 处，实得 ${src.split('err.failureClass = data.failureClass').length - 1}`)
