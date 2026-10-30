@@ -44,13 +44,12 @@ import {
   withFallbackLookups,
   deadlineRace,
   isCommunityEntry,
-  matchInstalledByEntry,
   mergedOutcome,
   type CommunityRegistrySummary,
   type MergedOutcome,
 } from './merged-market.js'
 import type { CommunityEntry } from './community-adapter.js'
-import { synthesizeInstallableEntry } from './upgrade-target.js'
+import { resolveUpgradeTarget, UpgradePathUnsupportedError } from './upgrade-target.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
@@ -915,37 +914,18 @@ async function upgradePluginLocked(
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
-  const registryUsable = loaded.status !== 'unavailable'
   const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)(opts.profileDir)
   const target = installed.find((it) => it.pkg === pkg)
   if (!target) throw new Error(`web profile 未安装该插件: ${pkg}`)
-  // ADR-0026（issue #30）：条目查找降级为元数据增强——registry unavailable 不再硬阻断升级；
-  // 主清单+社区均 miss 时经合成条目（synthesizeInstallableEntry）走与市场安装同一条管线，
-  // 本地/非线上来源由其 fail-closed 抛 UpgradePathUnsupportedError。
-  let entry: InstallableEntry | undefined
-  if (registryUsable) {
-    // 0.5.1：合并市场安装的社区条目同样可升级——主清单优先，miss 时查社区目录。
-    // 0.9.68（ADR-0016 / R2-3）：社区兜底经物化合并市场全量域 lookupInstalledAll（含 displaced 让位条目，
-    // min-ord 胜者 = 今日「先主清单 find 后社区 adapt 全量 find」合成语义）；reject 透传由窄 catch 吞为 miss。
-    entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
-    try {
-      if (!entry) {
-        const communityTask = (deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-        const outcome = await mergedOutcome({
-          namespace: opts.namespace ?? 'host',
-          profile: opts.profile ?? WEB_PROFILE,
-          cfg,
-          registry: loaded,
-          communityTask,
-          deadlineAt: Date.now() + DEFAULT_DEADLINE_MS,
-        })
-        entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
-      }
-    } catch {
-      entry = undefined
-    }
+  // ADR-0028：升级目标解析收编 resolveUpgradeTarget（编排序与原内联梯逐点一致：registryUsable 门
+  // → 主清单匹配 → 物化合并市场全量域 lookupInstalledAll（窄 catch 吞 miss）→ 合成/unsupported；
+  // registry unavailable 不阻断升级的 ADR-0026 语义由壳继承）。unsupported 在边缘重抛既有错误
+  // （message 字节不变）；web/desktop 共享单一判定产地。
+  const resolution = await resolveUpgradeTarget(target, cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile, signal: opts.signal }, { loaded, loadRegistry: deps?.loadRegistry, fetchCommunityCatalog: deps?.fetchCommunityCatalog })
+  if (resolution.kind === 'unsupported') {
+    throw new UpgradePathUnsupportedError(target.pkg, resolution.reason.detail)
   }
-  if (!entry) entry = synthesizeInstallableEntry(target)
+  const entry = resolution.entry
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
   const result = await installEntryLocked(entry, cfg, opts, deps)
