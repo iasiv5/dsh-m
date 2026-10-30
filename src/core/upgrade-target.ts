@@ -5,10 +5,13 @@
  * 自此消灭（c9faf21 漂移实证）。判据原子 isLocalSpec / GITHUB_SPEC_RE 产地不变
  * （merged-market，ADR-0026 修订段口径）。
  */
-import { GITHUB_SPEC_RE, isLocalSpec } from './merged-market.js'
+import { GITHUB_SPEC_RE, isLocalSpec, matchInstalledByEntry, mergedOutcome } from './merged-market.js'
 import type { UpgradePath } from './market.js'
 import type { InstalledPlugin } from './installed.js'
 import type { InstallableEntry } from './market-mutation.js'
+import { loadRegistry as defaultLoadRegistry, type LoadedRegistry, type RegistryConfig, type RegistryCacheNamespace } from './registry.js'
+import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
+import { WEB_PROFILE } from './env.js'
 
 export type UnsupportedReasonCode = 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable'
 
@@ -81,4 +84,64 @@ export function synthesizeInstallableEntry(target: InstalledPlugin): Installable
     throw new UpgradePathUnsupportedError(target.pkg, 'github spec 可解析性复核失败（不可达兜底）')
   }
   return { id: `installed:${target.pkg}`, source: 'github', github: m[1] }
+}
+
+// ---------- ADR-0028：async 壳——双梯（web/desktop）I/O 编排收编 ----------
+
+/** 社区解析 deadline（归一锚：web 曾用 market DEFAULT_DEADLINE_MS、desktop 曾用私有副本，两处现值同 60s）。 */
+export const UPGRADE_COMMUNITY_DEADLINE_MS = 60_000
+
+export type UpgradeTargetResolution =
+  | { kind: 'resolved'; entry: InstallableEntry; matchPath: 'primary' | 'community' | 'synthesized' }
+  | { kind: 'unsupported'; reason: { code: UnsupportedReasonCode; detail: string; message: string } }
+
+export interface UpgradeTargetDeps {
+  /** 直通：backend 已在梯外加载过 registry 时注入复用（零重复加载）；缺省壳内自取。 */
+  loaded?: LoadedRegistry
+  loadRegistry?: typeof defaultLoadRegistry
+  fetchCommunityCatalog?: typeof defaultFetchCommunityCatalog
+}
+
+/**
+ * 把已装插件解析为当次升级目标（ADR-0028）：编排序与现行双梯逐点一致——
+ * registryUsable 门 → 主清单 matchInstalledByEntry → 物化合并市场 lookupInstalledAll
+ * （含 displaced 让位条目；reject 窄 catch 吞为 miss）→ 合成兜底 / unsupported。
+ * profile 透传逐点复刻现行两梯（mergedOutcome 的 profile 必传且无内部缺省，错传将使
+ * 社区物化代缓存段错位）：mergedOutcome 传 `opts.profile ?? WEB_PROFILE`；
+ * communityTask / loadRegistry 传 raw `opts.profile`（二者内部自缺省）。
+ * 只读不副作用：不做 journal、不进 mutation session、不抛业务错误——unsupported 以
+ * 判别联合返回，信封映射（web 重抛 UpgradePathUnsupportedError / desktop 翻译
+ * DesktopOpsError('upgrade-unsupported')）留在各 backend 边缘。
+ */
+export async function resolveUpgradeTarget(
+  target: InstalledPlugin,
+  cfg: RegistryConfig,
+  opts: { namespace?: RegistryCacheNamespace; profile?: string; signal?: AbortSignal } = {},
+  deps: UpgradeTargetDeps = {},
+): Promise<UpgradeTargetResolution> {
+  const loaded = deps.loaded ?? await (deps.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
+  if (loaded.status !== 'unavailable') {
+    const primary = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
+    if (primary) return { kind: 'resolved', entry: primary, matchPath: 'primary' }
+    try {
+      const communityTask = (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
+      const outcome = await mergedOutcome({
+        namespace: opts.namespace ?? 'host',
+        profile: opts.profile ?? WEB_PROFILE,
+        cfg,
+        registry: loaded,
+        communityTask,
+        deadlineAt: Date.now() + UPGRADE_COMMUNITY_DEADLINE_MS,
+      })
+      const community = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
+      if (community) return { kind: 'resolved', entry: community, matchPath: 'community' }
+    } catch {
+      /* 社区失败/异常吞为 miss（现行双梯语义） */
+    }
+  }
+  const reason = unsupportedReasonFor(target)
+  if (reason) {
+    return { kind: 'unsupported', reason: { code: reason.code, detail: reason.detail, message: `「${target.pkg}」无法自动升级：${reason.detail}` } }
+  }
+  return { kind: 'resolved', entry: synthesizeInstallableEntry(target), matchPath: 'synthesized' }
 }

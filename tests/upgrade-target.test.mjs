@@ -4,9 +4,10 @@
  * 投影 upgradePathFor 五分支（自 market.test.mjs 同口径）、合成条目 synthesizeInstallableEntry
  * 五分支（自 tests/market-mutation.test.mjs ADR-0026 describe 整体迁移，断言原文照搬）。
  */
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { upgradePathFor, synthesizeInstallableEntry, UpgradePathUnsupportedError, unsupportedReasonFor } from '../lib/core/upgrade-target.js'
+import { upgradePathFor, synthesizeInstallableEntry, UpgradePathUnsupportedError, unsupportedReasonFor, resolveUpgradeTarget, UPGRADE_COMMUNITY_DEADLINE_MS } from '../lib/core/upgrade-target.js'
+import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
 
 describe('unsupportedReasonFor（ADR-0028 判定原子）', () => {
   it('① local spec → local-spec + detail 文案逐字', () => {
@@ -48,6 +49,123 @@ describe('upgradePathFor（ADR-0028 投影，判据经 unsupportedReasonFor 单�
     assert.equal(upgradePathFor({ pkg: 'c', spec: 'whatever', source: 'unknown' }), 'unsupported')
     assert.equal(upgradePathFor({ pkg: 'd', spec: 'github:o/r#abc', source: 'github' }), 'synthesized')
     assert.equal(upgradePathFor({ pkg: 'e', spec: 'not-a-github-spec', source: 'github' }), 'unsupported', 'github 畸形 spec：投影与合成判据对齐')
+  })
+})
+
+// ---------- ADR-0028：async 壳 resolveUpgradeTarget（双梯 I/O 编排收编） ----------
+
+// 自带夹具（CODING-STANDARDS：不引用兄弟 describe/文件闭包；形态对齐 merged-market/market-mutation 既有测试）
+const readyLoaded = (plugins) => ({
+  configuredAddress: '',
+  activeAddress: 'https://example.com/r.json',
+  source: 'default-raw',
+  status: 'ready',
+  isDefault: true,
+  stale: false,
+  fetchedAt: '2026-10-10T00:00:00.000Z',
+  errors: [],
+  count: plugins.length,
+  registry: { version: 1, plugins },
+})
+const unavailableLoaded = () => ({ ...readyLoaded([]), status: 'unavailable', activeAddress: null, source: 'unavailable' })
+const communityDisabled = () => ({ state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null })
+const communityReady = (plugins) => ({
+  state: { enabled: true, status: 'ready', version: '2026.10.10.1', checkedAt: '2026-10-10T00:00:00.000Z', fetchedAt: '2026-10-10T00:00:00.000Z', route: 'jsdelivr', count: plugins.length, errors: [], warnings: [] },
+  catalog: { name: 'awesome-dsh-plugin', url: 'https://awesome.example', source: 'https://github.com/x/y', updated: '2026-10-10', count: plugins.length, categories: {}, plugins },
+})
+const communityRawNpm = (name, owner) => ({
+  name,
+  owner,
+  url: `https://github.com/${owner}/${name}`,
+  category: 'c-ui',
+  description: { en: `${name} en`, zh: `${name} 中文` },
+  npm: name,
+  downloads: 100,
+})
+const mkTarget = (over = {}) => ({ pkg: 'p', name: 'P', version: '1.0.0', description: '', homepage: '', spec: '^1.0.0', source: 'npm', dsh: true, path: '/x', ...over })
+const communityMustNotBeCalled = async () => {
+  throw new Error('社区依赖不应被调用')
+}
+
+describe('resolveUpgradeTarget（ADR-0028 async 壳）', () => {
+  beforeEach(() => _resetMergedMarketForTests())
+
+  it('常量：UPGRADE_COMMUNITY_DEADLINE_MS = 60_000（两 backend 现值同 60s 的归一锚）', () => {
+    assert.equal(UPGRADE_COMMUNITY_DEADLINE_MS, 60_000)
+  })
+
+  it('① primary 命中 → resolved/primary，社区依赖零调用', async () => {
+    const entry = { id: 'p-1', name: 'Foo', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'foo' }
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, { loaded: readyLoaded([entry]), fetchCommunityCatalog: communityMustNotBeCalled })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'primary')
+    assert.deepEqual(r.entry, entry)
+  })
+
+  it('② primary miss + 社区命中 → resolved/community（社区条目经物化合并市场全量域）', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, {
+      loaded: readyLoaded([]),
+      fetchCommunityCatalog: async () => communityReady([communityRawNpm('foo', 'own')]),
+    })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'community')
+    assert.equal(r.entry.npm, 'foo')
+    assert.equal(r.entry.id, 'own--foo', '社区合成 id 形态（owner--name）')
+  })
+
+  it('③ 双 miss + npm 已装 → resolved/synthesized，entry 等于现行合成形态', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, { loaded: readyLoaded([]), fetchCommunityCatalog: communityDisabled })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'synthesized')
+    assert.deepEqual(r.entry, { id: 'installed:foo', source: 'npm', npm: 'foo' })
+  })
+
+  it('④ local spec → unsupported（code/detail/message 逐字）', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'baz', spec: 'file:../baz' }), {}, {}, { loaded: readyLoaded([]), fetchCommunityCatalog: communityDisabled })
+    assert.deepEqual(r, {
+      kind: 'unsupported',
+      reason: {
+        code: 'local-spec',
+        detail: '本地开发安装（file:../baz）不从线上更新；如需线上版本请先卸载后经 dsh-m 安装',
+        message: '「baz」无法自动升级：本地开发安装（file:../baz）不从线上更新；如需线上版本请先卸载后经 dsh-m 安装',
+      },
+    })
+  })
+
+  it('⑤ github spec 不解析 → unsupported（message 逐字）', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'qux', source: 'github', spec: 'not-a-github-spec' }), {}, {}, { loaded: readyLoaded([]), fetchCommunityCatalog: communityDisabled })
+    assert.equal(r.kind, 'unsupported')
+    assert.equal(r.reason.code, 'github-spec-unparseable')
+    assert.equal(r.reason.message, '「qux」无法自动升级：github 安装的 spec（not-a-github-spec）解析不出 owner/repo，拒绝臆测来源')
+  })
+
+  it('⑥ loaded unavailable → 跳过条目查找直接合成，社区依赖零调用', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, { loaded: unavailableLoaded(), fetchCommunityCatalog: communityMustNotBeCalled })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'synthesized')
+    assert.deepEqual(r.entry, { id: 'installed:foo', source: 'npm', npm: 'foo' })
+  })
+
+  it('⑦ 社区 fetch reject → 吞为 miss → synthesized（窄 catch 语义）', async () => {
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, {
+      loaded: readyLoaded([]),
+      fetchCommunityCatalog: async () => {
+        throw new Error('cdn down')
+      },
+    })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'synthesized')
+  })
+
+  it('⑧ 未注入 loaded → 壳内经 deps.loadRegistry 自取', async () => {
+    const entry = { id: 'p-1', name: 'Foo', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'foo' }
+    const r = await resolveUpgradeTarget(mkTarget({ pkg: 'foo', name: 'foo' }), {}, {}, {
+      loadRegistry: async () => readyLoaded([entry]),
+      fetchCommunityCatalog: communityMustNotBeCalled,
+    })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'primary')
+    assert.deepEqual(r.entry, entry)
   })
 })
 
