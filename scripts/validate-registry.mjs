@@ -1,6 +1,8 @@
 /**
  * registry CI 校验（DESIGN.md §2.3）。复用 lib/core/registry.js 的 validateRegistry，
- * 避免两套 schema 检查漂移。用法：npm run build && node scripts/validate-registry.mjs
+ * 避免两套 schema 检查漂移。用法：npm run build && node scripts/validate-registry.mjs [--offline]
+ * --offline：跳过网络段（npm/GitHub/URL 可达与 verified 污染 packument 检查），
+ *   限额耗尽或断网时仍出内容门禁（schema/重复 id/文案软警告，2026-10-30 retro ③）。
  * 可选 env GITHUB_TOKEN：提高 GitHub API 限额（仅读公开数据，无自定义密钥）。
  * 可选 env DSH_RUNTIME_VERSION：提供当前宿主版本时，额外软警告「verified 未覆盖
  * 当前宿主」（know-how 008 升级必查的门禁化；缺省跳过该项）。
@@ -9,6 +11,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
+
+const OFFLINE = process.argv.includes('--offline')
 
 const root = dirname(fileURLToPath(import.meta.url)) + '/..'
 const raw = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'))
@@ -122,7 +126,9 @@ async function reachable(url, attempt = 0) {
   }
 }
 
-for (const entry of parsed.registry?.plugins || []) {
+if (OFFLINE) {
+  console.log(`⏭ 离线模式：跳过网络段（${(parsed.registry?.plugins || []).length} 个条目的 npm/GitHub/URL 可达与 verified 污染 packument 检查）`)
+} else for (const entry of parsed.registry?.plugins || []) {
   const where = `[${entry.id}]`
   try {
     if (entry.npm) {
