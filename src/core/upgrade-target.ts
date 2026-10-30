@@ -55,8 +55,11 @@ export function upgradePathFor(item: { registryId?: string; spec?: string; sourc
  */
 export class UpgradePathUnsupportedError extends Error {
   readonly upgradePath = 'unsupported' as const
-  constructor(pkg: string, reason: string) {
-    super(`「${pkg}」无法自动升级：${reason}`)
+  /** #35：结构化成因（闭集码 + detail 冻结文案），供 host-api envelope 透出；message 模板字节不变（B5）。 */
+  readonly reason: { code: UnsupportedReasonCode; detail: string }
+  constructor(pkg: string, reason: { code: UnsupportedReasonCode; detail: string }) {
+    super(`「${pkg}」无法自动升级：${reason.detail}`)
+    this.reason = reason
     this.name = 'UpgradePathUnsupportedError'
   }
 }
@@ -74,7 +77,7 @@ export class UpgradePathUnsupportedError extends Error {
 export function synthesizeInstallableEntry(target: InstalledPlugin): InstallableEntry {
   const spec = typeof target.spec === 'string' ? target.spec : ''
   const reason = unsupportedReasonFor(target)
-  if (reason) throw new UpgradePathUnsupportedError(target.pkg, reason.detail)
+  if (reason) throw new UpgradePathUnsupportedError(target.pkg, reason)
   if (target.source === 'npm') {
     return { id: `installed:${target.pkg}`, source: 'npm', npm: target.pkg }
   }
@@ -83,7 +86,8 @@ export function synthesizeInstallableEntry(target: InstalledPlugin): Installable
     // 不可达：unsupportedReasonFor 已放行 github 可解析形态（fail-closed 兜底，与 ADR-0026 同旨）。
     // 若本兜底未来可达（如 GITHUB_SPEC_RE 被改坏引入状态性 flag），desktop 边缘 catch 会将其
     // 保真翻译为 upgrade-unsupported 信封（评审 W2），web 边缘本就以此为信封。
-    throw new UpgradePathUnsupportedError(target.pkg, 'github spec 可解析性复核失败（不可达兜底）')
+    // #35（评审 #1）：code 归 github-spec-unparseable 同域（github spec 可解析性失败），detail 原文冻结。
+    throw new UpgradePathUnsupportedError(target.pkg, { code: 'github-spec-unparseable', detail: 'github spec 可解析性复核失败（不可达兜底）' })
   }
   return { id: `installed:${target.pkg}`, source: 'github', github: m[1] }
 }

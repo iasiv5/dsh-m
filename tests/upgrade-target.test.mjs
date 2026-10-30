@@ -216,3 +216,33 @@ describe('synthesizeInstallableEntry（ADR-0026 合成条目）', () => {
     }
   })
 })
+
+// ---------- #35：UpgradePathUnsupportedError 携带结构化 reason（信封透出前置） ----------
+// 自带夹具：直接构造 + synthesize 三码路径各验 reason.code（message 字节不变由既有 describe ③-⑥ 与
+// market-mutation 零改动套件共同保护）。
+describe('UpgradePathUnsupportedError 携带结构化 reason（#35）', () => {
+  it('① 直接构造：reason 原样携带 + message 模板逐字（「pkg」无法自动升级：detail）', () => {
+    const err = new UpgradePathUnsupportedError('p', { code: 'local-spec', detail: '本地开发安装（file:../p）不从线上更新' })
+    assert.deepEqual(err.reason, { code: 'local-spec', detail: '本地开发安装（file:../p）不从线上更新' })
+    assert.equal(err.message, '「p」无法自动升级：本地开发安装（file:../p）不从线上更新')
+    assert.equal(err.upgradePath, 'unsupported')
+    assert.equal(err.name, 'UpgradePathUnsupportedError')
+  })
+
+  const mk = (over = {}) => ({ pkg: 'p', name: 'P', version: '1.0.0', description: '', homepage: '', spec: '^1.0.0', source: 'npm', dsh: true, path: '/x', ...over })
+
+  it('② synthesize 三码路径：err.reason.code 与判定原子闭集一致（local-spec / github-spec-unparseable / source-unresolvable）', () => {
+    const cases = [
+      { over: { pkg: 'baz', spec: 'file:../baz' }, code: 'local-spec' },
+      { over: { pkg: 'qux', source: 'github', spec: 'not-a-github-spec' }, code: 'github-spec-unparseable' },
+      { over: { pkg: 'corge', source: 'unknown', spec: 'whatever' }, code: 'source-unresolvable' },
+    ]
+    for (const { over, code } of cases) {
+      assert.throws(
+        () => synthesizeInstallableEntry(mk(over)),
+        (err) => err instanceof UpgradePathUnsupportedError && err.reason.code === code && typeof err.reason.detail === 'string' && err.reason.detail.length > 0,
+        `期望 ${over.pkg} 场景 reason.code=${code}`,
+      )
+    }
+  })
+})

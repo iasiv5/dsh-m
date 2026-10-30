@@ -436,7 +436,7 @@ describe('ADR-0026：upgrade 失败信封 failureClass', () => {
   })
 
   it('⑥ UpgradePathUnsupportedError（本地链接/非线上来源）→ target（B5 结构化指引）', async () => {
-    const r = await upgradeFailure(new UpgradePathUnsupportedError('p', '本地开发安装（file:../p）不从线上更新'))
+    const r = await upgradeFailure(new UpgradePathUnsupportedError('p', { code: 'local-spec', detail: '本地开发安装（file:../p）不从线上更新' }))
     assert.equal(r.body.failureClass, 'target')
   })
 

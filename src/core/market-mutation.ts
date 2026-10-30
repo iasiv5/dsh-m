@@ -924,7 +924,8 @@ async function upgradePluginLocked(
   // （message 字节不变）；web/desktop 共享单一判定产地。
   const resolution = await resolveUpgradeTarget(target, cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile, signal: opts.signal }, { loaded, loadRegistry: deps?.loadRegistry, fetchCommunityCatalog: deps?.fetchCommunityCatalog })
   if (resolution.kind === 'unsupported') {
-    throw new UpgradePathUnsupportedError(target.pkg, resolution.reason.detail)
+    // #35：结构化 reason（{code,detail} 为 resolution.reason 的结构子类型）直传，message 字节不变。
+    throw new UpgradePathUnsupportedError(target.pkg, resolution.reason)
   }
   const entry = resolution.entry
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
