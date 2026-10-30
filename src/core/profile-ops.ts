@@ -29,7 +29,7 @@ import { listInstalledPlugins as defaultListInstalled } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { npmLatest as defaultNpmLatest, npmTarballUrl as defaultNpmTarballUrl, githubLatestTag as defaultGithubLatestTag } from './versions.js'
 import { writeUpgradeIntent as defaultWriteUpgradeIntent, resolveUpgradeIntent as defaultResolveUpgradeIntent } from './upgrade-intent.js'
-import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
+import { resolveUpgradeActivation, type ActivationClassification } from './activation.js'
 import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
 import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckDeps } from './release-age.js'
 import { governExcludeBlock, registerExclusion } from './exclude-governance.js'
@@ -1193,17 +1193,10 @@ async function desktopUpgradeLocked(
   const degradedRestoredTo = managed.degraded === true ? managed.restoredTo : undefined
   const degradedSuffix = degradedRestoredTo !== undefined ? `；升级失败已回装旧版 ${degradedRestoredTo}（降级恢复）` : ''
 
-  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态
-  let activation: ActivationClassification | undefined
-  let needsRestart = true
-  if (entry.source === 'npm' && entry.npm && target.version && version !== undefined) {
-    try {
-      activation = await (deps.classifyActivation ?? classifyUpgradeActivation)(entry.npm, target.version, version)
-      if (activation === 'client-only') needsRestart = false
-    } catch {
-      activation = 'unknown'
-    }
-  }
+  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态。
+  // #34：判定块收编 resolveUpgradeActivation（activation.ts 单点）；初值恒 true / toVersion 局部
+  // version 为 backend 边缘事实（toVersion 空串场景不进门 → activation 缺席，裁决 B 归因在案）。
+  const { activation, needsRestart } = await resolveUpgradeActivation(entry, target.version, version, true, deps.classifyActivation)
 
   return {
     id: entry.id,
