@@ -17,7 +17,8 @@ import { lookup, browserLang, communityLabels } from "./i18n.js";
 import { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, zoneChips, marketNotice, scrollBodyTop, preferredPagerBehavior, filterScrollKey } from "./market-state.js";
 import { backdropCloseHandlers } from "./backdrop.js";
 import { opAppliesTo } from "./operations.js";
-import { opUpgradeMeta, activeKindOp } from "./operations-view.js";
+import { activeKindOp } from "./operations-view.js";
+import { performUpgradeFlow } from "./upgrade-flow.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, SearchBox, LinksRow, compactCount, ProgressLine } from "./chrome.jsx";
 import { Card, snapshotOf, verifiedByline } from "./card.jsx";
@@ -176,35 +177,17 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
 
   // 0.9.45 U10：市场/收藏详情 Modal 内升级（动线修复——此前已装条目只能去已装页操作）。
   // record.target = 安装包名（R1：opAppliesTo 以 x.pkg === rec.target 判定前提，收录 id ≠ 包名会被误判 superseded）
+  // #36：编排出仓 upgrade-flow 单点（enqueue-meta 字面留调用点；noteSink = Modal 内摘要
+  // 0.9.15 安装终态就地可见——degraded→warn / ok / catch m.kind==='ok'?'hint':'err' 三态映射）。
   const doUpgrade = async (it) => {
-    try {
-      // 0.9.75：升级结果版本变迁（from/to，github 源回退 sha 前 7 位）经 opMeta 落账进操作记录
-      // 0.10.3（挂账 1 数据面）：toVersion 随 enqueue 落 meta（中断恢复对账的比对依据）
-      // 0.10.20：from（当前实装版 it.installedVersion）随 enqueue 持久化——恢复对账改判后渲染 v旧→v新 的数据源
-      const res = await ops.runOp("upgrade", it.installedPkg, async () => {
-        const r = await api("upgrade", { pkg: it.installedPkg });
-        const m = opUpgradeMeta(r);
-        return m ? { ...r, opMeta: m } : r;
-      }, { from: it.installedVersion, toVersion: it.latest });
-      // 0.10.0 R4：降级恢复结局（升级失败但已自动回装旧版）→ warn 投影，绝不进成功臂（「升级成功 vX→vY」与回滚事实相反）
-      const degraded = oc.degradedOutcome(res);
-      if (degraded) {
-        notify({ kind: "warn", text: degraded.text });
-        setInstallNote({ id: it.id, kind: "warn", text: degraded.text });
-      } else {
-        // 0.9.94：升级成功文案（from/to 箭头 + builds 后缀 + 0.9.22 生效判定三态分流，client-only 不弹重启横幅）单源 op-outcome
-        // ADR-0023 第二刀：needsRestart 判定单源 restartBannerDecision（委派 upgradeNotify 三态）；文案仍单源 op-outcome
-        const ok = oc.upgradeOkText(res);
-        notify({ kind: "ok", needsRestart: restartBannerDecision("upgrade", res).needsRestart, text: ok.text });
-        setInstallNote({ id: it.id, kind: "ok", text: ok.text });
-      }
-      await (onMutation ? onMutation() : undefined);
-    } catch (e) {
-      // 0.9.94 变更结局描述（op-outcome）：superseded/guard/plain 三分支合一（与已装页同款文案链）
-      const m = oc.mutationFailed(e, { verb: "upgrade", target: it.installedPkg });
-      notify({ kind: m.kind, text: m.text });
-      setInstallNote({ id: it.id, kind: m.kind === "ok" ? "hint" : "err", text: m.text });
-    }
+    await performUpgradeFlow({
+      ops, oc, target: it.installedPkg,
+      apiCall: () => api("upgrade", { pkg: it.installedPkg }),
+      noteSink: (s) => setInstallNote({ id: it.id, kind: s.kind, text: s.text }),
+      refresh: onMutation || undefined,
+      notify,
+      from: it.installedVersion, toVersion: it.latest
+    });
   };
 
   const compatOverlay = compatConfirm

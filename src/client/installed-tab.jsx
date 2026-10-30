@@ -9,8 +9,9 @@ import { api } from "./hooks.js";
 import { lookup } from "./i18n.js";
 import { installedViewModel } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
-import { applyInstalledUpdates, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
-import { opUpgradeMeta, activeMutateOp, activeProgressOp } from "./operations-view.js";
+import { applyInstalledUpdates, batchUpgradeOrder, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
+import { activeMutateOp, activeProgressOp } from "./operations-view.js";
+import { performUpgradeFlow } from "./upgrade-flow.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, LinksRow, ProgressLine, ReadmeBlock } from "./chrome.jsx";
 import { Card } from "./card.jsx";
@@ -93,36 +94,17 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
   // issue #10 修复② + ADR-0026 三态化：返回 'ok'（成功含降级恢复/良性跳过）/ 'target'（目标级
   // 失败——批量跳过继续）/ 'systemic'（系统性失败——批量短路，issue #10 语义保留）。
   // 单点升级按钮不看返回值，行为零变化；transport 语义零特判（R6 不变，见 installed-view 锚测试）。
+  // #36：编排出仓 upgrade-flow 单点（enqueue-meta/opMeta 落账/degraded→notify 链单源——
+  // cdc8404 一处 bug 多站同步修病灶消除；0.9.75 版本变迁落账 + 0.10.3 toVersion 对账依据 +
+  // 0.10.20 from 持久化语义随编排走，注释信息并集见 upgrade-flow.js doc）。
   const doUpgrade = async (it) => {
-    try {
-      // 0.9.75：升级结果版本变迁（from/to，github 源回退 sha 前 7 位）经 opMeta 落账进操作记录
-      // 0.10.3（挂账 1 数据面）：toVersion 随 enqueue 落 meta（中断恢复对账的比对依据）
-      // 0.10.20：from（当前实装版 it.version）随 enqueue 持久化——恢复对账改判后渲染 v旧→v新 的数据源
-      const res = await ops.runOp("upgrade", it.pkg, async () => {
-        const r = await api("upgrade", { pkg: it.pkg });
-        const m = opUpgradeMeta(r);
-        return m ? { ...r, opMeta: m } : r;
-      }, { from: it.version, toVersion: it.latestVersion });
-      // 0.10.0 R4：降级恢复结局（升级失败但已自动回装旧版）→ warn 投影，绝不进成功臂（与回滚事实相反）
-      const degraded = oc.degradedOutcome(res);
-      if (degraded) {
-        notify({ kind: "warn", text: degraded.text });
-      } else {
-        // 0.9.94：升级成功文案（含 0.9.22 生效判定三态分流，缺席 = github 源等未判定，维持现状横幅）单源 op-outcome
-        // ADR-0023 第二刀：needsRestart 判定单源 restartBannerDecision（委派 upgradeNotify 三态）；文案仍单源 op-outcome
-        const ok = oc.upgradeOkText(res);
-        notify({ kind: "ok", needsRestart: restartBannerDecision("upgrade", res).needsRestart, text: ok.text });
-      }
-      await (onMutation ? onMutation() : reload());
-      return "ok";
-    } catch (e) {
-      // 0.9.94 变更结局描述（op-outcome）：guard/superseded/plain 合一（今日 guard 在前，互斥分支语义等价）
-      const m = oc.mutationFailed(e, { verb: "upgrade", target: it.pkg });
-      notify({ kind: m.kind, text: m.text });
-      // ADR-0026：superseded（前提消失良性跳过）归 ok 不中断；真实失败按 failureClass 三态
-      //（e.failureClass 由 hooks api() 透传，Task 6；字段缺席缺省 target——评审 F1）
-      return m.kind !== "err" ? "ok" : classifyBatchOutcome(e);
-    }
+    return performUpgradeFlow({
+      ops, oc, target: it.pkg,
+      apiCall: () => api("upgrade", { pkg: it.pkg }),
+      refresh: onMutation ? onMutation : reload,
+      notify,
+      from: it.version, toVersion: it.latestVersion
+    });
   };
 
   if (loading && !data) return h("div", { className: "dshm-empty" }, lookup("installed.loading"), Spin());

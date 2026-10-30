@@ -136,24 +136,28 @@ describe('ADR-0026：batchUpgradeOrder 排除 unsupported + classifyBatchOutcome
 })
 
 // ---------- 0.10.0 Task 10：降级恢复结局站点接线（main.jsx 源串结构锚；单行锚——避开 CRLF 多行锚陷阱） ----------
-describe('降级恢复站点接线（0.10.0 Task 10：市场卡 + 已装列表两处升级站点；ADR-0023 T11：站点随 Tab 出仓，计数改双文件合计）', () => {
+describe('降级恢复站点接线（0.10.0 Task 10：市场卡 + 已装列表两处升级站点；#36 出仓后降级分支单源 upgrade-flow，站点消费薄壳化）', () => {
   const marketTabSrc = readFileSync(new URL('../src/client/market-tab.jsx', import.meta.url), 'utf8')
   const installedTabSrc = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
   const both = marketTabSrc + '\n' + installedTabSrc
   const _src = both
   const count = (needle) => both.split(needle).length - 1
 
-  it('① 两处升级站点都先问降级分支（恰两处）', () => {
-    assert.equal(count('const degraded = oc.degradedOutcome(res);'), 2, '市场卡 doUpgrade + 已装列表 doUpgrade 各一处')
+  it('① 降级分支单源编排（#36 出仓：upgrade-flow 恰一处；两薄壳消费 performUpgradeFlow）', () => {
+    const flowSrc = readFileSync(new URL('../src/client/upgrade-flow.js', import.meta.url), 'utf8')
+    assert.equal(flowSrc.split('const degraded = oc.degradedOutcome(res);').length - 1, 1, '降级分支恰一处（编排单源）')
+    assert.ok(marketTabSrc.split('performUpgradeFlow(').length - 1 >= 1, '市场卡薄壳消费编排')
+    assert.ok(installedTabSrc.split('performUpgradeFlow(').length - 1 >= 1, '已装列表薄壳消费编排')
   })
 
-  it('② 降级分支 warn 通知、不进 upgradeOkText 成功臂（守卫分支恰两处）', () => {
-    assert.equal(count('if (degraded) {'), 2)
-    assert.equal(count('notify({ kind: "warn", text: degraded.text });'), 2, '降级走 warn（零「升级成功 vX→vY」路径）')
+  it('② 降级分支 warn 通知、不进 upgradeOkText 成功臂（编排单源恰一处）', () => {
+    const flowSrc = readFileSync(new URL('../src/client/upgrade-flow.js', import.meta.url), 'utf8')
+    assert.equal(flowSrc.split('if (degraded) {').length - 1, 1)
+    assert.equal(flowSrc.split("notify({ kind: 'warn', text: degraded.text });").length - 1, 1, '降级走 warn（零「升级成功 vX→vY」路径）')
   })
 
-  it('③ 市场卡站点同步 setInstallNote 降级句（恰一处；已装列表站点无 installNote 惯例）', () => {
-    assert.equal(count('setInstallNote({ id: it.id, kind: "warn", text: degraded.text });'), 1)
+  it('③ 市场卡站点同步 setInstallNote 降级句（noteSink 包装恰一处；已装列表站点无 installNote 惯例）', () => {
+    assert.equal(count('setInstallNote({ id: it.id, kind: s.kind, text: s.text })'), 1)
   })
 
   it('④ 文案键双字典同层：op.degraded zh 逐字 + en 键在位（i18n.js 词典面——ADR-0023 T1）', () => {
@@ -177,21 +181,24 @@ describe('升级 enqueue meta 携带 toVersion + from（0.10.3 单行锚；0.10.
     assert.equal(versionChipSrc.split('{ npm: "dsh-m", from: version, toVersion: state.latest }').length - 1, 1)
   })
 
-  it('② 已装列表以 updates 合并的 latestVersion 为目标版、当前实装 it.version 为 from（installed-tab.jsx）', () => {
-    assert.equal(installedTabSrc.split('{ from: it.version, toVersion: it.latestVersion }').length - 1, 1)
+  it('② 已装列表以 updates 合并的 latestVersion 为目标版、当前实装 it.version 为 from（installed-tab.jsx；#36 薄壳平铺传参形态）', () => {
+    assert.equal(installedTabSrc.split('from: it.version, toVersion: it.latestVersion').length - 1, 1)
   })
 
-  it('③ 市场卡以卡片 latest 为目标版、当前实装 it.installedVersion 为 from（升级站点 meta 原为空对象，第 4 参落 meta；market-tab.jsx）', () => {
-    assert.equal(marketTabSrc.split('{ from: it.installedVersion, toVersion: it.latest }').length - 1, 1, '市场卡 doUpgrade meta 锚')
+  it('③ 市场卡以卡片 latest 为目标版、当前实装 it.installedVersion 为 from（升级站点 meta 原为空对象，第 4 参落 meta；market-tab.jsx；#36 薄壳平铺传参形态）', () => {
+    assert.equal(marketTabSrc.split('from: it.installedVersion, toVersion: it.latest').length - 1, 1, '市场卡 doUpgrade meta 锚')
   })
 })
 
-// ADR-0026：面板批量三态接线源锚（as-built：installed-tab.jsx 经 classifyBatchOutcome/
-// summarizeBatch 消费 failureClass——failureClass 字面读取单源在 installed-updates.js）
+// ADR-0026：面板批量三态接线源锚（as-built：#36 出仓后 classifyBatchOutcome 单源在
+// upgrade-flow.js（installed-tab 薄壳经 performUpgradeFlow 透传三态）/ summarizeBatch 消费
+// failureClass——failureClass 字面读取单源在 installed-updates.js）
 describe('ADR-0026：installed-tab 批量三态接线（源结构锚，出现次数语义）', () => {
   const src = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
-  it('classifyBatchOutcome 接线 ≥1', () => {
-    assert.ok(src.split('classifyBatchOutcome').length - 1 >= 1, `实得 ${src.split('classifyBatchOutcome').length - 1}`)
+  const flowSrc = readFileSync(new URL('../src/client/upgrade-flow.js', import.meta.url), 'utf8')
+  it('classifyBatchOutcome 接线 ≥1（#36 出仓后单源在 upgrade-flow）', () => {
+    assert.ok(flowSrc.split('classifyBatchOutcome').length - 1 >= 1, `flow 实得 ${flowSrc.split('classifyBatchOutcome').length - 1}`)
+    assert.ok(src.split('performUpgradeFlow(').length - 1 >= 1, '薄壳经编排透传三态')
   })
   it('summarizeBatch 接线 ≥1', () => {
     assert.ok(src.split('summarizeBatch').length - 1 >= 1, `实得 ${src.split('summarizeBatch').length - 1}`)

@@ -24,6 +24,7 @@ const CONSUMER_FILES = [
   "src/client/installed-tab.jsx",
   "src/client/market-tab.jsx",
   "src/client/settings-tab.jsx",
+  "src/client/upgrade-flow.js",
 ];
 const consumerSrc = CONSUMER_FILES.map((f) => readFileSync(join(root, f), "utf8")).join("\n");
 const count = (needle) => consumerSrc.split(needle).length - 1;
@@ -32,6 +33,6 @@ test("0.9.94 守卫装配特征 join(\" | \") 在消费面文件归零（回流�
   assert.equal(count('join(" | ")'), 0, "守卫文案装配已单源 op-outcome.js，消费面文件出现 join(\" | \") 即装配回流");
 });
 
-test("0.9.94 六站点 mutationFailed 接线在位（≥6，卸站点需同步改本锚；ADR-0023 目录级合计）", () => {
-  assert.ok(count("mutationFailed") >= 6, "mutationFailed 接线站点不足 6——变更结局投影有站点脱管");
+test("0.9.94 六站点 mutationFailed 接线在位（出仓前 ≥6；#36 升级编排出仓后 installed/market 两站合一为 upgrade-flow，站点数结构性 −1 → ≥5；卸站点需同步改本锚；ADR-0023 目录级合计）", () => {
+  assert.ok(count("mutationFailed") >= 5, "mutationFailed 接线站点不足 5——变更结局投影有站点脱管");
 });

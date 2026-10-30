@@ -140,13 +140,15 @@ describe('全部更新批量接线（issue #10）', () => {
     assert.ok(itSrc.includes('batch.selfIncluded'), '自升级收尾提示接线在')
   })
 
-  it('④ doUpgrade 三态契约（ADR-0026 改写）：成功臂返回 "ok"；失败臂按 failureClass 分类', () => {
+  it('④ doUpgrade 三态契约（ADR-0026 改写；#36 出仓）：三态单源 upgrade-flow，薄壳透传', () => {
     const start = itSrc.indexOf('const doUpgrade = async (it) => {')
     const end = itSrc.indexOf('if (loading && !data) return', start)
     assert.ok(end > start, 'doUpgrade 切片边界在')
     const body = itSrc.slice(start, end)
-    assert.ok(body.includes('return "ok";'), '成功臂（含降级恢复/良性跳过面）返回 ok')
-    assert.ok(body.includes('classifyBatchOutcome(e)'), '失败臂按 failureClass 三态（superseded 良性跳过归 ok；字段缺席缺省 target）')
+    assert.ok(body.includes('performUpgradeFlow('), '薄壳消费编排单源（#36 出仓）')
+    const flowSrc = readFileSync(new URL('../src/client/upgrade-flow.js', import.meta.url), 'utf8')
+    assert.ok(flowSrc.includes("return 'ok';"), '成功臂（含降级恢复/良性跳过面）返回 ok')
+    assert.ok(flowSrc.includes('classifyBatchOutcome(e)'), '失败臂按 failureClass 三态（superseded 良性跳过归 ok；字段缺席缺省 target）')
   })
 
   it('⑤ 收尾提示文案双字典在位（i18n.js zh/en 各一枚）', () => {

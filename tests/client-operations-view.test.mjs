@@ -162,7 +162,7 @@ describe('main.jsx 操作记录增强接线结构锚', () => {
     assert.ok(ocSrc.includes('from "./operations-view.js"'), '必须消费 operations-view 视图模型（ESM import，operations-card.jsx）')
     assert.ok(ocSrc.includes('groupOpsByDay(finished)'), '已结束区必须按日分组')
     assert.ok(ocSrc.includes('opRowVm(r)'), '行渲染必须走 opRowVm')
-    assert.ok((readFileSync(join(root, 'src/client/market-tab.jsx'), 'utf8') + readFileSync(join(root, 'src/client/installed-tab.jsx'), 'utf8')).includes('opUpgradeMeta(r)'), '升级调用点必须管道 opUpgradeMeta（站点随 Tab 出仓——ADR-0023 T11 双文件合计）')
+    assert.ok(readFileSync(join(root, 'src/client/upgrade-flow.js'), 'utf8').includes('opUpgradeMeta(r)'), '升级调用点管道 opUpgradeMeta 单源迁编排（#36 出仓——ADR-0023 T11）')
   })
   it('新展示元素与新 i18n 键在位', () => {
     assert.ok(ocSrc.includes('dsvm-optime'), '行内时刻列（operations-card.jsx）')

@@ -354,7 +354,7 @@ describe('0.9.45 两段加载接线（源码断言；ADR-0023 T9：useMarketData
     assert.match(up, /dsvm-modalactions[\s\S]*?dshm-btn primary/, 'outdated → 动作区主按钮在（语言无关）')
     const ok = renderToString(h(components.__DetailModal, { it: base, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: false, profileKind: 'web' }))
     assert.doesNotMatch(ok, /dsvm-modalactions[\s\S]*?dshm-btn primary/, '非 outdated → 动作区无主按钮')
-    assert.match(marketTabSrc, /ops\.runOp\("upgrade", it\.installedPkg/, 'record.target = 安装包名（R1：upgrade record 语义是 pkg；Modal 升级按钮由 MarketTab 供给——ADR-0023 T11 在 market-tab.jsx）')
+    assert.match(marketTabSrc, /target: it\.installedPkg/, 'record.target = 安装包名（R1：upgrade record 语义是 pkg；#36 薄壳经 target 传参表达，runOp 落账在 upgrade-flow 单源——ADR-0023 T11 在 market-tab.jsx）')
     assert.match(marketTabSrc, /activeUpgradeRec\.target === detailItem\.installedPkg/, '进度行比对走 installedPkg（R1；market-tab.jsx）')
   })
 

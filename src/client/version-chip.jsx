@@ -56,6 +56,9 @@ function DshmVersionChip({ version, notify, initialCheck, ops }) {
     return performUpgrade();
   };
   // 升级臂——self-upgrade 请求全文件唯一直呼点。
+  // #36：self-upgrade 语义族（method/成功臂自拼文案/clearSelfCheckCache 副作用/unsupported
+  // info 分支/busy 守卫，另 opMeta 手拼 {from,to} 与 enqueue 含 npm 字段）不入通用编排
+  // upgrade-flow；enqueue-meta/opMeta 构造与其同源（{from, toVersion} 对账不变量一致）。
   const performUpgrade = async () => {
     if (busy) return;
     setBusy(true);
