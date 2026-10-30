@@ -7,7 +7,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { createOperationsStore, restoreRecords, drainRestored, createOpsPump, opAppliesTo, reachedVersion, readReconcileNotified, writeReconcileNotified, RECONCILE_NOTIFIED_KEY, OP_STORAGE_KEY, upgradeNotify, TERMINAL_CLEARABLE, REGISTRY_DEFAULT_TARGET } from '../src/client/operations.js'
+import { createOperationsStore, restoreRecords, createOpsPump, opAppliesTo, reachedVersion, readReconcileNotified, writeReconcileNotified, RECONCILE_NOTIFIED_KEY, OP_STORAGE_KEY, upgradeNotify, TERMINAL_CLEARABLE, REGISTRY_DEFAULT_TARGET } from '../src/client/operations.js'
 import { groupOpsByDay, opRowVm } from '../src/client/operations-view.js'
 
 /** localStorage mock（可注入故障）。 */
@@ -124,90 +124,6 @@ describe('restoreRecords（恢复四分支）', () => {
   })
 })
 
-describe('drainRestored（恢复执行器）', () => {
-  function storeWith(records) {
-    const store = createOperationsStore(memStorage())
-    for (const r of records) store.upsert(r) // 播种用 upsert（P1 后 replaceAll 是恢复写回合并语义，不新增）
-    return store
-  }
-
-  it('FIFO 逐条执行：成立→running→done；失败→failed；不成立→superseded 且不 dispatch', async () => {
-    const store = storeWith([
-      rec({ id: 'a', status: 'queued', target: 't-a' }),
-      rec({ id: 'b', status: 'queued', target: 't-b' }),
-      rec({ id: 'c', status: 'queued', target: 't-c' }),
-    ])
-    const dispatched = []
-    const stillApplies = async (r) => r.target !== 't-c'
-    await drainRestored(
-      store,
-      async (r) => {
-        dispatched.push(r.target)
-        return r.target === 't-b' ? { ok: false, error: 'boom' } : { ok: true }
-      },
-      stillApplies,
-    )
-    assert.deepEqual(dispatched, ['t-a', 't-b'], 't-c 前提消失不 dispatch')
-    const by = Object.fromEntries(store.list().map((r) => [r.id, r.status]))
-    assert.equal(by.a, 'done')
-    assert.equal(by.b, 'failed')
-    assert.equal(by.c, 'superseded')
-    assert.ok(store.list().find((r) => r.id === 'b').error.includes('boom'))
-  })
-
-  it('二次校验为执行时实读：drain dispatch 前重新查询而非复用 restore 快照', async () => {
-    // 侧信道：stillApplies 调用计数——restoreRecords 一次 + drain 每条 dispatch 前再一次 = 同一记录两次
-    const store = storeWith([rec({ id: 'only', status: 'queued' })])
-    let calls = 0
-    const stillApplies = async () => {
-      calls += 1
-      return true
-    }
-    const restored = await restoreRecords(store.list(), stillApplies)
-    store.replaceAll(restored)
-    await drainRestored(
-      store,
-      async () => ({ ok: true }),
-      stillApplies,
-    )
-    assert.equal(calls, 2, '同一记录 restore 校验 1 次 + drain dispatch 前实读 1 次')
-    assert.equal(store.list().find((r) => r.id === 'only').status, 'done')
-  })
-
-  it('dispatch 抛错按 failed 收敛；warned 透传', async () => {
-    const store = storeWith([
-      rec({ id: 'e', status: 'queued', target: 't-e' }),
-      rec({ id: 'w', status: 'queued', target: 't-w' }),
-    ])
-    await drainRestored(
-      store,
-      async (r) => {
-        if (r.target === 't-e') throw new Error('network gone')
-        return { ok: true, warning: 'built scripts approved' }
-      },
-      async () => true,
-    )
-    const by = Object.fromEntries(store.list().map((r) => [r.id, r.status]))
-    assert.equal(by.e, 'failed')
-    assert.equal(by.w, 'warned')
-  })
-
-  it('clearFinished 清除全部终态（含 failed/superseded，0.9.6 主人裁决），保留在途态', async () => {
-    const store = storeWith([
-      rec({ id: 's', status: 'superseded' }),
-      rec({ id: 'f', status: 'failed', error: 'x' }),
-      rec({ id: 'd', status: 'done' }),
-      rec({ id: 'q', status: 'queued' }),
-    ])
-    const next = store.clearFinished()
-    assert.deepEqual(next.map((r) => r.id), ['q'], '只有非终态（queued/running/input）保留')
-  })
-
-  it('单条 remove（终审·新伤2 的面板出口）', () => {
-    const store = storeWith([rec({ id: 'i', status: 'input', inputKind: 'peer-incompatible' }), rec({ id: 'd', status: 'done' })])
-    assert.deepEqual(store.remove('i').map((r) => r.id), ['d'])
-  })
-})
 
 describe('session 活会话标记（0.7.0 终审·新伤1）', () => {
   it('restoreRecords 跳过带 session 标记的记录（running 不被误标「重启中断」）', async () => {

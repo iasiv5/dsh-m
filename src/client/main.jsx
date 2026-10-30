@@ -10,7 +10,7 @@ const { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } = R
 const PLUGIN_ID = "dsh-m";
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision, marketResponseEquivalent } = require("./market-state.js");
+const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, marketResponseEquivalent } = require("./market-state.js");
 const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");

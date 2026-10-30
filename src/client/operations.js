@@ -14,11 +14,9 @@
  * - 持久化原子写：每次变更全量写，配额/序列化失败静默降级内存态（persistDegraded=true，不抛）；
  * - restoreRecords：必须在 installed 数据 resolve 之后调用（时序写死）；queued 逐条校验
  *   （成立→保持 queued 待执行；不成立→superseded）；input 一律 failed（待决确认不可恢复）；
- *   running 标 failed（进程重启中断）；done/warned/failed 原样保留；
- * - drainRestored：恢复执行器。FIFO 逐条 dispatch（复用现有 UI 调用链，不新建事务路径；
- *   后端 Profile 变更事务 FIFO 保证串行）；dispatch 前二次校验——以执行时实读复核前提
- *   （禁止复用 restore 流程开头缓存的 installed 快照），不成立→superseded。
- *   与 compensate-install rejected 分支「以执行时实况为准」语义同源。
+ *   running 标 failed（进程重启中断）；done/warned/failed 原样保留。
+ *   （drainRestored 恢复执行器已退役：生产路径由 createOpsPump 承担，恢复并入同一泵；
+ *   纯函数与其 Node 测试随 #36 接口瘦身移除。）
  * 不依赖 DOM/React，Node tests 直接 import。
  */
 
@@ -536,30 +534,4 @@ export function createOpsPump(store, getCtx) {
  * @param {(rec: OperationRecord) => Promise<{ ok: boolean; error?: string; warning?: string }>} dispatch
  * @param {(rec: OperationRecord) => Promise<boolean>} stillApplies
  */
-export async function drainRestored(store, dispatch, stillApplies) {
-  const queue = store.list().filter((r) => r.status === 'queued')
-  for (const rec of queue) {
-    let applies = false
-    try {
-      applies = await stillApplies(rec)
-    } catch {
-      applies = false
-    }
-    if (!applies) {
-      store.upsert({ ...rec, status: 'superseded', error: '执行时前提消失（已手动处理？）' })
-      continue
-    }
-    store.upsert({ ...rec, status: 'running' })
-    let result
-    try {
-      result = await dispatch(rec)
-    } catch (e) {
-      result = { ok: false, error: String((e && e.message) || e) }
-    }
-    if (result && result.ok) {
-      store.upsert({ ...rec, status: result.warning ? 'warned' : 'done', warning: result.warning })
-    } else {
-      store.upsert({ ...rec, status: 'failed', error: (result && result.error) || 'unknown' })
-    }
-  }
-}
+

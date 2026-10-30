@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } from '../src/client/market-state.js'
+import { chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } from '../src/client/zone-chips-geometry.js'
 
 describe('chipRows（offsetTop 去重计数行数）', () => {
   it('空数组 / 非数组 → 0', () => {

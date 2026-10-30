@@ -7,7 +7,8 @@ import React from "react";
 const h = React.createElement;
 const { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } = React;
 import { lookup } from "./i18n.js";
-import { zoneChips, chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } from "./market-state.js";
+import { zoneChips } from "./market-state.js";
+import { chipRows, countBeyondRows, clipTopOf, visibleRowTop, autoExpandDecision } from "./zone-chips-geometry.js";
 
 function ZoneChips({ zone, counts, labels, active, onPick, trailing, wrapTitle }) {
   const chips = useMemo(() => zoneChips(counts, labels, zone), [counts, labels, zone]);
