@@ -53,7 +53,7 @@ import type { CommunityEntry } from './community-adapter.js'
 import { resolveUpgradeTarget, UpgradePathUnsupportedError } from './upgrade-target.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
-import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
+import { resolveUpgradeActivation, type ActivationClassification } from './activation.js'
 import { HttpError } from './httpx.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
@@ -931,17 +931,9 @@ async function upgradePluginLocked(
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
   const result = await installEntryLocked(entry, cfg, opts, deps)
-  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态
-  let activation: ActivationClassification | undefined
-  let needsRestart = result.needsRestart
-  if (entry.source === 'npm' && entry.npm && target.version && result.version) {
-    try {
-      activation = await (deps?.classifyActivation ?? classifyUpgradeActivation)(entry.npm, target.version, result.version)
-      if (activation === 'client-only') needsRestart = false
-    } catch {
-      activation = 'unknown'
-    }
-  }
+  // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态。
+  // #34：判定块收编 resolveUpgradeActivation（activation.ts 单点）；初值/toVersion 为 backend 边缘事实。
+  const { activation, needsRestart } = await resolveUpgradeActivation(entry, target.version, result.version, result.needsRestart, deps?.classifyActivation)
   return { ...result, fromVersion: target.version, needsRestart, ...(activation ? { activation } : {}) }
 }
 
