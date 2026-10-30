@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
 import { externalToRecord } from '../src/client/operations.js'
-import { pad2, fmtOpClock, fmtOpFull, opDayKey, fmtOpDuration, opUpgradeMeta, groupOpsByDay, opRowVm, channelLabelKey, canRemoveRow } from '../src/client/operations-view.js'
+import { pad2, fmtOpClock, fmtOpFull, opDayKey, fmtOpDuration, opUpgradeMeta, groupOpsByDay, opRowVm, channelLabelKey, canRemoveRow, isInflightStatus, activeMutateOp, activeProgressOp, activeKindOp } from '../src/client/operations-view.js'
 
 const root = join(fileURLToPath(import.meta.url), '..', '..')
 
@@ -290,5 +290,36 @@ describe('main.jsx × 外部记录接线结构锚（Task 5）', () => {
     const modelSrc = readFileSync(join(root, 'src/client/operations.js'), 'utf8')
     assert.ok(modelSrc.includes('externalOverlay'), 'overlay 数组在位')
     assert.ok(modelSrc.includes('JSON.stringify(records.map'), 'persist 序列化只含本地 records（overlay 永不进 persist 路径）')
+  })
+})
+
+// ---------- #36：ops 在途谓词单点（五处手写镜像收权，status 闭集变更从此单点） ----------
+describe('#36 在途谓词：isInflightStatus / activeMutateOp / activeProgressOp / activeKindOp', () => {
+  const rec = (kind, status) => ({ kind, status, target: `${kind}-t` })
+
+  it('① isInflightStatus：queued/running/input 真值；终态与非字符串 false', () => {
+    for (const s of ['queued', 'running', 'input']) assert.equal(isInflightStatus(s), true, `status=${s} 在途`)
+    for (const s of ['done', 'warned', 'failed', 'superseded', '', undefined, null]) assert.equal(isInflightStatus(s), false, `status=${String(s)} 非在途`)
+  })
+
+  it('② activeMutateOp：首个 kind!==install 且在途；install 在途被跳过；全终态 null', () => {
+    const records = [rec('install', 'running'), rec('toggle', 'queued'), rec('upgrade', 'running')]
+    assert.equal(activeMutateOp(records).target, 'toggle-t', 'install 排除、取首个在途非 install')
+    assert.equal(activeMutateOp([rec('install', 'running'), rec('uninstall', 'done')]), null, '仅 install 在途 → null')
+    assert.equal(activeMutateOp([]), null)
+  })
+
+  it('③ activeProgressOp：install/upgrade/self-upgrade 三 kind 收，其余在途排', () => {
+    const records = [rec('toggle', 'queued'), rec('upgrade', 'queued'), rec('self-upgrade', 'running')]
+    assert.equal(activeProgressOp(records).target, 'upgrade-t', 'toggle 不进进度条（0.7.0 UX 裁决）')
+    assert.equal(activeProgressOp([rec('self-upgrade', 'input')]).target, 'self-upgrade-t', 'self-upgrade 在收集合')
+    assert.equal(activeProgressOp([rec('toggle', 'running')]), null)
+  })
+
+  it('④ activeKindOp：按 kind 取首个在途完整 record；无命中 null', () => {
+    const records = [rec('upgrade', 'done'), rec('upgrade', 'queued')]
+    assert.equal(activeKindOp(records, 'upgrade').status, 'queued', '跳过终态取在途')
+    assert.equal(activeKindOp(records, 'install'), null)
+    assert.equal(activeKindOp([], 'upgrade'), null)
   })
 })

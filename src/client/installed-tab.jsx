@@ -10,7 +10,7 @@ import { lookup } from "./i18n.js";
 import { installedViewModel } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
 import { applyInstalledUpdates, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
-import { opUpgradeMeta } from "./operations-view.js";
+import { opUpgradeMeta, activeMutateOp, activeProgressOp } from "./operations-view.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, LinksRow, ProgressLine, ReadmeBlock } from "./chrome.jsx";
 import { Card } from "./card.jsx";
@@ -29,12 +29,13 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
   // 失败路径同样在 finally 清除＝回滚到服务端态，配合 err toast。PhaseDot/副行文案一并跟随。
   const [pendingToggles, setPendingToggles] = useState({});
   // busy 派生自操作记录（0.7.0 Task 13）——首个进行中的非 install 操作
-  const activeMutateTarget = (ops.records.find((r) => r.kind !== "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
+  // #36：谓词收权 operations-view（activeMutateOp），变量名与语义不变
+  const activeMutateTarget = (activeMutateOp(ops.records) || {}).target || null;
   // 进度条只服务有 pnpm 阶段的操作（install/upgrade/self-upgrade）。toggle/uninstall 挂它只会
   // 显示无信息量的「· 准备中」，还要付出 47px×2 的卡片栅格位移——开关原地丢失命中 0.6–1.3s
   // （2026-10-13 CDP 实测，01_docs/research/2026-10-13-dshm-toggle-ux-cdp-probe.md）。
   // 注意别合并进 activeMutateTarget：后者还负责逐行禁用按钮（含 toggle 自身）。
-  const progressTarget = (ops.records.find((r) => (r.kind === "install" || r.kind === "upgrade" || r.kind === "self-upgrade") && (r.status === "running" || r.status === "queued" || r.status === "input")) || {}).target || null;
+  const progressTarget = (activeProgressOp(ops.records) || {}).target || null;
 
   const doToggle = async (it, enabled) => {
     setPendingToggles((m) => ({ ...m, [it.pkg]: enabled }));

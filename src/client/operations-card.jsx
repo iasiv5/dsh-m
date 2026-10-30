@@ -13,7 +13,7 @@ const { useMemo } = React;
 import { api, useScrollableContain } from "./hooks.js";
 import { lookup } from "./i18n.js";
 import { TERMINAL_CLEARABLE } from "./operations.js";
-import { groupOpsByDay, opRowVm, canRemoveRow, channelLabelKey } from "./operations-view.js";
+import { groupOpsByDay, opRowVm, canRemoveRow, channelLabelKey, isInflightStatus } from "./operations-view.js";
 import { Spin, XIcon } from "./chrome.jsx";
 
 // 操作记录卡（0.9.x 布局重构·第二批）：从面板底部搬迁至设置 tab 末位恒通宽卡。
@@ -21,7 +21,8 @@ import { Spin, XIcon } from "./chrome.jsx";
 // 「清除已结束」钉底；空态显示 hint 卡（导览：记录搬到这里了）。终态展示上限 50 条
 // （store 无上限，滚动区只管 UI 高度，条数上限防 DOM 无界增长）。
 function OperationsCard({ records, onClearFinished, onRemove }) {
-  const active = records.filter((r) => r.status === "queued" || r.status === "running" || r.status === "input");
+  // #36：在途闭集单点 isInflightStatus（queued/running/input），语义不变
+  const active = records.filter((r) => isInflightStatus(r.status));
   // 0.9.79（R1-7）：标题计数 = 合并后全量终态总数；slice(-50) 只作渲染截断（最近 50 条照旧），
   // 外部记录并入后计数不再因截断失真。
   const finishedAll = records.filter((r) => active.indexOf(r) < 0);

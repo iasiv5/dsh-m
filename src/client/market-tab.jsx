@@ -17,7 +17,7 @@ import { lookup, browserLang, communityLabels } from "./i18n.js";
 import { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, zoneChips, marketNotice, scrollBodyTop, preferredPagerBehavior, filterScrollKey } from "./market-state.js";
 import { backdropCloseHandlers } from "./backdrop.js";
 import { opAppliesTo } from "./operations.js";
-import { opUpgradeMeta } from "./operations-view.js";
+import { opUpgradeMeta, activeKindOp } from "./operations-view.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, SearchBox, LinksRow, compactCount, ProgressLine } from "./chrome.jsx";
 import { Card, snapshotOf, verifiedByline } from "./card.jsx";
@@ -58,10 +58,11 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   const [pageJump, setPageJump] = useState("");
   // busy 派生自操作记录（0.7.0 Task 13：状态不挂卡片）——首个进行中的 install
   // 0.9.15：保留完整 record——详情 Modal 内嵌进度行的数据源（展示仍是记录的派生，所有权不变）
-  const activeInstallRec = ops.records.find((r) => r.kind === "install" && (r.status === "running" || r.status === "queued" || r.status === "input")) || null;
+  // #36：谓词收权 operations-view（activeKindOp），变量名与语义不变
+  const activeInstallRec = activeKindOp(ops.records, "install");
   const activeInstallTarget = activeInstallRec ? activeInstallRec.target : null;
   // 0.9.45 U10：升级操作记录派生（与 install 同款「状态不挂卡片」所有权模型）；record.target = 安装包名（R1）
-  const activeUpgradeRec = ops.records.find((r) => r.kind === "upgrade" && (r.status === "running" || r.status === "queued" || r.status === "input")) || null;
+  const activeUpgradeRec = activeKindOp(ops.records, "upgrade");
   // 0.9.15：安装终态的 Modal 内摘要（{ id, kind: "ok"|"err"|"hint", text }）——Modal 是安装入口，
   // 终态也应就地可见；与底层 toast/横幅并行不冲突，仅在该条目自己的 Modal 内显示
   const [installNote, setInstallNote] = useState(null);

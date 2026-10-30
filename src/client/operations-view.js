@@ -138,3 +138,28 @@ export function canRemoveRow(r) {
 export function channelLabelKey(channel) {
   return `op.channel.${channel === 'host-tool' || channel === 'cli' ? channel : 'external'}`
 }
+
+// ---------- #36：ops 在途谓词单点（五处手写镜像收权；status 闭集变更从此单点） ----------
+
+/** 在途状态闭集（排队/进行中/待决）；终态（done/warned/failed/superseded）不在内。 */
+export function isInflightStatus(status) {
+  return status === 'queued' || status === 'running' || status === 'input'
+}
+
+/** 首个进行中的非 install 操作（installed-tab 逐行禁用busy 派生，0.7.0 Task 13）；无命中 null。 */
+export function activeMutateOp(records) {
+  return (Array.isArray(records) ? records : []).find((r) => r && r.kind !== 'install' && isInflightStatus(r.status)) || null
+}
+
+/**
+ * 进度条目标的操作（installed-tab 进度条只服务有 pnpm 阶段的操作——toggle/uninstall 挂它只会
+ * 显示无信息量的「· 准备中」，2026-10-13 CDP 实测卡位位移）；无命中 null。
+ */
+export function activeProgressOp(records) {
+  return (Array.isArray(records) ? records : []).find((r) => (r.kind === 'install' || r.kind === 'upgrade' || r.kind === 'self-upgrade') && isInflightStatus(r.status)) || null
+}
+
+/** 指定 kind 的首个在途操作完整 record（market-tab「状态不挂卡片」所有权模型）；无命中 null。 */
+export function activeKindOp(records, kind) {
+  return (Array.isArray(records) ? records : []).find((r) => r && r.kind === kind && isInflightStatus(r.status)) || null
+}
