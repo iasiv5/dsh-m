@@ -54,7 +54,6 @@ import {
   matchInstalledByEntry,
   mergedOutcome,
   GITHUB_SPEC_RE,
-  isLocalSpec,
   type CommunityRegistrySummary,
   type MergedOutcome,
 } from './merged-market.js'
@@ -64,6 +63,7 @@ import type { CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
+import { upgradePathFor } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
@@ -254,22 +254,6 @@ export interface InstalledItem extends InstalledPlugin {
 
 /** 升级通路三态（ADR-0026 GLOSSARY「来源自证更新」）。 */
 export type UpgradePath = 'catalog' | 'synthesized' | 'unsupported'
-
-/**
- * 升级通路投影（ADR-0026，B6）：判据单源——registryId 命中 → catalog；本地 spec
- * （file:/link:，merged-market isLocalSpec）、source ∉ {npm,github}，或 github 源 spec
- * 解析不出 owner/repo（GITHUB_SPEC_RE，与 synthesizeInstallableEntry 同规）→ unsupported；
- * 其余 → synthesized。与 synthesizeInstallableEntry 的分支口径逐点一致（评审 F8 +
- * 实施评审终审建议落地：投影/合成判据完全对齐）。
- */
-export function upgradePathFor(item: { registryId?: string; spec?: string; source?: string }): UpgradePath {
-  if (item.registryId) return 'catalog'
-  const spec = typeof item.spec === 'string' ? item.spec : ''
-  if (isLocalSpec(spec)) return 'unsupported'
-  if (item.source !== 'npm' && item.source !== 'github') return 'unsupported'
-  if (item.source === 'github' && !GITHUB_SPEC_RE.exec(spec)?.[1]) return 'unsupported'
-  return 'synthesized'
-}
 
 export interface InstalledResult {
   items: InstalledItem[]

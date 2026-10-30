@@ -21,7 +21,8 @@
  * 禁止事项：desktop 路径零 Web fallback——不做文件级装后守卫（app.asar 探测盲区）、
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
-import { withMutationSession, resolveRegistryEntry, synthesizeInstallableEntry, UpgradePathUnsupportedError, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
+import { withMutationSession, resolveRegistryEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
+import { synthesizeInstallableEntry, UpgradePathUnsupportedError } from './upgrade-target.js'
 import { matchInstalledByEntry } from './merged-market.js'
 import { mergedOutcome } from './merged-market.js'
 import { WEB_PROFILE } from './env.js'

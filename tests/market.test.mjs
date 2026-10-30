@@ -9,7 +9,8 @@ import { writeFileSync, readFileSync, rmSync, mkdtempSync, mkdirSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { listMarket, listInstalledWithMeta, existingMarketIds, upgradePathFor } from '../lib/core/market.js'
+import { listMarket, listInstalledWithMeta, existingMarketIds } from '../lib/core/market.js'
+import { upgradePathFor } from '../lib/core/upgrade-target.js'
 import { communityOutcome } from '../lib/core/merged-market.js'
 import '../lib/core/compat-check.js';
 import { resetLatestCacheForTest } from '../lib/core/latest-cache.js'

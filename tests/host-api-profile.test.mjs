@@ -384,7 +384,8 @@ describe('host-api profile 能力表路由（Task 8）', () => {
 })
 
 // ---------- ADR-0026：升级失败信封 failureClass（缺省 target、systemic 显式白名单，评审 F1） ----------
-import { InstallGuardError, UpgradePathUnsupportedError } from '../lib/core/market-mutation.js'
+import { InstallGuardError } from '../lib/core/market-mutation.js'
+import { UpgradePathUnsupportedError } from '../lib/core/upgrade-target.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
 import { DesktopOpsError } from '../lib/core/profile-ops.js'
 import { readFileSync } from 'node:fs'
