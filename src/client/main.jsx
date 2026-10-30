@@ -5,41 +5,23 @@
 const React = require("react");
 const rd = require("react-dom");
 const h = React.createElement;
-const { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } = React;
-
-const PLUGIN_ID = "dsh-m";
+const { useState, useEffect, useLayoutEffect, useCallback, useRef } = React;
 
 // 市场面板 pure state（Node tests 直接覆盖；0.7.0 Task 8 分区化：zone 状态工厂/页码窗口/分区 chips；0.9.25 跨区搜索：searchSourceOf）
-const { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, createZoneState, normalizeMarketQuery, resetPageOnFilterChange, normalizeMarketResponse, registryNotice, zoneChips, marketNotice, searchSourceOf, mergeLatestFields, marketResponseEquivalent } = require("./market-state.js");
-const { readMarketSnapshot, writeMarketSnapshot, isDefaultFirstPageQuery } = require("./market-snapshot.js");
 const { backdropCloseHandlers } = require("./backdrop.js");
-const { lbStep, lbNeighbors, swipeDir } = require("./lightbox.js");
-const { shotWheelAction } = require("./wheel-strip.js");
 const { dragSlop, grabOffset, titlebarTopInset, clampPoint, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
 const { clampSize, loadPanelSize, savePanelSize } = require("./window-resize.js");
-const { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } = require("./img-chain.js");
-const { createMarkdown } = require("./markdown.js");
-const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
-const { installedViewModel, registrySourceKey } = require("./installed-view.js");
-const { toggleViewModel, toggleNoticeKeys } = require("./toggle-view.js");
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
-const { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } = require("./restart-wait.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
-const { restoreRecords, opAppliesTo, readReconcileNotified, writeReconcileNotified, TERMINAL_CLEARABLE, REGISTRY_DEFAULT_TARGET } = require("./operations.js");
+const { restoreRecords, opAppliesTo, readReconcileNotified, writeReconcileNotified } = require("./operations.js");
 // 面板操作接线（GLOSSARY / ADR-0023 第二刀）：泵持有者 + 显式绑定 + 对账编排纯函数 + 横幅判定单源
-const { getSharedOpsStore, getSharedOpsPump, bindPanelOps, unbindPanelOps, recordSettingsOp, planReconcileActions, restartBannerDecision } = require("./panel-ops.js");
-const { groupOpsByDay, opRowVm, opUpgradeMeta, canRemoveRow, channelLabelKey } = require("./operations-view.js");
-const { createFavoritesStore, partitionStale } = require("./favorites.js");
-const { readSelfCheckCache, writeSelfCheckCache, clearSelfCheckCache, deriveChipState } = require("./self-check.js");
-const { shouldShowInstallCmd } = require("./install-cmd.js");
-const { createOpOutcome } = require("./op-outcome.js");
+const { getSharedOpsStore, getSharedOpsPump, bindPanelOps, unbindPanelOps, planReconcileActions } = require("./panel-ops.js");
+const { createFavoritesStore } = require("./favorites.js");
 const { hasShellTakeover } = require("./shell-takeover.js");
 
 // ---------- i18n（ADR-0023 第一刀：词典与取值函数出仓 src/client/i18n.js，main.jsx 仅保留装配） ----------
-const { lookup, browserLang, communityLabels, ZH, EN } = require("./i18n.js");
-// 变更结局描述（GLOSSARY，0.9.94）：五类变更结局投影的成品文案装配单源；lookup 纯函数（字典静态），模块级实例化
-const oc = createOpOutcome(lookup);
+const { lookup, ZH, EN } = require("./i18n.js");
 
 // （0.7.0 Task 8：客户端 CATEGORIES 表已由 market-state.js zoneChips 取代）
 
@@ -47,19 +29,15 @@ const oc = createOpOutcome(lookup);
 const { ensureCss } = require("./styles.js");
 
 // ---------- 数据 hooks（ADR-0023 第三刀：api/useAsync/useMarketData/fmtDate/useScrollableContain 出仓 src/client/hooks.js） ----------
-const { api, useAsync, useMarketData, fmtDate, useScrollableContain } = require("./hooks.js");
+const { api, useAsync, useMarketData, useScrollableContain } = require("./hooks.js");
 // ---------- 组件出仓·批次一（ADR-0023 第三刀 T10） ----------
-const { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, RestartBanner, SearchBox, XIcon, FsIcon, officialLinks, LinksRow, safeScreenshots, compactCount, Shot, UseImgChainProbe, Lightbox, useImgChain, ProgressLine, ReadmeBlock } = require("./chrome.jsx");
-const { Card, snapshotOf, verifiedByline } = require("./card.jsx");
-const { FavoriteZone } = require("./favorite-zone.jsx");
-const { ZoneChips } = require("./zone-chips.jsx");
-const { OperationsCard } = require("./operations-card.jsx");
+const { Icon, Spin, RestartBanner, XIcon, FsIcon, LinksRow } = require("./chrome.jsx");
 const { DshmVersionChip } = require("./version-chip.jsx");
 // ---------- 组件出仓·批次二（ADR-0023 第三刀 T11） ----------
-const { DetailModal, modalDepth } = require("./detail-modal.jsx");
+const { modalDepth } = require("./detail-modal.jsx");
 const { MarketTab } = require("./market-tab.jsx");
-const { InstalledTab, DetailRows } = require("./installed-tab.jsx");
-const { SettingsTab, Section, regSourceLabel, configStatusLabel } = require("./settings-tab.jsx");
+const { InstalledTab } = require("./installed-tab.jsx");
+const { SettingsTab } = require("./settings-tab.jsx");
 // ---------- 通用小组件 ----------
 
 
@@ -1093,7 +1071,7 @@ function SearchToolView(props) {
     return () => {
       live = false;
     };
-  }, [query, running, !!fromTool]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, running, !!fromTool]);
   if (running) return null;
   if (!items.length) return err ? h("div", { className: "dshm-err" }, err) : null;
   return h(
@@ -1131,10 +1109,10 @@ function ListToolView(props) {
   );
 }
 
-// ---------- loader 契约：factory 返回 { inject, apply } ----------
-const inject = ["slots"];
+// ---------- loader 契约：factory 返回 { inject, apply }（宿主按名消费，非死代码） ----------
+const inject = ["slots"]; // eslint-disable-line no-unused-vars -- loader 契约
 
-function apply(ctx) {
+function apply(ctx) { // eslint-disable-line no-unused-vars -- loader 契约
   const slots = ctx.slots;
   if (!slots) return;
   dshmSlotsRef = slots;

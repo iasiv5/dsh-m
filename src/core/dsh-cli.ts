@@ -6,7 +6,7 @@
  * - prepare 被拦 → 写 dangerouslyAllowAllBuilds 重试（明确报告，DESIGN.md §3 基线 4）。
  */
 
-import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { spawn, type SpawnOptions } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { installTimeoutMs, WEB_PROFILE, webProfileDir } from './env.js'

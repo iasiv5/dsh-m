@@ -51,7 +51,7 @@ function useAsync(fn, deps) {
     return fn(force)
       .then((data) => setState({ loading: false, data, error: null }))
       .catch((err) => setState({ loading: false, data: null, error: String((err && err.message) || err) }));
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  }, deps);
   useEffect(() => {
     run(false);
   }, [run]);

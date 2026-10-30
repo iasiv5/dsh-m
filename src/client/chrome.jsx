@@ -21,10 +21,6 @@ const PHASE_LABEL = { resolving: "phase.resolving", downloading: "phase.download
 
 
 
-const OP_STATUS_CLS = {
-  queued: "", running: "run", input: "warn", done: "ok", warned: "warn", failed: "err", superseded: "sup",
-};
-
 const h = React.createElement;
 const { useState, useEffect, useCallback, useRef, useMemo } = React;
 import { api, useScrollableContain } from "./hooks.js";
@@ -35,10 +31,9 @@ import { lbStep, lbNeighbors, swipeDir } from "./lightbox.js";
 import { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } from "./img-chain.js";
 import { iconCandidates } from "./icon-view.js";
 import { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } from "./restart-wait.js";
-import { DetailModal } from "./detail-modal.jsx";
 
 // markdown 渲染件工厂（createMarkdown 注入 h，与 main.jsx 同款）
-const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
+const { ExtLink, renderMarkdown } = createMarkdown(h);
 
 function Icon({ entry }) {
   const letter = String(entry.name || entry.id || "?").charAt(0).toUpperCase();

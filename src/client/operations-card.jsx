@@ -10,7 +10,7 @@ const OP_STATUS_CLS = {
 
 const h = React.createElement;
 const { useMemo } = React;
-import { api, useScrollableContain } from "./hooks.js";
+import { useScrollableContain } from "./hooks.js";
 import { lookup } from "./i18n.js";
 import { TERMINAL_CLEARABLE } from "./operations.js";
 import { groupOpsByDay, opRowVm, canRemoveRow, channelLabelKey, isInflightStatus } from "./operations-view.js";
@@ -33,7 +33,7 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   // 0.9.72 滚轮治理：已结束滚动区可滚才挂 contain；同时补键盘可达（0.9.45 U8 纪律）
   const [scrollRef, scrollCls] = useScrollableContain(finished.length);
   // 0.9.75 信息增强：已结束按日分组（新组在上、组内新→旧，最新一条贴标题可见不用滚动找）
-  const dayGroups = useMemo(() => groupOpsByDay(finished), [records]); // eslint-disable-line react-hooks/exhaustive-deps -- finished 派生自 records
+  const dayGroups = useMemo(() => groupOpsByDay(finished), [records]);
   // 行渲染（0.9.75）：展示派生全部收敛到 operations-view.js 的 opRowVm——
   // 行内时刻（title 给完整到秒）、开关/社区开关方向徽章（meta.on，旧记录已持久化立即可读）、
   // 升级版本变迁（meta.from/to，泵 0.9.75 起落账）、终态耗时。

@@ -22,7 +22,7 @@ import {
   upgradePlugin,
   InstallGuardError,
 } from './market-mutation.js'
-import { runProfileTransaction, TransactionError, makeNpmWarmPackument } from './profile-transaction.js'
+import { runProfileTransaction, TransactionError } from './profile-transaction.js'
 import { listExternalOperations, clearExternalOperations, removeExternalOperation } from './external-journal.js'
 import { readUpgradeIntent, resolveUpgradeIntent, writeUpgradeIntent } from './upgrade-intent.js'
 import { readInstalledPluginReadme, listInstalledPlugins, type PluginReadme } from './installed.js'
@@ -37,7 +37,7 @@ import { servingPort, scheduleRestart } from './restart.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
 import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
-import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry, desktopSelfUpgradeViaTarball, type DesktopManagerLike } from './profile-ops.js'
+import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry, desktopSelfUpgradeViaTarball } from './profile-ops.js'
 import { UpgradePathUnsupportedError } from './upgrade-target.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 

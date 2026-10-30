@@ -15,7 +15,7 @@ import { OperationsCard } from "./operations-card.jsx";
 import { createMarkdown } from "./markdown.js";
 
 // markdown 渲染件工厂（createMarkdown 注入 h，与 main.jsx 同款）
-const { ExtLink, MdImg, renderMarkdown } = createMarkdown(h);
+const { ExtLink } = createMarkdown(h);
 
 function regSourceLabel(data) {
   const key = registrySourceKey(data);

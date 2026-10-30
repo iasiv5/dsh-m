@@ -29,7 +29,6 @@ import { upgradeEffectLine } from './core/activation.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { pathToFileURL } from 'node:url'
 import { realpathSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 /** 分类中文标签（0.9.16 策展五桶）：精选桶单一事实源 market-query PRIMARY_CATEGORY_LABELS + 社区已知标签单一事实源；未知 slug 原样。 */
 function categoryLabelOf(category: string): string {

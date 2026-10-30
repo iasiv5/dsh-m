@@ -11,7 +11,7 @@
  * bundles 数组不产生 loader id（bundle 是包级启停选择，不是 cordis insert 合成条目），不参与冲突集合。
  */
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 import { readBundlePatchRows } from './patch-yaml.js'
 
 export type GuardViolationCode = 'NO_DSH_MARKER' | 'ENTRY_UNRESOLVABLE' | 'LOADER_ID_CONFLICT'

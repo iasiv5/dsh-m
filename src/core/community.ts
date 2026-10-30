@@ -13,7 +13,7 @@ import { decodeUtf8Fatal, fetchBytesLimited, describeFetchFailure } from './http
 import { isExactVersion, npmLatest } from './versions.js'
 import { mergedOutcome } from './merged-market.js'
 import type { CommunityRegistrySummary } from './merged-market.js'
-import type { LoadedRegistry, RegistryCacheNamespace, RegistryEntry } from './registry.js'
+import type { LoadedRegistry, RegistryCacheNamespace } from './registry.js'
 
 export const COMMUNITY_NPM_PACKAGE = 'dsh-plugin-catalog'
 export const MAX_COMMUNITY_BYTES = 32 * 1024 * 1024

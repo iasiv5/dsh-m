@@ -15,56 +15,35 @@ import {
   type HealAction,
   type TransactionDeps,
 } from './profile-transaction.js'
-import {
-  listInstalledPlugins as defaultListInstalledPlugins,
-  type InstalledPlugin,
-} from './installed.js'
-import { setLivePluginDisabled, loaderHost, type LoaderEntry } from './live-plugin.js'
+import { listInstalledPlugins as defaultListInstalledPlugins } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
-import { PROTECTED_MODULES, composeEnablement, type PluginEnablement } from './enablement.js'
-import { readProfileOverrides } from './patch-yaml.js'
+import { PROTECTED_MODULES } from './enablement.js'
 import {
   loadRegistry as defaultLoadRegistry,
-  type LoadedRegistry,
-  type RegistryCacheNamespace,
   type RegistryConfig,
   type RegistryEntry,
-  type RegistryState,
 } from './registry.js'
 import {
   fetchCommunityCatalog as defaultFetchCommunityCatalog,
-  type LoadedCommunity,
 } from './community.js'
 // 0.9.68（ADR-0016）：合并层迁入 merged-market.ts（communityOutcome/mergeRegistries/communitySummary/
 // deadlineRace/matchInstalledByEntry/isCommunityEntry/COMMUNITY_CATEGORY_LABELS）——market↔community
 // import 环自此断开；消费方（tools/profile-ops 等）直连 merged-market.js，本文件仅 import 自用
 //（历史 re-export 已由 ADR-0024 清理；ADR-0028 T4 后 profile-ops 亦不再经此消费 matchInstalledByEntry）。
 import {
-  communityOutcome,
-  communityTimeoutSummary,
-  withFallbackLookups,
-  deadlineRace,
-  isCommunityEntry,
   mergedOutcome,
-  type CommunityRegistrySummary,
-  type MergedOutcome,
 } from './merged-market.js'
-import type { CommunityEntry } from './community-adapter.js'
 import { resolveUpgradeTarget, UpgradePathUnsupportedError } from './upgrade-target.js'
-import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
-import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { resolveUpgradeActivation, type ActivationClassification } from './activation.js'
-import { HttpError } from './httpx.js'
-import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
+import { invalidateLatestCache } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
 import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
-import { readPnpmLockIntegrity } from './npm-integrity.js'
 import { isGenerationProjectionPkg } from './generation-projection.js'
 import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
-import { decodeUtf8Fatal, fetchTextLimited } from './httpx.js'
+import { fetchTextLimited } from './httpx.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
-  isNewerVersion,
+  isExactVersion,
   npmLatest as defaultNpmLatest,
   npmVersion,
 } from './versions.js'

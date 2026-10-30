@@ -6,10 +6,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { basename, isAbsolute, join, normalize } from 'node:path'
-import { constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
+import { constants as fsConstants, mkdirSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { WEB_PROFILE, cacheRoot } from './env.js'
-import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure, type HttpError } from './httpx.js'
+import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure } from './httpx.js'
 
 export const CATEGORIES = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist'] as const
 export type Category = (typeof CATEGORIES)[number]
@@ -707,12 +707,6 @@ function attemptTimeoutMs(cfg: RegistryConfig, opts: RegistryLoadOptions, starte
   if (!opts.deadlineMs || !Number.isFinite(opts.deadlineMs)) return per
   const remaining = opts.deadlineMs - (Date.now() - startedAt)
   return Math.max(1, Math.min(per, remaining))
-}
-
-function errorMessage(err: unknown): string {
-  const he = err as HttpError
-  if (he && typeof he.status === 'number') return `HTTP ${he.status}`
-  return err instanceof Error ? err.message : String(err)
 }
 
 async function fetchRegistryFromUrl(

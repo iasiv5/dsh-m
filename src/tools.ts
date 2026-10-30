@@ -12,7 +12,6 @@ import {
 } from './core/market.js'
 import {
   installFromRegistry,
-  selfUpgrade,
   uninstallPlugin,
   upgradePlugin,
   InstallGuardError,
@@ -102,7 +101,6 @@ export function registerTools(
   deps: ToolMarketDeps = {},
   profile: ActiveProfile = resolveActiveProfile(ctx),
 ): void {
-  const timeoutMs = cfg.timeoutMs ?? 20_000
   const m = {
     listMarket: deps.listMarket ?? listMarket,
     listInstalledWithMeta: deps.listInstalledWithMeta ?? listInstalledWithMeta,

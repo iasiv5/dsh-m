@@ -10,25 +10,16 @@
  * 本文件只留读侧查询与探测缓存；mutation 成功后的定向失效经本文件导出的
  * invalidateLatestForEntry（只失效不回写）。
  */
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { dshHome, webProfileDir, WEB_PROFILE } from './env.js'
-import {
-  runProfileTransaction,
-  makeNpmWarmPackument,
-  TransactionError,
-  type HealAction,
-  type TransactionDeps,
-} from './profile-transaction.js'
+import { WEB_PROFILE } from './env.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
   type InstalledPlugin,
 } from './installed.js'
 import { attachEntryIconDataUris, attachInstalledIconDataUris } from './installed-icon.js'
-import { setLivePluginDisabled, loaderHost, type LoaderEntry } from './live-plugin.js'
-import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
-import { PROTECTED_MODULES, composeEnablement, type PluginEnablement } from './enablement.js'
+import { loaderHost, type LoaderEntry } from './live-plugin.js'
+import { composeEnablement } from './enablement.js'
 import { readProfileOverrides } from './patch-yaml.js'
 import {
   loadRegistry as defaultLoadRegistry,
@@ -40,7 +31,6 @@ import {
 } from './registry.js'
 import {
   fetchCommunityCatalog as defaultFetchCommunityCatalog,
-  type LoadedCommunity,
 } from './community.js'
 // 0.9.68（ADR-0016）：合并层迁入 merged-market.ts（communityOutcome/mergeRegistries/communitySummary/
 // deadlineRace/matchInstalledByEntry/isCommunityEntry/COMMUNITY_CATEGORY_LABELS）——market↔community
@@ -61,22 +51,14 @@ import {
 // CommunityRegistrySummary 等）——消费方直连 merged-market.js；本文件仅在上方 import 中自用。
 import type { CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
-import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
-import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
+import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
 import { stampUpgradeProjection, type UnsupportedReasonCode } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
-import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
-import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
-import { readPnpmLockIntegrity } from './npm-integrity.js'
-import { isGenerationProjectionPkg } from './generation-projection.js'
-import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
-import { decodeUtf8Fatal, fetchTextLimited } from './httpx.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
   npmLatest as defaultNpmLatest,
-  npmVersion,
 } from './versions.js'
 
 // ---------- 契约类型 ----------

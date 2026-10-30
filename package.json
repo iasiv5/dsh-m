@@ -48,7 +48,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint tests",
+    "lint": "eslint tests src",
     "test": "npm run lint && node scripts/check-client-imports.mjs && node --test tests/*.test.mjs",
     "check-release": "node scripts/check-release.mjs",
     "release": "node scripts/release.mjs",

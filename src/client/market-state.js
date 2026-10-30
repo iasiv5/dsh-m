@@ -196,7 +196,7 @@ function narrowCategoryLabels(raw) {
  * 来源状态去设置页看。只保留错误态 unavailable（收录清单不可用）。
  * 输出绝不包含 configured/active 地址等本地路径。
  */
-export function registryNotice(summary, total) {
+export function registryNotice(summary, _total) {
   const s = summary && typeof summary === 'object' ? summary : {}
   if (s.status === 'unavailable') return { key: 'notice.unavailable' }
   return null
