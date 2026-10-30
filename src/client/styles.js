@@ -1,7 +1,21 @@
 // ---------- 样式（跟随 DSH Web 主题变量，深浅色自适应） ----------
 const CSS = `
-.dshm-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--dsw-alias-bg-mask-3,rgba(15,23,42,.48));display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-windows-titlebar-height,0px)) 16px 24px;box-sizing:border-box}
-.dshm-panel{position:relative;width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff));background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);-webkit-backdrop-filter:blur(14px) saturate(1.3);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:14px;box-shadow:0 18px 48px rgba(2,6,23,.25);overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
+/* 0.11.6 还原态对齐官方设置弹窗（2026-10-30 Desktop 实拍：图二重灰 vs 官方设置页；官方配方
+   取证 dsh-client-ui-settings-general .AnXs9G_overlay/_mask/_panel@rc.5）：①遮罩
+   mask-3（两主题恒 #0000007a＝48% 黑）→ mask-1（浅 24%/深 50% 随主题）+ 官方同款
+   var(--dsw-mask-blur)（当前主题 none，token 对齐防主题演进翻车）；②面板 86% 玻璃 +
+   blur(14px) → 不透明 --dsw-alias-bg-layer-2（官方 .AnXs9G_panel 同款，「玻璃垫重幕」
+   闷灰根除）；③圆角/阴影换官方 token（--dsw-radius-panel/--dsw-elevation-prominent），
+   旧字面值留作回落。ADR-0017 v2「拖拽态与静止态同玻璃同 blur」随玻璃退役自然成立
+   （两态同不透明，无双态跳变）。④遮罩几何（二轮，2026-10-30 像素实测收尾）：官方 mask 是
+   子元素 .AnXs9G_mask{inset:var(--dsh-frame-chrome-top,0px) 0 0}——天生从标题栏下缘起画；
+   本仓 mask 若画在 overlay 本体（inset:0）会盖住页面顶带：面板开着时条带左段被压成
+   #f9fafb×0.76=#bdbec1、右段 WCO（OS 画在网页之上）仍 #f9fafb——两截色。故 mask 挪
+   ::before（inset: var(--dsh-windows-titlebar-height,0px) 0 0），overlay 继续全视口居中
+   （面板位置与 0.11.5 逐像素一致，web 无变量回落 0 零漂移）。 */
+.dshm-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:max(24px,var(--dsh-windows-titlebar-height,0px)) 16px 24px;box-sizing:border-box}
+.dshm-overlay::before{content:'';position:absolute;inset:var(--dsh-windows-titlebar-height,0px) 0 0;background:var(--dsw-alias-bg-mask-1,rgba(0,0,0,.24));backdrop-filter:var(--dsw-mask-blur,none)}
+.dshm-panel{position:relative;width:min(920px,100%);height:min(680px,86vh);display:flex;flex-direction:column;background:var(--dsw-alias-bg-layer-2,var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff)));border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:var(--dsw-radius-panel,14px);box-shadow:var(--dsw-elevation-prominent,0 18px 48px rgba(2,6,23,.25));overflow:hidden;font-family:inherit;color:var(--dsw-alias-label-primary,inherit)}
 /* 0.9.70 还原态拖拽：.abs = 有位置记忆时的绝对定位形态（overlay 为 inset:0 fixed，
    绝对定位坐标即视口坐标）；无记录时面板仍走 overlay flex 居中，渲染路径与旧版逐字节一致。
    拖拽观感不变量（0.9.70 修订，ADR-0017 v2）：拖拽态与静止态同玻璃同 blur，外观逐像素一致
@@ -9,7 +23,8 @@ const CSS = `
    透字防护回归静止态既有不变量（毛玻璃模糊背景自持——透字病灶的成因是「关 blur 还留
    半透明」，两样都不动即无此病）。拖拽可供性只剩 grabbing 光标与投影加深；代价是拖拽期
    恢复每帧 backdrop 重滤镜（GPU 合成承担，弱机若报告掉帧再评估），帧内写/capture/
-   手势期监听等其余性能手段全部保留。 */
+   手势期监听等其余性能手段全部保留。0.11.6 注：玻璃随还原态官方对齐退役（见文件头
+   .dshm-overlay 注），两态同不透明，「无双态跳变」不变量自然成立。 */
 .dshm-panel.abs{position:absolute;margin:0}
 .dshm-panel--dragging{cursor:grabbing;box-shadow:0 24px 64px rgba(2,6,23,.38)}
 /* 0.9.69 拖拽手柄：user-select/touch-action/tap-highlight 无条件生效（全屏双击切换时
@@ -27,6 +42,21 @@ const CSS = `
    DSH Web / 浏览器无此变量 → 回落 0px，行为与旧版逐字节一致。 */
 .dshm-overlay.full{padding:0;top:var(--dsh-windows-titlebar-height,0px)}
 .dshm-panel.full{width:100%;height:100%;border-radius:0}
+/* 0.11.6 全屏态与原生标题栏带脱开（2026-10-30 Desktop 实拍：0.9.4 让位只做了「让」没做
+   「退开」——面板顶缘精确压在条带底缘（top=40px），1px border-l2 hairline 正好垫在
+   — □ ✕ 字形底下＝压线；且 overlay 暗色 mask 在 full 态原样保留，86% 玻璃背后垫着暗幕，
+   头部发灰，与原生条带（探针喂 titleBarOverlay 的侧栏填充色）形成灰白断层。对策：
+   ①+8px 呼吸位——露出的是 app 头部（侧栏填充），与条带同色同源，视觉上条带变厚、
+   按钮脱开；②full 态摘 mask——玻璃背后换真实页面，断层消失，全屏态本无「聚焦暗示」
+   语义。门控谓词与 readTitlebarInsets/titlebarTopInset 同款（有 data-windows-titlebar
+   且 OS 非全屏）；DSH Web / 浏览器无该属性 → 规则不适用，行为零漂移（0.9.4 同款回落
+   哲学）。 */
+html[data-windows-titlebar]:not([data-fullscreen]) .dshm-overlay.full{top:calc(var(--dsh-windows-titlebar-height,0px) + 8px)}
+/* full 态 mask 收尾（0.11.6 二轮）：mask 已挪 ::before，full 态不画——门控 full 藏 ::before；
+   非门控 full（Web / OS 全屏）overlay 盒 top 已由 0.9.4 规则让位，::before 相对盒归 0，
+   不再叠让 40px 留未遮带。 */
+.dshm-overlay.full::before{top:0}
+html[data-windows-titlebar]:not([data-fullscreen]) .dshm-overlay.full::before{display:none}
 /* resize 热区（panel resize）：透明贴内缘（面板 overflow:hidden 不可外置）。
    边 6/8px、角 14×14（Q8 定稿 12–16px 带内；扫描期可校准）。右热区盖住 .dshm-body
    纵向滚动条外缘 ~6px（余 ~9px 可拖）、角热区与滚动条 corner 死区基本重合（Q4 接受）。

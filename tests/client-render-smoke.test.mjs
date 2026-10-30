@@ -128,6 +128,29 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.match(stylesSrc, /padding:max\(24px,var\(--dsh-windows-titlebar-height,0px\)\) 16px 24px/, '浮动态 padding-top 下限在（矮窗口浮板不被拖拽带压住）')
   })
 
+  // 0.11.6 全屏态与原生条带脱开（2026-10-30 Desktop 实拍：顶缘压线 + mask 垫灰）：呼吸位
+  // +8px 且 full 态摘 overlay 暗色 mask；门控谓词与 readTitlebarInsets/titlebarTopInset
+  // 同款（data-windows-titlebar 存在且 OS 非全屏），DSH Web / 浏览器无属性 → 规则不适用
+  // 零漂移。第二锚钉住 0.9.4 基线让位规则原样保留（门控外的回落路径）。
+  it('Windows 全屏态脱开：呼吸位 +8px 与摘 mask 门控在 titlebar 存在且 OS 非全屏', () => {
+    assert.match(stylesSrc, /html\[data-windows-titlebar\]:not\(\[data-fullscreen\]\) \.dshm-overlay\.full\{top:calc\(var\(--dsh-windows-titlebar-height,0px\) \+ 8px\)\}/, '全屏态脱开规则在（+8px 呼吸位）')
+    assert.match(stylesSrc, /\.dshm-overlay\.full::before\{top:0\}/, 'full 态 ::before 相对盒归 0（非门控 full 不叠让 40px）')
+    assert.match(stylesSrc, /html\[data-windows-titlebar\]:not\(\[data-fullscreen\]\) \.dshm-overlay\.full::before\{display:none\}/, '门控 full 藏 ::before（不遮条带）')
+    assert.match(stylesSrc, /\.dshm-overlay\.full\{padding:0;top:var\(--dsh-windows-titlebar-height,0px\)\}/, '0.9.4 基线让位规则保持原样（门控外回落路径不被改写）')
+  })
+
+  // 0.11.6 还原态对齐官方设置弹窗（Desktop 实拍：图二重灰闷暗 vs 官方设置页；官方配方取证
+  // dsh-client-ui-settings-general .AnXs9G_overlay/_mask/_panel@0.2.1-rc.5）：遮罩
+  // mask-3（两主题恒 48% 黑）→ mask-1（浅 24%/深 50% 随主题）+ 官方同款 --dsw-mask-blur；
+  // 面板 86% 玻璃 + blur(14px) → 不透明 --dsw-alias-bg-layer-2；圆角/阴影换官方 token，
+  // 旧字面值留作回落。负向锚为源级 ASCII 字面量缺席（合法形态，CRLF 安全）。
+  it('还原态官方对齐：mask-1 + mask-blur 遮罩、面板不透明 layer-2、官方圆角/阴影 token', () => {
+    assert.match(stylesSrc, /\.dshm-overlay::before\{content:'';position:absolute;inset:var\(--dsh-windows-titlebar-height,0px\) 0 0;background:var\(--dsw-alias-bg-mask-1,rgba\(0,0,0,\.24\)\);backdrop-filter:var\(--dsw-mask-blur,none\)\}/, '遮罩挪 ::before 且从标题栏下缘起画（官方 .AnXs9G_mask 同构，条带不两截色）')
+    assert.match(stylesSrc, /\.dshm-panel\{[^}]*background:var\(--dsw-alias-bg-layer-2,var\(--dsw-alias-bg-elevated,var\(--dsw-alias-bg-base,#fff\)\)\)/, '面板不透明 layer-2 在（玻璃退役）')
+    assert.doesNotMatch(stylesSrc, /color-mix\(in srgb,var\(--dsw-alias-bg-base,#fff\) 86%,transparent\)/, '86% 玻璃底字面量已从源移除')
+    assert.match(stylesSrc, /\.dshm-panel\{[^}]*border-radius:var\(--dsw-radius-panel,14px\);box-shadow:var\(--dsw-elevation-prominent,0 18px 48px rgba\(2,6,23,\.25\)\)/, '官方圆角/阴影 token 在（旧字面值回落）')
+  })
+
   it('InstalledTab 空数据渲染不抛', () => {
     const installed = {
       loading: false,
