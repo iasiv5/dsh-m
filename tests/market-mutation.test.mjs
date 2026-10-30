@@ -1084,6 +1084,8 @@ describe('0.9.20 mutation → latest 缓存定向失效', () => {
 
 // ---------- ADR-0026 升级与收录解耦（issue #30）：web upgradePlugin ----------
 // 自含夹具（不引用兄弟 describe 闭包；原 unavailable 硬抛用例改写迁入此处）。
+// ADR-0028 T5：本 describe 仅保留「接线 + 信封映射」薄层（①② 全链接线、③ 信封）；
+// 解析梯判定分支归 tests/upgrade-target.test.mjs 表驱动套件，勿在此重繁殖镜像判定用例。
 describe('ADR-0026：upgradePlugin 与收录解耦（web）', () => {
   const communityDisabled = () => ({ state: { enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null })
 

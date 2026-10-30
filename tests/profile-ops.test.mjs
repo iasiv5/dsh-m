@@ -394,6 +394,8 @@ describe('desktopUninstall：removeBundle 委派（dsh-market 同策略）', () 
   })
 })
 
+// ADR-0028 T5：本 describe 的升级用例仅保留「接线 + 信封映射」薄层（合成接线×2、upgrade-unsupported
+// 信封×1）；解析梯判定分支归 tests/upgrade-target.test.mjs 表驱动套件，勿在此重繁殖镜像判定用例。
 describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', () => {
   function upgradeDeps(service, overrides = {}) {
     return {
