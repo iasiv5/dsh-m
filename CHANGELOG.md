@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.6 修复：面板与原生标题栏三处观感对齐——全屏呼吸位 / 遮罩换档 / 遮罩几何（Desktop 实拍驱动）
+
+- **背景（2026-10-30 Desktop 实拍三轮，官方配方取证 dsh-client-ui-settings-general `.AnXs9G_overlay/_mask/_panel` @0.2.1-rc.5 asar）**：① 全屏态面板顶缘精确压在原生条带底缘（0.9.4 让位只「让」未「退开」），1px hairline 正好垫在 — □ ✕ 字形底下＝压线；② 还原态遮罩 mask-3（两主题恒 48% 黑）+ 86% 玻璃面板，垫幕发灰，与官方设置弹窗（mask-1 + 不透明 layer-2）观感断层；③ 遮罩画在 overlay 本体（inset:0）盖住页面顶带——面板开着时条带左段被压成 #bdbec1（#f9fafb×0.76，与 mask-1 精确吻合的像素实测）、右段 WCO（OS 画在网页之上）仍 #f9fafb＝两截色。
+- **做法**：① `.dshm-overlay.full` 门控 top=40px+8px 呼吸位（谓词与 titlebarTopInset 同款）；② 遮罩 mask-3→mask-1 + 官方同款 `--dsw-mask-blur`（当前主题 none），面板玻璃→不透明 `--dsw-alias-bg-layer-2`，圆角/阴影换 `--dsw-radius-panel`/`--dsw-elevation-prominent`（旧字面值留回落）；③ mask 挪 `::before`（inset: var(--dsh-windows-titlebar-height,0px) 0 0）对齐官方 .AnXs9G_mask 同构，overlay 继续全视口居中——面板位置与 0.11.5 逐像素一致；full 态 ::before 收尾（门控 display:none / 非门控归 0）。ADR-0017 v2「同玻璃同 blur」随玻璃退役自然成立（两态同不透明）。
+- **行为说明**：Desktop 全屏态面板下移 8px（呼吸位）；还原态遮罩变轻、面板转不透明（对齐官方）；web/浏览器仅随 ② 全局对齐（轻遮罩+不透明白卡），几何规则零漂移（门控谓词/变量回落）；遮罩点击关闭语义不变（::before 属 overlay 本体，命中测试不变）。
+- **验证**：client-render-smoke 两 it 扩展七锚（含源级负向锚钉玻璃退役）+ 单点变异红证 ×3（+8px→+9px / mask 回落值 / ::before inset）；基线判别 17 项环境既有失败逐名一致（028 Windows 清单），改动树 pass=1830 vs 基线 1828（差值=新锚）。
+- **部署说明**：client-only 变更（host 侧零触碰），HMR 热载免重启。
+
 ### 0.11.5 重构：client 接缝收敛三件套——升级编排出仓 / ops 在途谓词收权 / market-state 归位（issue #36，client-only 零行为）
 
 - **背景（ADR-0028 Follow-up ③，issue #36，2026-10-30 client 侧架构走查）**：三项 opportunistic 摩擦——① `installed-tab.jsx` 与 `market-tab.jsx` 的升级编排近逐字双份（enqueue-meta/opMeta 落账/degraded→notify 链；cdc8404 一处 bug 多站同步修实证；enqueue-meta `{from,toVersion}` 是跨文件隐式不变量）；② ops 在途谓词五处手写镜像（status 闭集变更 = 多文件排查）；③ ZoneChips 裁剪几何五件套放错 seam（market-state 唯一消费者 zone-chips）+ `drainRestored` 已退役仍导出（接口死重）。
@@ -872,6 +880,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.6 Fixed: panel/native-titlebar visual alignment trio — fullscreen breathing gap / mask retier / mask geometry (driven by Desktop captures)
+
+- **Background (2026-10-30 Desktop captures in three rounds; official recipe from dsh-client-ui-settings-general `.AnXs9G_overlay/_mask/_panel` @0.2.1-rc.5 asar)**: (1) in fullscreen the panel top edge sat exactly on the native strip bottom (the 0.9.4 clearance "yielded" without "backing off"), its 1px hairline right under the — □ ✕ glyphs = the pressed-line look; (2) restored mode used mask-3 (48% black in both themes) + an 86% glass panel — muddy gray over the scrim, visually off from the official settings dialog (mask-1 + opaque layer-2); (3) the mask painted on the overlay itself (inset:0) covered the page top band — with the panel open the strip went two-tone: left #bdbec1 (#f9fafb×0.76, pixel-verified match to mask-1) vs right WCO #f9fafb (OS-drawn above web content).
+- **Change**: (1) `.dshm-overlay.full` gated top=40px+8px breathing gap (predicate mirrors titlebarTopInset); (2) mask-3→mask-1 + official `--dsw-mask-blur` (none in current theme), panel glass→opaque `--dsw-alias-bg-layer-2`, radius/shadow on `--dsw-radius-panel`/`--dsw-elevation-prominent` (old literals kept as fallbacks); (3) mask moved to `::before` (inset: var(--dsh-windows-titlebar-height,0px) 0 0), mirroring the official .AnXs9G_mask structure, overlay keeps full-viewport centering — panel position pixel-identical to 0.11.5; fullscreen ::before tail (gated display:none / others top:0). ADR-0017 v2 "same glass same blur" holds trivially after glass retirement (both states opaque).
+- **Behavior**: Desktop fullscreen panel sits 8px lower (breathing gap); restored mask lighter and panel opaque (official alignment); web/browser only takes (2) globally (lighter mask + opaque card), geometry rules zero-drift (gates/fallbacks); mask click-to-close semantics unchanged (::before belongs to the overlay element, hit-testing intact).
+- **Verification**: client-render-smoke two its extended to seven anchors (incl. a source-level negative anchor pinning glass retirement) + single-point mutation red-proofs ×3 (+8px→+9px / mask fallback / ::before inset); baseline judge: 17 environment-preexisting failures name-identical (028 Windows list), changed tree pass=1830 vs baseline 1828 (delta = new anchors).
+- **Deploy note**: client-only change (host untouched), HMR hot-reload, no restart needed.
 
 ### 0.11.5 Refactor: client seams trio — upgrade-flow extraction / ops inflight predicates / market-state relocation (issue #36, client-only zero-behavior)
 
