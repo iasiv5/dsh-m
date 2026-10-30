@@ -15,6 +15,8 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 
 `package.json` scripts are authoritative. `npm test` builds via `pretest` and runs the import guard plus `tests/*.test.mjs`; `npm run typecheck` runs TypeScript checks. Before either gate, follow the workspace AGENTS.md dependency preflight; preserve the original process exit code when filtering test output.
 
+- **测试锚计数/存在性探针**：node `src.split(needle).length - 1`（或 `grep -F` 裸子串）——`grep -c` 计 0 即 exit 1 且正则转义易错（退出码卫生的使用现场口径，2026-10-31 retro）。
+
 ## Repository references
 
 - Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome).

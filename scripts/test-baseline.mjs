@@ -7,7 +7,9 @@
  * 用法：改动在树上、尚未提交或已部分提交时，跑 `node scripts/test-baseline.mjs`。
  *
  * 流程：①改动态全量（npm test，pretest 自动 build）→ ②`git stash push -u` →
- * ③基线态全量（build 从基线源重建）→ ④`git stash pop` → ⑤失败集合按名 diff。
+ * ③基线态全量（build 从基线源重建）→ ④`git stash pop` → ⑤失败集合按名 diff →
+ * ⑥pop 后自动重建 lib（⑤的产物已被基线轮 build 覆盖为基线源——retro 2026-10-31：
+ *   热部署/发版若在判别后直接取 lib，会带出陈旧 bundle）。
  * - 两轮失败集合逐名一致 → 「环境既有」，exit 0；
  * - 不一致 → 打印新增/消失的失败名，exit 1（改动引入回归或修好了既有失败——都值得看一眼）。
  * - 全部通过（两轮 0 fail）→ 无需基线，exit 0。
@@ -85,6 +87,12 @@ try {
   }
 }
 
+console.log('[5/4] pop 后重建 lib（基线轮 build 已把产物覆盖为基线源）……')
+try {
+  execSync('npm run build', { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] })
+} catch (err) {
+  console.error(`✗ post-pop 重建失败——lib/ 仍为基线源产物，发版/热部署前请手动 npm run build：${err.message}`)
+}
 const inCurrentOnly = current.failingNames.filter((name) => !baseline.failingNames.includes(name))
 const inBaselineOnly = baseline.failingNames.filter((name) => !current.failingNames.includes(name))
 if (current.fail === 0 && baseline.fail === 0) {

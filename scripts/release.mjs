@@ -4,7 +4,7 @@
  * （0.10.2–0.10.6 五轮发布实录：tag 重钉舞步、日志文件险些入库、推错分支、网络断连手搓重试）。
  *
  * 前置（人工部分，脚本不代跑）：版本三处已 bump（031）、CHANGELOG 双语顶条已写、npm test 已全绿。
- * 步骤：干净树检查 → tag 重钉 HEAD（幂等）→ check-release 门禁（版本三处/双语顶条/tag=HEAD/发布物断言）
+ * 步骤：干净树检查 → push 预检（fetch + 快进判定）→ tag 重钉 HEAD（幂等）→ check-release 门禁（版本三处/双语顶条/tag=HEAD/发布物断言）
  *       → push main（3 次退避重试）→ push tag（同）→ 打印轮询与 sync 指引（018：绿 ≠ 已上架）。
  * 任一步失败 exit 1（push 幂等可重跑；tag 已重钉则按门禁口径处理）。
  */
@@ -30,6 +30,13 @@ const status = run('git status --porcelain')
 if (status !== '') throw new Error(`工作树不干净，先提交或清理：\n${status}`)
 
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+console.log('[0] push 预检：fetch + 快进判定（retro 2026-10-31：远端漂移此前要烧完整 tag 舞步才失败）……')
+run('git fetch origin main')
+try {
+  execSync('git merge-base --is-ancestor origin/main HEAD', { cwd: root, stdio: 'ignore' })
+} catch {
+  throw new Error('origin/main 有本地没有的提交（非快进）——先 `git pull --rebase origin main` 重验后再发')
+}
 run(`git tag -f v${version}`) // 幂等重钉：发布前多笔增量提交后 tag 始终落最终 HEAD
 run('npm run check-release') // 门禁（含 tag=HEAD）；失败直接抛，中止发布
 run('git push origin main', 3)
