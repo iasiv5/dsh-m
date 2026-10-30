@@ -435,9 +435,27 @@ describe('ADR-0026：upgrade 失败信封 failureClass', () => {
     assert.equal(r.body.failureClass, 'systemic')
   })
 
-  it('⑥ UpgradePathUnsupportedError（本地链接/非线上来源）→ target（B5 结构化指引）', async () => {
+  it('⑥ UpgradePathUnsupportedError → 409 + code:upgrade-unsupported + reason 透出（#35 web 信封升级，对齐 desktop 形态）', async () => {
     const r = await upgradeFailure(new UpgradePathUnsupportedError('p', { code: 'local-spec', detail: '本地开发安装（file:../p）不从线上更新' }))
-    assert.equal(r.body.failureClass, 'target')
+    assert.equal(r.status, 409)
+    assert.equal(r.body.code, 'upgrade-unsupported')
+    assert.equal(r.body.failureClass, 'target', '批量语义不变（ADR-0026 decision 4：跳过继续）')
+    assert.deepEqual(r.body.reason, { code: 'local-spec', detail: '本地开发安装（file:../p）不从线上更新' })
+    assert.equal(r.body.error, '「p」无法自动升级：本地开发安装（file:../p）不从线上更新')
+  })
+
+  it('⑥-b 三码表驱动：reason.code 透传、status/code/failureClass 恒定（#35）', async () => {
+    for (const reason of [
+      { code: 'local-spec', detail: 'd1' },
+      { code: 'github-spec-unparseable', detail: 'd2' },
+      { code: 'source-unresolvable', detail: 'd3' },
+    ]) {
+      const r = await upgradeFailure(new UpgradePathUnsupportedError('p', reason))
+      assert.equal(r.status, 409, `code=${reason.code} 应 409`)
+      assert.equal(r.body.code, 'upgrade-unsupported', `code=${reason.code} 信封 code 恒定`)
+      assert.equal(r.body.failureClass, 'target', `code=${reason.code} 批量语义恒定`)
+      assert.deepEqual(r.body.reason, reason, `code=${reason.code} reason 透传`)
+    }
   })
 
   it('⑦ 源结构锚：hooks.js api() 透传 failureClass（赋值表达式出现次数语义）', async () => {

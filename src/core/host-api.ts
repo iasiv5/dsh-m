@@ -38,6 +38,7 @@ import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
 import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
 import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry, desktopSelfUpgradeViaTarball, type DesktopManagerLike } from './profile-ops.js'
+import { UpgradePathUnsupportedError } from './upgrade-target.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** 宿主信任检查的统一签名（生产 = 官方 requestRejection 委派；测试可注入）。 */
@@ -246,6 +247,12 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     const failureClass = (err.code === 'upgrade-unsupported' || err.code === 'release-age-wait' || err.code === 'install-refused') ? 'target' : 'systemic'
     return { status: 409, payload: { ok: false, error: err.message, code: err.code, failureClass } }
   }
+  if (err instanceof UpgradePathUnsupportedError) {
+    // #35：web 梯 unsupported 信封升级——从 default 500 兜底臂升为 409 结构化信封，与 desktop
+    // 的 upgrade-unsupported 同构（error/code/failureClass/reason 四字段对齐）；成因码闭集见
+    // upgrade-target.ts。failureClass:'target' 维持批量跳过继续语义（ADR-0026 decision 4 不回退）。
+    return { status: 409, payload: { ok: false, error: err.message, code: 'upgrade-unsupported', failureClass: 'target', reason: { code: err.reason.code, detail: err.reason.detail } } }
+  }
   if (err instanceof ToggleError) {
     const status = err.code === 'protected' ? 403 : err.code === 'not-installed' ? 404 : 409
     return { status, payload: { ok: false, error: err.message, code: err.code } }
@@ -291,7 +298,8 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
     }
   }
   // ADR-0026（评审 F1）：缺省 target——单包网络错（npmLatest/githubLatestTag 裸 Error）、
-  // UpgradePathUnsupportedError、integrity 缺失等一切未具名错误属目标级（B4：跳过继续，不整批停止）
+  // integrity 缺失等一切未具名错误属目标级（B4：跳过继续，不整批停止）。
+  // #35：UpgradePathUnsupportedError 已升专属臂（409 + code + reason），不再经本兜底。
   return { status: 500, payload: { ok: false, error: err instanceof Error ? err.message : String(err), failureClass: 'target' } }
 }
 
