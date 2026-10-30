@@ -106,14 +106,14 @@
     {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
-      "description": "跳过 BrowserAuth，替换官方 Connection，免 Token；已测 Web 0.2.1-rc.4。Desktop 自动休眠。",
+      "description": "跳过 BrowserAuth，替换官方 Connection，免 Token；已测 Web 0.2.1-rc.5。Desktop 自动休眠。",
       "category": "self-dev",
       "tags": ["BrowserAuth", "连接", "安全", "工具"],
-      "verified": ["0.1.2-rc.1", "0.1.5-rc.1", "0.1.5-rc.2", "0.1.7-rc.1", "0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3", "0.2.1-rc.4"],
+      "verified": ["0.1.2-rc.1", "0.1.5-rc.1", "0.1.5-rc.2", "0.1.7-rc.1", "0.1.7-rc.2", "0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3", "0.2.1-rc.4", "0.2.1-rc.5"],
       "source": "npm",
       "npm": "@iasiv5/dsh-skip-browser-auth",
       "github": "iasiv5/dsh-skip-browser-auth",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skip-browser-auth@0.4.5/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skip-browser-auth@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-skip-browser-auth"
     },
     {
