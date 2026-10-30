@@ -9,7 +9,7 @@ import { api } from "./hooks.js";
 import { lookup } from "./i18n.js";
 import { installedViewModel } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
-import { applyInstalledUpdates, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch } from "./installed-updates.js";
+import { applyInstalledUpdates, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
 import { opUpgradeMeta } from "./operations-view.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, LinksRow, ProgressLine, ReadmeBlock } from "./chrome.jsx";
@@ -176,7 +176,10 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
                   notify({ kind: "err", text: lookup("installed.upgradeBatch.stopped", { target: stoppedAt }) });
                 }
                 if (summary.skippedUnsupported > 0) {
-                  notify({ kind: "warn", text: lookup("installed.upgradeBatch.skippedUnsupported", { n: summary.skippedUnsupported }) });
+                  // #35：按成因码分组提示（退役单段「本地链接安装」文案——unsupported 还涵盖
+                  // github-spec-unparseable / source-unresolvable，硬编码成因失实）
+                  const skippedNotice = skippedUnsupportedNotice(batch.unsupported, lookup);
+                  if (skippedNotice) notify({ kind: "warn", text: skippedNotice });
                 }
               },
             },

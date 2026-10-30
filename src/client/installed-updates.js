@@ -116,3 +116,37 @@ export function summarizeBatch(outcomes, skippedUnsupported = 0) {
     stopped: systemic > 0,
   }
 }
+
+// ---------- #35：批量升级跳过提示按成因分组 ----------
+
+const SKIPPED_UNSUPPORTED_ORDER = ['local-spec', 'github-spec-unparseable', 'source-unresolvable', 'other']
+
+/**
+ * 批量升级被跳过项（batchUpgradeOrder().unsupported）按成因码分桶（#35）：
+ * 三闭集码各归其桶；码缺席或不在闭集内（含垃圾项）归 other（防御兜底）。非数组安全降级全零。
+ */
+export function summarizeUnsupportedReasons(items) {
+  const counts = { 'local-spec': 0, 'github-spec-unparseable': 0, 'source-unresolvable': 0, other: 0 }
+  const arr = Array.isArray(items) ? items : []
+  for (const it of arr) {
+    if (!it || typeof it !== 'object') { counts.other += 1; continue }
+    const code = it.upgradePathReason
+    if (code === 'local-spec' || code === 'github-spec-unparseable' || code === 'source-unresolvable') counts[code] += 1
+    else counts.other += 1
+  }
+  return counts
+}
+
+/**
+ * 跳过提示文案（#35）：固定序（local-spec → github-spec-unparseable → source-unresolvable → other）
+ * 按非零桶经 lookup('installed.upgradeBatch.skipped.<code>', { n }) 拼接（空格连接）；全零 → null。
+ * lookup 注入保持 DOM-free 可测；退役单段键 installed.upgradeBatch.skippedUnsupported。
+ */
+export function skippedUnsupportedNotice(items, lookup) {
+  const counts = summarizeUnsupportedReasons(items)
+  const parts = []
+  for (const code of SKIPPED_UNSUPPORTED_ORDER) {
+    if (counts[code] > 0) parts.push(lookup(`installed.upgradeBatch.skipped.${code}`, { n: counts[code] }))
+  }
+  return parts.length ? parts.join(' ') : null
+}

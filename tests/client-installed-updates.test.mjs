@@ -6,7 +6,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { applyInstalledUpdates, installedUpdateStats, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, BATCH_SELF_PKG } from '../src/client/installed-updates.js'
+import { applyInstalledUpdates, installedUpdateStats, batchUpgradeOrder, classifyBatchOutcome, summarizeBatch, summarizeUnsupportedReasons, skippedUnsupportedNotice, BATCH_SELF_PKG } from '../src/client/installed-updates.js'
 
 const base = { pkg: 'a', name: 'A', version: '1.0.0' }
 const upd = (over = {}) => ({
@@ -195,5 +195,46 @@ describe('ADR-0026：installed-tab 批量三态接线（源结构锚，出现次
   })
   it('summarizeBatch 接线 ≥1', () => {
     assert.ok(src.split('summarizeBatch').length - 1 >= 1, `实得 ${src.split('summarizeBatch').length - 1}`)
+  })
+})
+
+// ---------- #35：批量升级跳过提示按成因分组（分桶 + 拼接，DOM-free 纯函数） ----------
+describe('#35 summarizeUnsupportedReasons / skippedUnsupportedNotice', () => {
+  const item = (reason) => ({ pkg: 'p', upgradePathReason: reason })
+
+  it('① 分桶计数：三码各归其桶；缺席/非闭集码/垃圾项归 other；非数组全零', () => {
+    const counts = summarizeUnsupportedReasons([
+      item('local-spec'),
+      item('local-spec'),
+      item('github-spec-unparseable'),
+      item('source-unresolvable'),
+      item(undefined),
+      item('weird-code'),
+      null,
+    ])
+    assert.deepEqual(counts, { 'local-spec': 2, 'github-spec-unparseable': 1, 'source-unresolvable': 1, other: 3 })
+    assert.deepEqual(summarizeUnsupportedReasons([]), { 'local-spec': 0, 'github-spec-unparseable': 0, 'source-unresolvable': 0, other: 0 })
+    assert.deepEqual(summarizeUnsupportedReasons('junk'), { 'local-spec': 0, 'github-spec-unparseable': 0, 'source-unresolvable': 0, other: 0 })
+  })
+
+  it('② 拼接：单桶单段、多桶固定序（local-spec → github-spec-unparseable → source-unresolvable → other）、全零 → null', () => {
+    const seen = []
+    const lookup = (key, params) => { seen.push([key, params]); return `${key}(${params.n})` }
+    assert.equal(skippedUnsupportedNotice([item('local-spec')], lookup), 'installed.upgradeBatch.skipped.local-spec(1)')
+    const multi = skippedUnsupportedNotice([item('source-unresolvable'), item('local-spec'), item(undefined), item('github-spec-unparseable')], lookup)
+    assert.equal(multi, [
+      'installed.upgradeBatch.skipped.local-spec(1)',
+      'installed.upgradeBatch.skipped.github-spec-unparseable(1)',
+      'installed.upgradeBatch.skipped.source-unresolvable(1)',
+      'installed.upgradeBatch.skipped.other(1)',
+    ].join(' '))
+    assert.equal(skippedUnsupportedNotice([], lookup), null)
+    assert.deepEqual(seen[0], ['installed.upgradeBatch.skipped.local-spec', { n: 1 }], 'lookup 键与 {n} 参数形态')
+  })
+
+  it('③ 接线源锚：installed-tab.jsx 经 skippedUnsupportedNotice 消费，退役键无 lookup 残留', () => {
+    const src = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
+    assert.ok(src.split('skippedUnsupportedNotice').length - 1 >= 1, `实得 ${src.split('skippedUnsupportedNotice').length - 1}`)
+    assert.ok(!src.includes('skippedUnsupported"'), '退役键不得残留 lookup 直接量')
   })
 })
