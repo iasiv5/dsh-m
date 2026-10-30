@@ -22,10 +22,7 @@
  * 不写 allowBuilds、不跑 dsh-m 自实现 pnpm 编排、服务缺席一律结构化拒绝。
  */
 import { withMutationSession, resolveRegistryEntry, type InstallableEntry, type InstallResult, type InstallDeps } from './market-mutation.js'
-import { synthesizeInstallableEntry, UpgradePathUnsupportedError } from './upgrade-target.js'
-import { matchInstalledByEntry } from './merged-market.js'
-import { mergedOutcome } from './merged-market.js'
-import { WEB_PROFILE } from './env.js'
+import { resolveUpgradeTarget } from './upgrade-target.js'
 import { loadRegistry as defaultLoadRegistry } from './registry.js'
 import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './community.js'
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
@@ -38,9 +35,6 @@ import { describeReleaseAgeFailure, releaseAgePrecheck, type ReleaseAgePrecheckD
 import { governExcludeBlock, registerExclusion } from './exclude-governance.js'
 import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
 import type { RegistryConfig, RegistryCacheNamespace } from './registry.js'
-
-/** desktop 升级社区兜底的等待上限（对齐 market.ts DEFAULT_DEADLINE_MS 量级；仅本路径使用）。 */
-const DEFAULT_COMMUNITY_DEADLINE_MS = 60_000
 
 /** 官方 pluginManager 的 Desktop 超集投影（运行时探测，缺方法按不可用处理）。 */
 export interface DesktopManagerLike {
@@ -1082,45 +1076,19 @@ async function desktopUpgradeLocked(
     })
   }
   const loaded = await (deps.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
-  // ADR-0026（issue #30）：条目查找降级为元数据增强——registry unavailable 不再硬阻断升级；
-  // 主清单+社区均 miss 时经合成条目走同一委派管线，本地/非线上来源转译为结构化 upgrade-unsupported。
-  const registryUsable = loaded.status !== 'unavailable'
   const { items } = await (deps.listInstalled ?? defaultListInstalled)(opts.profileDir)
   const target = items.find((it) => it.pkg === pkg)
   if (!target) throw new DesktopOpsError('install-refused', `desktop profile 未安装该插件: ${pkg}（升级目标必须是已装插件）`)
-  let entry: InstallableEntry | undefined
-  if (registryUsable) {
-    // 0.5.1 同语义：主清单 miss 查社区目录（合并市场安装的社区条目同样可升级）。
-    // 0.9.68（ADR-0016 / R2-3）：经物化合并市场全量域 lookupInstalledAll（含 displaced 让位条目，
-    // min-ord = 今日「先主清单后社区 adapt 全量」合成语义）；reject 透传由窄 catch 吞为 miss。
-    entry = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
-    if (!entry) {
-      try {
-        const communityTask = (deps.fetchCommunityCatalog ?? defaultFetchCommunityCatalog)(cfg, { namespace: opts.namespace ?? 'host', signal: opts.signal, profile: opts.profile })
-        const outcome = await mergedOutcome({
-          namespace: opts.namespace ?? 'host',
-          profile: opts.profile ?? WEB_PROFILE,
-          cfg,
-          registry: loaded,
-          communityTask,
-          deadlineAt: Date.now() + DEFAULT_COMMUNITY_DEADLINE_MS,
-        })
-        entry = outcome.lookupInstalledAll(target) as InstallableEntry | undefined
-      } catch {
-        entry = undefined
-      }
-    }
+  // ADR-0028：升级目标解析收编 resolveUpgradeTarget（编排序与原内联梯逐点一致：registryUsable 门
+  // → 主清单匹配 → 物化合并市场全量域（窄 catch 吞 miss）→ 合成/unsupported；registry unavailable
+  // 不阻断升级的 ADR-0026 语义由壳继承）。unsupported 在边缘翻译为既有 DesktopOpsError 信封
+  // （'upgrade-unsupported' + 完整 message，字节与原 synthesize 抛出经 catch 翻译链一致）；
+  // web/desktop 共享单一判定产地。
+  const resolution = await resolveUpgradeTarget(target, cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile, signal: opts.signal }, { loaded, loadRegistry: deps.loadRegistry, fetchCommunityCatalog: deps.fetchCommunityCatalog })
+  if (resolution.kind === 'unsupported') {
+    throw new DesktopOpsError('upgrade-unsupported', resolution.reason.message)
   }
-  if (!entry) {
-    try {
-      entry = synthesizeInstallableEntry(target)
-    } catch (err) {
-      if (err instanceof UpgradePathUnsupportedError) {
-        throw new DesktopOpsError('upgrade-unsupported', err.message)
-      }
-      throw err
-    }
-  }
+  const entry = resolution.entry
 
   let spec: string
   let version: string | undefined
