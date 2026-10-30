@@ -7,6 +7,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - **Merged materialization / displacement / identity indexes**: `src/core/merged-market.ts`; tests and integration harness: `tests/merged-market.test.mjs`.
 - **Market result assembly and filtering**: `src/core/market.ts`; behavior tests: `tests/market.test.mjs`; full-return golden snapshots and reusable `goldDeps` fixture: `tests/market-golden.test.mjs`.
 - **Query input grammar only**: `src/core/market-query.ts` and `tests/market-query.test.mjs`. This suite does not provide a `listMarket` integration harness.
+- **Upgrade-target resolution（升级目标解析，ADR-0028）**: `src/core/upgrade-target.ts`; tests: `tests/upgrade-target.test.mjs`. Sole judge of installed-plugin → installable-entry / unsupported; projection and both upgrade ladders consume it.
 - **Market card rendering and badge wiring**: `src/client/market-tab.jsx`; SSR/source-anchor checks: `tests/client-render-smoke.test.mjs`; i18n key coverage: `tests/client-i18n.test.mjs`.
 - **Installed-package enumeration and manifest metadata**: `src/core/installed.ts`; tests: `tests/installed.test.mjs`.
 
