@@ -297,6 +297,16 @@
       "github": "xevil3301/dsh-chatlock",
       "homepage": "https://github.com/xevil3301/dsh-chatlock",
       "icon": "https://cdn.jsdelivr.net/gh/xevil3301/dsh-chatlock@0f1d77d11c9429a657a07703fcf275aadc667432/assets/icon-180.png"
+    },
+    {
+      "id": "dsh-plugin-call-me",
+      "name": "DSH Call Me",
+      "description": "让 Agent 打电话到你的手机，口头回答后转写回传会话，也可发文字通知；需 /call-me 手机应用，付费订阅。",
+      "category": "watchlist",
+      "tags": ["电话", "语音", "通知", "审批"],
+      "source": "github",
+      "github": "radres/dsh-plugin-call-me",
+      "homepage": "https://github.com/radres/dsh-plugin-call-me"
     }
   ]
 }
