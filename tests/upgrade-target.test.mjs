@@ -6,7 +6,7 @@
  */
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { upgradePathFor, synthesizeInstallableEntry, UpgradePathUnsupportedError, unsupportedReasonFor, resolveUpgradeTarget, UPGRADE_COMMUNITY_DEADLINE_MS } from '../lib/core/upgrade-target.js'
+import { upgradePathFor, synthesizeInstallableEntry, UpgradePathUnsupportedError, unsupportedReasonFor, resolveUpgradeTarget, UPGRADE_COMMUNITY_DEADLINE_MS, stampUpgradeProjection } from '../lib/core/upgrade-target.js'
 import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
 
 describe('unsupportedReasonFor（ADR-0028 判定原子）', () => {
@@ -243,6 +243,33 @@ describe('UpgradePathUnsupportedError 携带结构化 reason（#35）', () => {
         (err) => err instanceof UpgradePathUnsupportedError && err.reason.code === code && typeof err.reason.detail === 'string' && err.reason.detail.length > 0,
         `期望 ${over.pkg} 场景 reason.code=${code}`,
       )
+    }
+  })
+})
+
+// ---------- #35：stampUpgradeProjection（InstalledItem 单点装配：upgradePath + upgradePathReason） ----------
+describe('stampUpgradeProjection（#35 投影）', () => {
+  it('① catalog/synthesized → upgradePath 赋值且 upgradePathReason 字段缺席（条件赋值，金样零 diff 前提）', () => {
+    const catalog = { registryId: 'p-1', pkg: 'a', spec: '^1.0.0', source: 'npm' }
+    stampUpgradeProjection(catalog)
+    assert.equal(catalog.upgradePath, 'catalog')
+    assert.ok(!('upgradePathReason' in catalog), 'catalog 项不得带 upgradePathReason')
+    const synth = { pkg: 'b', spec: '^1.0.0', source: 'npm' }
+    stampUpgradeProjection(synth)
+    assert.equal(synth.upgradePath, 'synthesized')
+    assert.ok(!('upgradePathReason' in synth), 'synthesized 项不得带 upgradePathReason')
+  })
+
+  it('② unsupported 三码 → upgradePathReason 与判定原子闭集一致', () => {
+    const cases = [
+      { item: { pkg: 'c', spec: 'file:../c', source: 'npm' }, code: 'local-spec' },
+      { item: { pkg: 'd', source: 'github', spec: 'not-a-github-spec' }, code: 'github-spec-unparseable' },
+      { item: { pkg: 'e', source: 'unknown', spec: 'whatever' }, code: 'source-unresolvable' },
+    ]
+    for (const { item, code } of cases) {
+      stampUpgradeProjection(item)
+      assert.equal(item.upgradePath, 'unsupported')
+      assert.equal(item.upgradePathReason, code)
     }
   })
 })

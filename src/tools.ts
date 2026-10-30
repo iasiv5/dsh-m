@@ -258,6 +258,7 @@ export function registerTools(
           source: it.source,
           registryId: it.registryId ?? null,
           upgradePath: it.upgradePath ?? null,
+          upgradePathReason: it.upgradePathReason ?? null,
           latestVersion: it.latestVersion ?? null,
           outdated: it.outdated,
           latestError: it.latestError ?? null,
@@ -419,6 +420,7 @@ export function registerTools(
         version: it.version,
         source: it.source,
         upgradePath: it.upgradePath ?? null,
+        upgradePathReason: it.upgradePathReason ?? null,
         latestVersion: it.latestVersion ?? null,
         latestTag: it.latestTag ?? null,
         outdated: it.outdated,
@@ -539,7 +541,7 @@ interface SearchOut {
   nextOffset?: number | null
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; latestError?: string | null; latestErrorCode?: string | null }>
+  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
   incompleteCount?: number
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }

@@ -460,12 +460,17 @@ describe('ADR-0026：upgradePath 投影', () => {
       listInstalledPlugins: async () => mkInstalled([
         mkItem({ pkg: 'pkg-1' }),
         mkItem({ pkg: 'pkg-other' }),
+        mkItem({ pkg: 'pkg-local2', spec: 'file:../local2' }),
       ]),
     })
     const res = await listInstalledWithMeta(cfg, { probeMode: 'none' }, deps)
     const byPkg = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePath]))
     assert.equal(byPkg['pkg-1'], 'catalog', 'registryId 命中 → catalog')
     assert.equal(byPkg['pkg-other'], 'synthesized', 'registry ready 但未命中 → synthesized')
+    // #35（评审 #2 修订 + 建议采纳）：装配层成因码——健康臂 stamp 点真实执行的 unsupported 覆盖
+    const byReason = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePathReason]))
+    assert.equal(byReason['pkg-local2'], 'local-spec', '健康臂 file: 项携带 local-spec 成因码')
+    assert.equal(byReason['pkg-1'], undefined, 'catalog 项不携带成因码')
   })
 
   it('早退臂：registry unavailable → 非收录 npm 项 synthesized、file: 项 unsupported（不经 matchInstalled）', async () => {
@@ -484,6 +489,13 @@ describe('ADR-0026：upgradePath 投影', () => {
     assert.equal(byPkg['pkg-local'], 'unsupported', 'file: spec → unsupported')
     assert.equal(byPkg['pkg-mystery'], 'unsupported', 'source 兜底（评审 F8）→ unsupported')
     assert.equal(byPkg['pkg-gh-bad'], 'unsupported', 'github 畸形 spec → unsupported（判据对齐修订：投影与合成一致）')
+    // #35（评审 #2 修订）：装配层成因码三码断言 + synthesized 项字段缺席
+    const byReason = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePathReason]))
+    assert.equal(byReason['pkg-local'], 'local-spec', 'file: 项成因码 local-spec')
+    assert.equal(byReason['pkg-mystery'], 'source-unresolvable', 'source 兜底项成因码 source-unresolvable')
+    assert.equal(byReason['pkg-gh-bad'], 'github-spec-unparseable', 'github 畸形 spec 成因码 github-spec-unparseable')
+    const pkg1 = res.items.find((it) => it.pkg === 'pkg-1')
+    assert.ok(!('upgradePathReason' in pkg1), 'synthesized 项不携带成因码')
     assert.equal(calls.npm.length, 0)
   })
 
@@ -1375,7 +1387,7 @@ describe('M1 Task 7：agent 工具契约', () => {
     const installedResult = {
       items: [
         { pkg: 'p-1', name: 'P1', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false, upgradePath: 'catalog' },
-        { pkg: 'p-local', name: 'PLocal', version: '1.0.0', source: 'npm', spec: 'file:../p-local', outdated: true, latestVersion: '9.9.9', upgradePath: 'unsupported' },
+        { pkg: 'p-local', name: 'PLocal', version: '1.0.0', source: 'npm', spec: 'file:../p-local', outdated: true, latestVersion: '9.9.9', upgradePath: 'unsupported', upgradePathReason: 'local-spec' },
       ],
       others: 0,
       profileDir: '/tmp/p',
@@ -1387,6 +1399,8 @@ describe('M1 Task 7：agent 工具契约', () => {
     const out = await list.execute({})
     assert.equal(out.items[0].upgradePath, 'catalog')
     assert.equal(out.items[1].upgradePath, 'unsupported')
+    // #35（评审 #2 修订）：tools 投影 map 白名单行——fixture 字段透传链（tools 层只透传不产生成因码）
+    assert.equal(out.items[1].upgradePathReason, 'local-spec', 'dshm_list 应透传 upgradePathReason')
     const listText = list.output.render({}, out)[0].text
     assert.ok(listText.includes('本地链接安装'), `renderList 应标注 unsupported 项：${listText}`)
     const outdated = registered.find((t) => t.name === 'dshm_outdated')

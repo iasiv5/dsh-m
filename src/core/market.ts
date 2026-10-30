@@ -63,7 +63,7 @@ import type { CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, githubLatestTag as rawGithubLatestTag, isExactVersion, type GithubBudget } from './versions.js'
 import { classifyUpgradeActivation, type ActivationClassification } from './activation.js'
-import { upgradePathFor } from './upgrade-target.js'
+import { stampUpgradeProjection, type UnsupportedReasonCode } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
@@ -250,6 +250,8 @@ export interface InstalledItem extends InstalledPlugin {
   iconDataUri?: string | null
   /** 升级通路投影（ADR-0026）：catalog=收录命中；synthesized=合成条目可升级；unsupported=本地/非线上来源 */
   upgradePath?: 'catalog' | 'synthesized' | 'unsupported'
+  /** unsupported 成因码（#35）：仅 unsupported 项赋值（缺席 = 可升级/收录命中），闭集见 upgrade-target */
+  upgradePathReason?: UnsupportedReasonCode
 }
 
 /** 升级通路三态（ADR-0026 GLOSSARY「来源自证更新」）。 */
@@ -934,7 +936,7 @@ export async function listInstalledWithMeta(
     // 此臂有意丢弃（安装/升级语义零变化——设计 2026-10-27「关键边界 3」）
     void community.merged
     // ADR-0026 投影落点①：早退臂不经 matchInstalled，registryId 必空——逐项按 spec/source 判定
-    for (const it of items) it.upgradePath = upgradePathFor(it)
+    for (const it of items) stampUpgradeProjection(it)
     return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
   }
 
@@ -942,7 +944,7 @@ export async function listInstalledWithMeta(
 
   matchInstalled(items, community.merged, community.lookupInstalled)
   // ADR-0026 投影落点②：健康臂在 registryId 写入后装配（catalog 判定可达）
-  for (const it of items) it.upgradePath = upgradePathFor(it)
+  for (const it of items) stampUpgradeProjection(it)
   // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
   // 'only' 面板第二段 ttlMin=0 永远新鲜（readLatestCache(key,0) 先删共享条目再重探：host ns 下浏览页/
   // 工具的 TTL 命中被刷新为更新值，预算消耗速率上升、上限不变，超限走 latestError 降级）。

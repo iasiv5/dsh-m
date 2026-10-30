@@ -49,6 +49,17 @@ export function upgradePathFor(item: { registryId?: string; spec?: string; sourc
 }
 
 /**
+ * InstalledItem 升级通路单点装配（#35）：upgradePath 三态 + unsupported 项的成因码
+ * upgradePathReason（条件赋值——catalog/synthesized 项字段缺席，金样零 diff 前提）。
+ * market.ts 两装配点（早退臂/健康臂）共用；判定经 unsupportedReasonFor 单源驱动。
+ */
+export function stampUpgradeProjection(item: { registryId?: string; spec?: string; source?: string; upgradePath?: UpgradePath; upgradePathReason?: UnsupportedReasonCode }): void {
+  item.upgradePath = upgradePathFor(item)
+  const reason = unsupportedReasonFor(item)
+  if (reason) item.upgradePathReason = reason.code
+}
+
+/**
  * 升级通路不支持错误（ADR-0026 边界）：本地开发安装（file:/link:）与非 npm/github
  * 源不从线上自动升级——结构化指引（upgradePath='unsupported'），不落普通 Error。
  * ADR-0028：自 market-mutation.ts 迁入；message 模板与 upgradePath 字段逐字冻结（B5）。
