@@ -30,4 +30,4 @@
 - **测试面收敛**：梯子分支判定迁往新 seam 表驱动套件，market-mutation / profile-ops 镜像用例瘦身为「接线 + 信封映射」薄层——镜像套件今日保护的是「两份相似」而非「同一政策」。
 - **文档**：GLOSSARY「升级目标解析」已立；AGENTS.md 导航随实现补行；实施计划见 `docs/plans/2026-10-30-upgrade-target-resolution-implementation-plan.md`。
 - **上游对照锚**（dsh-market 1.73.1 镜像复核）：`catalog-local-match.ts` 先例——doc 首句「Shared by the host restore route and the Market client so both refuse the same wrong guesses」与本决定同构，验证共享判定模块形态；其判别联合 + 闭集 `CatalogRestoreReason` 码为 reason 形态参照。两条避坑入计划约束：#485（弱信号不得越强信号，判定优先级严格有序）、#589（逐卡逐键全量过滤实测 ~300ms/渲染——本 module 消费 ADR-0016 物化代，不逐项重 adapt、不新增缓存层）。
-- **Follow-up 清单**（已开 issue）：① 生效判定双胞胎收编（ADR-0007 块，#34）；② web/desktop unsupported 信封统一 + reason envelope 透出 + client/cli 成因文案修正（i18n「本地链接安装」硬编码在 github-spec 场景失实，#35）——已实施（0.11.3）；③ client doUpgrade 三胞胎编排出仓 + ops 在途谓词收权 + market-state 几何搬家/drainRestored 退役（backlog 合并单，#36）。
+- **Follow-up 清单**（已开 issue）：① 生效判定双胞胎收编（ADR-0007 块，#34）——已实施（0.11.4）；② web/desktop unsupported 信封统一 + reason envelope 透出 + client/cli 成因文案修正（i18n「本地链接安装」硬编码在 github-spec 场景失实，#35）——已实施（0.11.3）；③ client doUpgrade 三胞胎编排出仓 + ops 在途谓词收权 + market-state 几何搬家/drainRestored 退役（backlog 合并单，#36）。

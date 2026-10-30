@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.4 重构：生效判定双胞胎收编——resolveUpgradeActivation post-executor 单点（issue #34）
+
+- **背景（ADR-0028 Follow-up ①，issue #34）**：ADR-0007（0.9.22，commit 7673375）引入的生效判定块在 web/desktop 两把升级锁尾段**逐字双份**（npm 源门判定 + try/fail-open unknown + client-only 压制 needsRestart），同构义务仅靠评审纪律维持——与 ADR-0028 收编的升级目标解析梯同病。
+- **做法**：`activation.ts`（生效判定分类单源）新增 `resolveUpgradeActivation(entry, fromVersion, toVersion, needsRestartInitial, classify?)` post-executor 单点，块体自两尾段逐字迁移；backend 差异参数化——needsRestart 初值（web = 安装事务判定、desktop = 恒 true）与 toVersion 来源（web = `result.version`、desktop = 局部 `version`）由边缘传入；两 Locked 尾段替换为一行解构消费，return 组装原样；`deps.classifyActivation` 注入位与 deps 形态**零改动**。
+- **行为说明（主人裁决 B 的唯一语义边角）**：收编门为真值判定（对齐 web 现场）；desktop 侧 toVersion 为空串场景（npmLatest 畸形 latest doc 可达，packument.ts:400 `: ''` 回退）由现场「进门 classify → 必归 unknown（含一次必败网络探测）」变为「不进门 → activation 字段缺席、needsRestart 维持」——省一次必败探测、文案不误导；表驱动用例钉住防隐性漂移。其余一切行为零变化：三态分类语义、fail-open、注入位、返回形态不变；selfUpgrade 不接判定的现状不变（回归用例钉住）。
+- **验证**：零行为验收主锚 = 接线套件与双 backend 套件**零 diff 全绿**（`git diff 1ad16e9..HEAD -- tests/upgrade-activation.test.mjs tests/market-mutation.test.mjs tests/profile-ops.test.mjs` = 0，评审亲证）；`tests/activation.test.mjs` 新表驱动七案（含空串钉新语义案）；全量 **1875/1875**、typecheck 0；计划/实施双独立评审（计划 2 项重要问题闭环——收编门语义边角经主人裁决 B 归因、最终验证判据改 commit 区间防恒真；实施逐 commit 验收零夹带）。实施计划入库 `docs/plans/2026-10-30-activation-post-executor-implementation-plan.md`。
+
 ### 0.11.3 行为变化：unsupported 信封统一 + reason envelope 透出 + client/cli 成因文案修正（issue #35）
 
 - **背景（ADR-0028 Follow-up ②，issue #35）**：同一「升级不支持」语义两端信封不对称——web 让 `UpgradePathUnsupportedError` 裸抛落 host-api default 臂 500（无 code、无成因），desktop 走 `DesktopOpsError('upgrade-unsupported')` → 409+code；同时 client i18n、CLI 与 agent tools 把 unsupported 成因硬编码为「本地链接安装」，而 unsupported 还涵盖 github spec 解析失败与来源不可解析——该场景下文案与事实不符。
@@ -858,6 +865,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.4 Refactor: activation twin collapse — resolveUpgradeActivation as the single post-executor (issue #34)
+
+- **Background (ADR-0028 Follow-up ①, issue #34)**: the activation block introduced by ADR-0007 (0.9.22, commit 7673375) lived verbatim in the tails of both upgrade locks (npm-source gate + try/fail-open unknown + client-only needsRestart suppression), the isomorphism kept only by review discipline — same disease as the upgrade-target ladder ADR-0028 collapsed.
+- **Changes**: `activation.ts` (the classification single source) gains `resolveUpgradeActivation(entry, fromVersion, toVersion, needsRestartInitial, classify?)` as the single post-executor, block migrated verbatim from both tails; backend differences are parameterized — the needsRestart initial value (web = install-transaction verdict, desktop = always true) and the toVersion source (web = `result.version`, desktop = local `version`) are passed in at the edge; both lock tails become a one-line destructuring call with their return assembly untouched; the `deps.classifyActivation` injection point and deps shape are **unchanged**.
+- **Behavior note (the single semantic edge, ruled B by the owner)**: the collapsed gate is truthy (aligned with the web site); on desktop, when toVersion is an empty string (reachable via a malformed latest doc, packument.ts:400 `: ''` fallback), the behavior changes from "enter gate → classify → inevitably unknown (including one doomed network probe)" to "skip gate → activation field absent, needsRestart preserved" — skipping a doomed probe with non-misleading copy; a table-driven case pins the new semantics against silent drift. Everything else is zero-change: the three-state semantics, fail-open, the injection point, the return shapes; selfUpgrade stays detached from classification (regression case pins it).
+- **Verification**: the zero-behavior acceptance anchor is a **zero diff across the wiring and both backend suites** (`git diff 1ad16e9..HEAD -- tests/upgrade-activation.test.mjs tests/market-mutation.test.mjs tests/profile-ops.test.mjs` = 0, reviewer-verified); seven new table-driven cases (including the empty-string pin); full suite **1875/1875**, typecheck 0; dual independent reviews (plan review closed 2 major findings — the gate-semantics edge ruled B by the owner with attribution, and the final-verification criterion switched to a commit-range diff against a perpetual-zero false pass; implementation review certified commit by commit with zero scope smuggling). Implementation plan committed at `docs/plans/2026-10-30-activation-post-executor-implementation-plan.md`.
 
 ### 0.11.3 Behavior change: unified unsupported envelope + reason envelope exposure + client/cli cause-copy fix (issue #35)
 
