@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 当前 24 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；策展五桶：essentials/cui-picks/self-dev/tencent-lighthouse/watchlist）。
+> 管辖范围：`registry.json` 当前 25 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；策展五桶：essentials/cui-picks/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。
@@ -50,6 +50,13 @@
 
 - **自研条目**（iasiv5 名下）：逐条对照仓库 README/COMPATIBILITY 核验每个能力声明后才可改写。
 - **三方收录**：只做结构统一（§2/§3/§4/§5）与明显过期修正，不深究事实核验、不代改能力声明。
+- **三方收录门槛**（2026-10-31，#37 引导转向 vs #38 收录的裁决入册）：入精选需同时满足三条——
+  ① 作者本人在 DSH 上实测可加载；② 功能内容无风险（纯本地展示、无付费墙、无托管服务依赖）；
+  ③ 投稿事实核对通过（npm/GitHub/homepage/icon 可达、文案过 §2–§5、格式守卫绿）。
+  任一不满足 → 引导至社区目录 awesome-dsh-plugin，不进 registry.json。
+- **三方条目 `verified` 默认不填**（同裁决）：`verified` 带来逐宿主版本复测义务，而
+  registry.json 修改权在仓库侧、三方作者无法持续维护该字段；作者实测记录写入
+  PR 描述/合并信息即可，条目本体不做兼容声明（「缺失版本号不构成负面信号」继续适用）。
 
 ## 7. CI 软警告
 
