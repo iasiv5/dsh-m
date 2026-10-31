@@ -145,3 +145,27 @@ describe('audience/decoupled 标注（自研元数据 v1.1）', () => {
     assert.ok(!text.includes('[作者自用]'), 'audience 缺省不加作者自用标')
   })
 })
+
+describe('注册表状态行（retro 2026-11-01 第 7 项）', () => {
+  const stateOf = (over = {}) => ({
+    configuredAddress: '', activeAddress: null, isDefault: true, status: 'ready',
+    stale: false, source: 'default-raw', fetchedAt: '2026-11-01T04:16:34.372Z', errors: [], count: 30,
+    ...over,
+  })
+
+  it('renderSearch 含「注册表（内部）」行：来源、条数、抓取时间', async () => {
+    const search = await loadSearch(() => ({ ...resultOf([primaryItem()]), registryState: stateOf() }))
+    const out = await search.execute({ query: 'x' })
+    assert.equal(out.registryNote, 'default-raw · 30 条 · 抓取于 2026-11-01T04:16:34.372Z')
+    assert.match(renderTextOf(search, out), /注册表（内部）：default-raw · 30 条 · 抓取于 2026-11-01T04:16:34\.372Z/)
+  })
+
+  it('过期缓存、非 ready 状态与错误数均有标注', async () => {
+    const search = await loadSearch(() => ({
+      ...resultOf([primaryItem()]),
+      registryState: stateOf({ source: 'default-jsdelivr', stale: true, status: 'degraded', errors: ['x', 'y'] }),
+    }))
+    const out = await search.execute({ query: 'x' })
+    assert.equal(out.registryNote, 'default-jsdelivr · 30 条 · 抓取于 2026-11-01T04:16:34.372Z · 过期缓存 · 状态 degraded · 错误 2 条')
+  })
+})

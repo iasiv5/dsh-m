@@ -95,6 +95,17 @@ function summaryOf(state: RegistryState): { isDefault: boolean; status: string; 
   return { isDefault: state.isDefault, status: state.status, stale: state.stale }
 }
 
+/** 注册表状态一行（内部信息，供 agent 判断市场数据是否新鲜；retro 2026-11-01 第 7 项）。 */
+function registryNoteOf(state: RegistryState): string {
+  const parts: string[] = [`${state.source ?? 'unknown'}`]
+  if (typeof state.count === 'number') parts.push(`${state.count} 条`)
+  if (state.fetchedAt) parts.push(`抓取于 ${state.fetchedAt}`)
+  if (state.stale) parts.push('过期缓存')
+  if (state.status !== 'ready') parts.push(`状态 ${state.status}`)
+  if (Array.isArray(state.errors) && state.errors.length > 0) parts.push(`错误 ${state.errors.length} 条`)
+  return parts.join(' · ')
+}
+
 export function registerTools(
   ctx: Context,
   cfg: RegistryConfig,
@@ -195,6 +206,7 @@ export function registerTools(
         nextOffset,
         total: result.total,
         registry: summaryOf(result.registryState),
+        registryNote: registryNoteOf(result.registryState),
         community: communityToolSummary(result.community),
         items: result.items.map((e) => ({
           id: e.id,
@@ -538,6 +550,7 @@ interface SearchOut {
   total?: number
   offset?: number
   nextOffset?: number | null
+  registryNote?: string
 }
 interface ListOut {
   items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
@@ -607,8 +620,9 @@ function renderSearch(out: SearchOut): string {
     `插件卡片已展示 ${out.items.length}${out.total && out.total > out.items.length ? `/${out.total}` : ''} 条（内部序号，禁止复述给用户）：`,
     lines.join('\n'),
     pager,
+    out.registryNote ? `注册表（内部）：${out.registryNote}` : null,
     '对用户最多回一句短话。禁止清单和长文。用户点名安装时才调 dshm_install（id）。',
-  ].join('\n')
+  ].filter((x): x is string => x !== null).join('\n')
 }
 
 function renderList(out: ListOut): string {
