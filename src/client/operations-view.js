@@ -152,6 +152,21 @@ export function activeMutateOp(records) {
 }
 
 /**
+ * 已装页逐行在途状态（0.11.10 修复「升级在途时卸载按钮显示卸载中…」）：
+ * disabled——同包存在任一在途非 install 操作，禁用同包其它动作（防冲突）；
+ * busyKind——该在途操作的 kind，各按钮自行判定是否 busy（升级只看 upgrade，卸载只看 uninstall）；
+ * 他包在途、install 在途、终态、脏输入均返回 { disabled: false, busyKind: null }。
+ * @param {Array<object>} records
+ * @param {string} pkg
+ * @returns {{ disabled: boolean, busyKind: string | null }}
+ */
+export function mutateStateForPkg(records, pkg) {
+  const op = activeMutateOp(records)
+  if (!op || op.target !== pkg) return { disabled: false, busyKind: null }
+  return { disabled: true, busyKind: op.kind }
+}
+
+/**
  * 进度条目标的操作（installed-tab 进度条只服务有 pnpm 阶段的操作——toggle/uninstall 挂它只会
  * 显示无信息量的「· 准备中」，2026-10-13 CDP 实测卡位位移）；无命中 null。
  */

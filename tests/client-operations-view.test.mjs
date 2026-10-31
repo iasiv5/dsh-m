@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
 import { externalToRecord } from '../src/client/operations.js'
-import { pad2, fmtOpClock, fmtOpFull, opDayKey, fmtOpDuration, opUpgradeMeta, groupOpsByDay, opRowVm, channelLabelKey, canRemoveRow, isInflightStatus, activeMutateOp, activeProgressOp, activeKindOp } from '../src/client/operations-view.js'
+import { pad2, fmtOpClock, fmtOpFull, opDayKey, fmtOpDuration, opUpgradeMeta, groupOpsByDay, opRowVm, channelLabelKey, canRemoveRow, isInflightStatus, activeMutateOp, activeProgressOp, activeKindOp, mutateStateForPkg } from '../src/client/operations-view.js'
 
 const root = join(fileURLToPath(import.meta.url), '..', '..')
 
@@ -307,6 +307,20 @@ describe('#36 在途谓词：isInflightStatus / activeMutateOp / activeProgressO
     assert.equal(activeMutateOp(records).target, 'toggle-t', 'install 排除、取首个在途非 install')
     assert.equal(activeMutateOp([rec('install', 'running'), rec('uninstall', 'done')]), null, '仅 install 在途 → null')
     assert.equal(activeMutateOp([]), null)
+  })
+
+  it('③ mutateStateForPkg（0.11.10）：同包在途才禁用；busyKind 为在途操作 kind，升级在途时卸载不得 busy', () => {
+    const up = [{ id: 'o1', kind: 'upgrade', target: 'dsh-m', status: 'running' }]
+    assert.deepEqual(mutateStateForPkg(up, 'dsh-m'), { disabled: true, busyKind: 'upgrade' })
+    assert.notEqual(mutateStateForPkg(up, 'dsh-m').busyKind, 'uninstall', '升级在途时卸载按钮不得 busy（「卸载中…」串扰）')
+    const un = [{ id: 'o2', kind: 'uninstall', target: 'dsh-m', status: 'queued' }]
+    assert.deepEqual(mutateStateForPkg(un, 'dsh-m'), { disabled: true, busyKind: 'uninstall' })
+    assert.notEqual(mutateStateForPkg(un, 'dsh-m').busyKind, 'upgrade', '卸载在途时升级按钮不得转圈')
+    assert.deepEqual(mutateStateForPkg([{ id: 'o5', kind: 'toggle', target: 'dsh-m', status: 'running' }], 'dsh-m'), { disabled: true, busyKind: 'toggle' }, 'toggle 在途：同包禁用，但 busyKind 非卸载/升级，两按钮都不转圈')
+    assert.deepEqual(mutateStateForPkg(up, 'other-pkg'), { disabled: false, busyKind: null }, '他包在途不影响本包')
+    assert.deepEqual(mutateStateForPkg([{ id: 'o3', kind: 'install', target: 'dsh-m', status: 'running' }], 'dsh-m'), { disabled: false, busyKind: null }, 'install 不计入同包在途')
+    assert.deepEqual(mutateStateForPkg([{ id: 'o4', kind: 'upgrade', target: 'dsh-m', status: 'done' }], 'dsh-m'), { disabled: false, busyKind: null }, '终态不在途')
+    assert.deepEqual(mutateStateForPkg(null, 'dsh-m'), { disabled: false, busyKind: null }, '脏输入安全')
   })
 
   it('③ activeProgressOp：install/upgrade/self-upgrade 三 kind 收，其余在途排', () => {

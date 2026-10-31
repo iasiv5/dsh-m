@@ -10,7 +10,7 @@ import { lookup } from "./i18n.js";
 import { installedViewModel } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
 import { applyInstalledUpdates, batchUpgradeOrder, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
-import { activeMutateOp, activeProgressOp } from "./operations-view.js";
+import { activeMutateOp, activeProgressOp, mutateStateForPkg } from "./operations-view.js";
 import { performUpgradeFlow } from "./upgrade-flow.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, PhaseDot, ToggleSwitch, TwoStepButton, LinksRow, ProgressLine, ReadmeBlock } from "./chrome.jsx";
@@ -35,7 +35,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
   // 进度条只服务有 pnpm 阶段的操作（install/upgrade/self-upgrade）。toggle/uninstall 挂它只会
   // 显示无信息量的「· 准备中」，还要付出 47px×2 的卡片栅格位移——开关原地丢失命中 0.6–1.3s
   // （2026-10-13 CDP 实测，01_docs/research/2026-10-13-dshm-toggle-ux-cdp-probe.md）。
-  // 注意别合并进 activeMutateTarget：后者还负责逐行禁用按钮（含 toggle 自身）。
+  // 注意别合并进 activeMutateTarget：后者只服务批量按钮的全局禁用（逐行禁用与 busy 已改由 mutateStateForPkg 派生，0.11.10）。
   const progressTarget = (activeProgressOp(ops.records) || {}).target || null;
 
   const doToggle = async (it, enabled) => {
@@ -179,6 +179,8 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
       { className: "dshm-cards" },
       items.map((it) => {
         const vm = installedViewModel(it);
+        // 0.11.10：逐行在途派生——disabled 为同包任一在途即禁用；busy 按在途操作 kind 区分（见 mutateStateForPkg）
+        const mut = mutateStateForPkg(ops.records, it.pkg);
         const pendingOn = pendingToggles[it.pkg];
         const tvm0 = toggleViewModel(it);
         // 乐观翻转覆盖开关视觉；停用时相位点按不变量清空（enabled===false → 相位 null）
@@ -191,7 +193,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
           name: it.name,
           topRight: h(ToggleSwitch, {
             vm: tvm,
-            disabled: activeMutateTarget === it.pkg,
+            disabled: mut.disabled,
             onChange: (enabled) => doToggle(it, enabled),
           }),
           badges: [
@@ -245,13 +247,13 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
               ? h("button", {
                   key: "up",
                   className: "dshm-btn primary sm",
-                  disabled: activeMutateTarget === it.pkg,
+                  disabled: mut.disabled,
                   onClick: (e) => {
                     e.stopPropagation();
                     doUpgrade(it);
                   },
                 },
-                activeMutateTarget === it.pkg ? h(Spin) : lookup("action.upgrade"))
+                mut.busyKind === "upgrade" ? h(Spin) : lookup("action.upgrade"))
               : null,
             h(TwoStepButton, {
               key: "un",
@@ -259,11 +261,11 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
               confirmLabel: lookup(vm.guard.confirmKey),
               // 卸载在途反馈（2026-10-31 UX）：泵 record 在途（queued/running/input）时按钮转
               // 「spin + 卸载中…」——此前确认后只剩灰色 disabled「卸载」，用户无从知晓正在卸载
-              // （busy 派生与 disabled 同源：activeMutateTarget，0.7.0 Task 13 谓词）
+              // （busy 仅在同包卸载在途时成立；disabled 为同包任一在途即禁用，见 mutateStateForPkg）
               busyLabel: lookup("action.uninstalling"),
               className: "dshm-btn sm",
-              disabled: activeMutateTarget === it.pkg,
-              busy: activeMutateTarget === it.pkg,
+              disabled: mut.disabled,
+              busy: mut.busyKind === "uninstall",
               onConfirm: () => doUninstall(it),
             }),
           ],

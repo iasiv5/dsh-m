@@ -190,9 +190,13 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
   })
 
   // busy/busyLabel 接线源结构锚（installed-tab.jsx；node 环境无鼠标点不开卡片，SSR 冒烟够不到 actions 分支）
-  it('InstalledTab 卸载按钮接线 busy/busyLabel（与 disabled 同源 activeMutateTarget）', () => {
+  // 0.11.10：busy 按在途操作种类判定（mutateStateForPkg），升级在途不串扰卸载按钮；行为由纯函数单测钉住
+  it('InstalledTab 按钮接线：busy 按在途操作种类（mutateStateForPkg），升级在途不串扰卸载', () => {
     assert.ok(_installedTabSrc.includes('busyLabel: lookup("action.uninstalling")'), 'busyLabel 传参在')
-    assert.ok(_installedTabSrc.includes('busy: activeMutateTarget === it.pkg'), 'busy 与 disabled 同源判据在')
+    assert.ok(_installedTabSrc.includes('const mut = mutateStateForPkg(ops.records, it.pkg)'), '逐行派生经纯函数')
+    assert.ok(_installedTabSrc.includes('busy: mut.busyKind === "uninstall"'), '卸载 busy 仅在卸载在途')
+    assert.ok(_installedTabSrc.includes('mut.busyKind === "upgrade" ? h(Spin)'), '升级转圈仅在升级在途')
+    assert.ok(!_installedTabSrc.includes('busy: activeMutateTarget === it.pkg'), '旧的仅按包名的 busy 判据已移除（升级在途会串扰卸载）')
     assert.match(i18nSrc, /"action\.uninstalling": "卸载中…"/, 'ZH 键在')
     assert.match(i18nSrc, /"action\.uninstalling": "Uninstalling…"/, 'EN 键在')
   })
