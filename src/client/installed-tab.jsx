@@ -253,7 +253,9 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
                     doUpgrade(it);
                   },
                 },
-                mut.busyKind === "upgrade" ? h(Spin) : lookup("action.upgrade"))
+                mut.busyKind === "upgrade"
+                  ? [h(Spin, { key: "spin" }), h("span", { key: "t", style: { marginLeft: 6 } }, lookup("action.upgrading"))]
+                  : lookup("action.upgrade"))
               : null,
             h(TwoStepButton, {
               key: "un",

@@ -195,10 +195,14 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(_installedTabSrc.includes('busyLabel: lookup("action.uninstalling")'), 'busyLabel 传参在')
     assert.ok(_installedTabSrc.includes('const mut = mutateStateForPkg(ops.records, it.pkg)'), '逐行派生经纯函数')
     assert.ok(_installedTabSrc.includes('busy: mut.busyKind === "uninstall"'), '卸载 busy 仅在卸载在途')
-    assert.ok(_installedTabSrc.includes('mut.busyKind === "upgrade" ? h(Spin)'), '升级转圈仅在升级在途')
+    assert.ok(_installedTabSrc.includes('mut.busyKind === "upgrade"'), '升级在途时才切换为 busy 分支')
+    assert.ok(_installedTabSrc.includes('lookup("action.upgrading")'), '升级在途文案走 action.upgrading（与卸载「卸载中…」对齐）')
+    assert.ok(_installedTabSrc.includes('h(Spin, { key: "spin" })'), '升级在途转圈与卸载同款（Spin 节点 + key）')
     assert.ok(!_installedTabSrc.includes('busy: activeMutateTarget === it.pkg'), '旧的仅按包名的 busy 判据已移除（升级在途会串扰卸载）')
     assert.match(i18nSrc, /"action\.uninstalling": "卸载中…"/, 'ZH 键在')
     assert.match(i18nSrc, /"action\.uninstalling": "Uninstalling…"/, 'EN 键在')
+    assert.match(i18nSrc, /"action\.upgrading": "升级中…"/, 'ZH 升级中文案键在')
+    assert.match(i18nSrc, /"action\.upgrading": "Upgrading…"/, 'EN 升级中文案键在')
   })
 
   it('SearchBox / ZoneChips / FavoriteZone 独立渲染不抛', () => {
