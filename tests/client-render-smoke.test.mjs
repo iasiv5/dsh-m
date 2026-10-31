@@ -226,7 +226,7 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
       zone: 'primary', counts: { essentials: 5, 'cui-picks': 4, 'self-dev': 8, 'tencent-lighthouse': 3, watchlist: 3 },
       labels: null, active: null, onPick: () => {}, trailing: null,
     }))
-    assert.equal((html.match(/data-chip="1"/g) || []).length, 7, '精选区=全部+固定六类')
+    assert.equal((html.match(/data-chip="1"/g) || []).length, 8, '精选区=全部+固定七类（0.11.11 新增 guizang）')
     assert.match(zoneChipsSrc, /const chipsSignature = JSON\.stringify\(chips\.map/, '分类内容签名而非不稳定的对象引用')
     assert.match(zoneChipsSrc, /\[chipsSignature, active, expanded, zone, stuck, rowHeight, measure\]/, '布局测量不依赖自身的 geom')
     assert.match(src, /if \(existing\.querySelector\("\.dshm-panel"\)\) return;\s*existing\.remove\(\);/, '崩溃遗留空容器不得永久阻挡重新打开（挂载区，main.jsx 保留）')

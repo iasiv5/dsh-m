@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import * as ms from '../src/client/market-state.js'
+import { CATEGORIES } from '../lib/core/registry.js'
 const {
   MARKET_PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
@@ -138,11 +139,14 @@ describe('zoneChips 分区构建器', () => {
   const labels = {
     agi: 'AGI 架构探索', ui: 'UI 增强', tools: '工具与能力', theme: '主题与外观', memory: '记忆',
   }
-  it('primary：策展五桶固定序（0 计数也展示）', () => {
+  it('primary：策展分类固定序（0 计数也展示；宝玉专区之后为歸藏专区）', () => {
     const chips = zoneChips({ essentials: 3 }, labels, 'primary')
-    assert.deepEqual(chips.map((c) => c.id), ['essentials', 'cui-picks', 'baoyu', 'self-dev', 'tencent-lighthouse', 'watchlist'])
-    assert.deepEqual(chips.map((c) => c.count), [3, 0, 0, 0, 0, 0])
-    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.essentials', 'cat.cui-picks', 'cat.baoyu', 'cat.self-dev', 'cat.tencent-lighthouse', 'cat.watchlist'])
+    assert.deepEqual(chips.map((c) => c.id), ['essentials', 'cui-picks', 'baoyu', 'guizang', 'self-dev', 'tencent-lighthouse', 'watchlist'])
+    assert.deepEqual(chips.map((c) => c.count), [3, 0, 0, 0, 0, 0, 0])
+    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.essentials', 'cat.cui-picks', 'cat.baoyu', 'cat.guizang', 'cat.self-dev', 'cat.tencent-lighthouse', 'cat.watchlist'])
+  })
+  it('漂移守卫：精选 chips 键序 ≡ registry CATEGORIES（新增分类只改一处即红）', () => {
+    assert.deepEqual(zoneChips({}, {}, 'primary').map((c) => c.id), [...CATEGORIES])
   })
   it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数跳过', () => {
     const counts = { market: 1, tools: 5, ui: 7, search: 0, other: 0, agi: 10, theme: 4, 'brand-new-slug': 2, 'empty-slug': 0 }
@@ -157,7 +161,7 @@ describe('zoneChips 分区构建器', () => {
   })
   it('脏输入安全', () => {
     assert.deepEqual(zoneChips(null, null, 'community'), [])
-    assert.equal(zoneChips(null, null, 'primary').length, 6)
+    assert.equal(zoneChips(null, null, 'primary').length, 7)
   })
 })
 

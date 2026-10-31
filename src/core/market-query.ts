@@ -18,11 +18,12 @@ import { CATEGORIES } from './registry.js'
 /** 社区分类 slug 文法（单一事实源；host-api/tools/cli/community-adapter 共用）。 */
 export const COMMUNITY_SLUG_RE = /^[a-z0-9-]{1,32}$/
 
-/** 精选五桶中文标签（键集 ≡ registry CATEGORIES，market-query.test.mjs 漂移守卫钉住）。 */
+/** 精选分类中文标签（键集 ≡ registry CATEGORIES，market-query.test.mjs 漂移守卫钉住）。 */
 export const PRIMARY_CATEGORY_LABELS: Record<string, string> = {
   essentials: '装机必备',
   'cui-picks': '崔添翼精选',
   baoyu: '宝玉专区',
+  guizang: '歸藏专区',
   'self-dev': 'iasi自研',
   'tencent-lighthouse': '腾讯轻量云专区',
   watchlist: '观察区',

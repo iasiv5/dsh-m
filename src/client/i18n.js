@@ -2,7 +2,7 @@
 const ZH = {
   "market.title": "插件市场",
   "tab.market": "市场", "tab.installed": "已装", "tab.settings": "设置",
-  "cat.all": "全部", "cat.essentials": "装机必备", "cat.cui-picks": "崔添翼精选", "cat.baoyu": "宝玉专区", "cat.self-dev": "iasi自研", "cat.tencent-lighthouse": "腾讯轻量云专区", "cat.watchlist": "观察区",
+  "cat.all": "全部", "cat.essentials": "装机必备", "cat.cui-picks": "崔添翼精选", "cat.baoyu": "宝玉专区", "cat.guizang": "歸藏专区", "cat.self-dev": "iasi自研", "cat.tencent-lighthouse": "腾讯轻量云专区", "cat.watchlist": "观察区",
   "zone.community": "社区", "zone.primary": "精选", "zone.favorites": "收藏",
   "badge.deprecated": "已弃用", "sub.snapshot": "v{v}（目录快照）", "badge.internal": "作者自用",
   "byline.verified": "实测 ≤{v}",
@@ -133,7 +133,7 @@ const ZH = {
 const EN = {
   "market.title": "Plugin Marketplace",
   "tab.market": "Market", "tab.installed": "Installed", "tab.settings": "Settings",
-  "cat.all": "All", "cat.essentials": "Essentials", "cat.cui-picks": "Cui Picks", "cat.baoyu": "Baoyu Picks", "cat.self-dev": "iasi Self-dev", "cat.tencent-lighthouse": "Tencent Lighthouse", "cat.watchlist": "Watchlist",
+  "cat.all": "All", "cat.essentials": "Essentials", "cat.cui-picks": "Cui Picks", "cat.baoyu": "Baoyu Picks", "cat.guizang": "Guizang Picks", "cat.self-dev": "iasi Self-dev", "cat.tencent-lighthouse": "Tencent Lighthouse", "cat.watchlist": "Watchlist",
   "zone.community": "Community", "zone.primary": "Curated", "zone.favorites": "Favorites",
   "badge.deprecated": "Deprecated", "sub.snapshot": "v{v} (catalog snapshot)", "badge.internal": "Author's own",
   "byline.verified": "verified ≤{v}",
