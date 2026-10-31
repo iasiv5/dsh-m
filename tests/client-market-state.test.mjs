@@ -140,9 +140,9 @@ describe('zoneChips 分区构建器', () => {
   }
   it('primary：策展五桶固定序（0 计数也展示）', () => {
     const chips = zoneChips({ essentials: 3 }, labels, 'primary')
-    assert.deepEqual(chips.map((c) => c.id), ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist'])
-    assert.deepEqual(chips.map((c) => c.count), [3, 0, 0, 0, 0])
-    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.essentials', 'cat.cui-picks', 'cat.self-dev', 'cat.tencent-lighthouse', 'cat.watchlist'])
+    assert.deepEqual(chips.map((c) => c.id), ['essentials', 'cui-picks', 'baoyu', 'self-dev', 'tencent-lighthouse', 'watchlist'])
+    assert.deepEqual(chips.map((c) => c.count), [3, 0, 0, 0, 0, 0])
+    assert.deepEqual(chips.map((c) => c.labelKey), ['cat.essentials', 'cat.cui-picks', 'cat.baoyu', 'cat.self-dev', 'cat.tencent-lighthouse', 'cat.watchlist'])
   })
   it('community：已知标签在前（含 ui/tools 真实计数键）、未知 slug 尾组、0 计数跳过', () => {
     const counts = { market: 1, tools: 5, ui: 7, search: 0, other: 0, agi: 10, theme: 4, 'brand-new-slug': 2, 'empty-slug': 0 }
@@ -157,7 +157,7 @@ describe('zoneChips 分区构建器', () => {
   })
   it('脏输入安全', () => {
     assert.deepEqual(zoneChips(null, null, 'community'), [])
-    assert.equal(zoneChips(null, null, 'primary').length, 5)
+    assert.equal(zoneChips(null, null, 'primary').length, 6)
   })
 })
 

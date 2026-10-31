@@ -22,6 +22,7 @@ export const COMMUNITY_SLUG_RE = /^[a-z0-9-]{1,32}$/
 export const PRIMARY_CATEGORY_LABELS: Record<string, string> = {
   essentials: '装机必备',
   'cui-picks': '崔添翼精选',
+  baoyu: '宝玉专区',
   'self-dev': 'iasi自研',
   'tencent-lighthouse': '腾讯轻量云专区',
   watchlist: '观察区',

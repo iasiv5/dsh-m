@@ -11,10 +11,11 @@ export const MARKET_PAGE_SIZES = [32, 64, 96]
 export const DEFAULT_PAGE_SIZE = 32
 
 /** 策展五桶（0.9.16 策展分类法替换功能五分类）：chips 顺序即桶序，腾讯轻量云专区按主人要求垫后。 */
-const CURATED_ORDER = ['essentials', 'cui-picks', 'self-dev', 'tencent-lighthouse', 'watchlist']
+const CURATED_ORDER = ['essentials', 'cui-picks', 'baoyu', 'self-dev', 'tencent-lighthouse', 'watchlist']
 const CURATED_LABELS = {
   essentials: '装机必备',
   'cui-picks': '崔添翼精选',
+  baoyu: '宝玉专区',
   'self-dev': 'iasi自研',
   'tencent-lighthouse': '腾讯轻量云专区',
   watchlist: '观察区',

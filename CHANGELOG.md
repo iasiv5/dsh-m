@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.8 新增：宝玉专区分类 + 收录 4 个宝玉 baoyu-design 插件
+
+- **背景**：宝玉（JimLiu）的 baoyu-design 技能套件以 4 个 npm 插件发布（`dsh-claude-slides` / `dsh-claude-design` / `dsh-claude-design-system` / `dsh-claude-dashboard`，均 2.4.1），需要独立分类收录。
+- **做法**：新增策展分类 `baoyu`（中文「宝玉专区」、英文 "Baoyu Picks"），排在「崔添翼精选」与「iasi自研」之间；registry.json 追加 4 条 `category: "baoyu"` 条目（仅主桶，不设 alsoCategories）。`CATEGORIES`、`PRIMARY_CATEGORY_LABELS`、客户端 `CURATED_ORDER` / 标签映射与 i18n 同步。
+- **兼容性说明**：registry 校验为整份拒绝——旧版 dsh-m（不认识 `baoyu`）解析新 registry 会整体降级为本地缓存。因此本版与 registry.json 推送必须同轮发布：先发 0.11.8，待其生效后再推送 registry。
+- **验证**：registry / 客户端分类顺序 / 漂移守卫测试同步更新。
+
 ### 0.11.7 修复×2：卸载在途反馈（按钮转圈+「卸载中…」）+ 收藏页图标三源修复（社区声明 icon 透传随轮收编）
 
 - **背景（2026-10-31 主人实拍/实测三轮）**：① 已装页「确认卸载」点击后，操作泵在途窗口内按钮只剩灰色 disabled「卸载」，无任何在途提示——TwoStepButton 只有「常态/武装确认」两态，无 busy 态；② 收藏页插件头像与社区/精选页不一致，恒显示 GitHub owner 头像（dsh-m 显 iasiv5 头像而非官方图标）。根因两层：收藏快照无任何图标字段（snapshotOf 白名单缺 icon/iconDataUri，ADR-0025 三层解析链前两层全空、恒落头像层）；社区目录声明 icon 被静默丢弃（上游构建目录 dsh-plugin-catalog 条目带 icon，live 抽样 358/7924 条声明，而 CommunityRawEntry 类型与适配层均无此键）。社区页 dsh-m 的蓝色图标来自已装 join（attachEntryIconDataUris 读本机已装包 manifest 图标；上游 iasiv5/dsh-m 条目实测无 icon 字段——主人证据图与判断吻合）。
@@ -888,6 +895,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.8 Added: Baoyu Picks category + four Baoyu baoyu-design plugins
+
+- **Background**: Baoyu (JimLiu)'s baoyu-design skill suite ships as four npm plugins (`dsh-claude-slides` / `dsh-claude-design` / `dsh-claude-design-system` / `dsh-claude-dashboard`, all 2.4.1) that need their own category.
+- **Change**: New curated category `baoyu` (zh "宝玉专区", en "Baoyu Picks"), placed between "Cui Picks" and "iasi Self-dev". registry.json gains four `category: "baoyu"` entries (primary bucket only, no alsoCategories). `CATEGORIES`, `PRIMARY_CATEGORY_LABELS`, the client `CURATED_ORDER` / label map and i18n are kept in sync.
+- **Compatibility note**: registry validation rejects the whole list on any unknown category — older dsh-m builds that do not know `baoyu` fall back to the local cache when they parse the new registry. This release therefore ships before the registry.json push.
+- **Verification**: registry / client category-order / drift-guard tests updated.
 
 ### 0.11.7 Fixed ×2: uninstall in-flight feedback (spinner + "Uninstalling…") + favorites icon trio repair (community-declared icons now flow through)
 
