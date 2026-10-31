@@ -186,20 +186,43 @@ describe('replaceAll 合并语义（0.7.0 评审 P1：恢复快照不抹掉窗�
   })
 })
 
-describe('opAppliesTo 前提判定（0.7.0 评审 P2）', () => {
+describe('opAppliesTo 前提判定（0.7.0 评审 P2；0.11.9 收紧为收录 id 判定）', () => {
+  // 生产中 registryId 与 registryGithub 由 matchInstalled 同批赋值，夹具按此成对给出
   const items = [
     { pkg: 'plain-pkg' },
-    { pkg: '@scope/wrapper', registryGithub: 'owner/repo' },
+    { pkg: '@scope/wrapper', registryId: 'owner--repo', registryGithub: 'owner/repo' },
   ]
-  it('install：target ∪ meta.npm ∪ registryGithub=meta.github 三键任一命中即「已装」', () => {
+  it('install：target ∪ meta.npm ∪ registryId=target 三键任一命中即「已装」', () => {
     assert.equal(opAppliesTo(rec({ kind: 'install', target: 'plain-pkg' }), items), false, 'target 命中')
     assert.equal(opAppliesTo(rec({ kind: 'install', target: 'id-x', meta: { npm: '@scope/wrapper' } }), items), false, 'meta.npm 命中')
-    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'owner--repo', meta: { github: 'owner/repo' } }), items), false, 'meta.github 命中（github 源已装）')
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'owner--repo', meta: { github: 'owner/repo' } }), items), false, 'registryId 命中（收录 id ≠ 包名，github 源已装）')
     assert.equal(opAppliesTo(rec({ kind: 'install', target: 'not-there', meta: { npm: 'absent' } }), items), true, '未装 → 前提成立')
   })
-  it('upgrade/uninstall/toggle：target 已装才成立', () => {
+  it('0.11.9：同仓库不同收录条目互不误判（宝玉四件套：装 slides 后装 design）', () => {
+    const slides = [{ pkg: 'dsh-claude-slides', registryId: 'dsh-claude-slides', registryGithub: 'JimLiu/baoyu-design' }]
+    assert.equal(
+      opAppliesTo(rec({ kind: 'install', target: 'dsh-claude-design', meta: { npm: 'dsh-claude-design', github: 'JimLiu/baoyu-design' } }), slides),
+      true,
+      '同仓兄弟已装 → claude-design 前提仍成立',
+    )
+    assert.equal(
+      opAppliesTo(rec({ kind: 'install', target: 'dsh-claude-slides', meta: { npm: 'dsh-claude-slides', github: 'JimLiu/baoyu-design' } }), slides),
+      false,
+      '同收录条目已装 → 拦截',
+    )
+  })
+  it('0.11.9：包名 ≠ 收录 id 时由 registryId 拦截重复安装（P2 初衷保留）', () => {
+    const alt = [{ pkg: 'chatlock-alt', source: 'github', registryId: 'dsh-chatlock', registryGithub: 'xevil3301/dsh-chatlock' }]
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'dsh-chatlock', meta: { github: 'xevil3301/dsh-chatlock' } }), alt), false)
+  })
+  it('边界：手装 github 条目（未匹配 registry）无可比键 → 前提成立（可接受边界）', () => {
+    const hand = [{ pkg: 'chatlock-alt', source: 'github' }]
+    assert.equal(opAppliesTo(rec({ kind: 'install', target: 'dsh-chatlock', meta: { github: 'xevil3301/dsh-chatlock' } }), hand), true)
+  })
+  it('upgrade/uninstall/toggle：target 已装才成立；upgrade 不读 registryId（未装的同仓兄弟不算已装）', () => {
     assert.equal(opAppliesTo(rec({ kind: 'uninstall', target: 'plain-pkg' }), items), true)
     assert.equal(opAppliesTo(rec({ kind: 'toggle', target: 'missing' }), items), false)
+    assert.equal(opAppliesTo(rec({ kind: 'upgrade', target: 'dsh-claude-design' }), [{ pkg: 'dsh-claude-slides', registryId: 'dsh-claude-slides', registryGithub: 'JimLiu/baoyu-design' }]), false)
     assert.equal(opAppliesTo(rec({ kind: 'install', target: 'x' }), null), true, '脏输入安全')
   })
 })

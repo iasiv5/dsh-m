@@ -611,7 +611,7 @@ function MarketPanel({ onClose }) {
     }
     const items = fresh && Array.isArray(fresh.items) ? fresh.items : null;
     if (!items) return true; // 读不到已装数据：保守放行（泵 dispatch 前还会再校验）
-    // 评审 P2：github 源 install 经 registryGithub ∪ meta.github 比对（核心判定在 opAppliesTo，可测）
+    // 0.11.9：install 前提经 opAppliesTo 判定（收录 id / 包名 / meta.npm 三键，核心判定可测）
     return opAppliesTo(r, items);
   }, []);
   const dispatchRestored = useCallback(async (r) => {

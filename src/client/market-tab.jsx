@@ -175,7 +175,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   };
 
   // 0.9.45 U10：市场/收藏详情 Modal 内升级（动线修复——此前已装条目只能去已装页操作）。
-  // record.target = 安装包名（R1：opAppliesTo 以 x.pkg === rec.target 判定前提，收录 id ≠ 包名会被误判 superseded）
+  // record.target = 已装包名（installedPkg）：upgrade 记录的前提由 opAppliesTo 以 x.pkg === rec.target 判定（R1）；install 记录的 target 为收录 id（runOp("install", it.id)），判定见 opAppliesTo。
   // #36：编排出仓 upgrade-flow 单点（enqueue-meta 字面留调用点；noteSink = Modal 内摘要
   // 0.9.15 安装终态就地可见——degraded→warn / ok / catch m.kind==='ok'?'hint':'err' 三态映射）。
   const doUpgrade = async (it) => {

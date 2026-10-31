@@ -388,11 +388,14 @@ export async function restoreRecords(records, stillApplies, installedVersionOf) 
 }
 
 /**
- * 前提判定核心（0.7.0 评审 P2）：install 的 target 是收录 id，与 installed.pkg 不同名——
- * 同时比对 meta.npm（npm 源安装后的包名）与 registryGithub === meta.github（github 源且已装条目
- * 被合并市场匹配上）；未匹配 registry 的手装 github 条目无可比键，恢复重发幂等（可接受边界）。
+ * 前提判定核心（0.7.0 评审 P2；0.11.9 收紧为收录 id 判定）：install 的 target 是收录 id，与 installed.pkg 可能不同名。
+ * 「已装」判定三键任一命中：x.pkg === target；x.pkg === meta.npm（npm 源安装后的包名）；
+ * x.registryId === target（已装条目经合并市场匹配到同一收录条目；github 源插件亦经此键识别）。
+ * 0.11.8 及以前的第三键 registryGithub === meta.github 按仓库比对，同仓库的多个收录条目（宝玉四件套）会互相误判已装，0.11.9 废弃。
+ * registryId 与 registryGithub 由 matchInstalled 同批赋值；注册表不可用时两者皆空，判定与旧版一致。
+ * 未匹配 registry 的手装 github 条目无可比键，恢复重发幂等（可接受边界）。
  * @param {OperationRecord} rec
- * @param {Array<{pkg: string, registryGithub?: string | null}>} installedItems
+ * @param {Array<{pkg: string, registryId?: string | null}>} installedItems
  */
 export function opAppliesTo(rec, installedItems) {
   const items = Array.isArray(installedItems) ? installedItems : []
@@ -401,7 +404,7 @@ export function opAppliesTo(rec, installedItems) {
       x &&
       (x.pkg === rec.target ||
         (rec.meta && typeof rec.meta.npm === 'string' && x.pkg === rec.meta.npm) ||
-        (rec.meta && typeof rec.meta.github === 'string' && x.registryGithub === rec.meta.github)),
+        (rec.kind === 'install' && typeof x.registryId === 'string' && x.registryId === rec.target)),
   )
   return rec.kind === 'install' ? !has : has
 }
