@@ -18,11 +18,11 @@
     {
       "id": "dsh-skins",
       "name": "DSH Skins",
-      "description": "DSH 侧栏多皮肤热切换，一键回官方；需 DSH ≥0.2.0-rc.1；Web 已测 0.2.1-rc.4；Desktop 已测 0.2.1-rc.3。",
+      "description": "DSH 侧栏多皮肤热切换，一键回官方；需 DSH ≥0.2.0-rc.1；Web 已测 0.2.1-rc.4；Desktop 已测 0.2.1-rc.5。",
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["皮肤", "主题", "美化", "界面"],
-      "verified": ["0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3", "0.2.1-rc.4"],
+      "verified": ["0.2.0-rc.1", "0.2.0-rc.2", "0.2.1-rc.2", "0.2.1-rc.3", "0.2.1-rc.4", "0.2.1-rc.5"],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
