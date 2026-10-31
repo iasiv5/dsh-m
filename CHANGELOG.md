@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.11 新增：歸藏专区分类（guizang）+ 升级按钮进行中改为「转圈 + 升级中…」
+
+- **背景**：宝玉专区之后新增「歸藏专区」精选分类，用于收录歸藏（op7418）的 dsh-guizang-design 插件。另外，已装页与详情弹窗的升级按钮在途时此前只显示转圈，与卸载按钮的「卸载中…」不对齐。
+- **做法**：`CATEGORIES` 在 baoyu 之后新增 `guizang`；精选标签 `PRIMARY_CATEGORY_LABELS`、客户端 `CURATED_ORDER` / 标签、i18n（中「歸藏专区」/ 英 "Guizang Picks"）同步。升级按钮在途时显示「转圈 + 升级中…」（新增 i18n 键 `action.upgrading`，中「升级中…」/ 英 "Upgrading…"），已装页与详情弹窗同款。
+- **兼容性说明**：旧版 dsh-m 解析含未知分类的 registry 会整份拒绝并退回缓存（同 0.11.8 说明）。因此 `guizang` 分类的收录条目 dsh-guizang-design 在宿主升级到 0.11.11 之后再推送 registry.json。
+- **测试**：分类顺序与 chip 计数断言更新（7 个分类 / 8 个 chip）；新增精选 chips ≡ registry CATEGORIES 的漂移守卫；render-smoke 新增详情弹窗升级在途用例。红→绿：修复前相关断言失败，修复后 client-market-state 46/46、render-smoke 46/46，全量 `npm test` 门禁通过。
+- **部署说明**：含 host 侧变更（分类常量、精选标签），升级后需重启 dsh web 才完整生效。
+
 ### 0.11.10 修复：已装页升级在途时卸载按钮误显「卸载中…」——busy 按在途操作种类判定
 
 - **背景（2026-11-01 实录）**：已装页点击 dsh-m 的「升级」后，升级按钮转圈，卸载按钮却显示「卸载中…」。根因：已装页的 busy 派生只看「同包是否有在途非 install 操作」，不区分 kind。0.11.7 引入卸载在途文案时即带入此串扰；反向，卸载在途时升级按钮也会误转圈。
@@ -913,6 +921,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.11 Added: Guizang Picks category + "Upgrading…" busy label on upgrade buttons
+
+- **Background**: a new curated category "歸藏专区" (guizang) follows 宝玉专区 and will list the dsh-guizang-design plugin. Separately, the upgrade buttons on the installed page and in the market detail modal only spun while in flight, unlike the uninstall button's "Uninstalling…" label.
+- **Change**: `CATEGORIES` gains `guizang` after `baoyu`; `PRIMARY_CATEGORY_LABELS`, the client `CURATED_ORDER` / labels and i18n ("歸藏专区" / "Guizang Picks") are kept in sync. While in flight, upgrade buttons show a spinner plus "Upgrading…" (new i18n key `action.upgrading`), matching the uninstall button on both pages.
+- **Compatibility**: older dsh-m builds reject a registry containing an unknown category and fall back to the cache (same as the 0.11.8 note). The registry.json entry for dsh-guizang-design is therefore pushed only after hosts are on 0.11.11.
+- **Tests**: category order and chip count assertions updated (7 categories / 8 chips); a drift guard requires the curated chip order to match registry CATEGORIES; a render-smoke case covers the upgrade-in-flight label in the detail modal. Red→green: the assertions failed before the change; client-market-state 46/46 and render-smoke 46/46; full `npm test` gate passes.
+- **Deployment**: includes host-side changes (category constant and curated labels); restart dsh web after upgrading for full effect.
 
 ### 0.11.10 Fixed: uninstall button showed "Uninstalling…" while an upgrade of the same plugin was in flight — busy now follows the in-flight operation kind
 
