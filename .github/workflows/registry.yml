@@ -58,8 +58,12 @@ jobs:
   # 0.9.21：jsDelivr CDN 对 @main 的缓存可能滞后数小时，而客户端默认链「线路粘性 + 恒 200
   # 即成功」会把滞后快照无限钉死（实证 2026-10-03：收录 DSH Market 18→19 后，粘性线路持续
   # 拉回 18 条旧版，强制刷新无效）。registry.json 实际变更的 push 在 validate 全绿后自动清缓存。
+  # 2026-10-31 加固：workflow_dispatch 也可触发本 job——「registry.json 变更 push 恰逢 CI 红
+  # → purge 被 needs 跳过，随后绿 push 未触碰 registry.json → 设计性跳过」的死锁窗口实录
+  # （2026-10-31 provider-card 收录轮）。恢复动作：手动 dispatch 本 workflow，event.before
+  # 为空 → 走下方保守 changed=yes 分支，validate 全绿后无条件补 purge。
   purge-jsdelivr:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     permissions:
@@ -81,7 +85,7 @@ jobs:
             changed=no
           fi
           if [ "$changed" != 'yes' ]; then
-            echo "registry.json untouched in this push — skip purge"
+            echo "registry.json untouched in this run — skip purge"
             exit 0
           fi
           echo "## jsDelivr purge (registry.json changed)" >> "$GITHUB_STEP_SUMMARY"
