@@ -301,14 +301,14 @@
     {
       "id": "dsh-provider-card",
       "name": "DSH 角色卡",
-      "description": "切换模型时在输入框旁出角色卡：身份名、六轴分数、额度提示与台词；23 张精选卡覆盖 15 个 provider。",
+      "description": "切换模型时在输入框旁出角色卡：身份名、六轴分数、额度提示与台词；精选多卡覆盖主流 provider。",
       "category": "watchlist",
       "tags": ["角色卡", "模型选择", "界面美化"],
       "source": "npm",
       "npm": "@mirai27/dsh-provider-card",
       "github": "FallenWings27/dsh-provider-card-release",
       "homepage": "https://github.com/FallenWings27/dsh-provider-card-release",
-      "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0/src/icon.svg"
+      "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0.1.2/src/icon.svg"
     }
   ]
 }
