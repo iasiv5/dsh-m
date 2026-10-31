@@ -125,7 +125,41 @@ describe('adaptCommunityCatalog — 入库 fixture 全量', () => {
     assert.equal(diff.tarball, undefined)
     assert.equal(diff.capabilityCheckedAt, undefined)
   })
+
+  // 收藏头像修复（2026-10-31）：上游目录（dsh-plugin-catalog plugins.json）条目带 icon 字段
+  // （live 抽样 358/7924 条声明，raw.githubusercontent https URL）——适配层此前不透传，社区
+  // 声明图标被静默丢弃（社区页/收藏卡退化到 owner 头像）。白名单扩 icon，strOrUndef 同口径
+  // （非字符串/空串不产键）；消费端 iconCandidates 的 https 门兜底校验。
+  it('icon 透传（2026-10-31 收藏头像修复）：声明即随条目产出；非字符串/空串不产键', () => {
+    const cat = catalogOf([
+      communityRawOf({ name: 'ic-one', owner: 'o1', icon: 'https://raw.githubusercontent.com/o1/ic-one/main/icon.png' }),
+      communityRawOf({ name: 'ic-two', owner: 'o2', icon: '   ' }),
+      communityRawOf({ name: 'ic-three', owner: 'o3', icon: 123 }),
+      communityRawOf({ name: 'ic-four', owner: 'o4' }),
+    ])
+    const r2 = adaptCommunityCatalog(cat)
+    const one = r2.entries.find((x) => x.id === 'o1--ic-one')
+    assert.equal(one.icon, 'https://raw.githubusercontent.com/o1/ic-one/main/icon.png', '声明 icon 随条目产出')
+    for (const id of ['o2--ic-two', 'o3--ic-three', 'o4--ic-four']) {
+      const e = r2.entries.find((x) => x.id === id)
+      assert.equal(e.icon, undefined, `${id}：空串/非字符串/缺席不产键`)
+    }
+  })
 })
+
+/** communityRaw 最小合法形态（本文件局部便捷构造；props 覆盖逐键合并）。 */
+function communityRawOf(props) {
+  return {
+    name: props.name,
+    owner: props.owner,
+    url: `https://github.com/${props.owner}/${props.name}`,
+    category: 'c-ui',
+    description: { en: `${props.name} awesome thing` },
+    npm: `${props.name}-pkg`,
+    downloads: 100,
+    ...props,
+  }
+}
 
 describe('adaptCommunityCatalog — 合成条目契约', () => {
   it('空目录 → 零产物零计数零警告', () => {

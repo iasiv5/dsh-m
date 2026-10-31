@@ -403,6 +403,35 @@ describe('existingMarketIds（FP2 2026-10-15：收藏 stale 批量化，三不�
     const res = await existingMarketIds(['dsh--market'], cfg, {}, deps)
     assert.deepEqual(res.present, ['dsh--market'])
   })
+
+  // 收藏头像修复（2026-10-31）：收藏快照无 icon 字段，收藏卡头像退化到 GitHub owner 头像
+  // （ADR-0025 候选序末位）。membership 查询已在手的 merged 条目随响应透出目录声明 icon——
+  // 仍在「三不原则」内（不枚举已装/不探测 latest/不分页，icon 是 merged 条目既有字段零新 IO）。
+  // 覆盖面=主清单 + 社区条目（适配层 icon 透传随本轮收编；上游目录 live 抽样 358/7924 条声明）。
+  it('⑤ icons 同批透出：present 条目的目录声明 icon 随 membership 返回（无 icon 条目不入 map）', async () => {
+    const primary = [
+      { id: 'p-ic', name: 'P-IC', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-ic', icon: 'https://example.com/p-ic.png' },
+      { id: 'p-noic', name: 'P-NOIC', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-noic' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('keep', 'o9', { icon: 'https://example.com/keep.png' })]))
+    const res = await existingMarketIds(['p-ic', 'p-noic', 'o9--keep', 'gone'], cfg, {}, deps)
+    assert.deepEqual(res.present, ['p-ic', 'p-noic', 'o9--keep'])
+    assert.deepEqual(res.icons, {
+      'p-ic': 'https://example.com/p-ic.png',
+      'o9--keep': 'https://example.com/keep.png',
+    }, '有声明 icon 的 present 条目透出（主清单 + 社区适配透传）；无 icon（缺省）与缺席条目不入 map')
+  })
+
+  it('⑥ icons 形态契约恒在：空 ids 快路与 registry 落代超时均返回空 map（消费端免判缺）', async () => {
+    const { deps } = fakeDeps()
+    const empty = await existingMarketIds([], cfg, {}, deps)
+    assert.deepEqual(empty.icons, {}, '空 ids 快路同样带 icons 键')
+    const hang = fakeDeps({ loadRegistry: async () => new Promise(() => {}) })
+    const deadline = await existingMarketIds(['p-0'], cfg, { deadlineMs: 30 }, hang.deps)
+    assert.deepEqual(deadline.present, [], '落代超时无 membership')
+    assert.deepEqual(deadline.icons, {}, '落代超时 icons 空 map（形态不漂移）')
+  })
 })
 
 describe('listInstalledWithMeta', () => {

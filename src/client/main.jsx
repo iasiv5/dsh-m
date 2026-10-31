@@ -14,6 +14,9 @@ const { clampSize, loadPanelSize, savePanelSize } = require("./window-resize.js"
 const { pickPayload, parseToolArgs } = require("./tool-view.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
+// 收藏头像修复（2026-10-31）：已装条目 → 图标别名索引（registryId/npm/github → iconDataUri），
+// 传收藏区做社区收藏的已装图标 join（icon-view.js DOM-free 纯逻辑，直测在 client-icon-view）
+const { buildInstalledIconIndex } = require("./icon-view.js");
 const { restoreRecords, opAppliesTo, readReconcileNotified, writeReconcileNotified } = require("./operations.js");
 // 面板操作接线（GLOSSARY / ADR-0023 第二刀）：泵持有者 + 显式绑定 + 对账编排纯函数 + 横幅判定单源
 const { getSharedOpsStore, getSharedOpsPump, bindPanelOps, unbindPanelOps, planReconcileActions } = require("./panel-ops.js");
@@ -806,7 +809,7 @@ function MarketPanel({ onClose }) {
       h(
         "div",
         { className: "dshm-body", ref: bodyRef },
-        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null, onOpenOps: openOps, bodyRef }) : null,
+        tab === "market" ? h(MarketTab, { notify, markets, onMutation: refreshViews, ops, favorites, profileKind: profile?.kind ?? null, onOpenOps: openOps, bodyRef, installedIcons: buildInstalledIconIndex(installed.data && installed.data.items) }) : null,
         tab === "installed" ? h(InstalledTab, { notify, installed, updates, onMutation: refreshViews, ops }) : null,
         tab === "settings" ? h(SettingsTab, {
           notify,

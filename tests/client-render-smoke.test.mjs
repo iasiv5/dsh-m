@@ -469,7 +469,7 @@ describe('0.9.76「版本无关」徽章退役（源码断言）——展示层�
   it('Modal Compat 行保留为唯一权威呈现；snapshotOf 数据字段照常透传（收藏/快照完整性）', () => {
     assert.ok(i18nSrc.includes('modal.decoupled.label') && i18nSrc.includes('modal.decoupled.value'), 'Compat 行 i18n 键在（词典面）')
     assert.match(detailModalSrc, /it\.decoupled === true \? kv\(lookup\("modal\.decoupled\.label"\)/, 'Compat 行条件渲染在（detail-modal.jsx）')
-    assert.match(cardSrc, /"verified", "audience", "decoupled"\]/, 'snapshotOf 数据字段保留（card.jsx）')
+    assert.match(cardSrc, /"verified", "audience", "decoupled", "icon", "iconDataUri"\]/, 'snapshotOf 数据字段保留（card.jsx）；收藏头像修复新增 icon/iconDataUri 持久化（2026-10-31）')
   })
 })
 

@@ -43,6 +43,10 @@ export interface CommunityRawEntry {
   install?: string
   added?: string
   screenshots?: string[]
+  /** 目录声明图标（2026-10-31 收藏头像修复收编）：上游构建目录（dsh-plugin-catalog plugins.json）
+   * 条目已带 icon（live 抽样 358/7924 条声明，raw.githubusercontent https URL 为主）——此前类型
+   * 与适配层均无此键，社区声明图标被静默丢弃（社区页/收藏卡退化到 owner 头像）。 */
+  icon?: string
   /** 前瞻性声明（0.7.0 Task 1）：上游目录当前无此键，形状对齐 dsh-market registry 类型；上游落地后跑 smoke 核对（尤其 replacement 是 string 还是对象）。 */
   deprecated?: boolean
   replacement?: string | null

@@ -576,7 +576,9 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             profile: profile.name,
             signal,
           })
-          payload = { present: result.present }
+          // 收藏头像修复（2026-10-31）：icons 随 membership 同批透传（core 既有字段零新 IO）；
+          // 桩缺 icons（旧测试/未来桩）时 undefined 经 JSON 序列化自然落键缺席，客户端已判缺容错。
+          payload = { present: result.present, icons: result.icons }
           break
         }
 

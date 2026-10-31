@@ -226,6 +226,10 @@ export function adaptCommunityCatalog(catalog: CommunityCatalog): AdaptCommunity
       screenshots: strArray(raw.screenshots),
       descriptionEn: en,
       owner,
+      // 目录声明图标透传（2026-10-31 收藏头像修复）：strOrUndef 同口径（非字符串/trim 空串不产键）；
+      // 消费端 iconCandidates 的 https 门兜底校验（ADR-0025），社区页/收藏卡/收藏 stale 检测 icons
+      // 批量透出（existingMarketIds）三处同源受益。
+      ...(strOrUndef(raw.icon) !== undefined ? { icon: strOrUndef(raw.icon) } : {}),
       ...(strOrUndef(raw.added) !== undefined ? { added: strOrUndef(raw.added) } : {}),
       ...(raw.deprecated === true ? { deprecated: true } : {}),
       ...(strOrUndef(raw.replacement) !== undefined ? { replacement: strOrUndef(raw.replacement) } : {}),

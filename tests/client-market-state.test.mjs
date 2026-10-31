@@ -314,6 +314,12 @@ describe('C3 接线结构锚（收藏批量 stale + fetchPage 零增量守卫）
     assert.equal(favSrc.split('present = new Set();').length - 1, 2, 'API 失败 → 空 Set = 全部保守 stale（let 初始化 + catch 清空恰两处）')
     assert.ok(!favSrc.includes('api("market", { query: fav.id'), '不得回退逐收藏 market 扇出')
   })
+  it('收藏头像接线（2026-10-31）：icons 同批消费 + 三层装配单源 withFavoriteIcons', () => {
+    assert.ok(favSrc.includes('if (res && res.icons && typeof res.icons === "object") iconsById = res.icons;'), 'icons 判缺容错消费在（旧宿主无键 → null 回退）')
+    assert.ok(favSrc.includes('setCheck({ staleIds: stale.map((f) => f.id), iconsById })'), 'iconsById 随 stale 检查同批入 state（零新增请求）')
+    assert.ok(favSrc.includes('withFavoriteIcons(s, check && check.iconsById, installedIcons)'), 'Icon entry 三层装配单源在（目录覆盖 → 快照 → 已装 join）')
+    assert.ok(favSrc.includes('import { withFavoriteIcons } from "./icon-view.js"'), '纯逻辑 import 在（DOM-free 直测于 client-icon-view）')
+  })
   it('fetchPage 零增量守卫：内容等价不提交，loading 照常收口（ADR-0023 T9：useMarketData 迁 hooks.js，锚随迁）', () => {
     const hooksSrc = readFileSync(new URL('../src/client/hooks.js', import.meta.url), 'utf8')
     assert.ok(hooksSrc.includes('if (!marketResponseEquivalent(prevData, merged)) setData(merged);'), '守卫调用逐字锚')

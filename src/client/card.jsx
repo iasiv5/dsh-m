@@ -53,7 +53,10 @@ function snapshotOf(it) {
     categoryLabel: it.categoryLabel,
     source: it.source,
   };
-  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated", "verified", "audience", "decoupled"]) {
+  // 收藏头像修复（2026-10-31）：icon/iconDataUri 入快照——快照此前无图标字段，收藏卡头像
+  // 恒退化到 GitHub owner 头像（ADR-0025 候选序末位）；新收藏离线也有图标。存量收藏由
+  // favorite-zone 的 market-ids-exist icons 覆盖 + 已装 iconDataUri join 兜底（icon-view.js）。
+  for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated", "verified", "audience", "decoupled", "icon", "iconDataUri"]) {
     if (it[k] !== undefined && it[k] !== null) s[k] = it[k];
   }
   return s;

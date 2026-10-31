@@ -800,17 +800,22 @@ export interface ExistingMarketIdsOptions {
  * 的 Set 判定在该边界判 live（=「已从目录消失」的正确语义），属修复而非回归，勿改回搜索页行为。
  *
  * 失败语义：registry 装载 reject → 原样抛出（host-api 统一 500 → 客户端 catch 空 Set 全 stale，
- * 与今日 market 同路径等价）；deadline 逃逸 → `{ present: [] }`（同今日超时空页 → 全 stale）；
+ * 与今日 market 同路径等价）；deadline 逃逸 → `{ present: [], icons: {} }`（同今日超时空页 → 全 stale）；
  * 社区 unavailable/disabled → merged=primary-only → 社区收藏判 stale（同今日）。
+ *
+ * 返回 icons（收藏头像修复 2026-10-31）：present 条目的目录声明 icon map（无声明 icon 的条目
+ * 不入 map；覆盖面=主清单 + 社区条目——社区适配层 icon 透传随本轮收编，上游目录 live 抽样
+ * 358/7924 条声明）——merged 条目既有字段零新 IO，仍在三不原则内；消费端 favorite-zone 用它
+ * 覆盖收藏快照的缺失 icon（ADR-0025 候选序首位）。
  */
 export async function existingMarketIds(
   ids: string[],
   cfg: RegistryConfig = {},
   opts: ExistingMarketIdsOptions = {},
   deps?: Partial<Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'>>,
-): Promise<{ present: string[] }> {
+): Promise<{ present: string[]; icons: Record<string, string> }> {
   const list = Array.isArray(ids) ? ids : []
-  if (list.length === 0) return { present: [] }
+  if (list.length === 0) return { present: [], icons: {} }
   const d: Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'> = {
     loadRegistry: deps?.loadRegistry ?? defaultLoadRegistry,
     fetchCommunityCatalog: deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog,
@@ -834,7 +839,7 @@ export async function existingMarketIds(
   }
   if (loaded === 'deadline') {
     void communityTask.catch(() => undefined)
-    return { present: [] }
+    return { present: [], icons: {} }
   }
   const community = await mergedOutcome({
     namespace,
@@ -844,11 +849,25 @@ export async function existingMarketIds(
     communityTask,
     deadlineAt,
   })
+  // 收藏头像修复（2026-10-31）：present 条目的目录声明 icon 随 membership 同批透出——收藏快照
+  // 无 icon 字段，收藏卡头像此前恒退化到 GitHub owner 头像（ADR-0025 候选序末位）。merged 条目
+  // 既有字段零新 IO，仍在「三不原则」内；无声明 icon（社区条目适配层不产出 icon）不入 map，
+  // 消费端（favorite-zone）按键覆盖快照后交 iconCandidates 的 https 门兜底校验。
+  const iconById = new Map(
+    community.merged
+      .map((entry) => [entry.id, typeof (entry as RegistryEntry).icon === 'string' ? (entry as RegistryEntry).icon as string : ''] as const)
+      .filter(([_, icon]) => icon !== ''),
+  )
   const knownIds = new Set(community.merged.map((entry) => entry.id))
   const present = list
     .map((id) => (typeof id === 'string' ? id.trim() : ''))
     .filter((id) => id !== '' && knownIds.has(id))
-  return { present }
+  const icons: Record<string, string> = {}
+  for (const id of present) {
+    const icon = iconById.get(id)
+    if (icon !== undefined) icons[id] = icon
+  }
+  return { present, icons }
 }
 
 // ---------- 已装列表 ----------

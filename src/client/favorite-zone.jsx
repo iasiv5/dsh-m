@@ -11,8 +11,12 @@ import { lookup } from "./i18n.js";
 import { partitionStale } from "./favorites.js";
 import { LinksRow, Icon, compactCount } from "./chrome.jsx";
 import { Card } from "./card.jsx";
+import { withFavoriteIcons } from "./icon-view.js";
 
-function FavoriteZone({ favorites, onOpen }) {
+// 收藏头像修复（2026-10-31）：installedIcons = main.jsx 由已装数据装配的别名索引
+// （buildInstalledIconIndex：registryId/npm/github → iconDataUri），社区收藏的已装插件借此
+// 用真图标（社区页 iconDataUri join 同款呈现）；缺席（SSR/旧调用面）安全降级既有链。
+function FavoriteZone({ favorites, onOpen, installedIcons }) {
   const list = favorites.list;
   const [check, setCheck] = useState(null); // { staleIds: string[] } | null
   useEffect(() => {
@@ -27,15 +31,19 @@ function FavoriteZone({ favorites, onOpen }) {
         // 逐收藏完整 market 查询扇出（C3 语义保留：只要「id 还在不在」的成员布尔，零 latest 探测）。
         // 失败/形态异常 → 空 Set = 全部保守 stale（与旧逐条 catch→false 同语义）。
         let present = new Set();
+        let iconsById = null;
         try {
           const res = await api("market-ids-exist", { ids: list.map((f) => f.id) });
           if (res && Array.isArray(res.present)) present = new Set(res.present);
+          // 收藏头像修复（2026-10-31）：目录声明 icon 随 membership 同批透出（core 既有字段零
+          // 新 IO）——快照无 icon 的存量收藏借此拿回目录图标；旧宿主响应无 icons 键 → null 判缺容错。
+          if (res && res.icons && typeof res.icons === "object") iconsById = res.icons;
         } catch {
           present = new Set();
         }
         const lookupLive = async (fav) => present.has(fav.id);
         const { stale } = await partitionStale(list, lookupLive);
-        if (live) setCheck({ staleIds: stale.map((f) => f.id) });
+        if (live) setCheck({ staleIds: stale.map((f) => f.id), iconsById });
       })();
     }, 800);
     return () => {
@@ -68,7 +76,9 @@ function FavoriteZone({ favorites, onOpen }) {
         const isStale = staleSet.has(fav.id);
         return Card({
           key: fav.id,
-          icon: h(Icon, { entry: s }),
+          // 三层装配（icon-view.js DOM-free 直测）：目录现行 icon（本批 market-ids-exist 响应）
+          // 覆盖快照 → 快照自带 icon/iconDataUri（新收藏）→ 已装 iconDataUri 别名 join → 头像回退
+          icon: h(Icon, { entry: withFavoriteIcons(s, check && check.iconsById, installedIcons) }),
           name: s.name,
           badges: [
             s.deprecated === true ? h("span", { className: "dshm-badge warn", key: "dep" }, lookup("badge.deprecated")) : null,

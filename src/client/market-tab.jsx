@@ -29,7 +29,7 @@ import { createOpOutcome } from "./op-outcome.js";
 // op-outcome 模块级实例（与 main.jsx 同款装配）
 const oc = createOpOutcome(lookup);
 
-function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, onOpenOps, bodyRef }) {
+function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, onOpenOps, bodyRef, installedIcons }) {
   const [zone, setZone] = useState("community");
   const market = zone === "favorites" ? null : markets[zone];
   const { data, loading, error, reload, query, updateQuery } = market || {};
@@ -272,7 +272,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
       null,
       CompatDialog,
       zoneBar,
-      h(FavoriteZone, { favorites, onOpen: openFavDetail }),
+      h(FavoriteZone, { favorites, onOpen: openFavDetail, installedIcons }),
       favDetailItem
         ? h(DetailModal, {
             it: favDetailItem,
