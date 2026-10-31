@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.9 修复：安装前提判定收紧为收录条目身份——同仓库多收录条目（宝玉四件套）不再互相误判「已装」
+
+- **背景（2026-11-01 实录）**：安装 dsh-claude-slides 后再安装 dsh-claude-design，队列报「已跳过（前提已不成立或已手动处理）」。根因：`opAppliesTo` 的第三键按**仓库**比对（`registryGithub === meta.github`），而 `JimLiu/baoyu-design` 同仓库收录了四个插件，任一已装即令其余三个被误判为已装。
+- **做法**：install 前提判定改为三键任一命中即「已装」：`x.pkg === target`、`x.pkg === meta.npm`、`x.registryId === target`；废弃仓库比对。`registryId` 由合并市场匹配赋值（与 `registryGithub` 同批），github 源插件的身份仍经此键识别。upgrade / uninstall / toggle 判定不变。
+- **行为零变化口径**：不存在同仓库兄弟收录条目的场景（含注册表不可用的早退臂）判定结果与 0.11.8 一致；变化仅限「同仓库、收录 id 不同」的条目之间互判。
+- **有意保留的边界**：① 同一插件被两个不同收录 id 登记时，不再被本判定拦截（数据层问题）；② 注册表把收录 id 改名后，改名前发起且仍在途的安装记录可能失配。
+- **测试**：P2 用例夹具补 `registryId`（生产中二者由 matchInstalled 成对赋值）；新增宝玉同仓兄弟、包名 ≠ id、手装 github 边界、upgrade 不读仓库键四组用例。红→绿：宝玉同仓用例在 0.11.8 判定下失败、0.11.9 下通过；`tests/client-operations.test.mjs` 58/58，全量 `npm test` 门禁通过。
+- **注释**：`market-tab.jsx`、`main.jsx` 中关于 record.target / registryGithub 的旧注释已修正为收录 id 口径。
+- **部署说明**：本版仅 client 判定变更（host 侧未改动）；升级后刷新页面即可；若仍走旧判定，重启 dsh web。
+
 ### 0.11.8 新增：宝玉专区分类 + 收录 4 个宝玉 baoyu-design 插件
 
 - **背景**：宝玉（JimLiu）的 baoyu-design 技能套件以 4 个 npm 插件发布（`dsh-claude-slides` / `dsh-claude-design` / `dsh-claude-design-system` / `dsh-claude-dashboard`，均 2.4.1），需要独立分类收录。
@@ -895,6 +905,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.9 Fixed: install precondition narrowed to registry-entry identity — same-repo sibling entries (Baoyu four-pack) no longer falsely block each other
+
+- **Background (2026-11-01 field report)**: after installing dsh-claude-slides, installing dsh-claude-design failed with "Skipped (precondition no longer holds or handled manually)". Root cause: the third key of `opAppliesTo` compared by **repository** (`registryGithub === meta.github`); `JimLiu/baoyu-design` ships four registry entries, so any one installed entry made the other three look installed.
+- **Change**: an install counts as installed when any of three keys matches: `x.pkg === target`, `x.pkg === meta.npm`, `x.registryId === target`. The repository comparison is removed. `registryId` is assigned by the merged-market match (in the same batch as `registryGithub`); github-source plugins are still identified through this key. Upgrade / uninstall / toggle judgments are unchanged.
+- **Zero-change scope**: scenarios without a same-repo sibling entry (including the early-return arm when the registry is unavailable) produce the same result as 0.11.8; the only change applies between entries that share a repository but have different registry ids.
+- **Intentional boundaries**: (1) the same plugin registered under two different ids is no longer blocked by this check (a registry data issue); (2) if a registry id is renamed, in-flight install records created before the rename may fail to match.
+- **Tests**: the P2 fixture now carries `registryId` (in production both are assigned together by `matchInstalled`); four new groups cover same-repo siblings, package name ≠ id, the hand-installed github boundary, and upgrade ignoring repository keys. Red→green: the Baoyu sibling test fails under the 0.11.8 judgment and passes under 0.11.9; `tests/client-operations.test.mjs` 58/58, and the full `npm test` gate passes.
+- **Comments**: stale comments about record.target / registryGithub in `market-tab.jsx` and `main.jsx` now describe the registry-id semantics.
+- **Deployment**: client-only judgment change (host side untouched); refresh the page after upgrading; restart dsh web if the old behavior persists.
 
 ### 0.11.8 Added: Baoyu Picks category + four Baoyu baoyu-design plugins
 
