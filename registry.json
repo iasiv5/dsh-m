@@ -353,6 +353,18 @@
       "npm": "dsh-claude-dashboard",
       "github": "JimLiu/baoyu-design",
       "homepage": "https://github.com/JimLiu/baoyu-design"
+    },
+    {
+      "id": "dsh-guizang-design",
+      "name": "歸藏设计",
+      "description": "歸藏设计：网页 PPT、图文卡片与网页排版共用设计系统，另有去 AI 味与语气档案，可一键做同风格的下一份。",
+      "category": "guizang",
+      "tags": ["网页PPT", "图文卡片", "网页排版", "去AI味"],
+      "source": "npm",
+      "npm": "dsh-guizang-design",
+      "github": "op7418/dsh-guizang-design",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-guizang-design@0/icon.png",
+      "homepage": "https://github.com/op7418/dsh-guizang-design"
     }
   ]
 }
