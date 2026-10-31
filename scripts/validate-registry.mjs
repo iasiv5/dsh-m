@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
+import { fetchPublishedCategories, unsupportedCategories } from './registry-categories.mjs'
 
 const OFFLINE = process.argv.includes('--offline')
 
@@ -123,6 +124,23 @@ async function reachable(url, attempt = 0) {
       await new Promise((r) => setTimeout(r, 1500))
       void attempt
     }
+  }
+}
+
+// ---------- 分类发布态门禁（retro 2026-11-01 第 3 项；仅在线模式） ----------
+// 未知分类会让旧版 dsh-m 整份拒绝 registry：registry 的分类必须已被 npm 上最新已发布版本支持。
+if (!OFFLINE) {
+  try {
+    const { version, categories } = await fetchPublishedCategories()
+    const bad = unsupportedCategories(parsed.registry, categories)
+    for (const { id, category } of bad) {
+      failed = true
+      console.error(`✗ [${id}] 分类「${category}」尚未被已发布的 dsh-m@${version} 支持——旧版会整份拒绝 registry。须先发版、宿主升级后再推 registry（见 CHANGELOG 兼容性说明）`)
+    }
+    if (bad.length === 0) console.log(`✓ 全部分类均受已发布 dsh-m@${version} 支持`)
+  } catch (err) {
+    warned = true
+    console.warn(`⚠ 分类发布态校验跳过：${err instanceof Error ? err.message : err}`)
   }
 }
 
