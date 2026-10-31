@@ -422,6 +422,15 @@ describe('0.9.45 两段加载接线（源码断言；ADR-0023 T9：useMarketData
     assert.match(marketTabSrc, /activeUpgradeRec\.target === detailItem\.installedPkg/, '进度行比对走 installedPkg（R1；market-tab.jsx）')
   })
 
+  it('详情 Modal 升级在途：转圈 + 「升级中…」，与已装页升级按钮同款（0.11.11）；空闲态无在途文案', () => {
+    const base = { id: 'x', name: 'X', description: 'd', source: 'npm', npm: 'pkg-x', installed: true, installedPkg: 'pkg-x', installedVersion: '1.0.0', outdated: true, category: 'tools', tags: [] }
+    const busy = renderToString(h(components.__DetailModal, { it: base, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: true, profileKind: 'web' }))
+    assert.ok(busy.includes('dshm-spin'), '升级在途转圈在（Spin 节点）')
+    assert.ok(busy.includes('升级中') || busy.includes('Upgrading'), '升级在途文案在（action.upgrading）')
+    const idle = renderToString(h(components.__DetailModal, { it: base, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, onUpgrade: () => {}, upgradeBusy: false, profileKind: 'web' }))
+    assert.ok(!idle.includes('升级中') && !idle.includes('Upgrading'), '空闲态不显示在途文案')
+  })
+
   it('详情 Modal：README 折叠页（npm 条目）与收录日期 fmtDate（0.9.45 U10b）', () => {
     const it = { id: 'r', name: 'R', description: 'd', source: 'npm', npm: 'pkg-r', category: 'tools', tags: [], added: '2026-09-28T00:00:00.000Z' }
     const html = renderToString(h(components.__DetailModal, { it, labels: {}, busy: false, onClose: () => {}, onInstall: () => {}, profileKind: 'web' }))

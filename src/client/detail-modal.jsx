@@ -272,7 +272,7 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
               React.Fragment,
               null,
               it.outdated
-                ? h("button", { className: "dshm-btn primary", disabled: upgradeBusy, onClick: () => onUpgrade(it) }, upgradeBusy ? h(Spin) : lookup("action.upgrade"))
+                ? h("button", { className: "dshm-btn primary", disabled: upgradeBusy, onClick: () => onUpgrade(it) }, upgradeBusy ? [h(Spin, { key: "spin" }), h("span", { key: "t", style: { marginLeft: 6 } }, lookup("action.upgrading"))] : lookup("action.upgrade"))
                 : null,
               h("span", { className: "dshm-hint" }, lookup("manage.hint")),
             )
