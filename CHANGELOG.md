@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.10 修复：已装页升级在途时卸载按钮误显「卸载中…」——busy 按在途操作种类判定
+
+- **背景（2026-11-01 实录）**：已装页点击 dsh-m 的「升级」后，升级按钮转圈，卸载按钮却显示「卸载中…」。根因：已装页的 busy 派生只看「同包是否有在途非 install 操作」，不区分 kind。0.11.7 引入卸载在途文案时即带入此串扰；反向，卸载在途时升级按钮也会误转圈。
+- **做法**：`operations-view` 新增纯函数 `mutateStateForPkg(records, pkg)`：`disabled` 保持「同包任一在途即禁用」（防止冲突操作），`busyKind` 返回在途操作的 kind；升级按钮只在 upgrade 在途时转圈，卸载按钮只在 uninstall 在途时显示「卸载中…」；开关 disabled 与之同源。
+- **行为零变化口径**：仅同包在途时的按钮状态变化；无在途操作、他包在途、install 在途、终态的场景与 0.11.9 一致。
+- **测试**：operations-view 新增 ③（升级在途卸载不 busy、卸载在途升级不转圈、toggle 在途仅禁用、他包/install/终态/脏输入）；render-smoke 接线锚改为新判据，并负向锚定旧判据已移除。红→绿：修复前新单测加载失败、旧锚失败；修复后 operations-view 48/48、render-smoke 45/45，全量 `npm test` 门禁通过。
+- **部署说明**：纯 client 变更（host 侧未改动）；升级后刷新页面即可；若仍显示旧文案，重启 dsh web。
+
 ### 0.11.9 修复：安装前提判定收紧为收录条目身份——同仓库多收录条目（宝玉四件套）不再互相误判「已装」
 
 - **背景（2026-11-01 实录）**：安装 dsh-claude-slides 后再安装 dsh-claude-design，队列报「已跳过（前提已不成立或已手动处理）」。根因：`opAppliesTo` 的第三键按**仓库**比对（`registryGithub === meta.github`），而 `JimLiu/baoyu-design` 同仓库收录了四个插件，任一已装即令其余三个被误判为已装。
@@ -905,6 +913,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.10 Fixed: uninstall button showed "Uninstalling…" while an upgrade of the same plugin was in flight — busy now follows the in-flight operation kind
+
+- **Background (2026-11-01 field report)**: clicking "Upgrade" on dsh-m made the upgrade button spin, while the uninstall button read "Uninstalling…". Root cause: the installed-tab busy derivation only checked whether any non-install operation for the same package was in flight, without looking at its kind. The reverse also held: while an uninstall was in flight, the upgrade button spun. The uninstall in-flight label came with 0.11.7.
+- **Change**: a new pure function `mutateStateForPkg(records, pkg)` in `operations-view`: `disabled` keeps "any in-flight operation for this package disables its actions" (prevents conflicting operations); `busyKind` returns the kind of that operation. The upgrade button spins only for an in-flight upgrade; the uninstall button shows "Uninstalling…" only for an in-flight uninstall. The toggle's disabled state uses the same derivation.
+- **Zero-change scope**: only button states for an in-flight operation on the same package change; scenarios with no in-flight operation, another package in flight, an install in flight, or a terminal record behave as in 0.11.9.
+- **Tests**: `client-operations-view` gains case ③ (upgrade in flight → uninstall not busy; uninstall in flight → upgrade not spinning; toggle in flight → disabled only; other package / install / terminal / dirty input). The render-smoke wiring anchor now checks the new derivation and negatively anchors the removed old check. Red→green: before the fix the new unit test fails to load and the old anchor fails; after the fix, operations-view 48/48 and render-smoke 45/45; the full `npm test` gate passes.
+- **Deployment**: client-only change (host side untouched); refresh the page after upgrading; restart dsh web if the old labels persist.
 
 ### 0.11.9 Fixed: install precondition narrowed to registry-entry identity — same-repo sibling entries (Baoyu four-pack) no longer falsely block each other
 
