@@ -98,7 +98,7 @@ decoupled 条目 description 含「已适配」句式（应改写为第四句式
 2026-10-28 chatlock 轮事后补断言（`95357fe`）；2026-10-31 provider-card 轮 CI 红后补（`14534f9`）。
 
 - [ ] `registry.json` 新增条目（紧凑单行风格与 icon 钉版见 §10 编辑纪律）
-- [ ] 本文件头部「管辖范围」计数 N→N+1，并追加收录 trail
+- [ ] 本文件头部「管辖范围」计数 N→N+1，并追加收录 trail（由 `tests/registry-copy-guide.test.mjs` 机械校验：漏改即红）
 - [ ] `tests/registry.test.mjs` 条目数断言 N→N+1，并追加 trail（约 L67）
 
 另：若收录 push 恰逢 CI 红，`purge-jsdelivr` 会因 `needs: validate` 被跳过、后续绿 push
