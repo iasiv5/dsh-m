@@ -308,7 +308,7 @@
       "npm": "@mirai27/dsh-provider-card",
       "github": "FallenWings27/dsh-provider-card-release",
       "homepage": "https://github.com/FallenWings27/dsh-provider-card-release",
-      "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0.1.2/src/icon.svg"
+      "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0/src/icon.svg"
     }
   ]
 }
