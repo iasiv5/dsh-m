@@ -178,16 +178,23 @@ function generate(nRandom) {
   }
 }
 
+// 固定格式：顶层元数据单行，cases 每条独占一行（grep 友好；与 tests/search-normalize-corpus-format.test.mjs 对齐）
+function serializeCorpus(p) {
+  const { cases, ...rest } = p
+  const head = JSON.stringify(rest).slice(0, -1)
+  return `${head},"cases":[\n${cases.map((c) => JSON.stringify(c)).join(',\n')}\n]}\n`
+}
+
 let nRandom = Number.parseInt(process.env.CORPUS_RANDOM ?? '800', 10) || 800
 let payload = generate(nRandom)
-let bytes = Buffer.byteLength(JSON.stringify(payload))
+let bytes = Buffer.byteLength(serializeCorpus(payload))
 let cutApplied = false
 if (bytes > BUDGET_HARD && nRandom > 0) {
   // >1MB 硬顶 → 砍随机桶（唯一旋钮）换参重跑；随机桶砍尽仍超 → 停下如实报告（不静默降 fuzz）
   nRandom = Math.max(0, Math.floor(nRandom * (BUDGET_HARD / bytes)))
   console.log(`[corpus] ${bytes}B > 1MB 硬顶 → 随机桶砍至 ${nRandom} 换参重跑`)
   payload = generate(nRandom)
-  bytes = Buffer.byteLength(JSON.stringify(payload))
+  bytes = Buffer.byteLength(serializeCorpus(payload))
   cutApplied = true
   if (bytes > BUDGET_HARD) {
     console.error(`[corpus] 随机桶已砍尽仍 ${bytes}B > 1MB 硬顶——停下如实报告，不静默降 fuzz`)
@@ -195,7 +202,7 @@ if (bytes > BUDGET_HARD && nRandom > 0) {
   }
 }
 mkdirSync(dirname(OUT), { recursive: true })
-writeFileSync(OUT, JSON.stringify(payload))
+writeFileSync(OUT, serializeCorpus(payload))
 const { stats } = payload
 console.log(`[corpus] catalog=${catalog.version} entries=${stats.entries} dedup=${stats.dedupedFieldStrings}`)
 console.log(`[corpus] buckets: hand=${stats.hand} categories=${stats.categories} longest=${stats.longest} random=${stats.random}/${nRandom}${cutApplied ? '(已砍)' : ''} fuzz=${stats.fuzz}/${3000}`)
