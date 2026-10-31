@@ -309,6 +309,50 @@
       "github": "FallenWings27/dsh-provider-card-release",
       "homepage": "https://github.com/FallenWings27/dsh-provider-card-release",
       "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0/src/icon.svg"
+    },
+    {
+      "id": "dsh-claude-slides",
+      "name": "Claude 幻灯片",
+      "description": "宝玉 claude-slides 技能：Agent 把可编辑的幻灯片写成文件，并在本地幻灯片编辑器中打开。",
+      "category": "baoyu",
+      "tags": ["幻灯片", "演示", "宝玉"],
+      "source": "npm",
+      "npm": "dsh-claude-slides",
+      "github": "JimLiu/baoyu-design",
+      "homepage": "https://github.com/JimLiu/baoyu-design"
+    },
+    {
+      "id": "dsh-claude-design",
+      "name": "Claude 画布设计",
+      "description": "宝玉 claude-design 技能：Agent 把多画板画布写成文件，并在本地画布编辑器中打开。",
+      "category": "baoyu",
+      "tags": ["设计", "画布", "宝玉"],
+      "source": "npm",
+      "npm": "dsh-claude-design",
+      "github": "JimLiu/baoyu-design",
+      "homepage": "https://github.com/JimLiu/baoyu-design"
+    },
+    {
+      "id": "dsh-claude-design-system",
+      "name": "Claude 设计系统",
+      "description": "宝玉 claude-design-system 技能：Agent 把设计系统（令牌、字体、组件、资源）写成文件，并在本地设计系统页面中打开。",
+      "category": "baoyu",
+      "tags": ["设计系统", "设计令牌", "宝玉"],
+      "source": "npm",
+      "npm": "dsh-claude-design-system",
+      "github": "JimLiu/baoyu-design",
+      "homepage": "https://github.com/JimLiu/baoyu-design"
+    },
+    {
+      "id": "dsh-claude-dashboard",
+      "name": "Claude 数据看板",
+      "description": "宝玉 claude-dashboard 技能：Agent 把数据驱动的看板写成文件，并在本地看板编辑器中打开。",
+      "category": "baoyu",
+      "tags": ["看板", "数据可视化", "宝玉"],
+      "source": "npm",
+      "npm": "dsh-claude-dashboard",
+      "github": "JimLiu/baoyu-design",
+      "homepage": "https://github.com/JimLiu/baoyu-design"
     }
   ]
 }
