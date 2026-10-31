@@ -31,6 +31,7 @@ import { lbStep, lbNeighbors, swipeDir } from "./lightbox.js";
 import { WESERV_TIMEOUT_MS, weservUrl, serviceBucketOf, tierOrder, nextTier, needsTimeout, preferredTier, rememberSuccess } from "./img-chain.js";
 import { iconCandidates } from "./icon-view.js";
 import { RESTART_POLL_MS, RESTART_DEADLINE_MS, nextRestartWait, isAmbiguousRestartRequestError } from "./restart-wait.js";
+import { twoStepVm } from "./two-step.js";
 
 // markdown 渲染件工厂（createMarkdown 注入 h，与 main.jsx 同款）
 const { ExtLink, renderMarkdown } = createMarkdown(h);
@@ -171,29 +172,36 @@ function ToggleSwitch({ vm, disabled, onChange, title }) {
   );
 }
 
-function TwoStepButton({ label, confirmLabel, className, onConfirm, disabled }) {
+function TwoStepButton({ label, confirmLabel, busyLabel, className, onConfirm, disabled, busy }) {
   const [arm, setArm] = useState(false);
   useEffect(() => {
     if (!arm) return;
     const t = setTimeout(() => setArm(false), 4000);
     return () => clearTimeout(t);
   }, [arm]);
+  // 三态展示模型单源（two-step.js，DOM-free 直测）：busy（在途）> arm > idle——
+  // 2026-10-31 卸载在途 UX：确认后原实现只剩灰色 disabled label，用户无从知晓正在卸载；
+  // busy 态转圈 + busyLabel（如「卸载中…」），恒禁点、摘 danger 红样式。
+  const vm = twoStepVm({ arm, busy, label, confirmLabel, busyLabel });
   return h(
     "button",
     {
-      className: `${className || "dshm-btn"} ${arm ? "danger" : ""}`.trim(),
-      disabled,
+      className: `${className || "dshm-btn"} ${vm.danger ? "danger" : ""}`.trim(),
+      disabled: disabled || vm.mode === "busy",
       onClick: (e) => {
         e.stopPropagation();
-        if (!arm) {
+        if (vm.mode === "idle") {
           setArm(true);
-        } else {
+        } else if (vm.mode === "arm") {
           setArm(false);
           onConfirm();
         }
+        // busy：在途恒禁点（按钮已 disabled，此处防御不触发）
       },
     },
-    arm ? confirmLabel : label,
+    vm.mode === "busy"
+      ? [h(Spin, { key: "spin" }), h("span", { key: "t", style: { marginLeft: 6 } }, vm.text)]
+      : vm.text,
   );
 }
 

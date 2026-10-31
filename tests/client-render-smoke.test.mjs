@@ -49,7 +49,7 @@ try {
   const compEntry = join(dir, '.render-smoke-components-entry.jsx')
   writeFileSync(
     compEntry,
-    'const { SearchBox, RestartBanner, Lightbox, UseImgChainProbe } = require("./chrome.jsx");\n' +
+    'const { SearchBox, RestartBanner, Lightbox, UseImgChainProbe, TwoStepButton } = require("./chrome.jsx");\n' +
       'const { ZoneChips } = require("./zone-chips.jsx");\n' +
       'const { FavoriteZone } = require("./favorite-zone.jsx");\n' +
       'const { DshmVersionChip } = require("./version-chip.jsx");\n' +
@@ -57,7 +57,7 @@ try {
       'const { InstalledTab } = require("./installed-tab.jsx");\n' +
       'const { MarketTab } = require("./market-tab.jsx");\n' +
       'const { OperationsCard } = require("./operations-card.jsx");\n' +
-      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard };\n',
+      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard, __TwoStepButton: TwoStepButton };\n',
   )
   const compOut = join(outDir, 'render-smoke-components.cjs')
   await build({
@@ -162,6 +162,39 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
       h(components.__InstalledTab, { notify: () => {}, installed, onMutation: null, ops: { records: [], runOp: async () => {} } }),
     )
     assert.ok(typeof html === 'string')
+  })
+
+  // 卸载在途 UX（2026-10-31）：两段确认按钮补 busy（在途）态——确认后原实现只剩灰色 disabled
+  // 「卸载」，用户无从知晓正在卸载。TwoStepButton 已装页 actions 区仅在卡片展开时挂载（card.jsx
+  // `open && actions`），SSR 到不了该分支——组件级 busy 渲染走下方直渲染锚，接线（busy/busyLabel
+  // 传参）走 installed-tab 源结构锚（三桶政策：源锚只留给无缝可走的物理事实）。
+  it('TwoStepButton busy 态直渲染：spin + 卸载中文案 + disabled、无 danger 类', () => {
+    const busyHtml = renderToString(h(components.__TwoStepButton, {
+      label: '卸载', confirmLabel: '确认卸载？', busyLabel: '卸载中…', busy: true,
+      className: 'dshm-btn sm', onConfirm: () => {},
+    }))
+    assert.ok(busyHtml.includes('卸载中') || busyHtml.includes('Uninstalling'), '在途文案在（busyLabel）')
+    assert.ok(busyHtml.includes('dshm-spin'), '在途转圈在（Spin 节点）')
+    assert.ok(busyHtml.includes('disabled'), '在途禁点在')
+    assert.ok(!busyHtml.includes('danger'), '在途摘 danger 类（busy 压过 arm）')
+    assert.ok(!busyHtml.includes('确认卸载'), '在途不落武装确认文案')
+    const idleHtml = renderToString(h(components.__TwoStepButton, {
+      label: '卸载', confirmLabel: '确认卸载？', busyLabel: '卸载中…', className: 'dshm-btn sm', onConfirm: () => {},
+    }))
+    assert.ok(idleHtml.includes('卸载'), '常态 label 在')
+    assert.ok(!idleHtml.includes('dshm-spin'), '常态无转圈（缺省态零新节点）')
+    const armHtml = renderToString(h(components.__TwoStepButton, {
+      label: '卸载', confirmLabel: '确认卸载？', busyLabel: '卸载中…', className: 'dshm-btn sm', onConfirm: () => {},
+    }))
+    assert.ok(!armHtml.includes('danger'), '不传 busy 时常态无 danger（arm 仍由内部 state 驱动，行为不变）')
+  })
+
+  // busy/busyLabel 接线源结构锚（installed-tab.jsx；node 环境无鼠标点不开卡片，SSR 冒烟够不到 actions 分支）
+  it('InstalledTab 卸载按钮接线 busy/busyLabel（与 disabled 同源 activeMutateTarget）', () => {
+    assert.ok(_installedTabSrc.includes('busyLabel: lookup("action.uninstalling")'), 'busyLabel 传参在')
+    assert.ok(_installedTabSrc.includes('busy: activeMutateTarget === it.pkg'), 'busy 与 disabled 同源判据在')
+    assert.match(i18nSrc, /"action\.uninstalling": "卸载中…"/, 'ZH 键在')
+    assert.match(i18nSrc, /"action\.uninstalling": "Uninstalling…"/, 'EN 键在')
   })
 
   it('SearchBox / ZoneChips / FavoriteZone 独立渲染不抛', () => {

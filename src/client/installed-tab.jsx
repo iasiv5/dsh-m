@@ -257,8 +257,13 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
               key: "un",
               label: lookup("action.uninstall"),
               confirmLabel: lookup(vm.guard.confirmKey),
+              // 卸载在途反馈（2026-10-31 UX）：泵 record 在途（queued/running/input）时按钮转
+              // 「spin + 卸载中…」——此前确认后只剩灰色 disabled「卸载」，用户无从知晓正在卸载
+              // （busy 派生与 disabled 同源：activeMutateTarget，0.7.0 Task 13 谓词）
+              busyLabel: lookup("action.uninstalling"),
               className: "dshm-btn sm",
               disabled: activeMutateTarget === it.pkg,
+              busy: activeMutateTarget === it.pkg,
               onConfirm: () => doUninstall(it),
             }),
           ],
