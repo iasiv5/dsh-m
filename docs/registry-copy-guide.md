@@ -84,10 +84,24 @@ decoupled 条目 description 含「已适配」句式（应改写为第四句式
 2. **判 audience**：通用价值、可向大众推广 → 缺省 public（不写键）；作者自用 / 内部推广场景 → `audience: "internal"`（GLOSSARY「自用条目」）。
 3. **判 decoupled**：问「本次 DSH 升级是否需要为它发适配版？」——需要 → coupled（按实测填 `verified` ＋「已适配」句式，入 know-how 008 核对清单）；大概率不需要 → `decoupled: true` ＋「版本无关」句式、**不填** `verified`（GLOSSARY「解耦条目」）。
 4. **文案**：过 §2 的 60 当量预算与 validate-registry 零 warn。
-5. **入册**：registry.json 收录（self-dev 桶内「公开在前、内部在后」排序）；know-how 008 升级核对只覆盖 coupled 条目，decoupled 条目仅轻查（句式与字段在位）。
+5. **入册**：registry.json 收录（self-dev 桶内「公开在前、内部在后」排序）；know-how 008 升级核对只覆盖 coupled 条目，decoupled 条目仅轻查（句式与字段在位）。落地时同步过 §11 三连 checklist。
 
 ## 10. icon 与钉版（2026-10-30）
 
 - icon 只填可解析的 https URL（ADR-0025，守卫 `tests/registry-icon-url.test.mjs`）。
 - jsdelivr 钉版一律**浮动大版本** `@<major>`（如 `@iasiv5/dsh-skins@1`、`@iasiv5/dsh-skip-browser-auth@0`）——随发版自动老化，**禁止钉全版本**（retro #4 定案，首例 commit `e21d54e`；2026-10-30 skip-auth 收录轮曾按旧惯例钉 `@0.4.7`，rebase 时发现新方向后看齐）。
 - 编辑纪律：registry.json 为紧凑单行风格，手工按行改，禁止 `JSON.parse→JSON.stringify` 整库重排（守卫 `tests/registry-format.test.mjs`，2026-10-30 实录：3 字段改动被重排成 231 行 diff 且 validate 全绿放过）。
+
+## 11. 收录 checklist（三连，2026-10-31 retro 定案）
+
+任何收录（自研/三方）落地时，三处同步改，漏一处即 CI 红。连续两轮实录都漏第三项：
+2026-10-28 chatlock 轮事后补断言（`95357fe`）；2026-10-31 provider-card 轮 CI 红后补（`14534f9`）。
+
+- [ ] `registry.json` 新增条目（紧凑单行风格与 icon 钉版见 §10 编辑纪律）
+- [ ] 本文件头部「管辖范围」计数 N→N+1，并追加收录 trail
+- [ ] `tests/registry.test.mjs` 条目数断言 N→N+1，并追加 trail（约 L67）
+
+另：若收录 push 恰逢 CI 红，`purge-jsdelivr` 会因 `needs: validate` 被跳过、后续绿 push
+未触碰 registry.json 时设计性跳过——CDN 将钉死旧快照。恢复通道：手动 dispatch
+`Registry check` workflow（`gh workflow run registry.yml`），validate 全绿后无条件补 purge
+（2026-10-31 registry.yml 加固，见该文件 purge-jsdelivr 注释）。
