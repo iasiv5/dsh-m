@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.15 文档：DSH 核验徽章升级 0.2.1-rc.5 + registry 自研条目收尾
+
+- **背景**：宿主已运行 0.2.1-rc.5（rc.4→rc.5 为契约面等价重发布，web-app patch 相对 rc.4 零 diff），dsh-m README 核验徽章与兼容表滞留 rc.4；registry 侧 dsh-m / dsh-copilot-auth 两 coupled 条目的 `verified` 数组同停在 rc.4，且两处 icon 钉死精确版本，违反 copy-guide §10 浮动规范。
+- **做法**：README 中英双份徽章 rc.4→rc.5，兼容表补 `0.2.1-rc.5` 行（核验结论按等价口径外推）；registry.json 两条目 `verified` 末尾补 `0.2.1-rc.5`（对照源=各仓库 README，dsh-skins 同款先例），icon 改浮动 `dsh-m@0` / `@inventec/dsh-copilot-auth@1`。
+- **兼容性**：纯文档与收录元数据变更，无代码/行为变化；收录 31 条不变，市场卡片经 raw TTL 刷新后显示新 verified 与浮动 icon。
+
 ### 0.11.14 新增：已装卡收录名主名——已装页与市场页命名统一（ADR-0029）
 
 - **背景**：已装卡主名此前取插件自带清单的 name（npm 插件恒为包名，scoped 长名在卡片上截断成 `@inventec/dsh-copilot-a…`），与市场卡/收藏卡的收录展示名（`DSH Skins` / `OneTree Log`）两套指称并存，跨页对号困难。
@@ -939,6 +945,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.15 Docs: DSH verification badge bumped to 0.2.1-rc.5 + registry self-dev entry refresh
+
+- **Background**: the host now runs 0.2.1-rc.5 (rc.4→rc.5 is a contract-surface equivalent re-release; host web-app patch zero-diff against rc.4), while the dsh-m README verification badge and compatibility table lagged at rc.4; on the registry side, the `verified` arrays of the two coupled entries (dsh-m / dsh-copilot-auth) also stopped at rc.4, and both icons pinned exact versions against the copy-guide §10 floating rule.
+- **How**: README badges rc.4→rc.5 in both languages plus a new `0.2.1-rc.5` compatibility-table row (conclusions carried over by equivalence); registry.json appends `0.2.1-rc.5` to both entries' `verified` arrays (source of truth = each repo's README, same precedent as dsh-skins) and floats the icons to `dsh-m@0` / `@inventec/dsh-copilot-auth@1`.
+- **Compatibility**: docs and listing metadata only, no code/behavior change; 31 entries unchanged; market cards pick up the new verified lists and floating icons after the raw TTL refresh.
 
 ### 0.11.14 Added: registry display name as the installed-card title — installed/market naming unified (ADR-0029)
 

@@ -8,11 +8,11 @@
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["市场","插件管理"],
-      "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4"],
+      "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5"],
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0.10.20/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-m"
     },
     {
@@ -122,11 +122,11 @@
       "description": "Copilot 登录注销页与开箱路由；桌面不支持目录刷新。需 DSH ≥0.1.7-rc.2；Web 已测 0.2.1-rc.4。",
       "category": "self-dev",
       "tags": ["Copilot","认证","模型接入","工具"],
-      "verified": ["0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4"],
+      "verified": ["0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5"],
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
-      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1.2.23/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
     },
     {
