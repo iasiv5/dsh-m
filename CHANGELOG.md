@@ -8,6 +8,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.13 变更：dsh-skills 收录条目文案定稿
+
+- **背景**：dsh-skills 条目名从 `DSH Skills (iasiv5)` 精简为 `DSH Skills`，描述压缩至市场卡片两行内；顺带修复 0.11.12 后一提交误以 pretty 格式重排 registry 的回归（恢复紧凑单行风格，`registry-format` 守卫全绿）。
+- **兼容性**：纯元数据与格式变更，收录 31 条不变；宿主升级到 0.11.13 后市场卡片显示定稿文案。
+
 ### 0.11.12 新增：收录 dsh-skills（iasi 自用技能合集，audience internal）
 
 - **背景**：自研插件 `@iasiv5/dsh-skills`——skills 仓（28 个 skill，打包收录 24 个，4 个因上游许可未收录）的 DSH 插件化分发，bundled skill 方式加载，免拷贝 `.agents/skills`。`audience: internal`，作者自用不推广。
@@ -926,6 +931,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.13 Changed: finalized dsh-skills listing copy
+
+- **Background**: the dsh-skills entry name is shortened from `DSH Skills (iasiv5)` to `DSH Skills` and its description compressed to fit the market card; also fixed a regression where a follow-up commit had reformatted registry.json in pretty style (compact single-line style restored, `registry-format` guards green).
+- **Compatibility**: metadata/format-only change, 31 entries unchanged; market cards show the finalized copy after upgrading to 0.11.13.
 
 ### 0.11.12 Added: dsh-skills listing (iasi's personal skill collection, audience internal)
 
