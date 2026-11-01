@@ -365,6 +365,20 @@
       "github": "op7418/dsh-guizang-design",
       "icon": "https://cdn.jsdelivr.net/npm/dsh-guizang-design@0/icon.png",
       "homepage": "https://github.com/op7418/dsh-guizang-design"
-    }
+    },
+      {
+        "id": "dsh-skills",
+        "name": "DSH Skills (iasiv5)",
+        "description": "iasiv5 skill 合集（收录 24 个）以 DSH 插件 bundled skill 分发，版本无关。作者自用，不推广。详见仓库。",
+        "category": "self-dev",
+        "tags": ["skills", "合集", "bundled"],
+        "decoupled": true,
+        "audience": "internal",
+        "source": "npm",
+        "npm": "@iasiv5/dsh-skills",
+        "github": "iasiv5/skills",
+        "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1.0.0/icon.svg",
+        "homepage": "https://github.com/iasiv5/skills"
+      }
   ]
 }
