@@ -500,6 +500,11 @@ describe('ADR-0026：upgradePath 投影', () => {
     const byReason = Object.fromEntries(res.items.map((it) => [it.pkg, it.upgradePathReason]))
     assert.equal(byReason['pkg-local2'], 'local-spec', '健康臂 file: 项携带 local-spec 成因码')
     assert.equal(byReason['pkg-1'], undefined, 'catalog 项不携带成因码')
+    // ADR-0029：收录命中项携带收录名 registryName；miss 项不写该键
+    const hit29 = res.items.find((it) => it.pkg === 'pkg-1')
+    assert.ok(typeof hit29.registryName === 'string' && hit29.registryName.length > 0, 'ADR-0029 命中项 registryName 为非空收录名')
+    const miss29 = res.items.find((it) => it.pkg === 'pkg-other')
+    assert.ok(!('registryName' in miss29), 'ADR-0029 miss 项不写 registryName')
   })
 
   it('早退臂：registry unavailable → 非收录 npm 项 synthesized、file: 项 unsupported（不经 matchInstalled）', async () => {
@@ -525,6 +530,8 @@ describe('ADR-0026：upgradePath 投影', () => {
     assert.equal(byReason['pkg-gh-bad'], 'github-spec-unparseable', 'github 畸形 spec 成因码 github-spec-unparseable')
     const pkg1 = res.items.find((it) => it.pkg === 'pkg-1')
     assert.ok(!('upgradePathReason' in pkg1), 'synthesized 项不携带成因码')
+    // ADR-0029：早退臂不经 matchInstalled，全部 items 不写 registryName
+    for (const it of res.items) assert.ok(!('registryName' in it), `ADR-0029 早退臂不写 registryName：${it.pkg}`)
     assert.equal(calls.npm.length, 0)
   })
 

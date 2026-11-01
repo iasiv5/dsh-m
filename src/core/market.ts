@@ -221,6 +221,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestSha?: string
   registryGithub?: string | null
   registryIcon?: string | null
+  /** 收录名（ADR-0029）：matchInstalled 命中时写 entry.name，空串归 null；未命中/早退臂缺席 */
+  registryName?: string | null
   latestVersion?: string
   outdated: boolean
   latestError?: string
@@ -971,6 +973,7 @@ function matchInstalled(
     item.registryId = entry.id
     item.registryGithub = entry.github ?? null
     item.registryIcon = (entry as RegistryEntry).icon ?? null
+    item.registryName = entry.name || null
     if (isCommunityEntry(entry)) item.community = true
   }
 }
