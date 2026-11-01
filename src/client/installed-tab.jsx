@@ -189,8 +189,10 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
           : { ...tvm0, switchOn: pendingOn, ...(pendingOn === false ? { phaseDotClass: "", phaseLabelKey: null } : {}) };
         return Card({
           key: it.pkg,
-          icon: h(Icon, { entry: { name: it.name, github: vm.githubRepo, icon: null, iconDataUri: it.iconDataUri ?? null } }),
-          name: it.name,
+          icon: h(Icon, { entry: { name: vm.displayName, github: vm.githubRepo, icon: null, iconDataUri: it.iconDataUri ?? null } }),
+          name: vm.displayName,
+          nameTitle: vm.nameTitle,
+          byline: vm.byline,
           topRight: h(ToggleSwitch, {
             vm: tvm,
             disabled: mut.disabled,

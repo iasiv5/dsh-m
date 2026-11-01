@@ -15,7 +15,7 @@ const verifiedByline = (it) =>
     ? { text: lookup("byline.verified", { v: it.verified[it.verified.length - 1] }), title: it.verified.join("、") }
     : null;
 
-function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines }) {
+function Card({ icon, name, nameTitle, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines }) {
   return h(
     "div",
     {
@@ -31,7 +31,7 @@ function Card({ icon, name, badges, desc, sub, links, open, onToggle, detail, ac
     h(
       "div",
       { className: "dshm-meta" },
-      h("div", { className: "dshm-top" }, h("span", { className: "dshm-name" }, name), ...badges.filter(Boolean), topRight || null),
+      h("div", { className: "dshm-top" }, h("span", { className: "dshm-name", title: nameTitle }, name), ...badges.filter(Boolean), topRight || null),
       byline && byline.length
         ? h("div", { className: "dsvm-byline" }, ...byline.map((b, i) => h("span", { key: i, title: b.title || undefined }, b.text)))
         : null,

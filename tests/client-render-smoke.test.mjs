@@ -191,6 +191,14 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
 
   // busy/busyLabel 接线源结构锚（installed-tab.jsx；node 环境无鼠标点不开卡片，SSR 冒烟够不到 actions 分支）
   // 0.11.10：busy 按在途操作种类判定（mutateStateForPkg），升级在途不串扰卸载按钮；行为由纯函数单测钉住
+  // ADR-0029：已装卡收录名/包名 byline/title 接线源锚（出现次数语义；node 环境无鼠标点不开卡片，SSR 冒烟够不到卡片体）
+  it('已装卡收录名接线源锚（ADR-0029）', () => {
+    assert.ok(_installedTabSrc.split('name: vm.displayName').length - 1 >= 2, 'Card 主名与 Icon 缺字回退两处都走收录名视图模型')
+    assert.ok(_installedTabSrc.split('byline: vm.byline').length - 1 >= 1, '包名 byline 传参在')
+    assert.ok(_installedTabSrc.split('nameTitle: vm.nameTitle').length - 1 >= 1, '主名 title 传参在')
+    assert.ok(cardSrc.split('title: nameTitle').length - 1 >= 1, 'Card .dshm-name span 挂 title 属性')
+  })
+
   it('InstalledTab 按钮接线：busy 按在途操作种类（mutateStateForPkg），升级在途不串扰卸载', () => {
     assert.ok(_installedTabSrc.includes('busyLabel: lookup("action.uninstalling")'), 'busyLabel 传参在')
     assert.ok(_installedTabSrc.includes('const mut = mutateStateForPkg(ops.records, it.pkg)'), '逐行派生经纯函数')
