@@ -158,8 +158,8 @@
     },
     {
       "id": "dsh-obmc-web",
-      "name": "DSH OBMC Web",
-      "description": "OpenBMC 控制台：SSH 隧道代理，一键开启；需 SSH 跳板连 BMC。新版宿主需插件 ≥0.1.4，版本无关，详见仓库。",
+      "name": "OBMC Web",
+      "description": "OpenBMC 控制台：SSH 隧道代理，一键开启；需 SSH 跳板连 BMC。版本无关，详见仓库。",
       "category": "self-dev",
       "tags": ["OpenBMC","远程管理","SSH 隧道","KVM"],
       "decoupled": true,
@@ -173,7 +173,7 @@
     {
       "id": "dsh-onetree-log",
       "name": "OneTree Log",
-      "description": "OneTree/dreport 日志包上传解包，14 域清单与预览；可登记服务器本地路径。新版宿主需插件 ≥0.1.4，版本无关，详见仓库。",
+      "description": "OneTree/dreport 日志包上传解包，14 域清单与预览；可登记服务器本地路径。版本无关，详见仓库。",
       "category": "self-dev",
       "tags": ["日志","OneTree","诊断","工具"],
       "decoupled": true,
