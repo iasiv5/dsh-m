@@ -62,6 +62,40 @@ describe('installedViewModel', () => {
   })
 })
 
+describe('installedViewModel：ADR-0029 收录名主名与包名 byline', () => {
+  // 回退矩阵（registryName / name / pkg → displayName / byline / nameTitle），评审 P2 定稿
+  it('① 收录命中：主名=收录名，byline=pkg，title 附包名', () => {
+    const vm = installedViewModel({ registryName: 'DSH Skins', name: '@iasiv5/dsh-skins', pkg: '@iasiv5/dsh-skins', spec: 'npm:x' })
+    assert.equal(vm.displayName, 'DSH Skins')
+    assert.deepEqual(vm.byline, [{ text: '@iasiv5/dsh-skins' }])
+    assert.equal(vm.nameTitle, 'DSH Skins（@iasiv5/dsh-skins）')
+  })
+  it('② 非市场/link（registryName 缺席）：回退现名，无 byline，title=现名', () => {
+    const vm = installedViewModel({ name: 'My Tool', pkg: 'my-tool', spec: 'npm:x' })
+    assert.equal(vm.displayName, 'My Tool')
+    assert.equal(vm.byline, null)
+    assert.equal(vm.nameTitle, 'My Tool')
+  })
+  it('③ registryName 空串：同②回退（core 已空串归 null，客户端再兜底）', () => {
+    const vm = installedViewModel({ registryName: '', name: 'My Tool', pkg: 'my-tool', spec: 'npm:x' })
+    assert.equal(vm.displayName, 'My Tool')
+    assert.equal(vm.byline, null)
+    assert.equal(vm.nameTitle, 'My Tool')
+  })
+  it('④ npm 典型三者同值：byline 不重复展示', () => {
+    const vm = installedViewModel({ registryName: 'dsh-context', name: 'dsh-context', pkg: 'dsh-context', spec: 'npm:x' })
+    assert.equal(vm.displayName, 'dsh-context')
+    assert.equal(vm.byline, null)
+    assert.equal(vm.nameTitle, 'dsh-context')
+  })
+  it('⑤ 边角：registryName===name 但 ≠ pkg → byline 保留 pkg 可见', () => {
+    const vm = installedViewModel({ registryName: 'X', name: 'X', pkg: 'pkg-x', spec: 'npm:x' })
+    assert.equal(vm.displayName, 'X')
+    assert.deepEqual(vm.byline, [{ text: 'pkg-x' }])
+    assert.equal(vm.nameTitle, 'X（pkg-x）')
+  })
+})
+
 describe('registrySourceKey', () => {
   it('官方/自定义/旧字段 → i18n key；无数据 null；未知 source 原样返回', () => {
     assert.equal(registrySourceKey(null), null)

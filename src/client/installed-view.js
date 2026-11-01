@@ -32,6 +32,12 @@ export function installedViewModel(it) {
     community: it.community === true,
     // M1 Task 7 ⑩：检查未完成标注（latestError 行渲染原料；code → 安全化原因由调用方 i18n/lookup）
     latestIssue: it.latestError ? { code: it.latestErrorCode ?? null, note: it.latestError } : null,
+    // ADR-0029：收录名主名 + 包名可见。showPkg 判据 = 收录名在写且 ≠ 包名（与包名比较的是收录名
+    // 原值，非回退后主名）；registryName 空串已由 core 归 null，此处再兜底 —— 非市场/未命中卡
+    // showPkg 恒假：无 byline 节点、title=现名，DOM 与旧版一致（零行为承诺格）。
+    displayName: it.registryName || it.name,
+    byline: it.registryName && it.registryName !== it.pkg ? [{ text: it.pkg }] : null,
+    nameTitle: it.registryName && it.registryName !== it.pkg ? `${it.registryName}（${it.pkg}）` : it.name,
   };
 }
 
