@@ -8,6 +8,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.12 新增：收录 dsh-skills（iasi 自用技能合集，audience internal）
+
+- **背景**：自研插件 `@iasiv5/dsh-skills`——skills 仓（28 个 skill，打包收录 24 个，4 个因上游许可未收录）的 DSH 插件化分发，bundled skill 方式加载，免拷贝 `.agents/skills`。`audience: internal`，作者自用不推广。
+- **兼容性说明**：`self-dev` 为既有分类，无新增分类兼容问题；本次 registry.json 变更（30→31 条）随 0.11.12 推送，宿主升级到 0.11.12 后市场可见。另经实测：条目未收录期间 `dshm_upgrade` 按 npm 包名直连 registry 亦可正常升级，收录仅为市场可见性。
+
 ### 0.11.11 新增：歸藏专区分类（guizang）+ 升级按钮进行中改为「转圈 + 升级中…」
 
 - **背景**：宝玉专区之后新增「歸藏专区」精选分类，用于收录歸藏（op7418）的 dsh-guizang-design 插件。另外，已装页与详情弹窗的升级按钮在途时此前只显示转圈，与卸载按钮的「卸载中…」不对齐。
@@ -921,6 +926,11 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.12 Added: dsh-skills listing (iasi's personal skill collection, audience internal)
+
+- **Background**: the in-house plugin `@iasiv5/dsh-skills` — the plugin distribution of the skills repo (28 skills; 24 packaged, 4 excluded for upstream licensing), loading as bundled skills with no `.agents/skills` copies. `audience: internal`, personal use, not promoted.
+- **Compatibility**: `self-dev` is an existing category, no new-category compatibility concerns; this registry change (30→31 entries) ships with 0.11.12 and becomes visible after upgrading the host's dsh-m. Also verified: while unlisted, `dshm_upgrade` still upgrades fine by resolving the npm package directly — the listing only affects market visibility.
 
 ### 0.11.11 Added: Guizang Picks category + "Upgrading…" busy label on upgrade buttons
 
