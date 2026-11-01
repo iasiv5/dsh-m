@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.11.14 新增：已装卡收录名主名——已装页与市场页命名统一（ADR-0029）
+
+- **背景**：已装卡主名此前取插件自带清单的 name（npm 插件恒为包名，scoped 长名在卡片上截断成 `@inventec/dsh-copilot-a…`），与市场卡/收藏卡的收录展示名（`DSH Skins` / `OneTree Log`）两套指称并存，跨页对号困难。
+- **做法**：`matchInstalled` 命中时单点写入 `registryName`（空串归 null）；`installedViewModel` 产出 `displayName` / `nameTitle` / `byline`：已装卡主名改为收录名（含社区收录条目），包名以 byline 小字副行保留（仅收录名 ≠ 包名时渲染），主名 span 恒挂 `title` 防截断；`Card` 增可选 `nameTitle`，市场/收藏卡不传、零变化。未命中 / 收录名空串 / registry 不可用早退臂一律回退现名。
+- **行为零变化口径**：非市场/未命中卡 DOM 与旧版一致（无 byline 节点，仅主名 span 新增 title 属性）；市场/收藏卡、`dshm_list` 工具面、CLI、toast 与卸载确认文案（保持包名口径）零改动；收录命中卡 Icon 缺图回退字母由现名首字母变收录名首字母。
+- **测试**：market 健康臂/早退臂补 registryName 断言；client-installed-view 新增回退矩阵五情景（含收录名=现名但 ≠ 包名的边角）；render-smoke 新增接线源锚（出现次数语义）。红→绿：三面新测试回退旧实现精确红（92/91/1、21/16/5、47/46/1），实现后单套件全绿；金样按受控变更面 UPDATE_GOLDEN 重生成，归因核验仅 installed-* 两 label 各 +3 键、market-* 六 label 零 diff；全量 1937/1937 零失败，typecheck 通过。
+- **部署说明**：含 host 侧变更（matchInstalled 数据字段），升级后需重启 dsh web 完整生效；纯展示层新增字段，无 API/行为破坏。
+
 ### 0.11.13 变更：dsh-skills 收录条目文案定稿
 
 - **背景**：dsh-skills 条目名从 `DSH Skills (iasiv5)` 精简为 `DSH Skills`，描述压缩至市场卡片两行内；顺带修复 0.11.12 后一提交误以 pretty 格式重排 registry 的回归（恢复紧凑单行风格，`registry-format` 守卫全绿）。
@@ -931,6 +939,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.11.14 Added: registry display name as the installed-card title — installed/market naming unified (ADR-0029)
+
+- **Background**: the installed card title used to be the plugin manifest's own `name` (always the package name for npm plugins; long scoped names truncated to `@inventec/dsh-copilot-a…` on the card), while market/favorite cards show catalog display names (`DSH Skins` / `OneTree Log`) — two names for one plugin across adjacent tabs.
+- **How**: `matchInstalled` now writes `registryName` at the single join point (empty string normalized to null); `installedViewModel` produces `displayName` / `nameTitle` / `byline`: the installed card title becomes the catalog display name (community hits included), the package name stays visible as a small byline row (rendered only when display name ≠ package name), and the title span always carries a `title` tooltip against truncation; `Card` gains an optional `nameTitle` — market/favorite callers don't pass it, zero change. Miss / empty registry name / registry-unavailable early-exit all fall back to the manifest name.
+- **Behavior-zero-change**: non-market/unmatched cards keep the old DOM (no byline node; only a new `title` attribute on the title span); market/favorite cards, the `dshm_list` tool surface, CLI, toasts and uninstall confirmations (package-name wording) untouched; the icon letter fallback of matched cards changes from manifest initial to display-name initial.
+- **Tests**: registryName assertions added to the market health/early-exit arms; a five-scenario fallback matrix in client-installed-view (incl. display name == manifest name but ≠ package name); new wiring source anchors in render-smoke (occurrence-count semantics). Red→green: with implementations reverted the new tests fail precisely (92/91/1, 21/16/5, 47/46/1), all green after; the golden fixture was regenerated via the controlled UPDATE_GOLDEN path with attribution verified (installed-* labels only, market-* labels zero diff); full suite **1937/1937** zero failures, typecheck clean.
+- **Deployment**: contains host-side changes (matchInstalled data field) — restart dsh web after upgrading for full effect; display-layer-only new field, no API/behavior break.
 
 ### 0.11.13 Changed: finalized dsh-skills listing copy
 
