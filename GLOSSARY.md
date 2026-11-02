@@ -6,8 +6,12 @@
 ## Language
 
 **Profile（web profile）**:
-插件安装的唯一事实源，即 `$DSH_HOME/profiles/web` 下被 pnpm 管理的那份依赖（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）。
+插件安装的唯一事实源，即 `$DSH_HOME/profiles/web` 下被 pnpm 管理的那份依赖（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）。0.12.0（ADR-0030）起泛指任意可操作 profile 的依赖目录（`profiles/<名>`），不限于名字字面量 `web`。
 _Avoid_: 安装目录、环境、profile 目录（当泛指整个目录树时）
+
+**可操作 profile（operable profile）**:
+宿主声明（profileContext）或 fallback 推导、名字可作安全路径段（`isDshProfileName`）的 profile；kind ∈ {web, desktop}。kind web 不要求名字字面量是 `web`——自定义名（如 aqua）与官方 web 名同权，市场写操作直达其 profile 目录（ADR-0030）。名字不可作安全路径段的 profile 拒绝一切写操作。
+_Avoid_: 合法 profile（语义含混）、未知 profile（kind unknown 只指名字不安全）
 
 **收录条目（Registry Entry）**:
 registry.json 中描述一个可安装插件的条目：来源（npm 或 GitHub）、分类与描述，不写死版本。

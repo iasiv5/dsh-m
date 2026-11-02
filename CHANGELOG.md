@@ -8,6 +8,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.0 新增：自定义 profile 写操作支持（issue #39，ADR-0030）
+
+- **背景**：`dsh --profile <自定义名>`（如 aqua）的普通 web 宿主下，市场读路径全部正常（已装列表/市场浏览取 profileContext.dir），写操作却全部 409「当前 profile 不支持该操作」——kindOf 字面枚举只认 web/desktop/tauri（ADR-0005「未知名显式拒写」）；且写路径四层缺省全部落回 `webProfileDir()`，形成「读 A 写 B」不对称（issue #39 两层根因，报告者本地补丁实测坐实）。
+- **做法**：同业对齐 dsh-market（1.73.8 生产模型）——①判定收窄：host 来源 + 名字可作安全路径段（`isDshProfileName` 唯一判定源）即 kind web；`unknown` 收窄为「名字不可作安全路径段」（专用文案 `WRITE_GUIDANCE_UNKNOWN`）；desktop 判定保留名字快路径 + generation 投影探测且探测恒优先。②目录权威：读写恒用宿主给的 dir，fallback 加 `--profile` argv 兜底（kind 恒 web 零漂移）。③写路径原子接线：面板 5 分支 + agent 工具 4 工具 + CLI 4 命令 + doctor 共 13 处写入口全传 `profileDir`/`profileName`（profileName 只进 `dsh plugin --profile <名>` 子进程 argv，文件路径只认 profileDir）。④desktop 侧零变化：能力表/委派/六条指引文案逐字冻结（字面快照断言）。落点不变量集成测试钉死接线回退；源结构锚 host-api 8→13、tools 7→11；锚有效性经隔离副本单点变异验证。
+- **兼容性**：行为放宽——此前 409 的自定义 web profile 场景变为可用（写操作直达 `profiles/<名>`，读写同目录）；desktop 行为与文案零变化；旧宿主（无 profileContext）除新增 argv 兜底外零漂移；无破坏性变更。回退面：revert + 版本号递增即回 0.11.15 语义。
+
 ### 0.11.15 文档：DSH 核验徽章升级 0.2.1-rc.5 + registry 自研条目收尾
 
 - **背景**：宿主已运行 0.2.1-rc.5（rc.4→rc.5 为契约面等价重发布，web-app patch 相对 rc.4 零 diff），dsh-m README 核验徽章与兼容表滞留 rc.4；registry 侧 dsh-m / dsh-copilot-auth 两 coupled 条目的 `verified` 数组同停在 rc.4，且两处 icon 钉死精确版本，违反 copy-guide §10 浮动规范。
@@ -945,6 +951,12 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.0 Added: custom profile write support (issue #39, ADR-0030)
+
+- **Background**: on a plain web host launched as `dsh --profile <custom>` (e.g. aqua), every marketplace read worked (installed list / market browsing read profileContext.dir) while every write 409'd with "current profile does not support this operation" — kindOf enumerated only web/desktop/tauri (ADR-0005 "reject writes on unknown names"); worse, the write path defaulted through four layers back to `webProfileDir()`, creating a read-A-write-B asymmetry (both root causes of issue #39, confirmed empirically by the reporter's local patch).
+- **How**: aligned with dsh-market (1.73.8 production model) — ① judgment narrowed: host-sourced + name passes path-segment safety (`isDshProfileName` as the single source) → kind web; `unknown` narrowed to "name unusable as a path segment" (dedicated `WRITE_GUIDANCE_UNKNOWN` copy); desktop judgment keeps the name fast-path + generation projection probe, probe always wins. ② directory authority: reads and writes always use the host-given dir; the fallback branch gains a `--profile` argv fallback (kind stays web, zero drift). ③ atomic write-path wiring: 13 write entry points across panel (5 branches) / agent tools (4 tools) / CLI (4 commands) + doctor now pass `profileDir`/`profileName` (profileName only reaches the `dsh plugin --profile <name>` child argv; file paths only ever come from profileDir). ④ desktop side unchanged: capability table, delegation, and the six guidance strings are frozen verbatim (literal snapshot assertion). Landing-spot invariant integration test pins any wiring regression; source anchors host-api 8→13, tools 7→11; anchor effectiveness verified by single-point mutation in an isolated copy.
+- **Compatibility**: behavior relaxation — previously-409 custom web profiles now work (writes land in `profiles/<name>`, reads and writes share one directory); desktop behavior and copy unchanged; legacy hosts (no profileContext) are zero-drift apart from the new argv fallback; no breaking change. Rollback: revert + version bump restores 0.11.15 semantics.
 
 ### 0.11.15 Docs: DSH verification badge bumped to 0.2.1-rc.5 + registry self-dev entry refresh
 
