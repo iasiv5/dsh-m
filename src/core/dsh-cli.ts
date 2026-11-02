@@ -9,7 +9,7 @@
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { installTimeoutMs, WEB_PROFILE, webProfileDir } from './env.js'
+import { installTimeoutMs, WEB_PROFILE, webProfileDir, isDshProfileName } from './env.js'
 import { createProgressTracker, type ProgressPhase, type ProgressTracker } from './progress.js'
 import { applyPreciseBuilds, readPendingBuilds } from './build-approval.js'
 import { governExcludeBlock, parseNpmSpec, registerExclusion } from './exclude-governance.js'
@@ -641,7 +641,9 @@ export async function runDshPlugin(
     signal?: AbortSignal
   } = {},
 ): Promise<string> {
-  if (profile !== WEB_PROFILE) throw new Error('仅支持 web profile')
+  // ADR-0030（issue #39）：守卫从「名字字面量必须是 web」放开为「名字可作安全路径段」——
+  // 自定义 profile（如 --profile aqua）与官方 web 名同权；目录权威由 deps.profileDir 传入。
+  if (!isDshProfileName(profile)) throw new Error(`拒绝不安全的 profile 名: ${profile}`)
   const target = pluginArgs[pluginArgs.length - 1] ?? ''
   if (!isSafePluginTarget(target)) throw new Error(`拒绝不安全的安装目标: ${target}`)
   const argv = (deps.dshArgv ?? dshArgv)()
@@ -680,6 +682,8 @@ export async function runDshPlugin(
  */
 export function makeAddViaLadder(deps: {
   runDshPlugin: PluginRunner
+  /** ADR-0030：传给 dsh CLI 的 profile 名（缺省 web；生产由 makeDshRunner 绑定真实名） */
+  profile?: string
   resolveBuilds?: (profileDirectory: string) => BuildApprovalDecision
   /** ADR-0009：委派前治理（排除块规范形态）；缺省绑 exclude-governance 落盘封装 */
   govern?: (profileDirectory: string) => Promise<{ changed: boolean; mergedNames?: string[] }>
@@ -734,7 +738,7 @@ export function makeAddViaLadder(deps: {
     let governRetryNote = ''
     const attemptAdd = async (args: string[]): Promise<{ ok: true; output: string } | { ok: false; text: string }> => {
       try {
-        return { ok: true, output: await run(WEB_PROFILE, args, opts(signal)) }
+        return { ok: true, output: await run(deps.profile ?? WEB_PROFILE, args, opts(signal)) }
       } catch (err) {
         const text = errText(err)
         if (governedRetryUsed || !DUAL_CODE_RE.test(text)) return { ok: false, text }
@@ -750,7 +754,7 @@ export function makeAddViaLadder(deps: {
           return { ok: false, text }
         }
         try {
-          return { ok: true, output: await run(WEB_PROFILE, args, opts(signal)) }
+          return { ok: true, output: await run(deps.profile ?? WEB_PROFILE, args, opts(signal)) }
         } catch (retryErr) {
           return { ok: false, text: errText(retryErr) }
         }
@@ -796,12 +800,12 @@ function errText(err: unknown): string {
 /** 卸载（转发 pnpm remove；调用方须先做 live-disable）。 */
 export async function removeDshPlugin(
   pkg: string,
-  deps: { runDshPlugin?: PluginRunner; profileDir?: string; signal?: AbortSignal } = {},
+  deps: { runDshPlugin?: PluginRunner; profileDir?: string; signal?: AbortSignal; profile?: string } = {},
 ): Promise<string> {
   if (!isSafePluginTarget(pkg)) throw new Error(`无效插件包名: ${pkg}`)
   const run = deps.runDshPlugin ?? runDshPlugin
   return run(
-    WEB_PROFILE,
+    deps.profile ?? WEB_PROFILE,
     ['remove', pkg],
     deps.profileDir !== undefined || deps.signal !== undefined
       ? { profileDir: deps.profileDir, signal: deps.signal }
@@ -828,16 +832,23 @@ function rawOutcome(text: string): RunnerOutcome {
  * 生产 runner：add 走 makeAddViaLadder（prepare/hoist 在途自愈在 adapter 内耗尽）；
  * remove 包 removeDshPlugin（原始文本分类）；frozen/rebuild 直接 spawn pnpm。
  * 四操作统一收 signal；output 截 800。
+ * ADR-0030：profileName 绑定真实 profile 名（缺省 web 零漂移）；deps.runDshPlugin
+ * 为测试注入缝（生产用模块级 runDshPlugin）。
  */
-export function makeDshRunner(profileDir: string): PnpmRunner {
-  const ladder = makeAddViaLadder({ runDshPlugin })
+export function makeDshRunner(
+  profileDir: string,
+  profileName: string = WEB_PROFILE,
+  deps: { runDshPlugin?: PluginRunner } = {},
+): PnpmRunner {
+  const runPlugin = deps.runDshPlugin ?? runDshPlugin
+  const ladder = makeAddViaLadder({ runDshPlugin: runPlugin, profile: profileName })
   return {
     async add(spec: string, signal?: AbortSignal): Promise<RunnerOutcome> {
       return ladder(spec, profileDir, signal)
     },
     async remove(pkg: string, signal?: AbortSignal): Promise<RunnerOutcome> {
       try {
-        const output = await removeDshPlugin(pkg, { profileDir, signal })
+        const output = await removeDshPlugin(pkg, { profileDir, signal, profile: profileName, runDshPlugin: runPlugin })
         return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
       } catch (err) {
         return rawOutcome(errText(err))

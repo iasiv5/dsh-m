@@ -10,7 +10,7 @@ import { mkdtempSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { makeAddViaLadder } from '../lib/core/dsh-cli.js'
+import { makeAddViaLadder, runDshPlugin, removeDshPlugin, makeDshRunner } from '../lib/core/dsh-cli.js'
 
 const PREPARE = 'needs to execute build scripts (node-sass) ERR_PNPM_IGNORED_BUILDS'
 const HOIST = '命令失败 (exit 1): ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF boom'
@@ -241,5 +241,71 @@ describe('web ladder 三挂点（ADR-0009）：留痕与 fail-open', () => {
     const out = await makeAddViaLadder({ runDshPlugin: run })('pkg-a@1.2.3', dir)
     assert.equal(out.class, 'ok')
     assert.equal(existsSync(join(dir, 'pnpm-workspace.yaml')), false, '登记不应为无块文件创建任何东西')
+  })
+})
+
+describe('ADR-0030：runDshPlugin 守卫放开 + profile 名参数化（issue #39）', () => {
+  /** runDshPlugin 直驱用桩：argv/cwd 全假，runCommand 捕获 (file, args)。 */
+  function fakeDshArgv() {
+    return { file: '/bin/echo', args: [], cwd: '/tmp', viaShell: false }
+  }
+  function captureRunCommand() {
+    const calls = []
+    const run = async (file, args, opts) => {
+      calls.push({ file, args, opts })
+      return 'ok'
+    }
+    return { run, calls }
+  }
+
+  it("runDshPlugin('aqua', …) 放行且子进程 argv 含 plugin --profile aqua", async () => {
+    const { run, calls } = captureRunCommand()
+    const out = await runDshPlugin('aqua', ['add', 'pkg-a@1.0.0'], { dshArgv: fakeDshArgv, runCommand: run, profileDir: '/tmp/pdir' })
+    assert.equal(out, 'ok')
+    const args = calls[0].args
+    const i = args.indexOf('--profile')
+    assert.ok(i !== -1, 'argv 应含 --profile')
+    assert.equal(args[i + 1], 'aqua', '--profile 应带真实 profile 名')
+    assert.equal(args.indexOf('plugin') !== -1, true, 'argv 应含 plugin 子命令')
+  })
+
+  it("runDshPlugin('../evil', …) → 拒绝不安全的 profile 名（新守卫文案锚）", async () => {
+    await assert.rejects(
+      () => runDshPlugin('../evil', ['add', 'pkg-a@1.0.0'], { dshArgv: fakeDshArgv }),
+      /拒绝不安全的 profile 名/,
+    )
+  })
+
+  it('ladder deps.profile → runDshPlugin 首参收到真实名（ADR-0009 三挂点行为不变）', async () => {
+    const { run, calls } = fakeRunner(['installed!'])
+    const ladder = makeAddViaLadder({ runDshPlugin: run, profile: 'aqua', govern: noopGovern, register: noopRegister, installedVersion: noopInstalledVersion })
+    const out = await ladder('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'ok')
+    assert.equal(calls[0].profile, 'aqua')
+  })
+
+  it('removeDshPlugin deps.profile → runDshPlugin 首参收到真实名', async () => {
+    const { run, calls } = fakeRunner(['removed!'])
+    const out = await removeDshPlugin('pkg-a', { runDshPlugin: run, profile: 'aqua', profileDir: '/tmp/profile' })
+    assert.equal(out, 'removed!')
+    assert.equal(calls[0].profile, 'aqua')
+  })
+
+  it("makeDshRunner(dir, 'aqua') → add/remove 均以 aqua 为 profile 名（deps.runDshPlugin 注入缝）", async () => {
+    const { run, calls } = fakeRunner(['ok'])
+    const runner = makeDshRunner('/tmp/profile', 'aqua', { runDshPlugin: run })
+    const add = await runner.add('pkg-a@1.2.3')
+    assert.equal(add.class, 'ok')
+    assert.equal(calls[0].profile, 'aqua')
+    const rem = await runner.remove('pkg-a')
+    assert.equal(rem.class, 'ok')
+    assert.equal(calls[calls.length - 1].profile, 'aqua')
+  })
+
+  it('makeDshRunner 不传名字 → 现状 web（零漂移）', async () => {
+    const { run, calls } = fakeRunner(['ok'])
+    const runner = makeDshRunner('/tmp/profile', undefined, { runDshPlugin: run })
+    await runner.add('pkg-a@1.2.3')
+    assert.equal(calls[0].profile, 'web')
   })
 })
