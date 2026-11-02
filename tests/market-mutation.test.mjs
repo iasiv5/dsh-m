@@ -1216,7 +1216,7 @@ describe('ADR-0030：InstallDeps/UninstallDeps profileName → 事务 runner 工
         ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
         profileDir: dir,
         profileName: 'aqua',
-        transaction: { runner: factory, profileDir: dir },
+        transaction: { runner: factory },
       })
       assert.equal(res.version, '1.2.3')
       assert.deepEqual(factories[0], [dir, 'aqua'])
@@ -1255,8 +1255,9 @@ packages:
         npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
         precheck: async () => null,
         fetchCommunityCatalog: async () => communityLoaded([]),
+        profileDir: profileDir,
         profileName: 'aqua',
-        transaction: { runner: factory, profileDir },
+        transaction: { runner: factory },
         classifyActivation: async () => 'unknown',
       }
       const res = await upgradePlugin('pkg-x', cfg, {}, deps)
@@ -1293,7 +1294,7 @@ packages:
         npmLatest: async () => ({ version: '1.1.0', integrity: sha512('good') }),
         profileDir: dir,
         profileName: 'aqua',
-        transaction: { runner: factory, profileDir: dir, retryDelaysMs: [0, 0] },
+        transaction: { runner: factory, retryDelaysMs: [0, 0] },
       }).catch(() => undefined)
       assert.deepEqual(factories[0], [dir, 'aqua'])
     } finally {

@@ -60,8 +60,6 @@ describe('ADR-0030 Task 9：自定义 profile 全链落点（横切回归面）'
         profileDir: fakeDir,
         profileName: 'aqua',
         transaction: {
-          profileDir: fakeDir,
-          profileName: 'aqua',
           runner: (profileDir, profileName) => {
             factories.push([profileDir, profileName])
             return {
@@ -102,7 +100,7 @@ describe('ADR-0030 Task 9：自定义 profile 全链落点（横切回归面）'
           ...txRegistryDeps({ version: '1.2.3', integrity: sha512('good') }),
           profileDir: fakeDir,
           profileName: 'aqua',
-          transaction: { profileDir: fakeDir, profileName: 'aqua', runner: () => { throw new Error('不应到达 runner') } },
+          transaction: { runner: () => { throw new Error('不应到达 runner') } },
         }),
         /变更前状态捕获失败/,
         'fail-closed 快照门读的是 fakeDir/package.json（接线断了好坏在此分辨）',
@@ -121,8 +119,6 @@ describe('ADR-0030 Task 9：自定义 profile 全链落点（横切回归面）'
         profileDir: fakeDir,
         profileName: 'aqua',
         transaction: {
-          profileDir: fakeDir,
-          profileName: 'aqua',
           runner: (profileDir, profileName) => {
             factories.push([profileDir, profileName])
             return {

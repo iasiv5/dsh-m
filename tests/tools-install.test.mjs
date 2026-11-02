@@ -5,6 +5,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import { InstallGuardError } from '../lib/core/market-mutation.js'
 import { webProfileDir } from '../lib/core/env.js'
@@ -171,5 +172,12 @@ describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具
     await tool.execute({ id: 'pkg-a' })
     assert.equal(captured[0].deps.profileDir, webProfileDir(), '无 profileContext → fallback web 目录（旧行为）')
     assert.equal(captured[0].deps.profileName, 'web')
+  })
+})
+
+describe('ADR-0030 源结构锚：tools 四工具 web 写分支接线计数（计划 T7.3 终值 11）', () => {
+  it("src/tools.ts 中 'profileDir: profile.dir' 出现次数 = 11（出现次数语义，非行数）", () => {
+    const src = readFileSync(new URL('../src/tools.ts', import.meta.url), 'utf8')
+    assert.equal(src.split('profileDir: profile.dir').length - 1, 11, 'desktop 4 + 读分支 3 + web 写分支 4（基线 7 + 4）')
   })
 })

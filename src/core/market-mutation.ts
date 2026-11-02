@@ -605,6 +605,9 @@ async function installEntryLocked(
       { kind: 'install-npm', pkg, version, integrity: expectedIntegrity, signal: opts.signal },
       {
         ...deps?.transaction,
+        // ADR-0030 / 评审 F1：profileDir 必须与 profileName 一并并入——只并名字会让事务
+        // 快照/回滚落 webProfileDir() 而 dsh 子进程按 --profile 写目标目录（跨目录原子性破碎）。
+        profileDir,
         profileName,
         warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
       },
@@ -697,7 +700,7 @@ async function installEntryLocked(
     }
     const result = await runProfileTransaction(
       { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
-      { ...deps?.transaction, profileName },
+      { ...deps?.transaction, profileDir, profileName },
     )
     if (!result.ok) throw new TransactionError(result)
     const realKey = result.pkg ?? candidate
@@ -953,6 +956,8 @@ export async function selfUpgrade(
         { kind: 'install-npm', pkg: pkgName, version: latest.version, integrity: latest.integrity, signal: opts.signal },
         {
           ...(deps?.transaction ?? {}),
+          // 评审 F1：同 uninstall 形态双并入（顶层 profileDir 在生产入口传入）
+          profileDir: deps?.transaction?.profileDir ?? deps?.profileDir,
           profileName: deps?.transaction?.profileName ?? deps?.profileName,
           warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
         },

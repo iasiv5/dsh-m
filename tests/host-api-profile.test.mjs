@@ -524,3 +524,10 @@ describe('ADR-0030（issue #39）：web kind 自定义名写分支接线（读�
     assert.equal(calls.upgrade.length, 0, 'web 事务不得被触达')
   })
 })
+
+describe('ADR-0030 源结构锚：host-api web 写分支接线计数（计划 T6.3 终值 13）', () => {
+  it("src/core/host-api.ts 中 'profileDir: profile.dir' 出现次数 = 13（出现次数语义，非行数）", () => {
+    const src = readFileSync(new URL('../src/core/host-api.ts', import.meta.url), 'utf8')
+    assert.equal(src.split('profileDir: profile.dir').length - 1, 13, '读 5 + desktop 委派 4 + 市场读 4（基线 8 + web 写分支 5）')
+  })
+})
