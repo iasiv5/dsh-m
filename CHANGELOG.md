@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.1 修复：升级读侧与 CLI 只读命令接线 profileDir（issue #42，ADR-0030 读侧收尾）
+
+- **背景**：0.12.0 修好自定义 profile 写路径后，读侧残留两处漏网（issue #42，报告者 appllove）：① `upgradePluginLocked` 已装枚举误读 `opts.profileDir`（生产入口均从 deps 传入 → 恒 undefined 落 `webProfileDir()`），自定义 profile 下升级必报「web profile 未安装该插件」——面板/工具/CLI/批量四条升级路全断，唯安装/卸载/开关正常；② CLI 三条只读命令 `list`/`outdated`/`search` 不传 `profileDir`/`profile`，无论 `--profile` 传什么都静默读 `profiles/web`（`dshm list --profile aqua` 列出的是 web 的 21 项而非 aqua 的、`outdated` 报 web 的更新、`search` 已装徽标取 web 版本）。该行 `opts.profileDir` 自 0.9.0 双 profile 地基起即错，因 #39 门禁此前把写路径全拒而不可达，0.12.0 放行后暴露。
+- **做法**：① 读侧实参改 `deps?.transaction?.profileDir ?? deps?.profileDir`（与同文件 installEntryLocked/uninstall/selfUpgrade 三兄弟同形态，未接线时保持 undefined 落缺省，零漂移）；「未安装」报错携带实际 profile 名（`deps?.profileName ?? opts.profile ?? WEB_PROFILE`）。② CLI 三 case 补 `profileDir: cliProfileDir, profile: cliProfileName`（与写命令消费同一对变量，单一事实源）；list 空目录文案去「web」硬编码；HELP 四处更新到 ADR-0030 口径（search/list/outdated 用法行 + profile 段）。③ 删除 `upgradePlugin`/`upgradePluginLocked` opts 类型上的 `profileDir` 死字段（本次事故根源形态，全仓无消费者，杜绝下一个调用方再从 opts 传）。
+- **测试**：读侧接线三变体（生产形态镜像/transaction 优先/零漂移+文案双钉，漏改文案的中间态即红）+ CLI 三命令 opts 捕获例；红→绿全程留证（旧实现+新测试恰好 2+3 红，恢复后全绿）。全量 npm test 2014/2014 零失败 + typecheck 通过；经两轮独立评审（计划评审 12 项闭环 + 产出评审 11 项核证零问题，红灯复演与零漂移逐字节对照取证留档）。
+- **兼容性**：行为修复——自定义 profile 升级从必失败变为可用；`dshm list/outdated/search` 自此尊重 `--profile`（此前静默读 web，属错误数据修正）。缺省（无 `--profile`）与 profile 名为 web 的用户逐字节零漂移（新旧实现输出实机对照一致）。**类型面注记**：`upgradePlugin` 公开 opts 类型删除 `profileDir` 字段（全仓零消费者；0.x patch）。desktop 行为零变化。另并入 devDep @types/node 26.6.6（#40）。回退面：revert + 版本号递增即回 0.12.0 语义。
+
 ### 0.12.0 新增：自定义 profile 写操作支持（issue #39，ADR-0030）
 
 - **背景**：`dsh --profile <自定义名>`（如 aqua）的普通 web 宿主下，市场读路径全部正常（已装列表/市场浏览取 profileContext.dir），写操作却全部 409「当前 profile 不支持该操作」——kindOf 字面枚举只认 web/desktop/tauri（ADR-0005「未知名显式拒写」）；且写路径四层缺省全部落回 `webProfileDir()`，形成「读 A 写 B」不对称（issue #39 两层根因，报告者本地补丁实测坐实）。
@@ -952,6 +959,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.1 Fixed: upgrade read-side and CLI read-only commands wired to profileDir (issue #42, ADR-0030 read-side closeout)
+
+- **Background**: after 0.12.0 fixed custom-profile writes, two read-side leaks remained (issue #42, reported by appllove): ① `upgradePluginLocked`'s installed enumeration read `opts.profileDir` (every production entry point passes the profile via deps → always undefined, falling back to `webProfileDir()`), so upgrading under a custom profile always failed with "web profile does not have this plugin installed" — all four upgrade paths (panel / agent tool / CLI / batch) broken while install/uninstall/toggle kept working. ② The three CLI read-only commands `list`/`outdated`/`search` passed no `profileDir`/`profile` and silently read `profiles/web` regardless of `--profile` (`dshm list --profile aqua` listed web's 21 entries instead of aqua's; `outdated` reported web's updates; `search` showed web's installed badges). The faulty `opts.profileDir` line dates back to the 0.9.0 dual-profile foundation; it stayed latent because #39's gate rejected all writes until 0.12.0 opened them.
+- **How**: ① read-side argument now `deps?.transaction?.profileDir ?? deps?.profileDir` (same shape as the three siblings in this file — installEntryLocked/uninstall/selfUpgrade; unwired stays undefined and falls to the default, zero drift); the "not installed" error now carries the actual profile name (`deps?.profileName ?? opts.profile ?? WEB_PROFILE`). ② The three CLI cases now pass `profileDir: cliProfileDir, profile: cliProfileName` (same variable pair as the write commands, single source of truth); the list empty-directory message drops the hardcoded "web"; HELP updated in four places to the ADR-0030 wording (search/list/outdated usage lines + the profile section). ③ The dead `profileDir` field on `upgradePlugin`/`upgradePluginLocked` opts types is removed (the root shape of this incident; zero consumers repo-wide, so no future caller can pass it via opts again).
+- **Testing**: three read-side wiring variants (production-shape mirror / transaction precedence / zero-drift with a message pin — the miss-the-copy middle state goes red) plus three CLI opts-capture cases; full red→green evidence on record (old implementation + new tests = exactly 2+3 reds, green after restore). Full npm test 2014/2014 zero-fail plus typecheck; two independent review rounds (plan review with 12 findings closed + implementation review with 11/11 checks passed, red-re-enactment and byte-identical zero-drift comparison archived).
+- **Compatibility**: behavior fix — upgrading under a custom profile goes from always-failing to working; `dshm list/outdated/search` now honor `--profile` (previously they silently read web — a wrong-data correction). Default (no `--profile`) and literal-`web` users are byte-identical zero-drift (old vs new outputs compared on a live host). **Type-surface note**: the public `upgradePlugin` opts type drops the `profileDir` field (zero consumers; 0.x patch). Desktop behavior unchanged. Also merges devDep @types/node 26.6.6 (#40). Rollback: revert + version bump restores 0.12.0 semantics.
 
 ### 0.12.0 Added: custom profile write support (issue #39, ADR-0030)
 
