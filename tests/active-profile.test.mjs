@@ -273,3 +273,20 @@ describe('WRITE_GUIDANCE 文案分治（ADR-0030）：desktop 六条冻结 + unk
     assert.ok(!msg.includes('undefined'), '不得漏插值')
   })
 })
+
+describe('ADR-0030 收口：desktop 名单判定大小写不敏感（对齐 dsh-market toLowerCase 判定）', () => {
+  const pcOf = (name, dir) => ({ get: (n) => (n === 'profileContext' ? { name, dir } : undefined) })
+
+  it("name='Desktop'（大小写变体）→ kind desktop（大小写不敏感 FS 上 profiles/Desktop ≡ profiles/desktop，不得落 web 事务）", () => {
+    assert.equal(resolveActiveProfile(ctxOf(pcOf('Desktop', '/tmp/dsh/profiles/desktop'))).kind, 'desktop')
+  })
+  it("name='TAURI' → kind desktop", () => {
+    assert.equal(resolveActiveProfile(ctxOf(pcOf('TAURI', '/tmp/dsh/profiles/tauri'))).kind, 'desktop')
+  })
+  it("name='WEB'（安全名变体，非字面 web）→ kind web", () => {
+    assert.equal(resolveActiveProfile(ctxOf(pcOf('WEB', '/tmp/dsh/profiles/web'))).kind, 'web')
+  })
+  it("name='DesktopX'（前缀相似但非名单名）→ kind web（不误伤）", () => {
+    assert.equal(resolveActiveProfile(ctxOf(pcOf('DesktopX', '/x'))).kind, 'web')
+  })
+})

@@ -9,7 +9,7 @@
 import { spawn, type SpawnOptions } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { installTimeoutMs, WEB_PROFILE, webProfileDir, isDshProfileName } from './env.js'
+import { installTimeoutMs, WEB_PROFILE, webProfileDir, isDshProfileName, isCmdSafeProfileName } from './env.js'
 import { createProgressTracker, type ProgressPhase, type ProgressTracker } from './progress.js'
 import { applyPreciseBuilds, readPendingBuilds } from './build-approval.js'
 import { governExcludeBlock, parseNpmSpec, registerExclusion } from './exclude-governance.js'
@@ -647,6 +647,11 @@ export async function runDshPlugin(
   const target = pluginArgs[pluginArgs.length - 1] ?? ''
   if (!isSafePluginTarget(target)) throw new Error(`拒绝不安全的安装目标: ${target}`)
   const argv = (deps.dshArgv ?? dshArgv)()
+  // ADR-0030 收口（对齐 dsh-market runDshPlugin 的 isCmdSafeProfileName）：cmd.exe 兜底
+  // 路径上名字含 %/&/^ 等会被展开或作元字符——结构化拒绝并指引（Node 直启不受限）。
+  if (argv.viaShell && !isCmdSafeProfileName(profile)) {
+    throw new Error(`profile 名 ${JSON.stringify(profile)} 无法安全通过 Windows cmd.exe 兜底路径；请经 Node 入口启动 DSH，或改用仅含字母/数字/空格/点/下划线/连字符的 profile 名`)
+  }
   const prepared = preparePluginArgs(deps.profileDir ?? webProfileDir(), pluginArgs)
   const tracker = beginProgress(target)
   const feed = makeProgressFeeder(tracker)

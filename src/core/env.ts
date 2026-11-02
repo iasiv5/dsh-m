@@ -52,6 +52,16 @@ export function dshProfileDirByName(name: string): string {
 }
 
 /**
+ * profile 名能否安全通过 Windows `dsh.cmd` 兜底路径（ADR-0030 收口，同业对齐
+ * dsh-market `isCmdSafeProfileName`）：cmd.exe 会对参数做百分号变量展开且元字符
+ * （& | ^ % 等）有命令语义——viaShell 路径上名字只许字母/数字/空格/./_/连字符。
+ * Node 直启（viaShell=false）argv 安全，不受此限。
+ */
+export function isCmdSafeProfileName(profile: string): boolean {
+  return isDshProfileName(profile) && /^[\p{L}\p{M}\p{N}._ -]+$/u.test(profile)
+}
+
+/**
  * 缓存根（0.9.0 双 profile，ADR-0005）：web 恒走旧路径（DSHM_CACHE_DIR 或
  * `$DSH_HOME/dshm/cache`）——不迁移不清空；非 web profile 加同名段
  * （`<root>/<profile>`），实现 profile 专属缓存互不污染。

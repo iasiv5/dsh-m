@@ -309,3 +309,34 @@ describe('ADR-0030：runDshPlugin 守卫放开 + profile 名参数化（issue #3
     assert.equal(calls[0].profile, 'web')
   })
 })
+
+describe('ADR-0030 收口：viaShell（Windows cmd.exe 兜底）路径的 cmd 安全名守卫（对齐 dsh-market isCmdSafeProfileName）', () => {
+  const cmdArgv = () => ({ file: 'dsh', args: [], cwd: undefined, viaShell: true })
+  const nodeArgv = () => ({ file: '/bin/echo', args: [], cwd: '/tmp', viaShell: false })
+  const noopRun = async () => 'ok'
+
+  it("viaShell=true + 名字含 % → 结构化拒绝（cmd.exe 变量展开面）", async () => {
+    await assert.rejects(
+      () => runDshPlugin('a%b', ['add', 'pkg-a@1.0.0'], { dshArgv: cmdArgv, runCommand: noopRun }),
+      /cmd\.exe|无法安全通过/,
+    )
+  })
+  it('viaShell=true + 名字含 & | ^ 等元字符 → 拒绝', async () => {
+    for (const name of ['a&b', 'a|b', 'a^b']) {
+      await assert.rejects(
+        () => runDshPlugin(name, ['add', 'pkg-a@1.0.0'], { dshArgv: cmdArgv, runCommand: noopRun }),
+        /cmd\.exe|无法安全通过/,
+      )
+    }
+  })
+  it("viaShell=true + 白名单名（'aqua' / 'a b' / 'dev-1.v2'）→ 放行", async () => {
+    for (const name of ['aqua', 'a b', 'dev-1.v2']) {
+      const out = await runDshPlugin(name, ['add', 'pkg-a@1.0.0'], { dshArgv: cmdArgv, runCommand: noopRun, profileDir: '/tmp/p' })
+      assert.equal(out, 'ok')
+    }
+  })
+  it('viaShell=false（Node 直启）+ 名字含 % → 放行（不经过 cmd.exe，无此面）', async () => {
+    const out = await runDshPlugin('a%b', ['add', 'pkg-a@1.0.0'], { dshArgv: nodeArgv, runCommand: noopRun, profileDir: '/tmp/p' })
+    assert.equal(out, 'ok')
+  })
+})

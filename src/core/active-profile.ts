@@ -94,8 +94,14 @@ export class ProfileUnsupportedError extends Error {
   }
 }
 
+/** 桌面名单的小写形态（判定大小写不敏感：大小写不敏感 FS 上 profiles/Desktop ≡ profiles/desktop，变体名必须进 desktop 分支而非 web 事务）。 */
+const DESKTOP_PROFILE_NAMES_LOWER: ReadonlySet<string> = new Set(DESKTOP_PROFILE_NAMES.map((n) => n.toLowerCase()))
+
 function kindOf(name: string): ProfileKind {
-  if (DESKTOP_PROFILE_NAMES.includes(name)) return 'desktop'
+  // ADR-0030 收口（对齐 dsh-market index.ts toLowerCase 判定）：desktop/tauri 名单
+  // 大小写不敏感——'Desktop' 变体在大小写不敏感 FS 上与 desktop 同目录，落 web 事务
+  // 即写错地盘（issue #39 同类）。CLI 门禁（cli.ts）同语义。
+  if (DESKTOP_PROFILE_NAMES_LOWER.has(name.toLowerCase())) return 'desktop'
   // ADR-0030：安全路径段名（含自定义名 aqua 等）与字面 web 名同权 → web；
   // unknown 从「不在枚举里」收窄为「名字不可作安全路径段」。
   if (isDshProfileName(name)) return 'web'
