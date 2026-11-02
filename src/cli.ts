@@ -20,7 +20,7 @@ import {
 import { togglePlugin as coreTogglePlugin } from './core/toggle.js'
 import { runDoctor } from './core/doctor.js'
 import { readLauncherPackageVersion } from './core/dsh-version.js'
-import { webProfileDir, desktopProfileDir } from './core/env.js'
+import { dshProfileDirByName, isDshProfileName, DESKTOP_PROFILE_NAMES, WEB_PROFILE } from './core/env.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS, INSTALLED_CORE_DEADLINE_MS } from './core/market-query.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
@@ -223,18 +223,27 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
   const { cmd, flags, positionals } = parseArgs(argv)
   const cfg = cliConfig()
 
-  // 0.9.0 双 profile（ADR-0005）：CLI 是 Web-only 入口（独立进程拿不到宿主 profileContext，
-  // 目标恒为 web profile）；--profile desktop / 其他非 web 值显式拒绝并指引官方入口，
-  // 绝不隐式回落 web（报告 §5.3「不能从不存在的 Desktop 模式推断」）。
+  // 0.9.0 双 profile（ADR-0005）→ 0.12.0 修订（ADR-0030）：CLI 放开安全自定义 profile 名——
+  // 与 web 名同权，文件事务直达 `profiles/<名>`（读写同目录）；desktop/tauri 名维持拒绝
+  // （CLI 不做桌面文件事务，变更走官方 Desktop 插件页）；不安全名（不可作目录段）显式拒绝；
+  // 无 flag → web（零漂移）。绝不隐式回落 web（报告 §5.3「不能从不存在的 Desktop 模式推断」）。
   const profileFlag = typeof flags.profile === 'string' ? flags.profile.trim() : ''
-  // 0.9.31（ADR-0011）：doctor 是纯 FS 只读体检——CLI 上唯一例外允许 --profile desktop；
-  // 其余命令维持「CLI 恒 web profile」拒绝（desktop 的变更类管理仍走官方 Desktop 插件页）。
+  // 0.9.31（ADR-0011）：doctor 是纯 FS 只读体检——desktop 名允许（只读，不与「desktop 管理走官方页」冲突）。
   const doctorDesktop = cmd === 'doctor' && profileFlag === 'desktop'
-  if (profileFlag !== '' && profileFlag !== 'web' && !doctorDesktop) {
-    err(`错误：dshm CLI 仅作用于 web profile，不支持 --profile ${profileFlag}。`)
-    err('Desktop profile 的插件管理请使用官方 Desktop 的插件管理页（Settings → Plugins），或回到 DSH Web 端使用 dsh-m。')
-    return 1
+  if (profileFlag !== '' && profileFlag !== WEB_PROFILE && !doctorDesktop) {
+    if (!isDshProfileName(profileFlag)) {
+      err(`错误：--profile 值不可用作目录段：${profileFlag}。请改用不含路径分隔符的 profile 名（字母/数字/点/下划线/连字符等）。`)
+      return 1
+    }
+    if (DESKTOP_PROFILE_NAMES.includes(profileFlag.toLowerCase())) {
+      err(`错误：dshm CLI 不管理 ${profileFlag} profile——其插件变更由官方管理器委派，CLI 无权对其做文件事务。`)
+      err('Desktop profile 的插件管理请使用官方 Desktop 的插件管理页（Settings → Plugins）。')
+      return 1
+    }
   }
+  // CLI 目标 profile 唯一解析点（ADR-0030）：写命令与 doctor 共用；desktop 名仅 doctor 可达（门禁已拦写命令）。
+  const cliProfileName = profileFlag !== '' ? profileFlag : WEB_PROFILE
+  const cliProfileDir = dshProfileDirByName(cliProfileName)
 
   switch (cmd) {
     case 'help':
@@ -380,7 +389,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
           forceIncompatible: flags.force === true,
           namespace: 'cli',
           channel: 'cli',
-        })
+        }, { profileDir: cliProfileDir, profileName: cliProfileName })
       } catch (e) {
         if (e instanceof InstallGuardError) {
           err('[⛔ 装后守卫拦截] ' + JSON.stringify(e.toWire()))
@@ -405,7 +414,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
           forceIncompatible: flags.force === true,
           namespace: 'cli',
           channel: 'cli',
-        })
+        }, { profileDir: cliProfileDir, profileName: cliProfileName })
       } catch (e) {
         if (e instanceof InstallGuardError) {
           err('[⛔ 装后守卫拦截] ' + JSON.stringify(e.toWire()))
@@ -429,7 +438,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const offFlag = flags.off === true
       if (onFlag === offFlag) throw new Error('开关命令需要恰好一个 --on 或 --off')
       requireYes(flags, '切换插件运行状态')
-      const res = await d.togglePlugin(target, onFlag, { channel: 'cli' })
+      const res = await d.togglePlugin(target, onFlag, { channel: 'cli', profileDir: cliProfileDir })
       out(`✅ 已${onFlag ? '启用' : '停用'} ${res.pkg}（profile 文件已更新）`)
       if (res.applied === 'live') out('本次进程内已即时生效；重启后状态保持。')
       else out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -439,7 +448,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'uninstall': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '卸载')
-      const res = await d.uninstallPlugin(target, cfg, { namespace: 'cli', channel: 'cli' })
+      const res = await d.uninstallPlugin(target, cfg, { namespace: 'cli', channel: 'cli' }, { profileDir: cliProfileDir, profileName: cliProfileName })
       out(`✅ 已卸载 ${res.pkg}${res.liveDisabled ? '（运行中的界面已先下线）' : ''}`)
       if (res.leftovers.length) out(`ℹ️  疑似残留数据（未删除）：${res.leftovers.join('、')}`)
       out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -458,8 +467,9 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       // runtimeVersion 仅用 readLauncherPackageVersion 纯 FS 通路（CLI 进程下通常为 null
       // → stale 判定降级 unknown，绝不 spawn）；errors>0 → exit 1。
       // 0.9.31（ADR-0011）：--profile desktop 例外开口（只读，不与「desktop 管理走官方页」冲突）。
-      const profileName = profileFlag === 'desktop' ? 'desktop' : 'web'
-      const targetDir = profileName === 'desktop' ? desktopProfileDir() : webProfileDir()
+      // 0.12.0（ADR-0030）：目标目录统一走 dshProfileDirByName（desktop 名 → 专用目录，其余安全名 → profiles/<名>）。
+      const profileName = cliProfileName
+      const targetDir = cliProfileDir
       const report = await runDoctor(targetDir, readLauncherPackageVersion())
       if (flags.json === true) {
         out(JSON.stringify(report, null, 2))
