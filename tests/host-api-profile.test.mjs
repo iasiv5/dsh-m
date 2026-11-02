@@ -57,7 +57,7 @@ async function callApi(dispatcher, args) {
 /** 独立 setup：trust/profile/desktop 行为全可编排；业务 deps 为记录型桩。 */
 function setupTrust({ trust, profile, overrides = {} } = {}) {
   const controller = createRegistryController({})
-  const calls = { listInstalled: [], scheduleRestart: [], upgrade: [], uninstall: [], selfUpgrade: [], desktopInstall: [], desktopToggle: [], desktopUpgrade: [], desktopUninstall: [], desktopSelfUpgrade: [], toggle: [], existingIds: [] }
+  const calls = { listInstalled: [], scheduleRestart: [], upgrade: [], uninstall: [], selfUpgrade: [], desktopInstall: [], desktopToggle: [], desktopUpgrade: [], desktopUninstall: [], desktopSelfUpgrade: [], toggle: [], existingIds: [], install: [] }
   const dispatcher = createApiDispatcher({
     controller,
     pkg: { name: 'dsh-m', version: '0.0.0-test' },
@@ -79,24 +79,28 @@ function setupTrust({ trust, profile, overrides = {} } = {}) {
         calls.listInstalled.push(opts)
         return { items: [], others: 0, profileDir: '/tmp/profile', registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'stale', isDefault: true, stale: true, fetchedAt: null, errors: [], count: 0 } }
       },
-      upgradePlugin: async (pkg) => {
-        calls.upgrade.push(pkg)
+      installFromRegistry: async (id, cfg, opts, deps) => {
+        calls.install.push({ id, opts, deps })
+        return { id, pkg: 'pkg-i', spec: 'pkg-i@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
+      },
+      upgradePlugin: async (pkg, cfg, opts, deps) => {
+        calls.upgrade.push({ pkg, opts, deps })
         return { id: 'x', pkg, spec: `${pkg}@2.0.0`, version: '2.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
       },
-      uninstallPlugin: async (pkg) => {
-        calls.uninstall.push(pkg)
+      uninstallPlugin: async (pkg, cfg, opts, deps) => {
+        calls.uninstall.push({ pkg, opts, deps })
         return { pkg, liveDisabled: false, needsRestart: true, leftovers: [] }
       },
-      selfUpgrade: async () => {
-        calls.selfUpgrade.push('dsh-m')
+      selfUpgrade: async (pkgName, currentVersion, cfg, opts, deps) => {
+        calls.selfUpgrade.push({ pkgName, currentVersion, opts, deps })
         return { pkg: 'dsh-m', version: '9.9.9', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true }
       },
       scheduleRestart: (port) => {
         calls.scheduleRestart.push(port)
         return { pid: 1, helperPid: undefined, via: 'app-exit' }
       },
-      togglePlugin: async (pkg, enabled) => {
-        calls.toggle.push([pkg, enabled])
+      togglePlugin: async (pkg, enabled, deps) => {
+        calls.toggle.push({ pkg, enabled, deps })
         return { pkg, enabled, applied: 'restart-required', via: 'fallback', warnings: [] }
       },
       desktopInstall: async (id, cfg, opts) => {
@@ -475,5 +479,48 @@ describe('ADR-0026：upgrade 失败信封 failureClass', () => {
   it('⑦ 源结构锚：hooks.js api() 透传 failureClass（赋值表达式出现次数语义）', async () => {
     const src = readFileSync(new URL('../src/client/hooks.js', import.meta.url), 'utf8')
     assert.equal(src.split('err.failureClass = data.failureClass').length - 1, 1, `hooks.js 透传赋值恰 1 处，实得 ${src.split('err.failureClass = data.failureClass').length - 1}`)
+  })
+})
+
+describe('ADR-0030（issue #39）：web kind 自定义名写分支接线（读写同一 dir 权威）', () => {
+  const aquaProfile = { name: 'aqua', kind: 'web', dir: '/h/profiles/aqua', source: 'host' }
+
+  it('install / upgrade / uninstall / self-upgrade → 事务入口收 profileDir + profileName', async () => {
+    const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: aquaProfile })
+    const ins = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'plug-w' } })
+    assert.equal(ins.status, 200)
+    assert.equal(calls.install[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(calls.install[0].deps.profileName, 'aqua')
+
+    const up = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'pkg-w' } })
+    assert.equal(up.status, 200)
+    assert.equal(calls.upgrade[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(calls.upgrade[0].deps.profileName, 'aqua')
+
+    const un = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'uninstall', pkg: 'pkg-w2' } })
+    assert.equal(un.status, 200)
+    assert.equal(calls.uninstall[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(calls.uninstall[0].deps.profileName, 'aqua')
+
+    const su = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(su.status, 200)
+    assert.equal(calls.selfUpgrade[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(calls.selfUpgrade[0].deps.profileName, 'aqua')
+  })
+
+  it('set-enabled → togglePlugin 收 profileDir（无子进程路径，不需要 profileName）', async () => {
+    const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: aquaProfile })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'pkg-w3', enabled: true } })
+    assert.equal(res.status, 200)
+    assert.equal(calls.toggle[0].deps.profileDir, '/h/profiles/aqua')
+  })
+
+  it('desktop 分支零改动锚：既有 desktop 传参断言保持原值', async () => {
+    const desktopProfile = { name: 'desktop', kind: 'desktop', dir: '/d/profiles/desktop', source: 'host' }
+    const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: desktopProfile })
+    const up = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'pkg-x' } })
+    assert.equal(up.status, 200)
+    assert.equal(calls.desktopUpgrade[0].opts.profileDir, '/d/profiles/desktop')
+    assert.equal(calls.upgrade.length, 0, 'web 事务不得被触达')
   })
 })

@@ -448,7 +448,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             break
           }
           // M2 Task 3：self-upgrade 收编 market.selfUpgrade（统一 mutation session + 守卫，直调事务旁路封死）
-          const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal, channel: 'panel' })
+          // ADR-0030：web 分支补 profileDir/profileName（自定义 profile 与 web 名同权，读写同一 dir 权威）
+          const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal, channel: 'panel' }, { profileDir: profile.dir, profileName: profile.name })
           payload = {
             pkg: result.pkg,
             version: result.version,
@@ -684,13 +685,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             break
           }
           const version = typeof body.version === 'string' ? body.version : undefined
+          // ADR-0030：web 写分支补 profileDir/profileName（此前缺省落 webProfileDir()——issue #39 写路径错配）
           const result = await d.installFromRegistry(id, cfg(), {
             version,
             forceIncompatible: boolArg(body.forceIncompatible),
             namespace: 'host',
             signal,
             channel: 'panel',
-          })
+          }, { profileDir: profile.dir, profileName: profile.name })
           payload = { ...result }
           break
         }
@@ -704,7 +706,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             payload = { ...(await d.desktopUninstall(target, { getService: d.getService, ensureService: d.ensureService, profileDir: profile.dir, channel: 'panel' })) }
             break
           }
-          const result = await d.uninstallPlugin(target, cfg(), { namespace: 'host', signal, channel: 'panel' })
+          const result = await d.uninstallPlugin(target, cfg(), { namespace: 'host', signal, channel: 'panel' }, { profileDir: profile.dir, profileName: profile.name })
           payload = { ...result }
           break
         }
@@ -719,7 +721,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             payload = { ...(await d.desktopToggle(target, body.enabled, { getService: d.getService as never, profileDir: profile.dir, channel: 'panel' })) }
             break
           }
-          const result = await d.toggle(target, body.enabled, { getService: d.getService, channel: 'panel' })
+          const result = await d.toggle(target, body.enabled, { getService: d.getService, channel: 'panel', profileDir: profile.dir })
           payload = { ...result }
           break
         }
@@ -754,7 +756,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             namespace: 'host',
             signal,
             channel: 'panel',
-          })
+          }, { profileDir: profile.dir, profileName: profile.name })
           payload = { ...result }
           break
         }
