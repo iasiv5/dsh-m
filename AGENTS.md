@@ -28,5 +28,5 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 
 ## Repository references
 
-- Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome).
+- Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome). Anonymous API hits rate-limit 403 fast — use the authenticated local `gh api repos/iasiv5/dsh-m/issues/<n>` instead.
 - 收录 PR 的评审与回复 playbook：`../01_docs/dsh-m-registry-playbook.md`（私有 01_docs，不进入本仓库）。
