@@ -7,6 +7,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { InstallGuardError } from '../lib/core/market-mutation.js'
+import { webProfileDir } from '../lib/core/env.js'
 
 async function registerWith(installBehavior) {
   const { registerTools } = await import('../lib/tools.js')
@@ -84,5 +85,91 @@ describe('M2 Task 3：dshm_install / dshm_upgrade 守卫拦截', () => {
     assert.equal(out.restartSafe, false)
     assert.ok(out.compensation.status === 'rolled-back')
     await assert.rejects(() => upgrade.execute({ pkg: 'pkg-a' }), /普通业务错误/)
+  })
+})
+
+describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具）', () => {
+  const aquaCtx = { name: 'aqua', dir: '/h/profiles/aqua' }
+
+  async function registerWithProfile(profileContext, coreOverrides = {}) {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {}, get: (n) => (n === 'profileContext' ? profileContext : undefined) }
+    registerTools(ctx, { timeoutMs: 50 }, coreOverrides)
+    return registered
+  }
+
+  it('dshm_install web 分支 → installFromRegistry deps 收 profileDir+profileName', async () => {
+    const captured = []
+    const registered = await registerWithProfile(aquaCtx, {
+      installFromRegistry: async (id, cfg, opts, deps) => {
+        captured.push({ id, deps })
+        return { id, pkg: 'p', spec: 'p@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
+      },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_install')
+    const out = await tool.execute({ id: 'pkg-a' })
+    assert.equal(out.version, '1.0.0')
+    assert.equal(captured[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(captured[0].deps.profileName, 'aqua')
+  })
+
+  it('dshm_toggle web 分支 → togglePlugin deps 收 profileDir（无子进程，不需要 profileName）', async () => {
+    const captured = []
+    const registered = await registerWithProfile(aquaCtx, {
+      togglePlugin: async (pkg, enabled, deps) => {
+        captured.push({ pkg, enabled, deps })
+        return { pkg, enabled, applied: 'restart-required', via: 'fallback', warnings: [] }
+      },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_toggle')
+    const out = await tool.execute({ pkg: 'pkg-t', enabled: true })
+    assert.equal(out.applied, 'restart-required')
+    assert.equal(captured[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(captured[0].deps.profileName, undefined)
+  })
+
+  it('dshm_uninstall web 分支 → uninstallPlugin deps 收 profileDir+profileName', async () => {
+    const captured = []
+    const registered = await registerWithProfile(aquaCtx, {
+      uninstallPlugin: async (pkg, cfg, opts, deps) => {
+        captured.push({ pkg, deps })
+        return { pkg, liveDisabled: false, needsRestart: true, leftovers: [] }
+      },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_uninstall')
+    const out = await tool.execute({ pkg: 'pkg-u' })
+    assert.equal(out.pkg, 'pkg-u')
+    assert.equal(captured[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(captured[0].deps.profileName, 'aqua')
+  })
+
+  it('dshm_upgrade web 分支 → upgradePlugin deps 收 profileDir+profileName', async () => {
+    const captured = []
+    const registered = await registerWithProfile(aquaCtx, {
+      upgradePlugin: async (pkg, cfg, opts, deps) => {
+        captured.push({ pkg, deps })
+        return { id: 'x', pkg, spec: `${pkg}@2.0.0`, version: '2.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
+      },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_upgrade')
+    const out = await tool.execute({ pkg: 'pkg-g' })
+    assert.equal(out.version, '2.0.0')
+    assert.equal(captured[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(captured[0].deps.profileName, 'aqua')
+  })
+
+  it('零漂移锚：web 名 profile 不传 deps 时行为不变（fallback profile，缺省目录）', async () => {
+    const captured = []
+    const registered = await registerWithProfile(undefined, {
+      installFromRegistry: async (id, cfg, opts, deps) => {
+        captured.push({ deps })
+        return { id, pkg: 'p', spec: 'p@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
+      },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_install')
+    await tool.execute({ id: 'pkg-a' })
+    assert.equal(captured[0].deps.profileDir, webProfileDir(), '无 profileContext → fallback web 目录（旧行为）')
+    assert.equal(captured[0].deps.profileName, 'web')
   })
 })

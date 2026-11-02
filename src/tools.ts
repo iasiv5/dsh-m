@@ -312,7 +312,8 @@ export function registerTools(
         return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool' }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
-        return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host', channel: 'host-tool' }))
+        // ADR-0030：web 分支补 profileDir/profileName（此前缺省落 webProfileDir()——issue #39 写路径错配）
+        return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
       } catch (err) {
         if (err instanceof InstallGuardError) {
           // 结构化 error result（M2 Task 3 ㉑-㉜）：不渲染「已安装」，无 force 通道；restartSafe 随结果携带
@@ -356,7 +357,7 @@ export function registerTools(
         assertWriteAllowed(profile, 'set-enabled')
         return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir, channel: 'host-tool' }))
       }
-      return cloneJson(await toggle(target, args.enabled, { getService: getService as never, channel: 'host-tool' }))
+      return cloneJson(await toggle(target, args.enabled, { getService: getService as never, channel: 'host-tool', profileDir: profile.dir }))
     },
   }))
 
@@ -387,7 +388,7 @@ export function registerTools(
       if (profile.kind !== 'web') {
         return cloneJson(await m.desktopUninstall(target, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir, channel: 'host-tool' }))
       }
-      return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host', channel: 'host-tool' }))
+      return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
     },
   }))
 
@@ -479,7 +480,7 @@ export function registerTools(
         return cloneJson(await m.desktopUpgrade(target, cfg, { forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool' }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
-        return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool' }))
+        return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
       } catch (err) {
         if (err instanceof InstallGuardError) {
           return { ok: false, guard: true, message: err.message, ...err.toWire() }
