@@ -2266,3 +2266,31 @@ importers:
     assert.equal(r.failure.code, 'LOCK_INTEGRITY_MISMATCH')
   })
 })
+
+describe('ADR-0030：runner 工厂第二参 profileName（issue #39）', () => {
+  it("deps { profileDir, profileName: 'aqua' } → 工厂收到 (profileDir, 'aqua')", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-txname-'))
+    const factories = []
+    const { runner } = mockRunner()
+    try {
+      await runProfileTransaction(
+        { kind: 'uninstall', pkg: 'pkg-a' },
+        { profileDir: dir, profileName: 'aqua', runner: (profileDir2, profileName) => { factories.push([profileDir2, profileName]); return runner } },
+      )
+    } catch { /* uninstall validate 可能拒绝——工厂已在 validate 前构造 */ }
+    assert.deepEqual(factories[0], [dir, 'aqua'])
+  })
+
+  it('不传 profileName → 工厂第二参 undefined（旧单参注入兼容）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-txname-'))
+    const factories = []
+    const { runner } = mockRunner()
+    try {
+      await runProfileTransaction(
+        { kind: 'uninstall', pkg: 'pkg-a' },
+        { profileDir: dir, runner: (profileDir2, profileName) => { factories.push([profileDir2, profileName]); return runner } },
+      )
+    } catch { /* 同上 */ }
+    assert.deepEqual(factories[0], [dir, undefined])
+  })
+})

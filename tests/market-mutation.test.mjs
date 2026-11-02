@@ -1187,3 +1187,117 @@ packages:
   })
 })
 
+
+// ---------- ADR-0030：profileName 贯穿四入口（issue #39） ----------
+
+describe('ADR-0030：InstallDeps/UninstallDeps profileName → 事务 runner 工厂第二参', () => {
+  function capturingFactory(profileDir, script = {}) {
+    const factories = []
+    const tx = mockTxRunner(script, profileDir)
+    const factory = (dir, name) => { factories.push([dir, name]); return tx.runner }
+    return { factory, factories, tx }
+  }
+
+  it("installFromRegistry 顶层 profileName:'aqua' → runner 工厂收到 (dir,'aqua')", async () => {
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { factory, factories } = capturingFactory(dir, {
+        add: [async () => {
+          writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+          writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
+          return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      })
+      const res = await installFromRegistry('p', {}, {}, {
+        ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+        profileDir: dir,
+        profileName: 'aqua',
+        transaction: { runner: factory, profileDir: dir },
+      })
+      assert.equal(res.version, '1.2.3')
+      assert.deepEqual(factories[0], [dir, 'aqua'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("upgradePlugin 顶层 profileName:'aqua' → runner 工厂收到 (dir,'aqua')", async () => {
+    const profileDir = txProfile({
+      'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { 'pkg-x': '1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  pkg-x@1.0.0:
+    resolution: {integrity: ${sha512('old')}}
+`,
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { factory, factories } = capturingFactory(profileDir, {
+        add: [async () => {
+          writeFileSync(join(profileDir, 'package.json'), JSON.stringify({ name: 'p', private: true, dependencies: { 'pkg-x': '2.0.0' } }, null, 2) + '\n')
+          writeFileSync(join(profileDir, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
+
+packages:
+  pkg-x@2.0.0:
+    resolution: {integrity: ${sha512('good')}}
+`)
+          return { class: 'ok', output: 'add-ok', buildApprovals: [], fallbackAllBuilds: false }
+        }],
+      })
+      const deps = {
+        loadRegistry: async () => readyLoaded([]),
+        listInstalledPlugins: async () => ({ items: [{ pkg: 'pkg-x', name: 'pkg-x', version: '1.0.0', source: 'npm', spec: 'pkg-x@1.0.0' }], others: 0, complete: true, profileDir }),
+        npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
+        precheck: async () => null,
+        fetchCommunityCatalog: async () => communityLoaded([]),
+        profileName: 'aqua',
+        transaction: { runner: factory, profileDir },
+        classifyActivation: async () => 'unknown',
+      }
+      const res = await upgradePlugin('pkg-x', cfg, {}, deps)
+      assert.equal(res.version, '2.0.0')
+      assert.deepEqual(factories[0], [profileDir, 'aqua'])
+    } finally {
+      rmSync(profileDir, { recursive: true, force: true })
+    }
+  })
+
+  it("uninstallPlugin 顶层 profileDir/profileName（UninstallDeps 新字段）→ 工厂收到", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dshm-un-txname-'))
+    try {
+      const { factory, factories } = capturingFactory(dir)
+      // validate 阶段大概率拒绝（空 profile）——工厂在 validate 前构造，吞拒绝、只看参数
+      await uninstallPlugin('pkg-a', {}, {}, { profileDir: dir, profileName: 'aqua', transaction: { runner: factory } }).catch(() => undefined)
+      assert.deepEqual(factories[0], [dir, 'aqua'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("selfUpgrade 顶层 profileName:'aqua' → runner 工厂收到", async () => {
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { 'dsh-m': '1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const { selfUpgrade } = await import('../lib/core/market-mutation.js')
+      const { factory, factories } = capturingFactory(dir)
+      // 后续阶段可能拒绝（守卫/校验）——工厂在事务入口即构造，吞异常、只看参数
+      await selfUpgrade('dsh-m', '1.0.0', {}, {}, {
+        npmLatest: async () => ({ version: '1.1.0', integrity: sha512('good') }),
+        profileDir: dir,
+        profileName: 'aqua',
+        transaction: { runner: factory, profileDir: dir, retryDelaysMs: [0, 0] },
+      }).catch(() => undefined)
+      assert.deepEqual(factories[0], [dir, 'aqua'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

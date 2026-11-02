@@ -121,7 +121,8 @@ export const TX_FAILURE_CODES = [
 export interface TransactionFailure { code: (typeof TX_FAILURE_CODES)[number]; note: string }
 
 export interface TransactionDeps {
-  runner?: (profileDir: string) => PnpmRunner   // 缺省 = makeDshRunner
+  /** ADR-0030：工厂第二参 profileName（dsh CLI 子进程 --profile 用；缺省由 makeDshRunner 取 web）。旧单参注入兼容：多传实参被 JS 忽略 */
+  runner?: (profileDir: string, profileName?: string) => PnpmRunner   // 缺省 = makeDshRunner
   warmPackument?: (pkg: string, signal?: AbortSignal) => Promise<void>
   /** L2②（ADR-0012）：NO_MATCHING_VERSION 来自 npmmirror 时的按需同步（缺省 = npm-route syncNpmmirrorPackage；注入仅为可测试性） */
   syncNpmmirror?: (pkg: string) => Promise<boolean>
@@ -132,6 +133,8 @@ export interface TransactionDeps {
   stripPatchedEntries?: (profileDir: string, pkg: string) => { changed: boolean; orphanedPatchFiles: string[] }
   retryDelaysMs?: readonly number[]             // 默认 [5_000, 15_000]；测试 [0, 0]
   profileDir?: string                           // 缺省 webProfileDir()；测试 tmpdir
+  /** ADR-0030（issue #39）：目标 profile 名——只用于 `dsh plugin --profile <名>` 子进程；文件路径一律只认 profileDir */
+  profileName?: string
 }
 
 // ---------- 四分支判别联合 ----------
@@ -608,6 +611,7 @@ async function rollbackAndConverge(
 
 interface ResolvedDeps {
   profileDir: string
+  profileName: string | undefined
   runner: PnpmRunner
   warmPackument: ((pkg: string, signal?: AbortSignal) => Promise<void>) | undefined
   syncNpmmirror: (pkg: string) => Promise<boolean>
@@ -622,6 +626,7 @@ function resolveDeps(deps?: TransactionDeps): Omit<ResolvedDeps, 'runner'> {
   const profileDir = deps?.profileDir ?? webProfileDir()
   return {
     profileDir,
+    profileName: deps?.profileName,
     warmPackument: deps?.warmPackument,
     syncNpmmirror: deps?.syncNpmmirror ?? syncNpmmirrorPackage,
     clearLatestCache: deps?.clearLatestCache ?? clearAllLatestCache,
@@ -1291,7 +1296,7 @@ async function executeTransaction(
   // runner factory（畸形校验已过；factory 异常 = 快照前 → rejected）
   let runner: PnpmRunner
   try {
-    runner = (deps?.runner ?? makeDshRunner)(base.profileDir)
+    runner = (deps?.runner ?? makeDshRunner)(base.profileDir, base.profileName)
   } catch (err) {
     return rejected({ code: 'INTERNAL_ERROR', note: `runner 构造失败：${errText(err)}` }, req.kind)
   }

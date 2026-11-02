@@ -64,6 +64,8 @@ export interface InstallDeps extends Partial<MarketDeps> {
   transaction?: TransactionDeps
   /** 目标 profile 目录（0.9.0 双 profile；缺省 webProfileDir()；transaction.profileDir 优先） */
   profileDir?: string
+  /** 目标 profile 名（ADR-0030）：只传给事务作 `dsh plugin --profile <名>`；transaction.profileName 优先 */
+  profileName?: string
   /** 外部操作直落钩子注入（0.9.79 ADR-0018，R3-1；缺省 = 真实现 appendExternalOperation） */
   appendExternalOperation?: AppendExternalOperation
 }
@@ -548,6 +550,8 @@ async function installEntryLocked(
 ): Promise<InstallResult> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
   const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
+  // ADR-0030：profile 名与 dir 同优先级（transaction 显式值 > 顶层字段）；只进子进程 argv，不进文件路径
+  const profileName = deps?.transaction?.profileName ?? deps?.profileName
   const d = {
     npmLatest: deps?.npmLatest ?? defaultNpmLatest,
     npmVersion: deps?.npmVersion ?? npmVersion,
@@ -601,6 +605,7 @@ async function installEntryLocked(
       { kind: 'install-npm', pkg, version, integrity: expectedIntegrity, signal: opts.signal },
       {
         ...deps?.transaction,
+        profileName,
         warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
       },
     )
@@ -692,7 +697,7 @@ async function installEntryLocked(
     }
     const result = await runProfileTransaction(
       { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
-      deps?.transaction ?? {},
+      { ...deps?.transaction, profileName },
     )
     if (!result.ok) throw new TransactionError(result)
     const realKey = result.pkg ?? candidate
@@ -788,6 +793,10 @@ export interface UninstallResult {
 export interface UninstallDeps {
   /** Task 6 起：卸载走事务（validate 前置 + 快照 + 回滚）；注入仅为可测试性 */
   transaction?: TransactionDeps
+  /** 目标 profile 目录（ADR-0030；缺省 webProfileDir()；transaction.profileDir 优先） */
+  profileDir?: string
+  /** 目标 profile 名（ADR-0030）：只作 `dsh plugin --profile <名>`；transaction.profileName 优先 */
+  profileName?: string
   /** 外部操作直落钩子注入（0.9.79 ADR-0018，R3-1；缺省 = 真实现） */
   appendExternalOperation?: AppendExternalOperation
 }
@@ -831,7 +840,11 @@ async function uninstallPluginLocked(
   }
   const result = await runProfileTransaction(
     { kind: 'uninstall', pkg, signal: opts.signal },
-    deps.transaction ?? {},
+    {
+      ...deps.transaction,
+      profileDir: deps.transaction?.profileDir ?? deps.profileDir,
+      profileName: deps.transaction?.profileName ?? deps.profileName,
+    },
   )
   if (!result.ok) throw new TransactionError(result)
   // 0.9.20 ①：卸载成功 → 尽力作废 npm-only 键（github 条目的 gh: 键无法由 pkg 名重构，
@@ -938,7 +951,11 @@ export async function selfUpgrade(
       }
       const result = await runProfileTransaction(
         { kind: 'install-npm', pkg: pkgName, version: latest.version, integrity: latest.integrity, signal: opts.signal },
-        { ...(deps?.transaction ?? {}), warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs) },
+        {
+          ...(deps?.transaction ?? {}),
+          profileName: deps?.transaction?.profileName ?? deps?.profileName,
+          warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
+        },
       )
       if (!result.ok) throw new TransactionError(result)
       const payload: InstallResult = {
