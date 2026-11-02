@@ -1,6 +1,6 @@
 # dsh-m agent navigation
 
-This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.md`](docs/CODING-STANDARDS.md) are the sources of truth. Before changing or reviewing dsh-m code/tests, read the coding standards; they define test-anchor, evidence, plan-traceability, and exit-code rules.
+This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.md`](docs/CODING-STANDARDS.md) are the sources of truth. Before changing or reviewing dsh-m code/tests — or writing implementation plans / red-lines for them — read the coding standards; they define test-anchor, evidence, plan-traceability, and exit-code rules (their evidence-discipline section explicitly governs plans and CHANGELOG claims).
 
 ## Owning code and tests
 
@@ -23,6 +23,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 ## Releasing
 
 - 发版走 `npm run release`（脚本头部列出前置条件与步骤，含 lock 三处同步）；门禁 `npm run check-release`。不要手动打 tag：2026-11-01 实录，tag 落在未包含 registry.json 的提交上、lock 未同步，CI 门禁两次失败并两次重打 tag。
+- **发版动作需当轮明确批准**：`npm run release`（push/tag/publish）与 issue 关闭属不可逆公开动作——「批准开工」不默认涵盖发版与关闭步骤，执行到二者前停下等主人确认。（2026-11-02 #42 战役实录：批准开工后被中途叫停一次、回帖草案另送审一次。）
 - lock 三处一致判定见 `scripts/release-lock.mjs`；`scripts/release.mjs` 发现不一致时自动同步，同步后的 `package-lock.json` 需纳入发版提交。
 - 新增 registry 分类的顺序（先发版 → 宿主升级 → 再推 registry）由 `scripts/validate-registry.mjs` 的分类门禁机械检查（判定逻辑在 `scripts/registry-categories.mjs`）；CHANGELOG 的兼容性说明同步记录。
 

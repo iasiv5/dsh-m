@@ -41,6 +41,28 @@ const enTop = topAfter('## English')
 check(`CHANGELOG 中文顶条含 ${version}`, Boolean(zhTop && zhTop.includes(version)), zhTop ?? '（未找到条目）')
 check(`CHANGELOG English 顶条含 ${version}`, Boolean(enTop && enTop.includes(version)), enTop ?? '（未找到条目）')
 
+// #42 战役 retro（2026-11-03）：插顶条时吞掉相邻条目标题（### 0.12.0 被 edit 吃掉，人工复核才
+// 逮住）——顶条存在性检查管不到相邻结构。配对断言：两区块近 10 条版本标题逐对一致。窗口取 10：
+// 更早历史存在一次良性漂移（中文 0.10.15 条对英文「Display …」无版本标题），全量配对会被它卡死。
+const sectionVersions = (marker, otherMarker) => {
+  const start = lines.indexOf(marker)
+  if (start === -1) return []
+  const otherIdx = lines.indexOf(otherMarker)
+  const end = otherIdx > start ? otherIdx : lines.length
+  return lines.slice(start + 1, end).filter((l) => l.startsWith('### ')).map((l) => l.replace(/^### /, '').trim().split(/[\s：:（(]/)[0])
+}
+const PAIR_WINDOW = 10
+const zhVersions = sectionVersions('## 中文', '## English')
+const enVersions = sectionVersions('## English', '## 中文')
+const firstBad = zhVersions.slice(0, PAIR_WINDOW).findIndex((v, i) => v !== enVersions[i])
+check(
+  `CHANGELOG 双语近 ${PAIR_WINDOW} 条标题配对`,
+  firstBad === -1 && zhVersions.length >= PAIR_WINDOW,
+  firstBad === -1
+    ? `配对：${zhVersions.slice(0, 3).join(' / ')} …`
+    : `第 ${firstBad + 1} 条失配：中文「${zhVersions[firstBad] ?? '（缺）'}」对英文「${enVersions[firstBad] ?? '（缺）'}」`,
+)
+
 let tagHead = ''
 const tagRev = spawnSync('git', ['rev-parse', `v${version}^{commit}`], { cwd: root, encoding: 'utf8' })
 if (tagRev.status === 0 && typeof tagRev.stdout === 'string') {
