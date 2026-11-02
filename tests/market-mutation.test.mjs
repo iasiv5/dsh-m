@@ -15,6 +15,7 @@ import { installFromRegistry, upgradePlugin, uninstallPlugin, capturePreMutation
 import { UpgradePathUnsupportedError } from '../lib/core/upgrade-target.js'
 import { _resetMergedMarketForTests, _mergedMarketStatsForTests } from '../lib/core/merged-market.js'
 import { IncompatibleError } from '../lib/core/compat-check.js'
+import { webProfileDir } from '../lib/core/env.js'
 import { latestCacheKey, readLatestCache, writeLatestCache, resetLatestCacheForTest } from '../lib/core/latest-cache.js'
 import { _setProjectionIoForTests } from '../lib/core/generation-projection.js'
 // R1-1：L2 物化代跨用例隔离（fixture 假身份可能同键；node --test 文件内共享模块状态）
@@ -1300,5 +1301,66 @@ packages:
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// ---------- ADR-0030 读侧接线（issue #42）：upgradePluginLocked 已装枚举目录 ----------
+// 自含夹具（不引用兄弟 describe 闭包）。三例都在读侧之后立刻失败（listInstalledPlugins 桩
+// 返回空 items → 「未安装该插件」抛出），不触达事务层；captured 记录桩收到的实参——正是修复点
+// （0.12.0 误读 opts.profileDir 恒 undefined → 落 webProfileDir()）。变体①同时钉文案：
+// profileLabel = deps.profileName ?? opts.profile ?? WEB_PROFILE（漏改文案的中间态在此红）。
+describe('ADR-0030 读侧接线：upgradePluginLocked 已装枚举目录', () => {
+  const capturingListInstalled = (captured) => async (dir) => {
+    captured.push(dir)
+    return { items: [], others: 0, complete: true, profileDir: dir }
+  }
+
+  it("① 生产形态镜像：deps 顶层 profileDir:'<fake>'+profileName:'aqua' → 桩收 fakeDir，报错带 aqua 名", async () => {
+    const fakeDir = mkdtempSync(join(tmpdir(), 'dshm-up-readside-'))
+    assert.notEqual(fakeDir, webProfileDir(), '夹具前提：fakeDir 与 webProfileDir() 不同')
+    const captured = []
+    const deps = {
+      loadRegistry: async () => readyLoaded([{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'p' }]),
+      listInstalledPlugins: capturingListInstalled(captured),
+      profileDir: fakeDir,
+      profileName: 'aqua',
+    }
+    try {
+      await assert.rejects(
+        () => upgradePlugin('p', cfg, {}, deps),
+        /aqua profile 未安装该插件/,
+        '漏改文案（只修实参）的中间态在此红——R4 防线',
+      )
+      assert.equal(captured[0], fakeDir, '已装枚举必须读 deps 接线的 profileDir，不得落 webProfileDir()')
+    } finally {
+      rmSync(fakeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('② transaction 优先级钉：仅 deps.transaction.profileDir → 桩收 transaction.profileDir', async () => {
+    const fakeDir = mkdtempSync(join(tmpdir(), 'dshm-up-readside-tx-'))
+    assert.notEqual(fakeDir, webProfileDir(), '夹具前提：fakeDir 与 webProfileDir() 不同')
+    const captured = []
+    const deps = {
+      loadRegistry: async () => readyLoaded([{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'p' }]),
+      listInstalledPlugins: capturingListInstalled(captured),
+      transaction: { profileDir: fakeDir },
+    }
+    try {
+      await assert.rejects(() => upgradePlugin('p', cfg, {}, deps), /未安装该插件/)
+      assert.equal(captured[0], fakeDir, 'transaction.profileDir 必须优先于缺省 webProfileDir()')
+    } finally {
+      rmSync(fakeDir, { recursive: true, force: true })
+    }
+  })
+
+  it('③ 零漂移钉：deps 无任何 profileDir → 桩实参保持 undefined，消息恒 web profile', async () => {
+    const captured = []
+    const deps = {
+      loadRegistry: async () => readyLoaded([{ id: 'p', name: 'P', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'p' }]),
+      listInstalledPlugins: capturingListInstalled(captured),
+    }
+    await assert.rejects(() => upgradePlugin('p', cfg, {}, deps), /web profile 未安装该插件/)
+    assert.equal(captured[0], undefined, '调用方未接线时实参保持 undefined（由 installed 层缺省兜底），不得显式传推导值')
   })
 })

@@ -172,10 +172,10 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
 用法：dshm <命令> [参数]
 
 只读命令：
-  dshm search [关键词] [--query 关键词] [--category essentials|cui-picks|self-dev|tencent-lighthouse|watchlist|<社区slug>] [--source primary|community|all] [--limit N] [--offset N]
+  dshm search [关键词] [--query 关键词] [--category essentials|cui-picks|self-dev|tencent-lighthouse|watchlist|<社区slug>] [--source primary|community|all] [--limit N] [--offset N] [--profile <名>]
                                         （首个位置参数等价 --query，--query 缺值时也回退它，多余位置参数忽略；source 分区：community=社区目录 6000+ 条 / primary=精选策展 / all=默认；limit 默认 10；offset 翻页）
-  dshm list                          列出 web profile 已装插件（含市场标注/可升级）
-  dshm outdated                      检查已装插件的最新版本
+  dshm list [--profile <名>]          列出目标 profile 已装插件（含市场标注/可升级）
+  dshm outdated [--profile <名>]      检查已装插件的最新版本
   dshm registry                      查看收录清单来源与条目
   dshm doctor [--json] [--profile web|desktop]  profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1；--profile desktop 为 doctor 专属例外）
 
@@ -187,9 +187,9 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   dshm restart --yes
   注意：变更互斥仅在进程内生效——变更执行期间不要同时从 GUI / Agent 工具发起另一次变更。
 
-profile 目标（0.9.0）：CLI 恒作用于 web profile；--profile web 为显式声明，
-  其余命令的 --profile desktop 会被拒绝——Desktop profile 的插件管理走官方 Desktop 插件管理页；
-  唯一例外：dshm doctor --profile desktop（只读体检，ADR-0011）。
+profile 目标（0.9.0；ADR-0030）：缺省 web；--profile <安全自定义名> 与 web 名同权，
+  读写直达 profiles/<名>；--profile desktop 仅 doctor 可用（只读体检，ADR-0011）——
+  Desktop profile 的插件管理走官方 Desktop 插件管理页。
 
 环境变量：DSHM_REGISTRY_URL（registry 源覆盖）、DSHM_TIMEOUT_MS、DSHM_CACHE_TTL_MIN、DSHM_CACHE_DIR、
   DSHM_COMMUNITY_CATALOG=0（退出社区清单）、DSHM_COMMUNITY_CATALOG_PIN（锁定社区目录版本）、
@@ -271,6 +271,8 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         withLatest: false,
         namespace: 'cli',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
+        profileDir: cliProfileDir,
+        profile: cliProfileName,
       })
       if (result.registryState.status === 'unavailable') {
         if (result.community.status !== 'ready' && result.community.status !== 'stale') {
@@ -309,13 +311,15 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     }
 
     case 'list': {
-      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli' })
+      // ADR-0030 读侧接线（issue #42）：与写命令消费同一对 cliProfileDir/cliProfileName，
+      // 已装枚举/缓存分段不再静默落 webProfileDir()。
+      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli', profileDir: cliProfileDir, profile: cliProfileName })
       if (result.registryState.status === 'unavailable') {
         for (const line of unavailableLines(result.registryState)) out(line)
         out('（registry 不可用，仅列出已装插件）')
       }
       if (!result.items.length) {
-        out(`web profile（${result.profileDir}）还没有已装的 dsh 插件。`)
+        out(`${cliProfileName} profile（${result.profileDir}）还没有已装的 dsh 插件。`)
         return 0
       }
       for (const it of result.items) {
@@ -332,7 +336,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'outdated': {
       // 双源判定（Task 7 ⑧）：主 unavailable + 社区 ready → 正常输出 + warning；
       // 社区 stale → 「缓存快照」行；两层皆不可用 → exit 1
-      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli', deadlineMs: INSTALLED_CORE_DEADLINE_MS })
+      const result: InstalledResult = await d.listInstalledWithMeta(cfg, { namespace: 'cli', deadlineMs: INSTALLED_CORE_DEADLINE_MS, profileDir: cliProfileDir, profile: cliProfileName })
       if (result.registryState.status === 'unavailable') {
         if (result.community.status !== 'ready' && result.community.status !== 'stale') {
           for (const line of unavailableLines(result.registryState)) err(line)

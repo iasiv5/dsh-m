@@ -112,4 +112,47 @@ describe('ADR-0030：dshm CLI 门禁放开 + 写命令接线', () => {
     const desktopReport = JSON.parse(desktop.text)
     assert.equal(desktopReport.profileDir, desktopProfileDir())
   })
+
+  // ---------- 读侧接线（issue #42）：list/outdated/search 必须把 --profile 传进 core ----------
+  // 断言只看 captured opts 与 exit code，不匹配输出文本；夹具 registryState 字面量同
+  // host-api-profile.test.mjs 既有 listMarket 形态。注意：outdated 夹具必须带 community.status
+  // 走真路径——market.test.mjs :918 既有夹具缺该字段靠 dispatch catch 兜 exit 1，不模仿。
+  it('--profile aqua list → listInstalledWithMeta opts 收 profileDir/profile', async () => {
+    const captured = []
+    const { code } = await runCapture(['list', '--profile', 'aqua'], {
+      listInstalledWithMeta: async (cfg, opts) => {
+        captured.push(opts)
+        return { items: [], others: 0, profileDir: join(dshHome(), 'profiles', 'aqua'), registryState: { status: 'stale', source: 'bundled', stale: true, isDefault: true, fetchedAt: null, errors: [], count: 0 }, community: { status: 'ready', acceptedCount: 0 } }
+      },
+    })
+    assert.equal(code, 0)
+    assert.equal(captured[0].profileDir, join(dshHome(), 'profiles', 'aqua'), 'list 已装枚举不得落 webProfileDir()')
+    assert.equal(captured[0].profile, 'aqua', 'registry/社区缓存按 profile 分段')
+  })
+
+  it('--profile aqua outdated → listInstalledWithMeta opts 收 profileDir/profile', async () => {
+    const captured = []
+    const { code } = await runCapture(['outdated', '--profile', 'aqua'], {
+      listInstalledWithMeta: async (cfg, opts) => {
+        captured.push(opts)
+        return { items: [{ pkg: 'p', name: 'p', version: '1.2.3', source: 'npm', spec: 'p@1.2.3', outdated: false, latestErrorCode: null, registryId: 'p', latestVersion: '1.2.3' }], others: 0, profileDir: join(dshHome(), 'profiles', 'aqua'), registryState: { status: 'stale', source: 'bundled', stale: true, isDefault: true, fetchedAt: null, errors: [], count: 0 }, community: { status: 'ready', acceptedCount: 0 } }
+      },
+    })
+    assert.equal(code, 0)
+    assert.equal(captured[0].profileDir, join(dshHome(), 'profiles', 'aqua'), 'outdated 已装枚举不得落 webProfileDir()')
+    assert.equal(captured[0].profile, 'aqua', 'registry/社区缓存按 profile 分段')
+  })
+
+  it('--profile aqua search kw → listMarket opts 收 profileDir/profile', async () => {
+    const captured = []
+    const { code } = await runCapture(['search', 'kw', '--profile', 'aqua'], {
+      listMarket: async (cfg, opts) => {
+        captured.push(opts)
+        return { items: [], total: 0, offset: 0, limit: 10, categoryCounts: { primary: 0, community: 0 }, registryState: { status: 'stale', source: 'bundled', stale: true, isDefault: true, fetchedAt: null, errors: [], count: 0 }, community: { status: 'ready', acceptedCount: 0 } }
+      },
+    })
+    assert.equal(code, 0)
+    assert.equal(captured[0].profileDir, join(dshHome(), 'profiles', 'aqua'), 'search 已装徽标不得落 webProfileDir()')
+    assert.equal(captured[0].profile, 'aqua', 'registry/社区缓存按 profile 分段')
+  })
 })

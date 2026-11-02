@@ -874,7 +874,7 @@ export interface UpgradeResult extends InstallResult {
 export function upgradePlugin(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean; profileDir?: string; channel?: OperationChannel } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean; channel?: OperationChannel } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   // 0.9.79 外部操作直落（ADR-0018）：终态后挂钩，session 区间内保持单写者
@@ -906,13 +906,19 @@ export function upgradePlugin(
 async function upgradePluginLocked(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean; profileDir?: string } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
 ): Promise<UpgradeResult> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
-  const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)(opts.profileDir)
+  // ADR-0030 读侧接线（issue #42）：已装枚举与同文件三兄弟（installEntryLocked/uninstall/selfUpgrade）
+  // 同形态——实参恒走 deps 接线（transaction 优先），不读 opts；未接线时保持 undefined 落
+  // listInstalledPlugins 缺省 webProfileDir()，调用零漂移。
+  const { items: installed } = await (deps?.listInstalledPlugins ?? defaultListInstalledPlugins)(deps?.transaction?.profileDir ?? deps?.profileDir)
   const target = installed.find((it) => it.pkg === pkg)
-  if (!target) throw new Error(`web profile 未安装该插件: ${pkg}`)
+  if (!target) {
+    const profileLabel = deps?.profileName ?? opts.profile ?? WEB_PROFILE
+    throw new Error(`${profileLabel} profile 未安装该插件: ${pkg}`)
+  }
   // ADR-0028：升级目标解析收编 resolveUpgradeTarget（编排序与原内联梯逐点一致：registryUsable 门
   // → 主清单匹配 → 物化合并市场全量域 lookupInstalledAll（窄 catch 吞 miss）→ 合成/unsupported；
   // registry unavailable 不阻断升级的 ADR-0026 语义由壳继承）。unsupported 在边缘重抛既有错误
