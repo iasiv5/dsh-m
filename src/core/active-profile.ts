@@ -1,18 +1,24 @@
 /**
- * ActiveProfile（0.9.0 双 profile，ADR-0005）：宿主当前 profile 的单一事实源。
+ * ActiveProfile（0.9.0 双 profile，ADR-0005；0.12.0 自定义 profile 写支持修订，ADR-0030）：
+ * 宿主当前 profile 的单一事实源。
  *
  * 事实源是官方 `ctx.get('profileContext')`（@deepseek-ai/dsh-app-boot，仅 dsh 启动的
  * profile 存在）；缺席（旧宿主 / 测试 / CLI）时降级 fallback = web 推导目录，且 source
- * 如实标注 'fallback'。kind 决定能力表：desktop 只放行能力表内动作；
- * 未知名一律拒写（报告 §4「对未知 profile 显式拒写」）。不得从页面 Origin、DSH_HOME、
- * process.cwd() 或文件存在性猜 **profile 身份**（报告 §4 同业旁证 #655/#744）——身份
- * 仍唯一来自 profileContext；kind 判定在名字快路径之外叠加 **形态事实**（generation
- * 投影探测，issue #3/#6：桌面发行版 profile 名有 desktop/tauri/web 三种，名字枚举
- * 必然漏，dataelement 的 `web` 名 profile 曾被放行进 web 事务路径撞装后守卫）。
- * 为什么不用「pluginManager 存在性」判桌面：官方 Web 宿主同样提供该服务（dsh-m 的
- * web 开关路径就在委派它，ADR-0001），存在性 ≠ 桌面。
+ * 如实标注 'fallback'。kind 决定能力表：desktop 只放行能力表内动作。
+ * 不得从页面 Origin、DSH_HOME、process.cwd() 或文件存在性猜 **profile 身份**（报告 §4
+ * 同业旁证 #655/#744）——身份与目录仍唯一来自 profileContext；kind 判定在名字快路径
+ * 之外叠加 **形态事实**（generation 投影探测，issue #3/#6：桌面发行版 profile 名有
+ * desktop/tauri/web 三种，名字枚举必然漏，dataelement 的 `web` 名 profile 曾被放行进
+ * web 事务路径撞装后守卫）。为什么不用「pluginManager 存在性」判桌面：官方 Web 宿主
+ * 同样提供该服务（dsh-m 的 web 开关路径就在委派它，ADR-0001），存在性 ≠ 桌面。
+ *
+ * ADR-0030（issue #39，同业对齐 dsh-market）：host 来源的 profile 名只要能作安全路径段
+ * （`isDshProfileName`，env.ts 唯一判定源）即按 web 放行写操作——原「未知名一律拒写」
+ * 收窄为「名字不可作安全路径段才拒写」：官方 `dsh --profile <自定义名>` 是一等场景，
+ * 目录权威恒取 profileContext.dir（宿主说的算，绝不从名字推导）。`unknown` 语义随之
+ * 收窄为「名字不安全」，专用文案见 WRITE_GUIDANCE_UNKNOWN。
  */
-import { webProfileDir, WEB_PROFILE, DESKTOP_PROFILE_NAMES } from './env.js'
+import { webProfileDir, WEB_PROFILE, DESKTOP_PROFILE_NAMES, isDshProfileName } from './env.js'
 import { isGenerationProjectionDir } from './generation-projection.js'
 
 export type ProfileKind = 'web' | 'desktop' | 'unknown'
@@ -61,6 +67,15 @@ export const WRITE_GUIDANCE: Record<ProfileAction, string> = {
   restart: 'Desktop 不由 dsh-m 重启：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏），让新安装的插件生效。',
 }
 
+/**
+ * unknown（名字不可作安全路径段）专用拒绝文案模板（ADR-0030，评审 Q2：WRITE_GUIDANCE
+ * 是按 action 的六条、desktop 与 unknown 共用，不存在 unknown 条目——per-kind 分治，
+ * 既有六条 desktop 指引逐字冻结不动）。
+ */
+export function WRITE_GUIDANCE_UNKNOWN(name: string): string {
+  return `当前 profile 名（${name}）不可用作目录段，已拒绝写操作。请改用不含路径分隔符的 profile 名（参考官方 --profile 命名）。`
+}
+
 export class ProfileUnsupportedError extends Error {
   readonly code: 'unsupported-on-profile'
   readonly action: ProfileAction
@@ -68,7 +83,7 @@ export class ProfileUnsupportedError extends Error {
   readonly guidance: string
 
   constructor(action: ProfileAction, profile: ActiveProfile) {
-    const guidance = WRITE_GUIDANCE[action]
+    const guidance = profile.kind === 'unknown' ? WRITE_GUIDANCE_UNKNOWN(profile.name) : WRITE_GUIDANCE[action]
     super(`当前 profile（${profile.name}）不支持该操作（${action}）。${guidance}`)
     this.name = 'ProfileUnsupportedError'
     this.code = 'unsupported-on-profile'
@@ -80,7 +95,9 @@ export class ProfileUnsupportedError extends Error {
 
 function kindOf(name: string): ProfileKind {
   if (DESKTOP_PROFILE_NAMES.includes(name)) return 'desktop'
-  if (name === WEB_PROFILE) return 'web'
+  // ADR-0030：安全路径段名（含自定义名 aqua 等）与字面 web 名同权 → web；
+  // unknown 从「不在枚举里」收窄为「名字不可作安全路径段」。
+  if (isDshProfileName(name)) return 'web'
   return 'unknown'
 }
 

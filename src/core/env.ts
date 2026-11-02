@@ -28,6 +28,30 @@ export function desktopProfileDir(): string {
 }
 
 /**
+ * profile 名路径段安全性（ADR-0030，同业对齐 dsh-market `isDshProfileName`）：
+ * 非空、非 `.`/`..`/`node_modules`、不含 `/`、`\`、`\0` 即可作目录段。
+ * 这是名字校验的**唯一**判定源——kind 判定（active-profile）与 CLI 门禁（cli.ts）
+ * 都消费它，不各自维护第二份字面规则。语义是「能不能安全地做路径段」，
+ * 不是「认不认识这个名字」：自定义名（如 aqua）与官方名同权。
+ */
+export function isDshProfileName(profile: unknown): boolean {
+  if (typeof profile !== 'string') return false
+  return profile !== ''
+    && profile !== '.'
+    && profile !== '..'
+    && profile !== 'node_modules'
+    && !profile.includes('/')
+    && !profile.includes('\\')
+    && !profile.includes('\0')
+}
+
+/** 按名字解析 profile 目录（ADR-0030）：desktop 名走专用目录，其余安全名走 `profiles/<名>`。 */
+export function dshProfileDirByName(name: string): string {
+  if (name === DESKTOP_PROFILE) return desktopProfileDir()
+  return join(dshHome(), 'profiles', name)
+}
+
+/**
  * 缓存根（0.9.0 双 profile，ADR-0005）：web 恒走旧路径（DSHM_CACHE_DIR 或
  * `$DSH_HOME/dshm/cache`）——不迁移不清空；非 web profile 加同名段
  * （`<root>/<profile>`），实现 profile 专属缓存互不污染。

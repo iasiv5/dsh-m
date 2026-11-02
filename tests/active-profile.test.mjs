@@ -10,6 +10,7 @@ import {
   assertWriteAllowed,
   ProfileUnsupportedError,
   WRITE_GUIDANCE,
+  WRITE_GUIDANCE_UNKNOWN,
 } from '../lib/core/active-profile.js'
 import { webProfileDir } from '../lib/core/env.js'
 
@@ -36,11 +37,20 @@ describe('resolveActiveProfile：profileContext 存在时以宿主事实为准',
     assert.equal(p.dir, '/tmp/dsh/profiles/web-custom')
   })
 
-  it('未知名 → kind unknown（显式拒写），事实仍取宿主', () => {
-    const pc = { name: 'dev', dir: '/tmp/dsh/profiles/dev' }
+  it('自定义安全名（aqua）→ kind web：ADR-0030 主案（host 来源 + 路径安全名即可操作）', () => {
+    const pc = { name: 'aqua', dir: '/tmp/dsh/profiles/aqua' }
+    const p = resolveActiveProfile(ctxOf({ get: (n) => (n === 'profileContext' ? pc : undefined) }))
+    assert.deepEqual(
+      { name: p.name, kind: p.kind, dir: p.dir, source: p.source },
+      { name: 'aqua', kind: 'web', dir: '/tmp/dsh/profiles/aqua', source: 'host' },
+    )
+  })
+
+  it('名字不可作安全路径段 → kind unknown（显式拒写），事实仍取宿主', () => {
+    const pc = { name: '../evil', dir: '/tmp/dsh/profiles/evil' }
     const p = resolveActiveProfile(ctxOf({ get: (n) => (n === 'profileContext' ? pc : undefined) }))
     assert.equal(p.kind, 'unknown')
-    assert.equal(p.dir, '/tmp/dsh/profiles/dev')
+    assert.equal(p.dir, '/tmp/dsh/profiles/evil')
     assert.equal(p.source, 'host')
   })
 
@@ -124,6 +134,7 @@ describe('assertWriteAllowed：能力表全矩阵', () => {
       }
       assert.ok(caught instanceof ProfileUnsupportedError)
       assert.equal(caught.profile, 'dev')
+      assert.ok(caught.message.includes('不可用作目录段'), 'unknown 拒绝应使用名字不安全专用文案（ADR-0030）')
     }
   })
 
@@ -158,9 +169,9 @@ describe('resolveActiveProfile：宿主形态事实升级（issue #3/#6，genera
     assert.equal(p.kind, 'web')
   })
 
-  it('未知名 + 投影事实 → 升级 desktop（事实优先于名字枚举；未知名零事实仍 unknown 拒写）', () => {
+  it('未知名 + 投影事实 → 升级 desktop（事实优先）；安全未知名零事实 → web 放行（未知拒写语义已收窄，ADR-0030）', () => {
     assert.equal(resolveActiveProfile(ctxOf(pcOf('future-name', '/x')), { generationProbe: () => true }).kind, 'desktop')
-    assert.equal(resolveActiveProfile(ctxOf(pcOf('future-name', '/x')), { generationProbe: () => false }).kind, 'unknown')
+    assert.equal(resolveActiveProfile(ctxOf(pcOf('future-name', '/x')), { generationProbe: () => false }).kind, 'web')
   })
 
   it('fallback（无 profileContext）不做探测、恒 web——旧行为零漂移', () => {
@@ -184,5 +195,25 @@ describe('WRITE_GUIDANCE：拒绝文案必须给可操作出口（issue #3 尾�
       assert.ok(typeof g === 'string' && g.length > 0, `${action} 指引不得为空串`)
       assert.ok(g.includes('Settings → Plugins'), `${action} 指引应含官方 Settings → Plugins 入口`)
     }
+  })
+})
+
+describe('WRITE_GUIDANCE 文案分治（ADR-0030）：desktop 六条冻结 + unknown 专用模板（评审 Q2/Q4）', () => {
+  it('desktop 六条指引逐字冻结（内联字面快照，任何漂移即红）', () => {
+    assert.deepEqual(WRITE_GUIDANCE, {
+      install: '请在官方宿主的插件管理界面（Settings → Plugins）安装；或把 dsh-m 安装到 web / desktop profile 后在市场内操作。',
+      'set-enabled': '请在官方宿主的插件管理界面（Settings → Plugins）开关该插件。',
+      upgrade: 'Desktop 暂不支持在市场内升级插件：请在官方 Desktop 的插件管理（Settings → Plugins）检查更新，或回到 DSH Web 使用 dsh-m 升级。',
+      uninstall: 'Desktop 暂不支持在市场内卸载插件：请使用官方 Desktop 的插件管理（Settings → Plugins）卸载。',
+      'self-upgrade': '当前宿主形态不支持面板内自更新：请在官方 Settings → Plugins 对 dsh-m 执行 remove + install（精确版本），或完全退出 Desktop 后用 `dsh plugin --profile desktop add dsh-m@<版本>`。',
+      restart: 'Desktop 不由 dsh-m 重启：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏），让新安装的插件生效。',
+    })
+  })
+
+  it('WRITE_GUIDANCE_UNKNOWN：模板函数，含名字插值与目录段锚', () => {
+    const msg = WRITE_GUIDANCE_UNKNOWN('test-profile')
+    assert.ok(msg.includes('test-profile'), '应含 profile 名插值')
+    assert.ok(msg.includes('不可用作目录段'), '应含名字不安全锚')
+    assert.ok(!msg.includes('undefined'), '不得漏插值')
   })
 })
