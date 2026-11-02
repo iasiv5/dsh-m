@@ -10,7 +10,6 @@ import { writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { installFromRegistry, uninstallPlugin } from '../lib/core/market-mutation.js'
 import { webProfileDir } from '../lib/core/env.js'
 
 const sha512 = (tag) => `sha512-${tag}${'A'.repeat(20)}`

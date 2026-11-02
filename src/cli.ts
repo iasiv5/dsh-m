@@ -236,7 +236,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       return 1
     }
     if (DESKTOP_PROFILE_NAMES.includes(profileFlag.toLowerCase())) {
-      err(`错误：dshm CLI 不管理 ${profileFlag} profile——其插件变更由官方管理器委派，CLI 无权对其做文件事务。`)
+      err(`错误：dshm CLI 不管理 --profile ${profileFlag}——该 profile 的插件变更由官方管理器委派，CLI 无权对其做文件事务。`)
       err('Desktop profile 的插件管理请使用官方 Desktop 的插件管理页（Settings → Plugins）。')
       return 1
     }

@@ -497,10 +497,14 @@ describe('dshm doctor --profile desktop', () => {
     }
   })
 
-  it('doctor --profile 非法值（非 web|desktop）仍拒绝', async () => {
-    const r = runCli(['doctor', '--profile', 'foo'], home)
-    assert.equal(r.status, 1)
-    assert.ok(r.stderr.includes('foo'))
+  it('doctor --profile 不安全值（不可作目录段）仍拒绝；安全自定义名放行扫 profiles/<名>（ADR-0030）', async () => {
+    const bad = runCli(['doctor', '--profile', '../evil'], home)
+    assert.equal(bad.status, 1)
+    assert.ok(bad.stderr.includes('../evil'), '拒绝文案点名收到的值')
+    assert.ok(bad.stderr.includes('不可用作目录段'), '拒绝文案锚（ADR-0030）')
+    const ok = runCli(['doctor', '--profile', 'foo'], home)
+    assert.equal(ok.status, 0)
+    assert.ok(ok.stdout.includes('[foo]'), '安全自定义名 → doctor 扫 profiles/foo')
   })
 
   it('空目录提示：默认 doctor 扫不存在的 web 目录 → 提示加 --profile desktop', async () => {
