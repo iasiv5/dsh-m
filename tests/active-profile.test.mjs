@@ -12,7 +12,8 @@ import {
   WRITE_GUIDANCE,
   WRITE_GUIDANCE_UNKNOWN,
 } from '../lib/core/active-profile.js'
-import { webProfileDir } from '../lib/core/env.js'
+import { webProfileDir, dshHome } from '../lib/core/env.js'
+import { join } from 'node:path'
 
 /** 守卫式 ctx 桩：get 行为可编排。 */
 function ctxOf({ get } = {}) {
@@ -81,6 +82,61 @@ describe('resolveActiveProfile：profileContext 缺席 → fallback（旧宿主/
     assert.equal(resolveActiveProfile(ctxOf()).source, 'fallback')
     assert.equal(resolveActiveProfile(null).source, 'fallback')
     assert.equal(resolveActiveProfile(undefined).source, 'fallback')
+  })
+
+  describe('fallback 的 --profile argv 兜底（ADR-0030，同业对齐 dsh-market argvProfile）', () => {
+    /** 保存/还原 process.argv 的沙箱跑法。 */
+    function withArgv(argv, fn) {
+      const saved = process.argv
+      process.argv = argv
+      try {
+        return fn()
+      } finally {
+        process.argv = saved
+      }
+    }
+
+    it("fallback + argv --profile aqua → { name:'aqua', kind:'web', dir: profiles/aqua }（kind 恒 web 不做探测）", () => {
+      withArgv(['node', 'dsh', '--profile', 'aqua', '--port', '3081'], () => {
+        const p = resolveActiveProfile(ctxOf({ get: () => undefined }))
+        assert.deepEqual(
+          { name: p.name, kind: p.kind, dir: p.dir, source: p.source },
+          { name: 'aqua', kind: 'web', dir: join(dshHome(), 'profiles', 'aqua'), source: 'fallback' },
+        )
+      })
+    })
+
+    it('fallback + argv 名不安全（../evil）→ 忽略 argv，回退 web 缺省（零漂移）', () => {
+      withArgv(['node', 'dsh', '--profile', '../evil'], () => {
+        const p = resolveActiveProfile(ctxOf({ get: () => undefined }))
+        assert.deepEqual(
+          { name: p.name, kind: p.kind, dir: p.dir, source: p.source },
+          { name: 'web', kind: 'web', dir: webProfileDir(), source: 'fallback' },
+        )
+      })
+    })
+
+    it('fallback + argv 值缺失/是旗标（--profile 无跟随或跟 --port）→ 回退 web 缺省', () => {
+      withArgv(['node', 'dsh', '--profile'], () => {
+        const p = resolveActiveProfile(ctxOf({ get: () => undefined }))
+        assert.equal(p.name, 'web')
+      })
+      withArgv(['node', 'dsh', '--profile', '--port', '3081'], () => {
+        const p = resolveActiveProfile(ctxOf({ get: () => undefined }))
+        assert.equal(p.name, 'web')
+      })
+    })
+
+    it('host 来源时 argv 存在不影响结果（profileContext 优先）', () => {
+      withArgv(['node', 'dsh', '--profile', 'aqua'], () => {
+        const pc = { name: 'web', dir: '/tmp/dsh/profiles/web' }
+        const p = resolveActiveProfile(ctxOf({ get: (n) => (n === 'profileContext' ? pc : undefined) }))
+        assert.deepEqual(
+          { name: p.name, kind: p.kind, source: p.source },
+          { name: 'web', kind: 'web', source: 'host' },
+        )
+      })
+    })
   })
 })
 

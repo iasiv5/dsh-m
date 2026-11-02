@@ -18,16 +18,17 @@
  * 目录权威恒取 profileContext.dir（宿主说的算，绝不从名字推导）。`unknown` 语义随之
  * 收窄为「名字不安全」，专用文案见 WRITE_GUIDANCE_UNKNOWN。
  */
-import { webProfileDir, WEB_PROFILE, DESKTOP_PROFILE_NAMES, isDshProfileName } from './env.js'
+import { webProfileDir, WEB_PROFILE, DESKTOP_PROFILE_NAMES, isDshProfileName, dshHome } from './env.js'
 import { isGenerationProjectionDir } from './generation-projection.js'
+import { join } from 'node:path'
 
 export type ProfileKind = 'web' | 'desktop' | 'unknown'
 
 export interface ActiveProfile {
-  /** profileContext.name；fallback 时为 'web' */
+  /** profileContext.name；fallback 时为 argv --profile 名或 'web' */
   readonly name: string
   readonly kind: ProfileKind
-  /** 当前 profile 目录：profileContext.dir；fallback 时为 env 推导的 web 目录 */
+  /** 当前 profile 目录：profileContext.dir；fallback 时为 argv 推导或 env 推导的 web 目录 */
   readonly dir: string
   /** 'host' = 官方 profileContext 注入；'fallback' = 缺席降级（旧行为） */
   readonly source: 'host' | 'fallback'
@@ -107,6 +108,21 @@ export interface ResolveProfileDeps {
 }
 
 /**
+ * fallback 分支的 --profile argv 兜底（ADR-0030，同业对齐 dsh-market argvProfile）：
+ * 旧宿主未注入 profileContext 但用户以 `--profile <名>` 启动时，若不读 argv 就会把
+ * 自定义 profile 的操作落进 web 名下（同业 #639 同款教训）。旗标无跟随值/跟随值是
+ * 另一个旗标/名字不安全，一律不取（回退 web 缺省，零漂移）。
+ */
+function argvProfileName(): string | undefined {
+  const argv = process.argv
+  const flag = argv.indexOf('--profile')
+  if (flag === -1 || flag + 1 >= argv.length) return undefined
+  const value = argv[flag + 1]!
+  if (value.startsWith('-')) return undefined
+  return isDshProfileName(value) ? value : undefined
+}
+
+/**
  * 守卫式解析：宿主注入 profileContext → 事实取宿主；缺席/抛错/畸形 → fallback web。
  * 在 host 生命周期内只应调用一次（host.ts apply 期），结果作为不可变对象传递。
  *
@@ -129,6 +145,12 @@ export function resolveActiveProfile(ctx: unknown, deps?: ResolveProfileDeps): A
   const name = typeof pc?.name === 'string' && pc.name.trim() !== '' ? pc.name.trim() : undefined
   const dir = typeof pc?.dir === 'string' && pc.dir.trim() !== '' ? pc.dir.trim() : undefined
   if (pc === undefined || pc === null || name === undefined || dir === undefined) {
+    // fallback 的 argv 兜底（ADR-0030）：kind 恒 web、不做投影探测——旧行为零漂移
+    // 纪律（旧宿主无官方管理器可委派，误判 desktop 反堵可用路径）。
+    const argvName = argvProfileName()
+    if (argvName !== undefined) {
+      return { name: argvName, kind: 'web', dir: join(dshHome(), 'profiles', argvName), source: 'fallback' }
+    }
     return { name: WEB_PROFILE, kind: 'web', dir: webProfileDir(), source: 'fallback' }
   }
   let kind = kindOf(name)
