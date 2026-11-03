@@ -1116,6 +1116,20 @@ describe('uninstall 门', () => {
     const r1 = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, depsOf(dir))
     assert.equal(r1.status, 'rejected')
     assert.equal(r1.failure.code, 'NOT_INSTALLED')
+    // issue #43：缺省回退标签逐字节钉（web）
+    assert.equal(r1.failure.note, 'web profile 未安装该插件: pkg-a')
+    rmSync(dir, { recursive: true, force: true })
+
+    // issue #43：带 profileName → note 标签携带实际 profile 名（ADR-0030；内联 baseTx，不改 depsOf 签名）
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\\n  - .\\n',
+    })
+    const r1b = await runProfileTransaction({ kind: 'uninstall', pkg: 'pkg-a' }, baseTx(dir, runner, { setLiveDisabled: async (pkg, flag) => { liveCalls.push([pkg, flag]); return false }, profileName: 'aqua' }))
+    assert.equal(r1b.status, 'rejected')
+    assert.equal(r1b.failure.code, 'NOT_INSTALLED')
+    assert.equal(r1b.failure.note, 'aqua profile 未安装该插件: pkg-a')
     rmSync(dir, { recursive: true, force: true })
 
     // NOT_DSH_PLUGIN

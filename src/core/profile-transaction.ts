@@ -34,7 +34,7 @@
 import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { webProfileDir } from './env.js'
+import { webProfileDir, WEB_PROFILE } from './env.js'
 import { isGenerationProjectionPkg } from './generation-projection.js'
 import { isSafePkgName, resolvePluginDir } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
@@ -909,7 +909,7 @@ async function validateUninstall(
     return rejected({ code: 'PROFILE_MANIFEST_UNREADABLE', note: errText(err) }, req.kind)
   }
   if (!(req.pkg in depsNow)) {
-    return rejected({ code: 'NOT_INSTALLED', note: `web profile 未安装该插件: ${req.pkg}` }, req.kind)
+    return rejected({ code: 'NOT_INSTALLED', note: `${d.profileName ?? WEB_PROFILE} profile 未安装该插件: ${req.pkg}` }, req.kind) // ADR-0030 / issue #43
   }
   const dir = resolvePluginDir(d.profileDir, req.pkg, depsNow[req.pkg])
   if (dir === null) {
