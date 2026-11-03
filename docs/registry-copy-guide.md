@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 当前 32 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills，30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
+> 管辖范围：`registry.json` 当前 33 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills（self-dev），30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；2026-11-04 收录 qiaomu-rss-dsh（watchlist，github 源），32→33；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。

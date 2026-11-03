@@ -311,6 +311,16 @@
       "icon": "https://cdn.jsdelivr.net/npm/@mirai27/dsh-provider-card@0/src/icon.svg"
     },
     {
+      "id": "qiaomu-rss-dsh",
+      "name": "乔木 RSS",
+      "description": "RSS 阅读器：乔木精选与个人订阅，原文、译文与改写切换，AI 原生对话伴读，含 OPML 迁移与 Agent 工具。详见仓库。",
+      "category": "watchlist",
+      "tags": ["阅读","翻译","订阅","播客"],
+      "source": "github",
+      "github": "joeseesun/qiaomu-rss-dsh",
+      "homepage": "https://github.com/joeseesun/qiaomu-rss-dsh"
+    },
+    {
       "id": "dsh-claude-slides",
       "name": "Claude 幻灯片",
       "description": "宝玉 claude-slides 技能：Agent 把可编辑的幻灯片写成文件，并在本地幻灯片编辑器中打开。",
