@@ -245,8 +245,8 @@ describe('resolveActiveProfile：宿主形态事实升级（issue #3/#6，genera
 })
 
 describe('WRITE_GUIDANCE：拒绝文案必须给可操作出口（issue #3 尾巴）', () => {
-  it('install / set-enabled / upgrade 指引非空且含官方插件页入口（issue #41：upgrade 条纳入出口检查）', () => {
-    for (const action of ['install', 'set-enabled', 'upgrade']) {
+  it('install / set-enabled / upgrade / uninstall / self-upgrade 指引非空且含官方插件页入口（issue #41：upgrade 纳入；Task 7c：uninstall/self-upgrade 纳入——restart 条出口为「重启应用」，不适用本断言）', () => {
+    for (const action of ['install', 'set-enabled', 'upgrade', 'uninstall', 'self-upgrade']) {
       const g = WRITE_GUIDANCE[action]
       assert.ok(typeof g === 'string' && g.length > 0, `${action} 指引不得为空串`)
       assert.ok(g.includes('Settings → Plugins'), `${action} 指引应含官方 Settings → Plugins 入口`)
@@ -260,8 +260,8 @@ describe('WRITE_GUIDANCE 文案分治（ADR-0030）：desktop 六条冻结 + unk
       install: '请在官方宿主的插件管理界面（Settings → Plugins）安装；或把 dsh-m 安装到 web / desktop profile 后在市场内操作。',
       'set-enabled': '请在官方宿主的插件管理界面（Settings → Plugins）开关该插件。',
       upgrade: '请在官方宿主的插件管理界面（Settings → Plugins）检查更新并升级；或把 dsh-m 安装到 web / desktop profile 后在市场内升级。',
-      uninstall: 'Desktop 暂不支持在市场内卸载插件：请使用官方 Desktop 的插件管理（Settings → Plugins）卸载。',
-      'self-upgrade': '当前宿主形态不支持面板内自更新：请在官方 Settings → Plugins 对 dsh-m 执行 remove + install（精确版本），或完全退出 Desktop 后用 `dsh plugin --profile desktop add dsh-m@<版本>`。',
+      uninstall: '请在官方宿主的插件管理界面（Settings → Plugins）卸载；或把 dsh-m 安装到 web / desktop profile 后在市场内操作。',
+      'self-upgrade': '请在官方宿主的插件管理界面（Settings → Plugins）对 dsh-m 执行 remove + install（精确版本）；或把 dsh-m 安装到 web / desktop profile 后在市场内自更新。',
       restart: 'Desktop 不由 dsh-m 重启：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏），让新安装的插件生效。',
     })
   })
