@@ -94,6 +94,20 @@ describe('togglePlugin：保护门与在装判定', () => {
       (err) => err instanceof ToggleError && err.code === 'not-installed',
     )
   })
+
+  it('未安装 + profileName → 报错标签携带实际 profile 名（issue #43）', async () => {
+    await assert.rejects(
+      () => togglePlugin('ghost-pkg', false, { profileDir: dir, profileName: 'aqua' }),
+      (err) => err instanceof ToggleError && err.code === 'not-installed' && err.message === 'aqua profile 未安装该插件: ghost-pkg',
+    )
+  })
+
+  it('未安装 + 不传 profileName → 报错逐字节为 web 文案（issue #43 缺省零漂移）', async () => {
+    await assert.rejects(
+      () => togglePlugin('ghost-pkg', false, { profileDir: dir }),
+      (err) => err instanceof ToggleError && err.code === 'not-installed' && err.message === 'web profile 未安装该插件: ghost-pkg',
+    )
+  })
 })
 
 describe('togglePlugin：委派路径（一律 Bundle，与官方页主开关同层）', () => {

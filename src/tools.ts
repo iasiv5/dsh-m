@@ -360,9 +360,9 @@ export function registerTools(
       // 0.9.0：desktop → 官方管理器委派（服务缺席结构化拒绝）；web → 既有委派/降级
       if (profile.kind !== 'web') {
         assertWriteAllowed(profile, 'set-enabled')
-        return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir, channel: 'host-tool' }))
+        return cloneJson(await m.desktopToggle(target, args.enabled, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir, profileName: profile.name, channel: 'host-tool' }))
       }
-      return cloneJson(await toggle(target, args.enabled, { getService: getService as never, channel: 'host-tool', profileDir: profile.dir }))
+      return cloneJson(await toggle(target, args.enabled, { getService: getService as never, channel: 'host-tool', profileDir: profile.dir, profileName: profile.name }))
     },
   }))
 

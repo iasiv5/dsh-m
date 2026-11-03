@@ -16,6 +16,7 @@ import { join } from 'node:path'
 
 import { installFromRegistry, upgradePlugin, selfUpgrade } from '../lib/core/market-mutation.js'
 import '../lib/core/toggle.js';
+import { ToggleError } from '../lib/core/toggle.js'
 import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from '../lib/core/profile-ops.js'
 import { listExternalOperations, journalFile } from '../lib/core/external-journal.js'
 import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
@@ -261,6 +262,22 @@ describe('外部操作直落 × 通道插桩（Task 3）', () => {
     assert.equal(list[0].kind, 'toggle')
     assert.equal(list[0].channel, 'cli')
     assert.equal(list[0].target, 'demo-pkg')
+  })
+
+  it('⑤b desktopToggle 透传 profileName → not-installed 标签携带实际 profile 名（issue #43）', async () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), 'dshm-extchan-tgl-empty-'))
+    dirs.push(emptyDir)
+    // 最小桩：getService 必须非 undefined（resolveManager direct 分支），否则先抛 unaddressable；
+    // not-installed 在在装判定处抛出，桩方法不会被调用。
+    const service = {
+      listPlugins: async () => [],
+      setPluginEnabled: async () => ({}),
+      setBundleEnabled: async () => ({}),
+    }
+    await assert.rejects(
+      () => desktopToggle('ghost-pkg', false, { getService: () => service, profileDir: emptyDir, profileName: 'aqua', channel: 'cli' }),
+      (err) => err instanceof ToggleError && err.code === 'not-installed' && err.message === 'aqua profile 未安装该插件: ghost-pkg',
+    )
   })
 
   it('⑥ desktop 三入口各自记单条（desktop-* kind，channel 按 caller）', async () => {

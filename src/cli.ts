@@ -442,7 +442,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       const offFlag = flags.off === true
       if (onFlag === offFlag) throw new Error('开关命令需要恰好一个 --on 或 --off')
       requireYes(flags, '切换插件运行状态')
-      const res = await d.togglePlugin(target, onFlag, { channel: 'cli', profileDir: cliProfileDir })
+      const res = await d.togglePlugin(target, onFlag, { channel: 'cli', profileDir: cliProfileDir, profileName: cliProfileName })
       out(`✅ 已${onFlag ? '启用' : '停用'} ${res.pkg}（profile 文件已更新）`)
       if (res.applied === 'live') out('本次进程内已即时生效；重启后状态保持。')
       else out('需要重启 DSH Web 生效：dshm restart --yes')

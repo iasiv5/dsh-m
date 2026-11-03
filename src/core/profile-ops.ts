@@ -379,6 +379,8 @@ export interface DesktopToggleDeps {
   channel?: OperationChannel
   /** 外部操作直落钩子注入（R3-1；透传 togglePlugin） */
   appendExternalOperation?: AppendExternalOperation
+  /** ADR-0030 / issue #43：透传给 togglePlugin 作 not-installed 报错标签；缺省 'web' */
+  profileName?: string
 }
 
 /**
@@ -402,6 +404,7 @@ export async function desktopToggle(pkg: string, enabled: boolean, deps: Desktop
     profileDir: deps.profileDir,
     channel: deps.channel,
     appendExternalOperation: deps.appendExternalOperation,
+    profileName: deps.profileName,
   })
 }
 

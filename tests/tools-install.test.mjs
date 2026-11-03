@@ -115,7 +115,7 @@ describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具
     assert.equal(captured[0].deps.profileName, 'aqua')
   })
 
-  it('dshm_toggle web 分支 → togglePlugin deps 收 profileDir（无子进程，不需要 profileName）', async () => {
+  it('dshm_toggle web 分支 → togglePlugin deps 收 profileDir+profileName（issue #43 标签透传）', async () => {
     const captured = []
     const registered = await registerWithProfile(aquaCtx, {
       togglePlugin: async (pkg, enabled, deps) => {
@@ -127,7 +127,7 @@ describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具
     const out = await tool.execute({ pkg: 'pkg-t', enabled: true })
     assert.equal(out.applied, 'restart-required')
     assert.equal(captured[0].deps.profileDir, '/h/profiles/aqua')
-    assert.equal(captured[0].deps.profileName, undefined)
+    assert.equal(captured[0].deps.profileName, 'aqua')
   })
 
   it('dshm_uninstall web 分支 → uninstallPlugin deps 收 profileDir+profileName', async () => {

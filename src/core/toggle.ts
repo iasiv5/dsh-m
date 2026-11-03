@@ -26,7 +26,7 @@ import { PROTECTED_MODULES } from './enablement.js'
 import { withMutationSession } from './market-mutation.js'
 import { setLivePluginDisabled, loaderHost, type LoaderEntry, type LoaderHost } from './live-plugin.js'
 import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
-import { webProfileDir } from './env.js'
+import { webProfileDir, WEB_PROFILE } from './env.js'
 
 export interface ToggleResult {
   pkg: string
@@ -74,6 +74,8 @@ export interface ToggleDeps {
   channel?: OperationChannel
   /** 外部操作直落钩子注入（R3-1；缺省 = 真实现 appendExternalOperation） */
   appendExternalOperation?: AppendExternalOperation
+  /** ADR-0030 / issue #43：目标 profile 名，仅作 not-installed 报错标签；缺省回退 'web'，消息逐字节不变 */
+  profileName?: string
 }
 
 /** 官方 change() 富结果的鸭子读（不建类型依赖）。 */
@@ -134,7 +136,7 @@ async function togglePluginLocked(pkg: string, enabled: boolean, deps: ToggleDep
   // ② 在装判定
   const installed = await listInstalledPlugins(profileDir)
   const item = installed.items.find((it) => it.pkg === key)
-  if (item === undefined) throw new ToggleError('not-installed', `web profile 未安装该插件: ${key}`)
+  if (item === undefined) throw new ToggleError('not-installed', `${deps?.profileName ?? WEB_PROFILE} profile 未安装该插件: ${key}`) // ADR-0030 / issue #43
 
   const granularity = item.patchRows && isSingleRowPlugin(item.patchRows) ? 'row' : 'bundle'
   const service = deps.getService?.()
