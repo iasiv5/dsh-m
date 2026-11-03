@@ -51,7 +51,7 @@
 - `docs/adr/0002-precise-build-approval.md`（精确放行治理）
 - `docs/CODING-STANDARDS.md`（测试锚、证据、评审检查单）
 - 独立评审（2026-11-03，五轮 + 终局）：I1–I8 全闭合，结论「可进入执行」；台账 `.dsh-research/issue41-review-scratch/ledger.md`
-- **范围事实（主人 2026-11-03 指示）**：评审计划外建议①（`WRITE_GUIDANCE.upgrade` 过期文案，同族不同文件）并入本役 → Task 7b。评审同族发现 uninstall / self-upgrade 两条亦过期，**不在获批范围**，收尾时上报主人另断。
+- **范围事实（主人 2026-11-03 指示）**：评审计划外建议①（`WRITE_GUIDANCE.upgrade` 过期文案，同族不同文件）并入本役 → Task 7b。**后续修订（主人 2026-11-03 产出评审后批示）**：uninstall / self-upgrade 两条同族过期一并收口 → Task 7c；P3 措辞（「逐字统一」→「句式统一」）同步落地。
 
 ## 文件结构与职责
 
@@ -183,7 +183,7 @@ catch-all 同 Step 3 文案。
 - [ ] Step 1: 两工具 `parameters` 各加 `approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' }`
 - [ ] Step 2: `dshm_install` execute desktop 分支（:312）与 `dshm_upgrade` execute desktop 分支（:480）的 opts 各改为**条件展开**（评审 I1：显式键即使值 undefined 也使 `'approvedBuilds' in opts` 为 true，会击穿 it ⑦ 零漂移断言；评审 Batch 2 另注：与 core :515 语义对齐——**空数组视为缺省**）：`...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {})`（web 分支不透传）。
 - [ ] Step 3: 两 `presentResult` 改为：guard 臂不动 → 新增 `if (out?.needsBuildApproval === true) return { card: 'generic', title: \`未完成 · 需要批准构建脚本 · ${out?.pkg || ''}\`, content: [] }` → `if (isError || out?.ok === false) return { card: 'generic', title: isError ? '升级失败' : '升级失败', content: [] }` 简写收敛为 `title: '升级失败'`（install 侧同理『安装失败』）→ 现成功臂兜底。
-- [ ] Step 4: 两工具 description 追加一句（**执行期修订：实施为英文句**，与 Task 4 Step 2 systemPrompt 句逐字统一、三处共用——`an abort, not success` 源锚计数因此为 3 而非 1）：`A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.`
+- [ ] Step 4: 两工具 description 追加一句（**执行期修订：实施为英文句**，与 Task 4 Step 2 systemPrompt 句**句式统一**（骨架句同文，两工具尾句各异——产出评审 P3）、三处共用——`an abort, not success` 源锚计数因此为 3 而非 1）：`A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.`
 - [ ] Step 5: 跑绿 + typecheck
 - Run: `set -o pipefail; npm run typecheck 2>&1 | tail -3 && npm run build 2>&1 | tail -2 && node --test tests/tools-upgrade-message.test.mjs tests/tools-install.test.mjs 2>&1 | tail -4`
 - Expected: typecheck exit 0（`InstallOut` 字段与 args 读取类型闭合）；两文件 exit 0（Task 1 it①-⑦ 全绿）。
@@ -201,7 +201,7 @@ catch-all 同 Step 3 文案。
 - [ ] Step 2: 段内追加一句（:532 upgrade 句之后）：`A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.`
 - [ ] Step 3: 跑绿
 - Run: `set -o pipefail; npm run build 2>&1 | tail -2 && node --test tests/tools-install.test.mjs 2>&1 | tail -3 && node -e "const s=require('fs').readFileSync('src/tools.ts','utf8');console.log('retry sentence', s.split('an abort, not success').length-1);console.log('desktop fix', s.split('only restart is refused').length-1)"`
-- Expected: exit 0；锚计数：`an abort, not success` = **3**（systemPrompt ×1 + 两工具 description ×2，三处逐字统一——执行期修订，原期望 1）、`only restart is refused` = 1；测试绿。
+- Expected: exit 0；锚计数：`an abort, not success` = **3**（systemPrompt ×1 + 两工具 description ×2，三处句式统一——执行期修订，原期望 1）、`only restart is refused` = 1；测试绿。
 
 ### Task 5: client 未遂文案（op-outcome / upgrade-flow / market-tab / i18n）
 
@@ -279,6 +279,13 @@ if (res && res.needsBuildApproval === true) {
 - [ ] Step 2（实现）：active-profile.ts `:65` 换新文案；`:72-75` 注释「既有六条 desktop 指引逐字冻结不动」句尾追加「（0.12.2 局部修订：upgrade 条过期更正，issue #41 配套）」。
 - Run: `set -o pipefail; npm run build 2>&1 | tail -2 && node --test tests/active-profile.test.mjs 2>&1 | tail -4`
 - Expected: exit 0；`grep -c "暂不支持在市场内升级" src/core/active-profile.ts tests/active-profile.test.mjs` 双 0（退出码卫生：计数 0 用 `! grep -q` 形态核验）。
+
+### Task 7c: uninstall / self-upgrade 同族过期指引收口（主人批示扩面，2026-11-03）
+
+- 目标：Task 7b 同族遗留两条一并更正——uninstall 条「Desktop 暂不支持在市场内卸载」（0.9.8 起已放开）、self-upgrade 条「当前宿主形态不支持面板内自更新」（0.10.0 D3 通道起已放开）。镜像 install 条家族结构（官方页 + 市场双出口）；restart 条保持（出口为「重启应用」，语义仍真）。
+- 涉及文件：`src/core/active-profile.ts`、`tests/active-profile.test.mjs`。
+- 做法与验证：deepEqual 两条新值 + 出口断言循环扩至 `['install','set-enabled','upgrade','uninstall','self-upgrade']`（restart 不适用）——红先行（实现未改时 deepEqual 必红）→ 实现 → 绿；过期文案双文件 `! grep -q` 清零。
+- Run/Expected：同 Task 7b 形态（`npm run build && node --test tests/active-profile.test.mjs` → 31/31；`! grep -q "暂不支持在市场内"` 与 `! grep -q "不支持面板内自更新"` 双文件通过）。
 
 ### Task 8: 文档件（ADR / GLOSSARY / CHANGELOG）
 
