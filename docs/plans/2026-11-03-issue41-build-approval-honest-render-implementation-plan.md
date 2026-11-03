@@ -97,7 +97,7 @@
 const blocked = { ok: false, needsBuildApproval: true, id: 'dsh-x', pkg: 'plug-a', spec: 'plug-a@1.2.3', pendingBuilds: ['plug-a@1.2.3', 'esbuild-dep'], message: '该插件需要执行构建脚本（plug-a@1.2.3）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）' }
 ```
 
-  it ①：`renderUpgrade(blocked)` 断言——`match /^⛔ 升级未完成：需要批准构建脚本/`；含 `待批准：`；逐行含 `- plug-a@1.2.3` 与 `- esbuild-dep`；含 `目标版本：plug-a@1.2.3（未安装）`；含 `approvedBuilds 重试本工具`；含 `官方 Settings → Plugins`；含 `当前版本未变更`；`doesNotMatch /^✅/`；`!text.includes('dshm_restart')`（未遂无重启尾巴）。
+  it ①：`renderUpgrade(blocked)` 断言——`match /^⛔ 升级未完成：需要批准构建脚本/`；含 `待批准：`；逐行含 `- plug-a@1.2.3` 与 `- esbuild-dep`；含 `目标版本：plug-a@1.2.3（未安装）`；含 `approvedBuilds 重试本工具`；含 `官方 Settings → Plugins`；含 `当前版本未变更`；`doesNotMatch /^✅/`；负向断言为**成功臂尾巴句式** `!text.includes('需要重启生效') && !text.includes('询问是否 dshm_restart')`（执行期修正：Q7 定稿文案末句「不要询问 dshm_restart」自身含该词，裸 `!includes('dshm_restart')` 与已批准文案互斥；断言钉的是「询问是否 dshm_restart」这一成功臂尾巴句式，二者不冲突）。
   it ②：catch-all——`renderUpgrade({ ok: false, message: '未知形态' })` 断言含 `⛔ 操作未完成` 与 `不要对用户宣称成功`，`doesNotMatch /^✅/`。
   it ③：guard 臂先行回归——`renderUpgrade({ ok:false, guard:true, needsBuildApproval:true, message:'m', compensation:{status:'rolled-back',note:'n'} })` 仍走 guard 文案（含 `守卫拦截`，不含 `需要批准构建脚本`），钉住专臂优先序。
 

@@ -8,3 +8,11 @@ pnpm 拦截依赖构建脚本（needs-builds）后，dsh-m 此前用 `dangerousl
 
 - 安装/升级结果中原 `usedAllowAllBuilds: boolean` 的报告语义升级为 `buildApprovals: string[]`（放行了谁）+ 兜底标志，notify 文案从「按策略放行」改为列包名。
 - 结果类型是破坏性变更，随 0.4.0 一起发（GUI/CLI/agent 工具三入口同步改）。
+
+## 0.12.2 工具层接线（issue #41）
+
+精确放行的重试通道自 core 透传（`installBundle(spec, { approvedBuilds })`）延伸到 agent 工具入参：`dshm_install` / `dshm_upgrade` 新增 `approvedBuilds: string[]`，语义为「上次结构化未遂（needsBuildApproval）返回的 pendingBuilds 原样回传」，且必须经用户确认后使用。信任模型不变：仍按精确名单逐键放行、不做全量放行；与 `force`（跳过 peer 预检）同级——模型发起、人确认。
+
+不带回显校验（「本次回传名单 ⊆ 上次 pending 名单」的比对）的理由：外部操作账本的记录白名单只有 reason 字符串、无结构化 pendingBuilds 字段，校验需要引入新的持久状态；真正的闸门是精确放行语义本身 + 用户确认环节，名单范围错误的代价被逐键放行的许可面上限封死。
+
+配套确立渲染层总不变量：`renderInstall` / `renderUpgrade` 对任何 `ok: false` 的结果永不输出「✅ 已安装/已升级」（needsBuildApproval 专臂 + ok:false 兜底臂）。0.8.5 曾为 guard 形态修过同类假成功，本次是该 bug 类的第二次漏网，不变量为其结构性收口。

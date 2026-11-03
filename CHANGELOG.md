@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.2 修复：构建审批未遂的诚实渲染 + approvedBuilds 工具重试通道（issue #41）
+
+- **背景**：desktop 路径下插件升级被 pnpm 构建脚本闸门拦下时，core 返回结构化未遂（`needsBuildApproval`，账本如实记 failed），但工具渲染层只认 `guard` 形态——未遂结果落入成功臂渲染成「✅ 已升级（最新）。需要重启生效」，UI 卡片、工具文本、模型指引三方一致宣称成功，实际版本纹丝未动（issue #41 报告者 snoonk 实机取证：`dsh-builtin-browser` 0.4.15→0.5.2 升级回滚后工具仍报成功）；且错误消息让调用方「带 approvedBuilds 重试」而工具 schema 根本没有这个入参，确认重试闭环在工具层走不通。GUI 面板 toast 同罪（`upgradeOkText` 不看 `ok` 字段）。
+- **做法**：① `renderInstall`/`renderUpgrade` 各加 needsBuildApproval 专臂（⛔ 未完成 + 待批准名单 + 两条处理路径 + 目标版本，不带重启尾巴）与 `ok:false` 兜底臂，确立「`ok:false` 永不渲染 ✅」总不变量（0.8.5 曾为 guard 修过同类假成功，本次为该 bug 类结构性收口）；两处 `presentResult` 卡片同步分流「未完成 · 需要批准构建脚本」。② `dshm_install`/`dshm_upgrade` 新增 `approvedBuilds: string[]` 入参（条件展开透传，不传/空数组零漂移，与 core 同构）——「未遂 → 用户确认 → 名单原样回传重试」闭环在工具层走通。③ GUI toast 双站（升级流/安装流）按 needsBuildApproval 分流 warn 未遂文案（i18n 新增共享键 + 动词键，中英双语）；批量升级维持 ADR-0026 目标级跳过语义。④ systemPrompt 补重试闭环指引句，并更正 desktop 能力过期句（0.9.8 已放开 upgrade/uninstall/self-upgrade，旧句「仅只读+装新包可用」反向误导）；`WRITE_GUIDANCE.upgrade` 拒绝指引同族过期文案一并更正（主人批准，ADR-0030 冻结面局部修订）。
+- **测试**：红→绿全程留证——渲染臂/工具接线 7 例（变异验证：专臂条件单点变异红、恢复绿）、客户端 4 例（假 lookup 契约 + 真 i18n 双语容忍断言 + 三键双字典在场断言，堵动态键审计盲区）、指引出口断言扩面。全量 npm test 2025/2025 零失败 + typecheck 通过；实施计划经独立评审五轮 8 项闭环。
+- **兼容性**：行为修复——desktop 构建审批未遂从假成功变为如实未遂；新入参可选、向后兼容（不传时 opts 形态零漂移）；成功路径文案与 web 路径行为逐字节不变；desktop 拒绝指引 upgrade 条文案更新（去失实的「暂不支持」断言，保留官方页出口）。回退面：revert + 版本号递增即回 0.12.1 语义。
+
 ### 0.12.1 修复：升级读侧与 CLI 只读命令接线 profileDir（issue #42，ADR-0030 读侧收尾）
 
 - **背景**：0.12.0 修好自定义 profile 写路径后，读侧残留两处漏网（issue #42，报告者 appllove）：① `upgradePluginLocked` 已装枚举误读 `opts.profileDir`（生产入口均从 deps 传入 → 恒 undefined 落 `webProfileDir()`），自定义 profile 下升级必报「web profile 未安装该插件」——面板/工具/CLI/批量四条升级路全断，唯安装/卸载/开关正常；② CLI 三条只读命令 `list`/`outdated`/`search` 不传 `profileDir`/`profile`，无论 `--profile` 传什么都静默读 `profiles/web`（`dshm list --profile aqua` 列出的是 web 的 21 项而非 aqua 的、`outdated` 报 web 的更新、`search` 已装徽标取 web 版本）。该行 `opts.profileDir` 自 0.9.0 双 profile 地基起即错，因 #39 门禁此前把写路径全拒而不可达，0.12.0 放行后暴露。
@@ -959,6 +966,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.2 Fixed: honest rendering of build-approval aborts + approvedBuilds retry channel in tools (issue #41)
+
+- **Background**: On desktop, when an upgrade is blocked by the pnpm build-script gate, core returns a structured abort (`needsBuildApproval`, honestly journaled as failed) — but the tool rendering layer only recognized the `guard` shape, so the abort fell into the success arm and rendered "✅ upgraded (latest), restart required", with the UI card, tool text and model guidance all claiming success while the installed version never moved (reported by snoonk with forensic evidence: `dsh-builtin-browser` 0.4.15→0.5.2 rolled back yet the tool reported success). The error message told callers to "retry with approvedBuilds" while the tool schema had no such parameter — the confirm-and-retry loop was unreachable from tools. GUI panel toasts had the same defect (`upgradeOkText` ignores the `ok` field).
+- **What changed**: ① `renderInstall`/`renderUpgrade` each gained a needsBuildApproval arm (⛔ incomplete + pending list + two remediation paths + target version, no restart tail) and an `ok:false` catch-all arm, establishing the invariant "never render ✅ for `ok:false`" (0.8.5 fixed the same false-success class for guard; this closes the class structurally); both `presentResult` cards now branch to "incomplete · build-script approval needed". ② `dshm_install`/`dshm_upgrade` gained an `approvedBuilds: string[]` parameter (conditionally spread, zero drift when absent/empty, mirroring core) — the "abort → user confirms → retry with the same list" loop now works at the tool layer. ③ GUI toasts (upgrade flow / install flow) branch to a warn abort message (new shared i18n key + verb keys, bilingual); batch upgrade keeps the ADR-0026 target-level skip semantics. ④ systemPrompt gained the retry-loop guidance sentence and corrected the stale desktop capability sentence (upgrade/uninstall/self-upgrade have been allowed since 0.9.8; the old sentence said read-only + install only, misleading in the opposite direction); the stale `WRITE_GUIDANCE.upgrade` refusal text corrected as well (owner-approved, a localized revision of the ADR-0030 frozen face).
+- **Tests**: red→green evidence throughout — 7 tool/render cases (mutation-verified: single-point condition mutation goes red, restore goes green), 4 client cases (fake-lookup contract + bilingual-tolerant real-i18n assertion + presence assertions for the three keys in both dictionaries, closing the dynamic-key audit gap), guidance outlet assertions extended. Full npm test 2025/2025, typecheck clean; implementation plan went through five review rounds with 8 findings closed.
+- **Compatibility**: behavior fix — desktop build-approval aborts now render as honest incompletes instead of false successes; the new parameter is optional and backward-compatible (zero drift in opts shape when absent); success-path copy and web-path behavior are byte-identical; the desktop upgrade refusal guidance now states reality (drops the false "not supported" claim, keeps the official-page outlet). Rollback: revert + version bump restores 0.12.1 semantics.
 
 ### 0.12.1 Fixed: upgrade read-side and CLI read-only commands wired to profileDir (issue #42, ADR-0030 read-side closeout)
 
