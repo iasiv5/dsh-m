@@ -181,3 +181,70 @@ describe('ADR-0030 源结构锚：tools 四工具 web 写分支接线计数（�
     assert.equal(src.split('profileDir: profile.dir').length - 1, 11, 'desktop 4 + 读分支 3 + web 写分支 4（基线 7 + 4）')
   })
 })
+
+describe('issue #41：desktop needsBuildApproval 未遂——诚实渲染 + approvedBuilds 通道', () => {
+  // 夹具形态对照生产调用点（tools.ts:312/:480）：desktop 分支顶层 opts + getService/ensureService deps；
+  // profile 经 registerTools 第四参直注（:113），不走 ctx.get 解析。
+  async function registerDesktopWith(stubs = {}) {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+    registerTools(ctx, { timeoutMs: 50 }, {
+      desktopInstall: stubs.install ?? (async () => ({ ok: false, needsBuildApproval: true, id: 'dsh-x', pkg: 'plug-a', spec: 'plug-a@1.2.3', pendingBuilds: ['plug-a@1.2.3'], message: '该插件需要执行构建脚本（plug-a@1.2.3）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）' })),
+      desktopUpgrade: stubs.upgrade ?? (async () => ({ ok: false, needsBuildApproval: true, id: 'dsh-x', pkg: 'plug-a', spec: 'plug-a@1.2.3', pendingBuilds: ['plug-a@1.2.3'], message: '该插件需要执行构建脚本（plug-a@1.2.3）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）' })),
+    }, { kind: 'desktop', name: 'desktop', dir: '/tmp/dsh-m-test-profile' })
+    return registered
+  }
+
+  it('④ dshm_upgrade.execute 未遂 → render ⛔ 升级未完成，无 ✅ 无重启尾巴', async () => {
+    const registered = await registerDesktopWith()
+    const tool = registered.find((t) => t.name === 'dshm_upgrade')
+    const out = await tool.execute({ pkg: 'plug-a' })
+    assert.equal(out.needsBuildApproval, true)
+    const text = tool.output.render({}, out)[0].text
+    assert.match(text, /^⛔ 升级未完成：需要批准构建脚本/)
+    assert.match(text, /- plug-a@1\.2\.3/)
+    assert.match(text, /approvedBuilds 重试本工具/)
+    assert.doesNotMatch(text, /^✅/)
+    assert.ok(!text.includes('需要重启生效') && !text.includes('询问是否 dshm_restart'), '未遂不得带成功臂重启尾巴（尾巴句式：需要重启生效/询问是否 dshm_restart）')
+  })
+
+  it('⑤ dshm_install.execute 未遂 → render ⛔ 安装未完成，无 ✅ 无重启尾巴', async () => {
+    const registered = await registerDesktopWith()
+    const tool = registered.find((t) => t.name === 'dshm_install')
+    const out = await tool.execute({ id: 'plug-a' })
+    assert.equal(out.needsBuildApproval, true)
+    const text = tool.output.render({}, out)[0].text
+    assert.match(text, /^⛔ 安装未完成：需要批准构建脚本/)
+    assert.match(text, /未安装任何新版本/)
+    assert.match(text, /approvedBuilds 重试本工具/)
+    assert.doesNotMatch(text, /^✅/)
+    assert.ok(!text.includes('需要重启生效') && !text.includes('询问是否 dshm_restart'), '未遂不得带成功臂重启尾巴（尾巴句式：需要重启生效/询问是否 dshm_restart）')
+  })
+
+  it('⑥ schema：两工具均有 approvedBuilds 数组入参', async () => {
+    const registered = await registerDesktopWith()
+    for (const name of ['dshm_install', 'dshm_upgrade']) {
+      const tool = registered.find((t) => t.name === name)
+      // defineTool 将 parameters 规范化为 JSON Schema 形态（{type, properties, required}）——字段在 .properties 下
+      const p = tool.parameters?.properties?.approvedBuilds
+      assert.ok(p, `${name} 缺 approvedBuilds 入参`)
+      assert.equal(p.type, 'array')
+      assert.equal(p.items.type, 'string')
+    }
+  })
+
+  it('⑦ 透传与零漂移：名单原样进 opts；不传/空数组 → opts 无该键（core :515 length>0 门同构）', async () => {
+    const calls = []
+    const registered = await registerDesktopWith({
+      upgrade: async (target, cfg, opts) => { calls.push(opts); return { ok: true, pkg: target, version: '9.9.9' } },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_upgrade')
+    await tool.execute({ pkg: 'plug-a', approvedBuilds: ['plug-a@1.2.3'] })
+    assert.deepEqual(calls[0].approvedBuilds, ['plug-a@1.2.3'])
+    await tool.execute({ pkg: 'plug-a' })
+    assert.ok(!('approvedBuilds' in calls[1]), '不传参不得出现显式键')
+    await tool.execute({ pkg: 'plug-a', approvedBuilds: [] })
+    assert.ok(!('approvedBuilds' in calls[2]), '空数组视为缺省（与 core 条件展开语义对齐）')
+  })
+})

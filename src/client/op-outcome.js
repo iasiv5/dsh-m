@@ -60,6 +60,11 @@ export function createOpOutcome(lookup) {
       ? { kind: "warn", text: lookup("op.degraded", { restoredTo: res.restoredTo || "—" }) }
       : null
 
+  /** needsBuildApproval 未遂文案（issue #41）：单一共享键；verbKey 指向本地化动词键
+   *  （动态 lookup(verbKey) 不在 i18n 直接量审计面——键在场由 client-i18n.test 在场断言钉住）。 */
+  const buildBlockedText = (res, verbKey) =>
+    lookup("notify.buildApprovalPending", { verb: lookup(verbKey), pkg: res?.pkg || "" })
+
   /** 变更失败描述：superseded → ok；guard → err（guardBlockedText）；其余 → err failed.<verb>。副作用（notify/setInstallNote）留守调用点。 */
   const mutationFailed = (e, { verb, target }) => {
     if (e && e.opSuperseded) return { kind: 'ok', text: lookup('op.superseded.note', { target }) }
@@ -67,5 +72,5 @@ export function createOpOutcome(lookup) {
     return { kind: 'err', text: lookup(PLAIN_FAIL_KEY[verb], { err: (e && e.message) || e }) }
   }
 
-  return { guardBlockedText, buildsSuffix, upgradeOkText, degradedOutcome, mutationFailed }
+  return { guardBlockedText, buildsSuffix, upgradeOkText, degradedOutcome, buildBlockedText, mutationFailed }
 }

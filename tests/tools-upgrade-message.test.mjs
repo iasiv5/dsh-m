@@ -37,3 +37,34 @@ describe('renderUpgrade × 生效判定三态（0.9.22）', () => {
     assert.doesNotMatch(text, /^✅/)
   })
 })
+
+describe('renderUpgrade × needsBuildApproval 未遂（issue #41）', () => {
+  const blocked = { ok: false, needsBuildApproval: true, id: 'dsh-x', pkg: 'plug-a', spec: 'plug-a@1.2.3', pendingBuilds: ['plug-a@1.2.3', 'esbuild-dep'], message: '该插件需要执行构建脚本（plug-a@1.2.3）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）' }
+
+  it('① 未遂 → ⛔ 升级未完成（名单/处理路径/目标版本），无 ✅ 无重启尾巴', () => {
+    const text = renderUpgrade(blocked)
+    assert.match(text, /^⛔ 升级未完成：需要批准构建脚本/)
+    assert.match(text, /待批准：/)
+    assert.match(text, /- plug-a@1\.2\.3/)
+    assert.match(text, /- esbuild-dep/)
+    assert.match(text, /目标版本：plug-a@1\.2\.3（未安装）/)
+    assert.match(text, /approvedBuilds 重试本工具/)
+    assert.match(text, /官方 Settings → Plugins/)
+    assert.match(text, /当前版本未变更/)
+    assert.doesNotMatch(text, /^✅/)
+    assert.ok(!text.includes('需要重启生效') && !text.includes('询问是否 dshm_restart'), '未遂不得带成功臂重启尾巴（尾巴句式：需要重启生效/询问是否 dshm_restart）')
+  })
+
+  it('② ok:false 兜底 → ⛔ 操作未完成，永不渲染成功', () => {
+    const text = renderUpgrade({ ok: false, message: '未知形态' })
+    assert.match(text, /⛔ 操作未完成/)
+    assert.match(text, /不要对用户宣称成功/)
+    assert.doesNotMatch(text, /^✅/)
+  })
+
+  it('③ 臂序回归：guard 优先于未遂，双标志并存走守卫文案', () => {
+    const text = renderUpgrade({ ok: false, guard: true, needsBuildApproval: true, message: 'm', compensation: { status: 'rolled-back', note: 'n' } })
+    assert.match(text, /守卫拦截/)
+    assert.ok(!text.includes('需要批准构建脚本'), '双标志并存不得落入未遂臂')
+  })
+})

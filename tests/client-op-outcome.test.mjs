@@ -199,3 +199,15 @@ describe('op-outcome · mutationFailed（superseded/guard/plain × verb 五枚�
       { kind: 'ok', text: 'op.superseded.note{target=p}' })
   })
 })
+
+describe('op-outcome · buildBlockedText（issue #41 未遂文案：共享键 + 动词键）', () => {
+  it('① verb 参数逐字进共享键（upgrade）', () => {
+    assert.equal(oc.buildBlockedText({ pkg: 'plug-a' }, 'notify.verb.upgrade'),
+      'notify.buildApprovalPending{verb=notify.verb.upgrade,pkg=plug-a}')
+  })
+
+  it('② install 动词同构', () => {
+    assert.equal(oc.buildBlockedText({ pkg: 'plug-a' }, 'notify.verb.install'),
+      'notify.buildApprovalPending{verb=notify.verb.install,pkg=plug-a}')
+  })
+})

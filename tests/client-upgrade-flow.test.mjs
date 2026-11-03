@@ -135,3 +135,31 @@ describe('performUpgradeFlow（#36 升级编排单点）', () => {
     assert.deepEqual(callResult.opMeta, { from: '1.0.0', to: '2.0.0' })
   })
 })
+
+describe('performUpgradeFlow × needsBuildApproval（issue #41：未遂不进成功臂）', () => {
+  it('未遂 res → warn 通知（无 needsRestart）+ noteSink warn + refresh + 返回 target', async () => {
+    const ops = fakeOps()
+    const notes = []
+    const sinks = []
+    let refreshes = 0
+    const out = await performUpgradeFlow({
+      ops, oc, target: 'plug-a', from: '1.0.0', toVersion: '2.0.0',
+      apiCall: async () => ({ ok: false, needsBuildApproval: true, pkg: 'plug-a', pendingBuilds: ['plug-a@2.0.0'] }),
+      noteSink: (s) => sinks.push(s),
+      refresh: () => { refreshes += 1 },
+      notify: (n) => notes.push(n),
+    })
+    assert.equal(out, 'target', 'ADR-0026 目标级失败语义（classifyBatchOutcome 消费）')
+    const warn = notes[0]
+    assert.equal(warn.kind, 'warn')
+    assert.notEqual(warn.needsRestart, true, '未遂不得触发重启横幅')
+    // lookup 随 browserLang() 走 ZH/EN（node 环境实测取 en）——未遂标记按双语断言
+    assert.ok(
+      warn.text.includes('需要批准构建脚本') || warn.text.includes('needs build-script approval'),
+      'toast 为未遂文案',
+    )
+    assert.ok(!warn.text.includes('已升级') && !warn.text.includes('Upgraded'), '不得宣称已升级')
+    assert.equal(sinks[0]?.kind, 'warn')
+    assert.equal(refreshes, 1)
+  })
+})

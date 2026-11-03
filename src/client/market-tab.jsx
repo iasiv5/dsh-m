@@ -139,11 +139,21 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   const zoneBar = zoneChips;
 
   // 0.9.15：成功文案拆出——底层 toast 与 Modal 内终态行共用同一份（0.9.94：builds 段换 op-outcome）
+  // issue #41：desktop 构建审批未遂 → 未遂文案，绝不说「已安装」
   const installResultText = (res) =>
-    lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
-    oc.buildsSuffix(res) +
-    (res.bundleWarning === "no-patch-layer" ? lookup("notify.bundlewarning") : "");
+    res && res.needsBuildApproval === true
+      ? oc.buildBlockedText(res, "notify.verb.install")
+      : lookup("notify.installed", { pkg: res.pkg, version: res.version ? ` v${res.version}` : "" }) +
+        oc.buildsSuffix(res) +
+        (res.bundleWarning === "no-patch-layer" ? lookup("notify.bundlewarning") : "");
   const installDone = (it2, res) => {
+    if (res && res.needsBuildApproval === true) {
+      // 未遂：warn 投影、不进 restartBannerDecision（未遂无重启语义）
+      const text = installResultText(res);
+      notify({ kind: "warn", needsRestart: false, text });
+      setInstallNote({ id: it2.id, kind: "warn", text });
+      return;
+    }
     // ADR-0023 第二刀：横幅判定单源（install 字面 true）
     notify({ kind: "ok", needsRestart: restartBannerDecision("install", res).needsRestart, text: installResultText(res) });
     setInstallNote({ id: it2.id, kind: "ok", text: installResultText(res) });

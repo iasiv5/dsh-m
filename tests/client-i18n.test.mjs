@@ -59,3 +59,12 @@ describe('i18n 审计自身健全性', () => {
 it('ADR-0026：ZH 与 EN 键集逐键相等（中英同步防回归门）', () => {
   assert.deepEqual([...Object.keys(ZH)].sort(), [...Object.keys(EN)].sort())
 })
+
+describe('issue #41：notify.buildApprovalPending 三键双字典在场（评审 I6——动态 lookup(verbKey) 不在直接量审计面）', () => {
+  it('ZH/EN 均含共享键与两个动词键', () => {
+    for (const k of ['notify.buildApprovalPending', 'notify.verb.upgrade', 'notify.verb.install']) {
+      assert.ok(k in ZH, `ZH 缺 ${k}`)
+      assert.ok(k in EN, `EN 缺 ${k}`)
+    }
+  })
+})

@@ -62,7 +62,7 @@ const DESKTOP_ALLOWED: ReadonlySet<ProfileAction> = new Set<ProfileAction>([
 export const WRITE_GUIDANCE: Record<ProfileAction, string> = {
   install: '请在官方宿主的插件管理界面（Settings → Plugins）安装；或把 dsh-m 安装到 web / desktop profile 后在市场内操作。',
   'set-enabled': '请在官方宿主的插件管理界面（Settings → Plugins）开关该插件。',
-  upgrade: 'Desktop 暂不支持在市场内升级插件：请在官方 Desktop 的插件管理（Settings → Plugins）检查更新，或回到 DSH Web 使用 dsh-m 升级。',
+  upgrade: '请在官方宿主的插件管理界面（Settings → Plugins）检查更新并升级；或把 dsh-m 安装到 web / desktop profile 后在市场内升级。',
   uninstall: 'Desktop 暂不支持在市场内卸载插件：请使用官方 Desktop 的插件管理（Settings → Plugins）卸载。',
   'self-upgrade': '当前宿主形态不支持面板内自更新：请在官方 Settings → Plugins 对 dsh-m 执行 remove + install（精确版本），或完全退出 Desktop 后用 `dsh plugin --profile desktop add dsh-m@<版本>`。',
   restart: 'Desktop 不由 dsh-m 重启：请退出并重新打开 Desktop 应用（关闭窗口可能只是隐藏），让新安装的插件生效。',
@@ -71,7 +71,7 @@ export const WRITE_GUIDANCE: Record<ProfileAction, string> = {
 /**
  * unknown（名字不可作安全路径段）专用拒绝文案模板（ADR-0030，评审 Q2：WRITE_GUIDANCE
  * 是按 action 的六条、desktop 与 unknown 共用，不存在 unknown 条目——per-kind 分治，
- * 既有六条 desktop 指引逐字冻结不动）。
+ * 既有六条 desktop 指引逐字冻结不动；0.12.2 局部修订：upgrade 条过期文案更正，issue #41 配套）。
  */
 export function WRITE_GUIDANCE_UNKNOWN(name: string): string {
   return `当前 profile 名（${name}）不可用作目录段，已拒绝写操作。请改用不含路径分隔符的 profile 名（参考官方 --profile 命名）。`

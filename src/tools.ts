@@ -282,11 +282,12 @@ export function registerTools(
   ctx.tools.register(defineTool({
     name: 'dshm_install',
     description:
-      'Install a plugin from the dsh-m registry into the current web profile after the user names one (装 dsh-skins / 安装 web-search). Pass the id from dshm_search results. npm 源锁定最新精确版本，github 源锁定 commit SHA。安装前做 peer 兼容预检（只检 @deepseek-ai/dsh(-*)；github 源不预检）：不兼容时返回结构化结果，向用户说明风险，用户确认后带 force: true 重试（force 等价 forceIncompatible）。Do not print CLI commands. After success, tell the user it needs a restart of dsh web, and offer dshm_restart.',
+      'Install a plugin from the dsh-m registry into the current web profile after the user names one (装 dsh-skins / 安装 web-search). Pass the id from dshm_search results. npm 源锁定最新精确版本，github 源锁定 commit SHA。安装前做 peer 兼容预检（只检 @deepseek-ai/dsh(-*)；github 源不预检）：不兼容时返回结构化结果，向用户说明风险，用户确认后带 force: true 重试（force 等价 forceIncompatible）。Do not print CLI commands. After success, tell the user it needs a restart of dsh web, and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the install succeeded.',
     parameters: {
       id: { type: 'string', required: true, description: '收录 id from dshm_search, e.g. dsh-skins' },
       version: { type: 'string', description: 'Optional exact semver (npm 源). Default latest.' },
       force: { type: 'boolean', description: '用户已确认兼容风险后重试时置 true（跳过 peer 预检拦截）。' },
+      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -297,7 +298,10 @@ export function registerTools(
     presentResult: (_args, { isError, meta }) => {
       const out = meta as InstallOut | undefined
       if (out?.guard === true) return { card: 'generic', title: `守卫拦截 · ${out.compensation?.status ?? ''}`, content: [] }
-      return { card: 'generic', title: isError ? '安装失败' : `已安装 · ${out?.pkg || ''}`, content: [] }
+      // issue #41：desktop 构建审批未遂——卡片不得宣称「已安装」；ok:false 兜底同禁成功标题
+      if (out?.needsBuildApproval === true) return { card: 'generic', title: `未完成 · 需要批准构建脚本 · ${out?.pkg || ''}`, content: [] }
+      if (isError || out?.ok === false) return { card: 'generic', title: '安装失败', content: [] }
+      return { card: 'generic', title: `已安装 · ${out?.pkg || ''}`, content: [] }
     },
     timeoutMs: installTimeoutMs() + 60_000,
     async execute(args) {
@@ -309,7 +313,8 @@ export function registerTools(
       if (profile.kind !== 'web') {
         assertWriteAllowed(profile, 'install')
         // 0.9.8：补传服务解析 deps（此前漏传 → desktop 安装恒 no-manager，实机 2026-10-01）
-        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool' }, { getService: getService as never, ensureService: ensureService as never }))
+        // issue #41：approvedBuilds 条件展开（空数组视为缺省，与 core :515 同构）——不传时 opts 形态零漂移
+        return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
         // ADR-0030：web 分支补 profileDir/profileName（此前缺省落 webProfileDir()——issue #39 写路径错配）
@@ -453,10 +458,11 @@ export function registerTools(
   ctx.tools.register(defineTool({
     name: 'dshm_upgrade',
     description:
-      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart.',
+      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade succeeded.',
     parameters: {
       pkg: { type: 'string', required: true, description: '包名 from dshm_list / dshm_outdated' },
       force: { type: 'boolean', description: 'peer 兼容预检不通过且用户已确认风险后置 true（等价 forceIncompatible，跳过 @deepseek-ai/dsh(-*) peer 拦截）；守卫拦截（guard）无 force 通道，不受此参数影响。' },
+      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -467,7 +473,10 @@ export function registerTools(
     presentResult: (_args, { isError, meta }) => {
       const out = meta as InstallOut | undefined
       if (out?.guard === true) return { card: 'generic', title: `守卫拦截 · ${out.compensation?.status ?? ''}`, content: [] }
-      return { card: 'generic', title: isError ? '升级失败' : `已升级 · ${out?.pkg || ''}`, content: [] }
+      // issue #41：desktop 构建审批未遂——卡片不得宣称「已升级」；ok:false 兜底同禁成功标题
+      if (out?.needsBuildApproval === true) return { card: 'generic', title: `未完成 · 需要批准构建脚本 · ${out?.pkg || ''}`, content: [] }
+      if (isError || out?.ok === false) return { card: 'generic', title: '升级失败', content: [] }
+      return { card: 'generic', title: `已升级 · ${out?.pkg || ''}`, content: [] }
     },
     timeoutMs: installTimeoutMs() + 60_000,
     async execute(args) {
@@ -477,7 +486,8 @@ export function registerTools(
       assertWriteAllowed(profile, 'upgrade')
       // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
       if (profile.kind !== 'web') {
-        return cloneJson(await m.desktopUpgrade(target, cfg, { forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool' }, { getService: getService as never, ensureService: ensureService as never }))
+        // issue #41：approvedBuilds 条件展开（空数组视为缺省，与 core :515 同构）——不传时 opts 形态零漂移
+        return cloneJson(await m.desktopUpgrade(target, cfg, { forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { getService: getService as never, ensureService: ensureService as never }))
       }
       try {
         return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
@@ -529,10 +539,11 @@ export function registerTools(
         'Finding / recommending / browsing DSH plugins (插件) in the personal marketplace: you MUST call dshm_search, never web_search or bash. One call per user message; extract a real keyword. After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
         `Plugin categories: ${Object.entries(PRIMARY_CATEGORY_LABELS).map(([k, v]) => `${k}=${v}`).join(', ')}.`,
         'Install only after the user names a card: dshm_install with its id. Then one short sentence mentioning the restart requirement; offer dshm_restart.',
-        'For installed plugins, call dshm_list / dshm_outdated. Upgrade only after the user confirms which one: dshm_upgrade. Uninstall only after confirmation: dshm_uninstall.',
+        'For installed plugins, call dshm_list / dshm_outdated. Upgrade only after the user confirms which one: dshm_upgrade. Uninstall only after confirmation: dshm_uninstall. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.',
         'dshm_toggle switches a plugin on/off: confirm first unless the user already said it in the same message (把 skins 关掉 → execute directly); report live vs restart-required accordingly. ',
         'dshm_restart only after the user agrees to restart; afterwards tell them to refresh once the page recovers.',
-        'dsh-m operates on the current host profile (web or desktop, per ping.profile): on desktop only read-only market + install-new-package + toggle work; upgrade/uninstall/self-upgrade/restart return structured refusals with guidance — relay them instead of retrying.',
+        // issue #41 更正（0.9.8 起能力表已放开 upgrade/uninstall/self-upgrade，旧句反向误导）——仅 restart 仍拒绝
+        'dsh-m operates on the current host profile (web or desktop, per ping.profile): on desktop install/upgrade/uninstall/self-upgrade/toggle all work via the official plugin manager; only restart is refused with guidance — relay it instead of retrying.',
       ].join(' '),
     })
   })
@@ -560,6 +571,10 @@ interface ListOut {
 }
 interface InstallOut {
   guard?: boolean
+  /** issue #41：desktop 构建审批未遂（core profile-ops DesktopInstallResult 分支）——needsBuildApproval 专臂 + ok:false 兜底臂共用 */
+  ok?: boolean
+  needsBuildApproval?: boolean
+  pendingBuilds?: string[]
   kind?: string
   message?: string
   compensation?: { status: string; note: string }
@@ -652,6 +667,23 @@ function renderInstall(out: InstallOut): string {
     '对用户如实说明守卫拦截与终态，不得说「已安装成功」或「已恢复原版本」。',
   ].filter(Boolean).join('\n')
   if (out.guard === true) return guardBlock as unknown as string
+  // issue #41：desktop 构建审批未遂（结构化 ok:false + needsBuildApproval）——0.11.15 假成功修复，
+  // 对齐 0.8.5 guard 分流纪律：未遂永不渲染「✅ 已安装」，且不带重启尾巴。
+  if (out.needsBuildApproval === true) {
+    const pending = (out.pendingBuilds ?? []).map((b) => `  - ${b}`).join('\n')
+    return [
+      '⛔ 安装未完成：需要批准构建脚本',
+      pending ? `待批准：\n${pending}` : null,
+      `原因：${out.message ?? ''}`,
+      '处理方式（按序尝试）：',
+      '  1. 征得用户确认后，把上面的名单原样作为 approvedBuilds 重试本工具',
+      '  2. 用户在官方 Settings → Plugins 里重试（管理器会写 allowBuilds）',
+      '未安装任何新版本。不要对用户说「已安装」，不要询问 dshm_restart。',
+    ].filter(Boolean).join('\n')
+  }
+  if (out.ok === false) {
+    return `⛔ 操作未完成：${out.message ?? ''}\n状态未变更。不要对用户宣称成功。`
+  }
   const extra = buildsNote(out)
   const compatNote = out.compat
     ? '注意：该版本与当前 DSH 运行时 peer 不兼容，已按用户确认强制安装。'
@@ -710,6 +742,25 @@ export function renderUpgrade(out: InstallOut & { fromVersion?: string }): strin
       out.restartSafe === true ? '可以重启 DSH Web。' : '修复后再重启（不要现在一键重启）。',
       '对用户如实说明守卫拦截与终态，不得说「已升级成功」或「已恢复原版本」。',
     ].filter(Boolean).join('\n')
+  }
+  // issue #41：desktop 构建审批未遂——未遂永不渲染「✅ 已升级」（同 0.8.5 guard 分流纪律）；
+  // pendingBuilds 自带 pkg@version，目标版本由 spec 呈现（B4：渲染侧解决，core 不补 version）。
+  if (out.needsBuildApproval === true) {
+    const pending = (out.pendingBuilds ?? []).map((b) => `  - ${b}`).join('\n')
+    return [
+      '⛔ 升级未完成：需要批准构建脚本',
+      pending ? `待批准：\n${pending}` : null,
+      `原因：${out.message ?? ''}`,
+      '处理方式（按序尝试）：',
+      '  1. 征得用户确认后，把上面的名单原样作为 approvedBuilds 重试本工具',
+      '  2. 用户在官方 Settings → Plugins 里重试（管理器会写 allowBuilds）',
+      out.spec ? `目标版本：${out.spec}（未安装）` : null,
+      '当前版本未变更。不要对用户说「已升级」，不要询问 dshm_restart。',
+    ].filter(Boolean).join('\n')
+  }
+  // 渲染层总不变量（grill Q2/Q11）：任何 ok:false 永不落入成功文案——当前为防御纵深（普查空集）
+  if (out.ok === false) {
+    return `⛔ 操作未完成：${out.message ?? ''}\n状态未变更。不要对用户宣称成功。`
   }
   const from = out.fromVersion ? `v${out.fromVersion} → ` : ''
   const to = out.version ? `v${out.version}` : out.sha ? out.sha.slice(0, 7) : '最新'

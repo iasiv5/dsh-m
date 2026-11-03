@@ -34,6 +34,15 @@ export async function performUpgradeFlow({ ops, oc, target, from, toVersion, api
       const m = opUpgradeMeta(r);
       return m ? { ...r, opMeta: m } : r;
     }, { from, toVersion });
+    // issue #41：desktop 构建审批未遂（结构化 ok:false + needsBuildApproval，不抛）——
+    // warn 投影绝不进成功臂（「已升级 …（— → latest）」与回滚事实相反），返回 ADR-0026 目标级 'target'。
+    if (res && res.needsBuildApproval === true) {
+      const text = oc.buildBlockedText(res, 'notify.verb.upgrade');
+      notify({ kind: 'warn', needsRestart: false, text });
+      noteSink?.({ kind: 'warn', text });
+      await (refresh ? refresh() : undefined);
+      return classifyBatchOutcome(res);
+    }
     // 降级恢复结局：升级失败但已自动回装旧版 → warn 投影（与回滚事实相反的「成功」绝不出现）
     const degraded = oc.degradedOutcome(res);
     if (degraded) {
