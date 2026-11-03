@@ -334,6 +334,7 @@ describe('host-api profile 能力表路由（Task 8）', () => {
     assert.equal(res.body.via, 'delegate')
     assert.equal(calls.desktopToggle.length, 1)
     assert.equal(calls.desktopToggle[0].opts.profileDir, '/d/profiles/desktop')
+    assert.equal(calls.desktopToggle[0].opts.profileName, 'desktop')
     assert.equal(calls.toggle.length, 0, 'web toggle 不得被触达')
   })
 
@@ -508,11 +509,12 @@ describe('ADR-0030（issue #39）：web kind 自定义名写分支接线（读�
     assert.equal(calls.selfUpgrade[0].deps.profileName, 'aqua')
   })
 
-  it('set-enabled → togglePlugin 收 profileDir（无子进程路径，不需要 profileName）', async () => {
+  it('set-enabled → togglePlugin 收 profileDir+profileName（issue #43 标签透传）', async () => {
     const { dispatcher, calls } = setupTrust({ trust: () => undefined, profile: aquaProfile })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-enabled', pkg: 'pkg-w3', enabled: true } })
     assert.equal(res.status, 200)
     assert.equal(calls.toggle[0].deps.profileDir, '/h/profiles/aqua')
+    assert.equal(calls.toggle[0].deps.profileName, 'aqua')
   })
 
   it('desktop 分支零改动锚：既有 desktop 传参断言保持原值', async () => {

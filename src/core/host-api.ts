@@ -718,10 +718,10 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           // 0.9.0：desktop → 官方管理器委派（服务缺席结构化拒绝，禁 fallback 文件写）
           if (profile.kind !== 'web') {
             assertWriteAllowed(profile, 'set-enabled')
-            payload = { ...(await d.desktopToggle(target, body.enabled, { getService: d.getService as never, profileDir: profile.dir, channel: 'panel' })) }
+            payload = { ...(await d.desktopToggle(target, body.enabled, { getService: d.getService as never, profileDir: profile.dir, profileName: profile.name, channel: 'panel' })) } // ADR-0030 / issue #43
             break
           }
-          const result = await d.toggle(target, body.enabled, { getService: d.getService, channel: 'panel', profileDir: profile.dir })
+          const result = await d.toggle(target, body.enabled, { getService: d.getService, channel: 'panel', profileDir: profile.dir, profileName: profile.name }) // ADR-0030 / issue #43
           payload = { ...result }
           break
         }
