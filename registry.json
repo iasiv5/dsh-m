@@ -355,6 +355,17 @@
       "homepage": "https://github.com/JimLiu/baoyu-design"
     },
     {
+      "id": "dsh-claude-motion",
+      "name": "Claude 动效",
+      "description": "宝玉 claude-motion 技能：Agent 把短动画逐场景写成文件，并在本地动效播放器中预览、批注，可导出 MP4 或 GIF。",
+      "category": "baoyu",
+      "tags": ["动画","短片","视频","宝玉"],
+      "source": "npm",
+      "npm": "dsh-claude-motion",
+      "github": "JimLiu/baoyu-design",
+      "homepage": "https://github.com/JimLiu/baoyu-design"
+    },
+    {
       "id": "dsh-guizang-design",
       "name": "歸藏设计",
       "description": "歸藏设计：网页 PPT、图文卡片与网页排版共用设计系统，另有去 AI 味与语气档案，可一键做同风格的下一份。",
