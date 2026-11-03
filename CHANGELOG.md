@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.3 修复：toggle/事务「web profile 未安装」报错携带实际 profile 名（issue #43，ADR-0030 同族收尾）
+
+- **背景**：issue #42（0.12.1）收尾评审发现的同族残留两处 + 独立评审追加一处：① `togglePluginLocked` not-installed 报错硬编码「web profile 未安装该插件」（toggle 读写目录经 profileDir 接线正确，仅标签错）；② 卸载门 `validateUninstall` 的 NOT_INSTALLED 拒绝 note 同款硬编码；③ 计划评审（R-02）发现 GUI 面板 set-enabled 路由两入口（host-api desktop 委派 / web toggle）同样未传 profileName——自定义 profile 下用户看到「web profile 未安装」，实为 aqua/tauri 未安装。
+- **做法**：① `ToggleDeps`/`DesktopToggleDeps` 新增可选 `profileName`（仅作报错标签，文件路径权威仍只认 profileDir，ADR-0030 冻结面不触碰）；报错回退链 `deps?.profileName ?? WEB_PROFILE`，事务侧 `d.profileName ?? WEB_PROFILE`（ResolvedDeps 已携带 profileName，零新接线）。② 五处调用链接线：tools web/desktop 分支、CLI toggle、desktopToggle 透传、host-api set-enabled 两入口（主人批示纳入）。③ 既有断言面先清点后改写两处（tools-install dshm_toggle 用例 `deps.profileName` undefined→'aqua'；host-api-profile 两用例补断言并去「不需要 profileName」过期标题），改写处逐一列入提交说明。
+- **测试**：新增 toggle 正向（aqua）+ 缺省逐字节两钉、external-journal ⑤b desktopToggle 透传钉（补 ToggleError 具名导入、自带最小桩、编号避让既有 ⑥）、事务 NOT_INSTALLED 缺省逐字节 + 带名变体（内联 baseTx 注入 profileName）；红→绿全程留证（四处红灯原因逐一核对，无 ReferenceError 假红）。全量 2028/2028 零失败（npm test）+ typecheck 通过；实施计划经独立评审三轮 18 项闭环（R-01 阻断 + R-03/R-04/R-05/R-07/R-13 重要级全部副本实测复核），GUI 残留路径按泵的 stillApplies 实读语义修正叙事。
+- **兼容性**：仅 not-installed 报错的 profile 标签随实际 profile 名变化——desktop 宿主（desktop/tauri）未装报错由「web profile 未安装该插件」变为「desktop profile …」/「tauri profile …」（对齐 profile-ops.ts 既有 desktop 报错同族口径）；缺省（不传 profileName）逐字节不变；desktop 其余拒绝路径与成功路径文案零变化；新增字段 optional，不传时行为零漂移。GUI set-enabled 路径的未装分支残留仅两类（installed 实读失败保守放行 / stillApplies 通过后的竞态窗口），本次已随入口接线覆盖。回退面：revert + 版本号递增即回 0.12.2 语义。
+
 ### 0.12.2 修复：构建审批未遂的诚实渲染 + approvedBuilds 工具重试通道（issue #41）
 
 - **背景**：desktop 路径下插件升级被 pnpm 构建脚本闸门拦下时，core 返回结构化未遂（`needsBuildApproval`，账本如实记 failed），但工具渲染层只认 `guard` 形态——未遂结果落入成功臂渲染成「✅ 已升级（最新）。需要重启生效」，UI 卡片、工具文本、模型指引三方一致宣称成功，实际版本纹丝未动（issue #41 报告者 snoonk 实机取证：`dsh-builtin-browser` 0.4.15→0.5.2 升级回滚后工具仍报成功）；且错误消息让调用方「带 approvedBuilds 重试」而工具 schema 根本没有这个入参，确认重试闭环在工具层走不通。GUI 面板 toast 同罪（`upgradeOkText` 不看 `ok` 字段）。
@@ -966,6 +973,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.3 Fixed: toggle/transaction "not installed" errors carry the actual profile name (issue #43, ADR-0030 family closure)
+
+- **Background**: Family leftovers found in the issue #42 (0.12.1) closing review plus one more from the independent plan review: ① `togglePluginLocked`'s not-installed error hardcoded "web profile 未安装该插件" (toggle read/write dirs were correctly wired via profileDir — only the label was wrong); ② the uninstall-gate `validateUninstall` NOT_INSTALLED note had the same hardcode; ③ plan review (R-02) found the GUI panel set-enabled route (host-api desktop delegate / web toggle) also lacked profileName — under a custom profile users saw "web profile 未安装" when it was actually aqua/tauri that missed the plugin.
+- **What changed**: ① `ToggleDeps`/`DesktopToggleDeps` gained optional `profileName` (error label only; file paths still trust profileDir exclusively — the ADR-0030 frozen face is untouched); fallback chains `deps?.profileName ?? WEB_PROFILE` and `d.profileName ?? WEB_PROFILE` (ResolvedDeps already carried profileName — zero new wiring). ② Five call-site chains wired: tools web/desktop branches, CLI toggle, desktopToggle passthrough, and both host-api set-enabled entries (owner-approved inclusion). ③ The existing assertion surface was census-then-rewritten in two places (tools-install dshm_toggle case `deps.profileName` undefined→'aqua'; host-api-profile two cases gain assertions and drop the stale "profileName not needed" titles), with each rewrite listed in the commit messages.
+- **Tests**: new toggle positive (aqua) + default byte-identical pins, external-journal ⑤b desktopToggle passthrough pin (named ToggleError import added, self-contained minimal stub, numbering avoiding the existing ⑥), transaction NOT_INSTALLED default byte pin + named variant (inline baseTx injecting profileName); red→green evidence throughout (all four red causes verified — no ReferenceError false reds). Full npm test 2028/2028, typecheck clean; the implementation plan went through three independent review rounds with 18 findings closed (R-01 blocking; important-grade R-03/R-04/R-05/R-07/R-13 all re-verified in out-of-repo copies), and the GUI leftover narrative was corrected against the ops pump's stillApplies re-read semantics.
+- **Compatibility**: only the not-installed error's profile label changes with the actual profile name — desktop hosts (desktop/tauri) now see "desktop profile …"/"tauri profile …" instead of "web profile …" (aligning with the existing desktop error family in profile-ops.ts); the default (no profileName) is byte-identical; all other desktop refusal/success copy unchanged; the new fields are optional with zero drift when absent. The GUI set-enabled not-installed branch had only two remaining paths (conservative pass-through when the installed re-read fails / a race window after stillApplies) — both are now covered by wiring the entries. Rollback: revert + version bump restores 0.12.2 semantics.
 
 ### 0.12.2 Fixed: honest rendering of build-approval aborts + approvedBuilds retry channel in tools (issue #41)
 
