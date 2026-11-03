@@ -119,7 +119,7 @@ async function registerDesktopWith(stubs = {}) {
 （夹具形态对照生产调用点：tools.ts:312/:480 desktop 分支顶层 opts，不多注内层。）
 
   it ④：`dshm_upgrade.execute({ pkg: 'plug-a' })` → `output.render` 文本过 it ① 同款锚（⛔ 开头、不含 ✅、不含 dshm_restart）。
-  it ⑤：`dshm_install.execute({ id: 'plug-a' })` → render 文本断言 `/^⛔ 安装未完成：需要批准构建脚本/`、含 `未安装任何新版本`、`doesNotMatch /^✅/`、`!text.includes('dshm_restart')`（未遂无重启尾巴，与 it ① 对称）。
+  it ⑤：`dshm_install.execute({ id: 'plug-a' })` → render 文本断言 `/^⛔ 安装未完成：需要批准构建脚本/`、含 `未安装任何新版本`、`doesNotMatch /^✅/`、负向断言与 it ① 同款**成功臂尾巴句式** `!text.includes('需要重启生效') && !text.includes('询问是否 dshm_restart')`（执行期修正同步：原裸 `!includes('dshm_restart')` 与 Q7 定稿文案自斥，机理见 it ① 注）。
   it ⑥：schema——两工具 `parameters.approvedBuilds` 存在且 `type === 'array'`。
   it ⑦：透传与零漂移——`dshm_upgrade.execute({ pkg: 'plug-a', approvedBuilds: ['plug-a@1.2.3'] })` → 桩收到的**第三参**（opts，桩签名 `(target, cfg, opts, deps)`，对照 tools.ts:480 生产调用形态）`approvedBuilds` deepEqual `['plug-a@1.2.3']`；不带参调用 → opts 无 `approvedBuilds` 键（`!('approvedBuilds' in opts)`）；`approvedBuilds: []`（空数组）→ 同样无该键（与 core :515 `length > 0` 门语义对齐）。
 
@@ -183,7 +183,7 @@ catch-all 同 Step 3 文案。
 - [ ] Step 1: 两工具 `parameters` 各加 `approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' }`
 - [ ] Step 2: `dshm_install` execute desktop 分支（:312）与 `dshm_upgrade` execute desktop 分支（:480）的 opts 各改为**条件展开**（评审 I1：显式键即使值 undefined 也使 `'approvedBuilds' in opts` 为 true，会击穿 it ⑦ 零漂移断言；评审 Batch 2 另注：与 core :515 语义对齐——**空数组视为缺省**）：`...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {})`（web 分支不透传）。
 - [ ] Step 3: 两 `presentResult` 改为：guard 臂不动 → 新增 `if (out?.needsBuildApproval === true) return { card: 'generic', title: \`未完成 · 需要批准构建脚本 · ${out?.pkg || ''}\`, content: [] }` → `if (isError || out?.ok === false) return { card: 'generic', title: isError ? '升级失败' : '升级失败', content: [] }` 简写收敛为 `title: '升级失败'`（install 侧同理『安装失败』）→ 现成功臂兜底。
-- [ ] Step 4: 两工具 description 追加一句：`needsBuildApproval 是未遂不是成功：征得用户确认后把 pendingBuilds 原样作为 approvedBuilds 重试；不得对用户宣称已升级/已安装。`
+- [ ] Step 4: 两工具 description 追加一句（**执行期修订：实施为英文句**，与 Task 4 Step 2 systemPrompt 句逐字统一、三处共用——`an abort, not success` 源锚计数因此为 3 而非 1）：`A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.`
 - [ ] Step 5: 跑绿 + typecheck
 - Run: `set -o pipefail; npm run typecheck 2>&1 | tail -3 && npm run build 2>&1 | tail -2 && node --test tests/tools-upgrade-message.test.mjs tests/tools-install.test.mjs 2>&1 | tail -4`
 - Expected: typecheck exit 0（`InstallOut` 字段与 args 读取类型闭合）；两文件 exit 0（Task 1 it①-⑦ 全绿）。
@@ -201,7 +201,7 @@ catch-all 同 Step 3 文案。
 - [ ] Step 2: 段内追加一句（:532 upgrade 句之后）：`A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.`
 - [ ] Step 3: 跑绿
 - Run: `set -o pipefail; npm run build 2>&1 | tail -2 && node --test tests/tools-install.test.mjs 2>&1 | tail -3 && node -e "const s=require('fs').readFileSync('src/tools.ts','utf8');console.log('retry sentence', s.split('an abort, not success').length-1);console.log('desktop fix', s.split('only restart is refused').length-1)"`
-- Expected: exit 0；两锚计数各 1；测试绿。
+- Expected: exit 0；锚计数：`an abort, not success` = **3**（systemPrompt ×1 + 两工具 description ×2，三处逐字统一——执行期修订，原期望 1）、`only restart is refused` = 1；测试绿。
 
 ### Task 5: client 未遂文案（op-outcome / upgrade-flow / market-tab / i18n）
 
@@ -215,6 +215,7 @@ catch-all 同 Step 3 文案。
 - [ ] Step 1（红）：`tests/client-op-outcome.test.mjs` 新 describe：假 lookup 下 `oc.buildBlockedText({ pkg: 'plug-a' }, 'notify.verb.upgrade')` 逐字等于 `notify.buildApprovalPending{verb=notify.verb.upgrade,pkg=plug-a}`；`notify.verb.install` 同理。`tests/client-upgrade-flow.test.mjs` 新 it：`apiCall` 桩 resolve `{ ok:false, needsBuildApproval:true, pkg:'plug-a' }` → notify 收到 `{ kind:'warn' }` 且 `needsRestart` 不为 true、返回值 === `'target'`（消费 `classifyBatchOutcome(res)`）。**另补 `tests/client-i18n.test.mjs` 新 it（评审 I6——动词键是动态 `lookup(verbKey)` 消费、不在直接量审计面，且 upgrade-flow.js 不在 auditTargets；lookup 缺键静默回退裸键名，0.10.4 事故形态）：断言 ZH/EN 两字典均含 `notify.buildApprovalPending`、`notify.verb.upgrade`、`notify.verb.install` 三键（`in` 断言 ×6）。**先跑确认红——
   Run: `set -o pipefail; npm run build 2>&1 | tail -2 && node --test tests/client-op-outcome.test.mjs tests/client-upgrade-flow.test.mjs tests/client-i18n.test.mjs 2>&1 | tail -6`
   Expected: 新 it 全红（buildBlockedText 不存在 / 分支缺失，notify 未收到 warn / i18n 三键不在场）；既有矩阵用例仍绿。
+  **执行期修订（产出评审 P1-2）**：client-upgrade-flow 新 it 的文案断言为**双语容忍**形态（`需要批准构建脚本` ∥ `needs build-script approval`；`已升级` ∥ `Upgraded`）——node 环境实测 `browserLang()` 取 `en`、lookup 走英文字典，钉死中文标记必红；GUI 真实运行语言随浏览器，双语断言与实现解耦。
 - [ ] Step 2（实现）：`op-outcome.js` 工厂内加：
 
 ```js
