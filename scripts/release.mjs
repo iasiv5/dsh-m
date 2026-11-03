@@ -35,7 +35,9 @@ const run = (cmd, tries = 1) => {
   const mismatch = lockVersionMismatch(pkgJson, lockJson)
   if (mismatch) {
     console.log(`[lock] 版本三处不一致（${mismatch}），自动同步：npm install --package-lock-only --ignore-scripts`)
-    run('npm install --package-lock-only --ignore-scripts')
+    // 0.12.2 发版实录：npm 11.19 EALLOWSCRIPTS 一过性（~/.npmrc allow-scripts 触发 policy 检查），
+    // release 内失败、同命令手动重跑即过——lock 同步是发版最贵失败点，吃 5s 退避重试
+    run('npm install --package-lock-only --ignore-scripts', 3)
     const after = lockVersionMismatch(pkgJson, JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8')))
     if (after) throw new Error(`lock 同步后仍不一致：${after}`)
     if (run('git status --porcelain -- package-lock.json') !== '') {
