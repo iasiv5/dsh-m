@@ -46,9 +46,9 @@
 - **B2**（issue #44 缺陷 B；评审 R2-P6 修正为双臂）：git 源 spec（github:/git+/URL）不参与 satisfies 判定（spec 侧形态门）且 lock 值（codeload/git+ URL）不参与 lockfile 直比（值侧形态门）→ 双臂皆不误报；`account[].lockfile` 保留观测值（证据保真）。
 - **B3**（防过抑制）：真·账实分裂（npm spec + lock ≠ installed）仍报 `consistent === false`；git 源实装缺失仍报 false（issue #44 回归表第 4 行）。
 - **B4**（观测修复）：gitHosted tarball 形态下 `lockResolutionOf` 可解析 URL 键 → `lockResolutions[pkg].commit` 观测到 40 位 hex；`derivePrior` github 臂 `restorable === true`。
-- **B5**（Q3 决议）：观测不到 commit → evidence `lockCommitIdentity: null`（类型放宽 `string | null`），补偿复验见 null 即拒绝（不回显请求 sha）。
+- **B5**（Q3 决议）：观测不到 commit → evidence `lockCommitIdentity: null`（类型放宽 `string | null`），补偿复验见 null 即拒绝（不回显请求 sha）。【产出评审 P2 已知缺口记录 2026-11-04】构造侧（market-mutation `?? null` 行）无直接测试钉——需 install 守卫失败 harness，成本超计划测试面承诺；复验侧 fail-closed 已有钉（⑧b 第二子句 / ⑧c observed-null 第一子句），缺口如实记录不补钉。
 - **B6**（补偿复验修复）：gitHosted 形态 lock + 证据 SHA 一致 → 复验通过（HEAD 恒拒绝 → 修复后首次可用）；SHA 不一致 / 无 SHA → 恒拒绝不变。
-- **B7**（Q4 决议）：`lockVersionOf` 提取值剥离 peer 后缀（红先加固钉——夹具取「引号键 + version 行先于 resolution 行」形态使 HEAD 红，评审 R2-P5 探针 B 形态证实唯一有效钉；真实 pnpm 生成序（resolution 先行）下 lockVersionOf 恒 null 走 evidence 回退，B7 属防御性加固非现行为修复）。
+- **B7**（Q4 决议）：`lockVersionOf` 提取值剥离 peer 后缀（加固钉——夹具取「引号键 + version 行先于 resolution 行」形态。【执行期勘误 2026-11-04，产出评审 P1a】原预测「使 HEAD 红」不成立：真实 lib 的 lockVersionOf 因模板字面量转义降级（`\s`→字面 `s`）对一切锁文本恒 null → evidence 回退命中，基线实测绿；红灯仅在「转义修复已应用、strip 未加」中间态可达（产出评审中间态红演实证），⑧d 实际保护对象 = strip 行使性。计划评审期的 B 形态探针用的是正确转义的复刻正则，未预见真实 lib 降级）。
 - **B8**：全量 `npm test` 零失败（基线 0.12.3 = 2028/2028，新增约 10 例）+ `npm run typecheck` 绿 + 本机探针 B2 场景误报消失。
 
 grill 决议映射：Q1 范围四点一并（本文档全部）→ D1；Q2 doctor B 口径 = semver 形态门**双侧化**（lock 值门 `^\d+\.\d+\.\d+` + spec 门 `validRange(spec) !== null`——评审 R2-P6 证实单侧门不消警，与 Q2「非 semver 形态不比对」精神同构的自洽扩展），`link:` 早退分支不动，`parseSpecSource` 仅注释提及不接线 → D2；Q3 `?? sha` → `?? null` → D3；Q4 lockVersionOf 加固纳入 → D4；Q5 测试范围红先 → D5；Q6 不立 ADR、CHANGELOG/回帖随发版批示 → D6。
@@ -127,7 +127,7 @@ grill 决议映射：Q1 范围四点一并（本文档全部）→ D1；Q2 docto
   1. `gitHosted tarball URL 键 → commit 可观测 → github prior restorable`：deps `{ 'dsh-x': 'github:owner/repo#' + sha40 }`，lock packages 段键 `dsh-x@https://codeload.github.com/owner/repo/tar.gz/<sha40>:` + `resolution: {gitHosted: true, tarball: <同 URL>}` + `version: 0.9.3`（本机实锁逐字形态）→ `cap.snapshot.lockResolutions['dsh-x'].commit === sha40`、`.version === '0.9.3'`；`derivePrior(cap.snapshot, 'dsh-x').state.restorable === true`、`sourceKind === 'github'`（HEAD 红：`lockResolutions` 无此键 → restorable false）。
   2. `git+https 键·键内 hex 兜底`：键 `dsh-x@https://github.com/owner/repo.git#<sha40>:`，体仅 `version: 0.10.7`（无 `commit:` 字段）→ `lockResolutions['dsh-x'].commit === sha40`（HEAD 红：整键不可匹配）。
   3. `无 SHA 形态 → commit 缺席 → restorable 维持 false`：键 `dsh-x@https://example.com/x.tgz:`，体 `version: 1.0.0` → `commit` undefined、`restorable === false`（绿钉 fail-closed 方向）。
-- **Step 2**（确认红）：`npm run build && set -o pipefail; node --test tests/market-mutation.test.mjs 2>&1 | tail -30` → 用例 1/2 红、3 绿；记录。
+- **Step 2**（确认红）：`npm run build && set -o pipefail; node --test tests/market-mutation.test.mjs 2>&1 | tail -30` → 用例 1/2 红、3 绿；记录。【执行期勘误 2026-11-04，产出评审 P1b】实测 1/2/3 全红：用例 3 首断言 `assert.ok(res)` 钉「URL 键可解析」这一修复后行为，基线旧正则下键不可解析 → 同源红灯，非 fail-closed 语义臂独立可红；HEAD 后三例终态不变。
 - **Step 3**（最小实现）：
   - `:272` 键行正则捕获组 `([^\s':]+)` → `(.+?)`（非贪婪，容忍 URL 冒号；行尾 `'?:\s*$` 锚不变；注释引 0.5.1 引号兼容先例同口径 + 本次 URL 键形态）；`body` 起点分支持久化 `matchedKey = key`。
   - commit 提取（body text 之上追加）：
@@ -150,8 +150,8 @@ grill 决议映射：Q1 范围四点一并（本文档全部）→ D1；Q2 docto
   1. `gitHosted 形态·SHA 一致 → 复验通过`：evidence `{ source: 'github', pinnedSpec: 'github:o/r#<sha40>', sha: sha40, lockCommitIdentity: sha40 }`，lock packages 键 `pkg-x@https://codeload.github.com/o/r/tar.gz/<sha40>:` + `resolution: {gitHosted: true, tarball: <同 URL>}`（无 `commit:` 字段）→ **不**返回 `COMPENSATE_EVIDENCE_MISMATCH`（走到后续恢复臂）（HEAD 红：`lockCommitOf` 恒 null → 恒拒绝）。
   2. `SHA 不一致 → rejected`：锁键内 hex = 另一 sha40 ≠ evidence → `COMPENSATE_EVIDENCE_MISMATCH`（绿钉）。
   3. `无任何 SHA → rejected`：锁键/体均无 hex40 → rejected（绿钉，覆盖 B5 的 null evidence 消费臂）。
-  4. `npm 形态·version 值带 peer 后缀 → 复验通过`（红先加固钉 B7；夹具取探针 B 形态——**引号键、键名不带后缀、version 行先于 resolution 行**：`'pkg-a@1.0.0':` / `version: 1.0.0(@peer/a@1.0.0)` / `resolution: {integrity: …}`；HEAD 上 lockVersionOf 返回带后缀原始串 → integrity 查 `pkg-a@1.0.0(@peer/a@1.0.0)` = null → rejected（红）；strip 后 version=1.0.0 → integrity 命中（绿）。评审 R2-P5 探针 A–D 四形态实测：A（无引号键）/C（resolution 先行）/D（裸 version）形态下 B7 空转）。
-- **Step 2**（确认红）：`npm run build && set -o pipefail; node --test tests/profile-transaction.test.mjs 2>&1 | tail -30` → 用例 1、4 红（用例 4 红 = lockVersionOf 返回带后缀原始串 → integrity null → rejected，评审 R2-P5 探针 B 形态预演）；2/3 绿（2/3 HEAD 因恒 null 恒拒绝而绿——红灯归因写清：HEAD 绿是「错的原因」，修复后绿才是「对的原因」）；记录。
+  4. `npm 形态·version 值带 peer 后缀 → 复验通过`（加固钉 B7；夹具取探针 B 形态——**引号键、键名不带后缀、version 行先于 resolution 行**：`'pkg-a@1.0.0':` / `version: 1.0.0(@peer/a@1.0.0)` / `resolution: {integrity: …}`；【执行期勘误 2026-11-04，产出评审 P1a】原预测「HEAD 上 lockVersionOf 返回带后缀原始串 → rejected（红）」不成立——真实 lib 转义降级使 lockVersionOf 恒 null → evidence 回退命中，基线绿；strip 的行使性由「转义修复+无 strip」中间态红演实证（详见 B7 勘误）。评审 R2-P5 探针 A–D 四形态实测：A（无引号键）/C（resolution 先行）/D（裸 version）形态下 B7 空转）。
+- **Step 2**（确认红）：`npm run build && set -o pipefail; node --test tests/profile-transaction.test.mjs 2>&1 | tail -30` → 用例 1、4 红（用例 4 红 = lockVersionOf 返回带后缀原始串 → integrity null → rejected，评审 R2-P5 探针 B 形态预演）；2/3 绿（2/3 HEAD 因恒 null 恒拒绝而绿——红灯归因写清：HEAD 绿是「错的原因」，修复后绿才是「对的原因」）；记录。【执行期勘误 2026-11-04，产出评审 P1a】实测仅用例 1 红、4 绿（原因同 B7 勘误：转义降级 → 恒 null 回退）；用例 4 的红在「转义修复+无 strip」中间态复演可达（产出评审留证）；2/3 绿的「错的原因」实为双重——转义降级使正则从不匹配 + 形态缺口，两者任一存在即恒拒绝。
 - **Step 3**（最小实现）——`lockCommitOf`（:1263）重写为键行定位式（现正则缺口有二：键尾 `'` 强制闭引号——真锁无引号 URL 键在键尾即失配（评审 R1-P1 实测：真锁 `qiaomu-rss-dsh@https://codeload…:` 无引号，现行正则 test=false）；体扫描只认 `commit:` 字段无兜底）：
   ```ts
   /** pnpm-lock 目标包 entry 的 commit identity：体内 commit: 字段优先，键文本+体内 40 位 hex 兜底（gitHosted tarball 形态无 commit: 字段；与 market-mutation.ts lockResolutionOf 同一口径）。 */

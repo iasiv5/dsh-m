@@ -1875,7 +1875,7 @@ describe('M2 Task 3：compensate-install 补偿事务', () => {
     assert.deepEqual(tx.calls.remove, [], '零写入')
   })
 
-  it('⑧c github 补偿·锁内无可观测 SHA → rejected（null evidence 消费臂，不猜）', async () => {
+  it('⑧c github 补偿·锁内无可观测 SHA（observed-null）→ rejected（复验第一子句 commit===null，不猜）', async () => {
     const evidenceSha = 'a'.repeat(40)
     compInstallBadPkg(dir, 'pkg-a')
     compWriteManifestDeps(dir, { 'pkg-a': `github:o/r#${evidenceSha}` })
