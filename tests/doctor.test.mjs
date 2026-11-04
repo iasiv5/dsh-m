@@ -323,6 +323,58 @@ describe('checkAccount', () => {
     assert.equal(r.account[0].consistent, true)
     assert.equal(r.findings.length, 0)
   })
+
+  it('lock version 带多层 peer 后缀（issue #44 缺陷 A：1.2.3(@a@1)(@b@2)）→ 剥全部后缀后一致，不误报', async () => {
+    mkProfile(
+      { 'pkg-m': '1.2.3' },
+      lock([{ name: 'pkg-m', spec: '1.2.3', ver: '1.2.3(@peer/a@1.0.0)(@peer/b@2.0.0)' }]),
+    )
+    mkInstalled('pkg-m', '1.2.3')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].lockfile, '1.2.3')
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
+  })
+
+  it('git 源·codeload tarball 形态（issue #44 缺陷 B）→ lockfile 观测值保留且不比对，不误报', async () => {
+    const sha = 'a'.repeat(40)
+    const url = `https://codeload.github.com/o/r/tar.gz/${sha}`
+    mkProfile({ 'pkg-x': `github:o/r#${sha}` }, lock([{ name: 'pkg-x', spec: `github:o/r#${sha}`, ver: url }]))
+    mkInstalled('pkg-x', '0.3.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.account[0].lockfile, url, 'lockfile 字段保留观测值（证据保真）')
+    assert.equal(r.findings.length, 0)
+  })
+
+  it('git 源·git+https 形态 → 不比对 URL，不误报', async () => {
+    const sha = 'b'.repeat(40)
+    mkProfile(
+      { 'pkg-y': `git+https://github.com/o/r.git#${sha}` },
+      lock([{ name: 'pkg-y', spec: `git+https://github.com/o/r.git#${sha}`, ver: `git+https://github.com/o/r.git#${sha}` }]),
+    )
+    mkInstalled('pkg-y', '0.10.7')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
+  })
+
+  it('git 源·实装缺失仍报（issue #44 回归表第 4 行：该报的仍要报）', async () => {
+    const sha = 'a'.repeat(40)
+    mkProfile({ 'pkg-z': `github:o/r#${sha}` }, lock([{ name: 'pkg-z', spec: `github:o/r#${sha}`, ver: `https://codeload.github.com/o/r/tar.gz/${sha}` }]))
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, false)
+    assert.equal(r.account[0].installed, null)
+    assert.equal(r.findings.length, 1)
+  })
+
+  it('npm 真分裂（pin=installed 但 lock 不同）仍报——形态门不得过度抑制', async () => {
+    mkProfile({ 'pkg-w': '1.0.0' }, lock([{ name: 'pkg-w', spec: '1.0.0', ver: '2.0.0' }]))
+    mkInstalled('pkg-w', '1.0.0')
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].consistent, false)
+    assert.equal(r.findings.length, 1)
+  })
 })
 
 // ---------- Task 5：runDoctor 聚合 + dualMarket 信息级 ----------

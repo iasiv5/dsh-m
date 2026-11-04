@@ -93,7 +93,9 @@ export type PriorUnion =
 /** 分源 evidence：validate 对当前 manifest/lock 实读比对（插队复验），不匹配 → COMPENSATE_EVIDENCE_MISMATCH。 */
 export type CompensateEvidence =
   | { source: 'npm'; manifestSpec: string; resolvedVersion: string; integrity: string }
-  | { source: 'github'; pinnedSpec: string; sha: string; lockCommitIdentity: string }
+  // lockCommitIdentity 可为 null：lock 无法观测 commit identity（形态未知/条目缺失）时如实记 null，
+  // 补偿复验见 null 即拒绝——不回显请求期望值假充观测（issue #44 同根因类，2026-11-04）
+  | { source: 'github'; pinnedSpec: string; sha: string; lockCommitIdentity: string | null }
 // 自升级 = install-npm + pkg=自身（语义等同，不设独立 kind）
 
 export interface HealAction { code: (typeof TX_HEAL_CODES)[number]; note: string }
@@ -1254,16 +1256,30 @@ async function compensateInstall(
 
 /** pnpm-lock packages 段中目标包的 resolution.version（粗粒度文本提取，供补偿验证）。 */
 function lockVersionOf(lockText: string, pkg: string): string | null {
-  const re = new RegExp(`'?(?:[^'\n]*node_modules/)?${pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@[^'\n]*':\s*\n[^}]*?version:\s*(\S+)`, 'm')
+  // 2026-11-04 issue #44 同根因类第三缺陷：模板字面量内 `\n`/`\s` 是未识别转义——`\n` 降级为
+  // 真实换行、`\s` 降级为字面 `s`，旧正则 `version:s*` 要求冒号后紧跟 s 字符，正常锁恒不匹配
+  // → 本函数恒 null 走 evidence 回退（补偿复验从未真正行使 lock 版本观测）。双反斜杠修正转义。
+  // 键尾闭引号 `'?:` 可选（无引号 URL 键兼容，与 market-mutation.ts lockResolutionOf 同口径）。
+  const esc = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(`'?(?:[^'\\n]*node_modules/)?${esc}@[^'\\n]*'?:\\s*\\n[^}]*?version:\\s*(\\S+)`, 'm')
   const m = re.exec(lockText)
-  return m ? m[1]!.replace(/'/g, '') : null
+  return m ? m[1]!.replace(/'/g, '').replace(/(\([^)]*\))+$/, '') : null
 }
 
-/** pnpm-lock 目标包 resolution 的 commit（github tarball 无 integrity，以 commit identity 为准）。 */
+/** pnpm-lock 目标包 entry 的 commit identity：体内 commit: 字段优先，键文本+体内 40 位 hex 兜底（gitHosted tarball 形态无 commit: 字段；与 market-mutation.ts lockResolutionOf 同口径）。 */
 function lockCommitOf(lockText: string, pkg: string): string | null {
-  const re = new RegExp(`'?(?:[^'\n]*node_modules/)?${pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}@[^'\n]*':\s*\n[^}]*?commit:\s*'?([0-9a-f]{40})`, 'm')
-  const m = re.exec(lockText)
-  return m ? m[1]! : null
+  // 2026-11-04 重写：旧实现同一模板转义降级（`commit:s*`）+ 键尾闭引号强制 + 只认 commit:
+  // 字段无兜底——三重叠加使 github 补偿恒拒绝（issue #44 同根因类）。
+  // 键行定位 → 截至下一顶层键行/顶格段界（防 packages 段末条 body 过界进 snapshots 段）
+  // → 命名 commit: 字段优先 → 键文本+体内 40 位 hex 兜底。
+  const esc = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const at = new RegExp(`^  '?(?:[^'\\n]*node_modules/)?${esc}@[^'\\n]*'?:\\s*$`, 'm').exec(lockText)
+  if (!at) return null
+  const rest = lockText.slice(at.index + at[0].length)
+  const end = rest.search(/^\S|^  \S/m) // 顶格段界（如 snapshots:）或下一两空格键行；-1 = 文件尾
+  const body = end >= 0 ? rest.slice(0, end) : rest
+  const named = /commit:\s*'?([0-9a-f]{40})/.exec(body)?.[1]
+  return named ?? /([0-9a-f]{40})/.exec(at[0] + body)?.[1] ?? null
 }
 
 // ---------- 入口：FIFO 互斥 + 分发 ----------

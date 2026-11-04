@@ -17,7 +17,7 @@
 import { readdir, readFile, lstat, stat, readlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
-import { satisfies } from 'semver'
+import { satisfies, validRange } from 'semver'
 import { dshHome } from './env.js'
 import { readProfileDeps, resolvePluginDir, readPkgJson } from './installed.js'
 
@@ -412,8 +412,9 @@ async function readLockImporters(lockPath: string): Promise<LockImporters> {
       // link: 依赖在 lock 里是 { specifier, link: true } 无 version → 自然落空（按契约置 null）
       if (value && typeof value === 'object' && typeof value.version === 'string' && value.version) {
         // pnpm lock v9 的 version 可带 peer 后缀：`0.9.28(@deepseek-ai/schemastery@3.18.4)`
-        // ——剥去括号后缀再入账（实机预演 2026-10-04 曾因此把 4 条三处一致的依赖误报账实分裂）
-        map.set(name, value.version.replace(/\([^)]*\)$/, ''))
+        // ——剥去**全部**括号后缀再入账（2026-10-04 单层后缀曾误报 4 条；issue #44 缺陷 A：
+        // 多 peer 依赖带多组后缀 `1.2.3(@a@1)(@b@2)`，单层正则剥后残留同样误报，2026-11-04 修）
+        map.set(name, value.version.replace(/(\([^)]*\))+$/, ''))
       }
     }
     return { map, supported: true }
@@ -424,6 +425,10 @@ async function readLockImporters(lockPath: string): Promise<LockImporters> {
 
 /** semver.satisfies 安全包装：任一侧非法（dist-tag / workspace 协议等）→ null（不可判定，不猜）。 */
 function satisfiesSafe(version: string, range: string): boolean | null {
+  // issue #44 缺陷 B（spec 侧门，2026-11-04）：semver 7.8.5 的 satisfies 对非法 range 返回
+  // false 而非 throw（catch 臂从不触发），git:/git+:/tarball URL/dist-tag pin 会被误判不一致。
+  // validRange 前置门让实现兑现本注释承诺的「任一侧非法 → null」契约。
+  if (validRange(range) === null) return null
   try {
     return satisfies(version, range) ?? null
   } catch {
@@ -464,7 +469,11 @@ export async function checkAccount(profileDir: string): Promise<{ account: Accou
     } else {
       const pinOk = satisfiesSafe(installed, spec)
       if (pinOk === false) consistent = false
-      if (lockfile !== null && lockfile !== installed) consistent = false
+      // issue #44 缺陷 B（值侧门，2026-11-04）：lock 值非 semver 形态（git/patch/tarball URL）
+      // 不比对——unknown≠broken 同契约；spec 形态判定已有 parseSpecSource（installed.ts），
+      // 此处按值形态门覆盖其超集。lockfile 字段仍推送观测值（证据保真）。
+      const lockComparable = lockfile !== null && /^\d+\.\d+\.\d+/.test(lockfile)
+      if (lockComparable && lockfile !== installed) consistent = false
     }
     account.push({ name, pin: spec, installed, lockfile, consistent })
     if (!consistent) {

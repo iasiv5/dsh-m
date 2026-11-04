@@ -1825,6 +1825,94 @@ describe('M2 Task 3：compensate-install 补偿事务', () => {
     assert.equal(readFileSync(join(dir, 'package.json'), 'utf8'), before)
   })
 
+  it('⑧a github 补偿·gitHosted tarball 形态（无 commit: 字段，SHA 在键/URL 内）且 SHA 一致 → 补偿通过（issue #44：HEAD 恒拒绝 → 修复后首次可用）', async () => {
+    const sha = 'a'.repeat(40)
+    const url = `https://codeload.github.com/o/r/tar.gz/${sha}`
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': `github:o/r#${sha}` })
+    compWriteLock(dir, `  pkg-a@${url}:\n    resolution: {gitHosted: true, tarball: ${url}}\n    version: 0.9.3`)
+    const tx = compFakeRunner(dir)
+    const live = []
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'github', pinnedSpec: `github:o/r#${sha}`, sha, lockCommitIdentity: sha },
+        prior: { kind: 'none' },
+      },
+      {
+        runner: () => tx.runner,
+        profileDir: dir,
+        setLiveDisabled: async (pkg, disabled) => {
+          live.push([pkg, disabled])
+          return false
+        },
+      },
+    )
+    assert.equal(res.ok, true, JSON.stringify(res))
+    assert.deepEqual(tx.calls.remove, ['pkg-a'])
+  })
+
+  it('⑧b github 补偿·锁内 SHA ≠ 证据 → rejected（fail-closed）', async () => {
+    const evidenceSha = 'a'.repeat(40)
+    const lockSha = 'f'.repeat(40)
+    const url = `https://codeload.github.com/o/r/tar.gz/${lockSha}`
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': `github:o/r#${evidenceSha}` })
+    compWriteLock(dir, `  pkg-a@${url}:\n    resolution: {gitHosted: true, tarball: ${url}}\n    version: 0.9.3`)
+    const tx = compFakeRunner(dir)
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'github', pinnedSpec: `github:o/r#${evidenceSha}`, sha: evidenceSha, lockCommitIdentity: evidenceSha },
+        prior: { kind: 'none' },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.status, 'rejected')
+    assert.equal(res.failure.code, 'COMPENSATE_EVIDENCE_MISMATCH')
+    assert.deepEqual(tx.calls.remove, [], '零写入')
+  })
+
+  it('⑧c github 补偿·锁内无可观测 SHA → rejected（null evidence 消费臂，不猜）', async () => {
+    const evidenceSha = 'a'.repeat(40)
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': `github:o/r#${evidenceSha}` })
+    compWriteLock(dir, `  pkg-a@https://example.com/x.tgz:\n    resolution: {tarball: https://example.com/x.tgz}\n    version: 1.0.0`)
+    const tx = compFakeRunner(dir)
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'github', pinnedSpec: `github:o/r#${evidenceSha}`, sha: evidenceSha, lockCommitIdentity: evidenceSha },
+        prior: { kind: 'none' },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.status, 'rejected')
+    assert.equal(res.failure.code, 'COMPENSATE_EVIDENCE_MISMATCH')
+    assert.deepEqual(tx.calls.remove, [], '零写入')
+  })
+
+  it('⑧d npm 补偿·lock version 值带 peer 后缀（引号键 + version 行先行）→ strip 后复验通过（B7 红先钉）', async () => {
+    compInstallBadPkg(dir, 'pkg-a')
+    compWriteManifestDeps(dir, { 'pkg-a': '1.0.0' })
+    compWriteLock(dir, `  'pkg-a@1.0.0':\n    version: 1.0.0(@peer/a@1.0.0)\n    resolution: {integrity: ${INTEGRITY_2}}`)
+    const tx = compFakeRunner(dir)
+    const res = await runProfileTransaction(
+      {
+        kind: 'compensate-install',
+        pkg: 'pkg-a',
+        evidence: { source: 'npm', manifestSpec: '1.0.0', resolvedVersion: '1.0.0', integrity: INTEGRITY_2 },
+        prior: { kind: 'none' },
+      },
+      { runner: () => tx.runner, profileDir: dir },
+    )
+    assert.equal(res.ok, true, `HEAD 上 lockVersionOf 返回带后缀原始串 → integrity 查无 → rejected：${JSON.stringify(res)}`)
+    assert.deepEqual(tx.calls.remove, ['pkg-a'])
+  })
+
   it('㉒ mappingOnly：移除新包 + 双落点 mapping 恢复 + 相邻条目不变 + add 零调用', async () => {
     compInstallBadPkg(dir, 'pkg-a')
     // 刚装的坏包在 manifest 中（补偿对象）；mappingOnly 指其「装上前」的旧 prior 形态

@@ -685,6 +685,76 @@ packages:
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('gitHosted tarball URL 键（issue #44 同根因类）→ commit 可观测 → github prior restorable=true', async () => {
+    const sha = 'c'.repeat(40)
+    const url = `https://codeload.github.com/owner/repo/tar.gz/${sha}`
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { 'dsh-x': `github:owner/repo#${sha}` } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  dsh-x@${url}:
+    resolution: {gitHosted: true, tarball: ${url}}
+    version: 0.9.3
+`,
+    })
+    try {
+      const cap = await capturePreMutationState(dir)
+      assert.equal(cap.kind, 'snapshot')
+      const res = cap.snapshot.lockResolutions['dsh-x']
+      assert.ok(res, 'URL 键必须可解析（旧正则键捕获在首个冒号处截断）')
+      assert.equal(res.version, '0.9.3')
+      assert.equal(res.commit, sha, 'commit 从键名/URL 内 40 位 hex 观测（gitHosted 形态无 commit: 字段）')
+      const prior = derivePrior(cap.snapshot, 'dsh-x')
+      assert.equal(prior.kind, 'dependency')
+      assert.equal(prior.state.restorable, true, 'github prior 依 commit identity 判可恢复')
+      assert.equal(prior.state.sourceKind, 'github')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('git+https 键·键内 hex 兜底 → commit 可观测', async () => {
+    const sha = 'd'.repeat(40)
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { 'dsh-x': `github:owner/repo#${sha}` } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  dsh-x@https://github.com/owner/repo.git#${sha}:
+    version: 0.10.7
+`,
+    })
+    try {
+      const cap = await capturePreMutationState(dir)
+      assert.equal(cap.snapshot.lockResolutions['dsh-x'].commit, sha, '无 commit: 字段时从键内 40 位 hex 兜底观测')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('无 SHA 形态 → commit 缺席 → github prior 维持不可恢复（fail-closed）', async () => {
+    const dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { 'dsh-x': 'https://example.com/x.tgz' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+packages:
+  dsh-x@https://example.com/x.tgz:
+    version: 1.0.0
+`,
+    })
+    try {
+      const cap = await capturePreMutationState(dir)
+      const res = cap.snapshot.lockResolutions['dsh-x']
+      assert.ok(res, 'URL 键可解析')
+      assert.equal(res.commit, undefined, '无 40 位 hex → commit 缺席')
+      const prior = derivePrior(cap.snapshot, 'dsh-x')
+      assert.equal(prior.state.restorable, false, '观测不到 commit → 不可自动恢复（不猜）')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('generation 投影 prior 事实（issue #6 修法 B：投影目录即完整快照，不依赖 lock integrity）', () => {
