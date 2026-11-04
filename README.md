@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.5%20verified-2563eb)](#兼容与常见问题)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.1%20verified-2563eb)](#兼容与常见问题)
 
 [English](./README.en.md) · 中文
 
@@ -85,8 +85,9 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 | `0.2.1-rc.3` | 同 0.2.0 通路 | 最后完整实测于 dsh-m 0.10.11（link 装机：测试 1719/1719 零失败 + 七项兼容清单）；后续版本未复测 |
 | `0.2.1-rc.4` | 同 0.2.0 通路 | 0.11.x 线 dogfood 宿主（本机 web 档 dsh-m 0.11.0 常驻运行）；0.11.1 发版（全量测试 1841/1841 + 发版门禁全绿）；官方契约核对取自 rc.3/rc.4 双版（ADR-0027） |
 | `0.2.1-rc.5` | 同 0.2.0 通路 | 契约面等价重发布（宿主 web-app patch 相对 rc.4 零 diff）；rc.4 的核验结论按等价口径承接；0.11.x 线 dogfood 宿主已随宿主升级运行于 rc.5 |
+| `0.2.2-rc.1` | 同 0.2.0 通路 | 新 minor 线首轮（宿主 web-app patch 含 UI bundle 行增删，非等价重发布）；0.12.x 线 dogfood 宿主已随宿主升级运行于 rc.1（2026-11-04 实机验收：市场面板、设置通路与全量客户端产物下发均正常） |
 
-> 表中各代核验对应其时点的 dsh-m 版本：0.10.x 线的完整实测仅覆盖 DSH 0.2.1-rc.2 / rc.3，0.11.x 线覆盖 0.2.1-rc.4（rc.5 为契约面等价重发布，核验结论按等价口径外推）；更老代际未经当前版本复测，不代表当前 dsh-m 可在其上运行。
+> 表中各代核验对应其时点的 dsh-m 版本：0.10.x 线的完整实测仅覆盖 DSH 0.2.1-rc.2 / rc.3，0.11.x 线覆盖 0.2.1-rc.4（rc.5 为契约面等价重发布，核验结论按等价口径外推），0.12.x 线覆盖 0.2.2-rc.1（2026-11-04 起）；更老代际未经当前版本复测，不代表当前 dsh-m 可在其上运行。
 
 **Desktop 与 Web 完全一样吗？** 不是。Desktop 的浏览、安装新包和开关作用于 desktop profile；升级/卸载等操作需宿主官方 `pluginManager` 提供相应能力，缺失时返回结构化拒绝和指引。Desktop 不提供 Web 的一键重启；变更需按应用提示退出并重新打开。两边的收藏、操作记录和已装状态互不串联。
 
