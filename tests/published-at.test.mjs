@@ -14,10 +14,12 @@ import { join } from 'node:path'
 import {
   PUBLISHED_AT_TTL_MS,
   PUBLISHED_AT_STORE_MAX,
+  PUBLISHED_AT_MAX_BYTES,
   modifiedOf,
   publishedAtParts,
   fetchPublishedAt,
   evictOldest,
+  makeLargeFetcher,
   clearPublishedAtCacheForTest,
 } from '../lib/core/published-at.js'
 import { resetNpmRouteForTests } from '../lib/core/npm-route.js'
@@ -172,5 +174,18 @@ describe('fetchPublishedAt 磁盘缓存', () => {
     assert.equal(got2, times.modified)
     const store = JSON.parse(readFileSync(join(cacheDir, 'published-at', 'store.json'), 'utf8'))
     assert.ok('pkg-8\nhttps://registry.npmjs.org' in store.entries, '解除占位后正常落盘')
+  })
+})
+
+describe('makeLargeFetcher 大载荷通道（重型包修复实测：billion-context 8096 版本 / 32MB packument）', () => {
+  it('maxBytes 抬升至 PUBLISHED_AT_MAX_BYTES，其余选项透传', async () => {
+    const seen = []
+    const base = async (url, opts) => { seen.push({ url, opts }); return { times: {} } }
+    const large = makeLargeFetcher(base)
+    await large('https://registry.npmjs.org/heavy', { timeoutMs: 5_000, maxBytes: 8 * 1024 * 1024 })
+    assert.equal(seen[0].opts.maxBytes, PUBLISHED_AT_MAX_BYTES, '8MB 缺省被抬到 64MB')
+    assert.equal(seen[0].opts.timeoutMs, 5_000, '其余选项逐字保留')
+    await large('https://registry.npmjs.org/x', undefined)
+    assert.equal(seen[1].opts.maxBytes, PUBLISHED_AT_MAX_BYTES, '无 maxBytes 时同样抬升')
   })
 })

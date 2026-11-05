@@ -569,7 +569,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           // ADR-0031（B5）：GUI 详情弹窗单条取数缝点——磁盘优先（命中零网络），非列表路径，无 withPublishedAt 参与。
           const npm = typeof body.npm === 'string' ? body.npm.trim() : ''
           if (npm === '') throw new ApiProtocolError(400, '参数 npm: 需非空字符串')
-          payload = { publishedAt: await fetchPublishedAt(npm, 12_000, signal) }
+          payload = { publishedAt: await fetchPublishedAt(npm, 20_000, signal) }
           break
         }
 

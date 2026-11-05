@@ -11,6 +11,20 @@
 export const PUBLISHED_AT_TTL_MS = 24 * 60 * 60_000
 /** store 条目上限：超限按 `at` 最旧淘汰（B4）。 */
 export const PUBLISHED_AT_STORE_MAX = 20_000
+/** 发布时刻取数载荷上限：64MB。默认 8MB 会确定性拒绝重型包（实测 billion-context：
+ * 8096 版本 / 32MB packument）——只影响本模块生产取数通道，共享访问器缺省值不动。 */
+export const PUBLISHED_AT_MAX_BYTES = 64 * 1024 * 1024
+
+/**
+ * 大载荷 fetcher：抬高 maxBytes 上限后透传（其余选项逐字保留）。
+ * 仅发布时刻生产取数通道使用；`base` 可注入供测试断言抬升行为。
+ */
+export function makeLargeFetcher(base?: typeof fetchJsonLimited): typeof fetchJsonLimited {
+  const inner = base ?? fetchJsonLimited
+  return (url, opts) => inner(url, { ...opts, maxBytes: Math.max(opts?.maxBytes ?? 0, PUBLISHED_AT_MAX_BYTES) })
+}
+
+const LARGE_FETCHER = /* 惰性绑定：lib 构建后模块级常量持有包装器 */ makeLargeFetcher()
 
 export interface PublishedAtDeps {
   packumentTimes?: (pkg: string, timeoutMs?: number, signal?: AbortSignal) => Promise<Record<string, string> | null>
@@ -53,6 +67,7 @@ export function publishedAtParts(iso: string, nowMs?: number): { date: string; d
 import { readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { fetchJsonLimited } from './httpx.js'
 import { packumentTimes } from './packument.js'
 import { cacheDir } from './env.js'
 import { activeNpmRegistry } from './npm-route.js'
@@ -120,7 +135,9 @@ export async function fetchPublishedAt(
   const key = `${pkg}\n${await activeNpmRegistry()}`
   const hit = memo[key]
   if (hit && nowMs() - hit.at < PUBLISHED_AT_TTL_MS) return hit.modified
-  const times = await (deps?.packumentTimes ?? packumentTimes)(pkg, timeoutMs ?? 12_000, signal)
+  const times = deps?.packumentTimes
+    ? await deps.packumentTimes(pkg, timeoutMs ?? 12_000, signal)
+    : await packumentTimes(pkg, timeoutMs ?? 12_000, signal, { fetchJsonLimited: LARGE_FETCHER })
   const modified = times ? modifiedOf(times) : null
   if (modified === null) return null
   const entry: StoreEntry = { modified, at: nowMs() }
