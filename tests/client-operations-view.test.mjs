@@ -206,14 +206,23 @@ describe('外部记录 × 视图模型（渠道徽标/单条移除出口/按日�
     assert.equal(opRowVm({ ...base, kind: 'upgrade', status: 'done', channel: 'cli', meta: { from: '1.0.0', to: '2.0.0' } }).version, 'v1.0.0→v2.0.0')
   })
 
-  it('⑥canRemoveRow：本地问题态出口 + 外部 failed 放行（0.9.82 修订 R2-3）', () => {
+  it('⑤opRowVm 暴露 degradedRestoredTo（降级恢复行内文案数据源；缺席/形态不符一律 null）', () => {
     const base = { id: 'r', createdAt: 1 }
-    // 本地路径不变（R0 红线）：input/failed/superseded 保留 ✕
-    for (const status of ['input', 'failed', 'superseded']) {
+    assert.equal(opRowVm({ ...base, kind: 'upgrade', status: 'warned', meta: { degraded: true, restoredTo: '0.28.2' } }).degradedRestoredTo, '0.28.2')
+    assert.equal(opRowVm({ ...base, kind: 'upgrade', status: 'warned' }).degradedRestoredTo, null, 'meta 缺席 → null')
+    assert.equal(opRowVm({ ...base, kind: 'upgrade', status: 'warned', meta: { degraded: true } }).degradedRestoredTo, null, 'restoredTo 缺席 → null')
+    assert.equal(opRowVm({ ...base, kind: 'upgrade', status: 'done', meta: { degraded: false, restoredTo: '0.28.2' } }).degradedRestoredTo, null, '非 degraded → null')
+    assert.equal(opRowVm({ ...base, kind: 'install', status: 'warned', meta: { degraded: true, restoredTo: 1 } }).degradedRestoredTo, null, '非字符串 restoredTo → null')
+  })
+
+  it('⑥canRemoveRow：本地问题态出口 + 外部 failed 放行（0.9.82 修订 R2-3；0.12.6 本地 warned 扩面）', () => {
+    const base = { id: 'r', createdAt: 1 }
+    // 本地路径（0.12.6 起 input/failed/superseded/warned；R0 红线前三态原样）：全部保留 ✕
+    for (const status of ['input', 'failed', 'superseded', 'warned']) {
       assert.equal(canRemoveRow({ ...base, status }), true, `本地 ${status} 保留单条 ✕`)
     }
-    // 本地 queued/running/done/warned 无 ✕（R0/R5 回归锚，原样保留）
-    for (const status of ['queued', 'running', 'done', 'warned']) {
+    // 本地 queued/running/done 无 ✕（R0/R5 回归锚；warned 自 0.12.6 起放行、移出本列）
+    for (const status of ['queued', 'running', 'done']) {
       assert.equal(canRemoveRow({ ...base, status }), false)
     }
     // 外部记录：仅 failed 放行（0.9.82 修订）；done 不给 ✕（与面板 done 对齐）
@@ -271,6 +280,13 @@ describe('main.jsx × 外部记录接线结构锚（Task 5）', () => {
     assert.ok(ocSrc.includes('onRemove(r)'), '行渲染传整行 record（onOpsRemove 按 channel 分流；operations-card.jsx）')
     const view = readFileSync(join(root, 'src/client/operations-view.js'), 'utf8')
     assert.ok(view.includes("return r.status === 'failed'"), 'canRemoveRow 外部 failed 放行')
+  })
+  it('⑧warned 单条 ✕ + 降级行内文案接线锚（0.12.6）', () => {
+    const view = readFileSync(join(root, 'src/client/operations-view.js'), 'utf8')
+    assert.ok(view.includes("|| r.status === 'warned'"), 'canRemoveRow 本地 warned 放行（operations-view.js）')
+    assert.ok(view.includes('degradedRestoredTo:'), 'opRowVm 暴露 degradedRestoredTo（operations-view.js）')
+    assert.ok(ocSrc.includes('degradedRestoredTo'), '行渲染消费降级标记（operations-card.jsx）')
+    assert.ok(ocSrc.includes('op.degraded'), '降级文案走既有 op.degraded 键（operations-card.jsx）')
   })
   it('②清除联动 external-operations-clear；fetch 时机三处（R1-6）；persist 纯净', () => {
     assert.ok(src.includes('api("external-operations")'), '读取 method')

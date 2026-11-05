@@ -116,19 +116,25 @@ export function opRowVm(r) {
     // 外部记录渠道标记（0.9.79 ADR-0018）：非空 = 渠道徽标渲染 + 单条移除出口判定
     // （0.9.82 修订 R2-3：failed 放行，见 canRemoveRow）
     channel: typeof rec.channel === 'string' && rec.channel !== '' ? rec.channel : null,
+    // 降级恢复标记（0.12.6）：meta.degraded=true → restoredTo 作行内文案数据源（operations-card
+    // 消费既有 op.degraded 键渲染 opnote）；字段缺席/形态不符一律 null（旧记录与非降级行零变化）
+    degradedRestoredTo: meta.degraded === true && typeof meta.restoredTo === 'string' && meta.restoredTo !== '' ? meta.restoredTo : null,
   }
 }
 
 /**
- * 单条移除出口判定（0.9.79 R3-1 下沉；0.9.82 修订 R2-3）：本地记录维持 input/failed/superseded
- * 出口；外部记录 failed 放行（服务端 per-id delete 已建：external-operations-remove，事务顺序
+ * 单条移除出口判定（0.9.79 R3-1 下沉；0.9.82 修订 R2-3；0.12.6 本地 warned 扩面）：本地记录
+ * input/failed/superseded/warned 出口；外部记录 failed 放行（服务端 per-id delete 已建：
+ * external-operations-remove，事务顺序
  * 先 api 成功再动 overlay）——done 不给 ✕，与本地 done 无 ✕ 对齐；外部记录经 externalToRecord
- * 只产生 done/failed 终态，input/superseded 分支仅为防御。
+ * 只产生 done/failed 终态，input/superseded 分支仅为防御。warned 放行理由（0.12.6）：本地降级
+ * 恢复行点亮设置 tab 红点（main.jsx opsAttention 含 warned）却无单条出口——0.9.82 外部 failed
+ * 同款红点死锁残留，唯一消除手段曾只有「清除已结束」全量清空。
  */
 export function canRemoveRow(r) {
   if (!r || typeof r !== 'object') return false
   if (r.channel) return r.status === 'failed'
-  return r.status === 'input' || r.status === 'failed' || r.status === 'superseded'
+  return r.status === 'input' || r.status === 'failed' || r.status === 'superseded' || r.status === 'warned'
 }
 
 /**

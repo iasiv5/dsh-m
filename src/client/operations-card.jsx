@@ -43,7 +43,10 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
   // 0.9.79：外部记录行追加渠道徽标（lookup(channelLabelKey)，Agent 工具/命令行/外部兜底）。
   const row = (r) => {
     const vm = opRowVm(r);
-    const tip = [vm.full, vm.durText, r.error || r.warning || ""].filter(Boolean).join(" · ");
+    // 降级恢复行内文案（0.12.6）：meta.degraded → 复用既有 op.degraded 键（泵落账的记录只带
+    // degraded/restoredTo 标记、warning 字段为空，行上原先只有干巴巴的「带警告」无任何原因）
+    const degradedNote = vm.degradedRestoredTo !== null ? lookup("op.degraded", { restoredTo: vm.degradedRestoredTo }) : "";
+    const tip = [vm.full, vm.durText, degradedNote, r.error || r.warning || ""].filter(Boolean).join(" · ");
     return h(
       "div",
       { key: r.id, className: `dsvm-oprow ${OP_STATUS_CLS[r.status] || ""}` },
@@ -58,8 +61,9 @@ function OperationsCard({ records, onClearFinished, onRemove }) {
       r.status === "running" ? Spin() : null,
       r.error ? h("span", { className: "dsvm-opnote" }, r.error) : null,
       r.warning ? h("span", { className: "dsvm-opnote" }, r.warning) : null,
+      degradedNote ? h("span", { className: "dsvm-opnote" }, degradedNote) : null,
       // 单条移除（终审·新伤2 → 0.9.79 R3-1/R2-3 → 0.9.82 修订 R2-3）：出口判定下沉 canRemoveRow——
-      // 本地 input/failed/superseded 保留 ✕；外部记录 failed 放行（服务端 per-id delete 已建），
+      // 本地 input/failed/superseded/warned 保留 ✕（0.12.6：warned 红点死锁扩面）；外部记录 failed 放行（服务端 per-id delete 已建），
       // done 仍不给 ✕。onRemove 收整行 record，onOpsRemove 按 channel 分流（本地 remove / 外部 api）。
       canRemoveRow(r) && onRemove
         ? h("button", { className: "dshm-xbtn", title: lookup("op.remove"), onClick: () => onRemove(r) }, h(XIcon))
