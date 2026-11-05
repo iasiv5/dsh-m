@@ -715,6 +715,16 @@ describe('dshm_search：安装标注单快照契约（Tier B + fail-closed）', 
     await assert.rejects(() => search.execute({ query: 'sentinel' }), /安装标注不可用/)
   })
 
+  it('fail-closed 文案带 profile 名（desktop 不误报 web，issue #46 建议③）', async () => {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
+    registerTools(ctx, cfg, { listMarket: async () => ({ items: [{ ...sentinel, installed: false, installedPkg: undefined, installedVersion: undefined }], total: 1, offset: 0, limit: 5, categoryCounts: { ...emptyCounts, tools: 1 }, registryState: readyState, installedComplete: false, latestComplete: true, latestTimedOut: false }) }, { name: 'desktop', kind: 'desktop', dir: 'C:\\dshm-fake-desktop-profile', source: 'fallback' })
+    const search = registered.find((t) => t.name === 'dshm_search')
+    assert.ok(search, 'dshm_search 已注册')
+    await assert.rejects(() => search.execute({ query: 'sentinel' }), /读取 desktop profile 安装状态失败/)
+  })
+
   it('空结果的安装状态不完整时保持空结果（不误伤 unavailable/超时路径）', async () => {
     const search = await searchToolWith({
       items: [],

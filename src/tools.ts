@@ -196,7 +196,7 @@ export function registerTools(
       // 状态不完整且存在可被误标的条目时 fail-closed——不把未知安装状态呈现成未安装；
       // 空结果（registry 不可用/超时/无匹配）无可误标条目，维持优雅空结果。
       if (!result.installedComplete && result.items.length > 0) {
-        throw new Error('读取 web profile 安装状态失败，安装标注不可用；请稍后重试')
+        throw new Error(`读取 ${profile.name} profile 安装状态失败，安装标注不可用；请稍后重试`)
       }
       const shown = result.items.length
       const nextOffset: number | null = offset + shown < result.total ? offset + shown : null
