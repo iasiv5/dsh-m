@@ -36,19 +36,27 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
   useModalDepth(true);
   const communityScreenshotSource = it.community === true || typeof it.owner === "string";
   const [primaryShotState, setPrimaryShotState] = useState({ id: null, screenshots: [] });
-  // ADR-0031（B5）：最后发布 prop 直读优先；缺失且 npm 在场时打开后单条 published-at 拉取（磁盘命中零网络），
-  // id 键控防跨条目串值（primaryShotState 同款）；失败静默落 null 不重试。
-  const [pubAtState, setPubAtState] = useState({ id: null, publishedAt: null });
-  const pubAt = it.publishedAt ?? (pubAtState.id === it.id ? pubAtState.publishedAt : null);
+  // ADR-0031（B5）：最后发布 prop 直读优先；npm 条目**首帧占位渲染该行**（loading 显示「…」、
+  // 失败显示「—」＝弹窗既有无数据惯例，值原位替换）——避免行插入引发的弹窗高度跳变（主人实测反馈）。
+  // 打开后单条 published-at 拉取（磁盘命中零网络），id 键控防跨条目串值（primaryShotState 同款）。
+  const [pubAtState, setPubAtState] = useState({ id: null, value: null, status: "idle" });
+  const hasNpm = typeof it.npm === "string" && it.npm.trim() !== "";
+  const pubAt = it.publishedAt ?? (pubAtState.id === it.id && pubAtState.status === "done" ? pubAtState.value : null);
+  const pubLoading =
+    hasNpm &&
+    it.publishedAt === undefined &&
+    !(pubAtState.id === it.id && (pubAtState.status === "done" || pubAtState.status === "failed"));
   useEffect(() => {
-    setPubAtState({ id: it.id, publishedAt: it.publishedAt ?? null });
-    if (typeof it.npm !== "string" || it.npm.trim() === "" || it.publishedAt !== undefined) return;
+    setPubAtState({ id: it.id, value: it.publishedAt ?? null, status: it.publishedAt !== undefined ? "done" : "idle" });
+    if (!hasNpm || it.publishedAt !== undefined) return;
     let live = true;
     api("published-at", { npm: it.npm })
       .then((r) => {
-        if (live) setPubAtState({ id: it.id, publishedAt: r?.publishedAt ?? null });
+        if (live) setPubAtState({ id: it.id, value: r?.publishedAt ?? null, status: "done" });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (live) setPubAtState({ id: it.id, value: null, status: "failed" });
+      });
     return () => {
       live = false;
     };
@@ -211,10 +219,14 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
         { className: "dsvm-kv" },
         kv(lookup("modal.category"), catLabel),
         it.added ? kv(lookup("modal.added"), fmtDate(it.added)) : null,
-        it.npm && pubAt
+        hasNpm
           ? kv(
               lookup("modal.publishedAt"),
-              `${fmtDate(pubAt)}（${publishedDays(pubAt) === 0 ? lookup("modal.today") : lookup("modal.daysAgo", { n: publishedDays(pubAt) })}）`,
+              pubAt
+                ? `${fmtDate(pubAt)}（${publishedDays(pubAt) === 0 ? lookup("modal.today") : lookup("modal.daysAgo", { n: publishedDays(pubAt) })}）`
+                : pubLoading
+                  ? "…"
+                  : "—",
             )
           : null,
         it.community === true

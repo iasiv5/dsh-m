@@ -27,6 +27,7 @@
 - **陈旧度有界**：显示值最多滞后 24h；每包每天至多重取一次，同日重复搜索零网络。
 - **零漂移承诺（CODING-STANDARDS 承诺格）**：缺省态 `listMarket` 返回体逐字节不变（golden 8 captures 钉）；`publishedAtComplete` 为条件键。
 - **天数口径双产地**：core `publishedAtParts`（tools/CLI）与 client 弹窗内联（展示格式化不入属主，B3）语义一致——**天数口径变化需两处同步**（本条即同步提醒）。
-- **大载荷通道（实测修复 2026-11-05）**：重型包会被共享访问器缺省 `maxBytes: 8MB` 确定性拒绝（billion-context：8096 版本 / 32MB packument 实测）——本模块生产取数通道经 `makeLargeFetcher` 抬至 64MB（`PUBLISHED_AT_MAX_BYTES`），共享访问器缺省值与其余消费面不动；弹窗 action 超时相应 12s → 20s。
+- **大载荷通道（实测修复 2026-11-05）**：重型包会被共享访问器缺省 `maxBytes: 8MB` 确定性拒绝（billion-context：8096 版本 / 32MB packument 实测，929ms 拿到 time.modified）——本模块生产取数通道经 `makeLargeFetcher` 抬至 64MB（`PUBLISHED_AT_MAX_BYTES`），共享访问器缺省值与其余消费面不动；弹窗 action 超时相应 12s → 20s。
+- **弹窗占位行（主人实测反馈修复 2026-11-05）**：GUI 详情弹窗对 npm 条目**首帧恒渲染该行**——loading 显「…」、取数失败显「—」（弹窗既有无数据惯例，不冒充「很旧/很新」）、值原位替换——行高恒定，消除行插入引发的弹窗高度跳变（`.dsvm-modalbox` 高度随内容自适应）；列表面（tools/CLI）失败仍为行缺席，口径不变。
 - **同名异义**：`MarketItem.publishedAt`（包级 ISO string）区别于 `release-age.ts` 版本级 `publishedAt`（epoch ms，发布等待期）——两处 docstring/注释互指。
 - **断言面**：`tests/published-at.test.mjs`（16 例）、market/tools-search/cli-search/host-api/host-api-profile/client-render-smoke 各增 describe；既有钉例零改动（Step 0 四类普查在案：计划 §Task 3）。
