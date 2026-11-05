@@ -5,7 +5,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -13,6 +13,8 @@ import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
 import { readUpgradeIntent, resolveUpgradeIntent, writeUpgradeIntent } from '../lib/core/upgrade-intent.js'
+import { clearPublishedAtCacheForTest } from '../lib/core/published-at.js'
+import { resetNpmRouteForTests } from '../lib/core/npm-route.js'
 
 const ORIGIN = 'http://127.0.0.1:3080'
 const JSON_HEADERS = { 'content-type': 'application/json', origin: ORIGIN, host: '127.0.0.1:3080' }
@@ -1008,5 +1010,43 @@ describe('M1 Task 6：host-api 社区契约', () => {
     assert.equal(res.status, 200)
     assert.equal(optsSeen.length, 1)
     assert.equal(optsSeen[0]?.force, false, 'force 不得连坐社区 summary（弱网 3s 超时占位把社区卡打成不可用的教训）')
+  })
+})
+
+describe('host-api published-at（ADR-0031：详情弹窗单条取数缝点，B5）', () => {
+  let pubatCacheRoot
+  beforeEach(() => {
+    pubatCacheRoot = mkdtempSync(join(tmpdir(), 'dshm-pubat-api-'))
+    process.env.DSHM_CACHE_DIR = pubatCacheRoot
+    process.env.DSHM_NPM_REGISTRY = 'https://registry.npmjs.org' // decideNpmRoute 第 1 优先级直采（R3 键确定性）
+    resetNpmRouteForTests()
+  })
+  afterEach(() => {
+    delete process.env.DSHM_CACHE_DIR
+    delete process.env.DSHM_NPM_REGISTRY
+    resetNpmRouteForTests()
+    if (pubatCacheRoot) rmSync(pubatCacheRoot, { recursive: true, force: true })
+  })
+
+  it('① store 预置命中：返回缓存值（零网络直读）', async () => {
+    mkdirSync(join(pubatCacheRoot, 'published-at'), { recursive: true })
+    writeFileSync(
+      join(pubatCacheRoot, 'published-at', 'store.json'),
+      JSON.stringify({
+        version: 1,
+        entries: { 'pkg-a\nhttps://registry.npmjs.org': { modified: '2026-11-01T00:00:00.000Z', at: Date.now() } },
+      }),
+    )
+    clearPublishedAtCacheForTest()
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'published-at', npm: 'pkg-a' } })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, { ok: true, publishedAt: '2026-11-01T00:00:00.000Z' })
+  })
+
+  it('② npm 空 → 400', async () => {
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'published-at', npm: '' } })
+    assert.equal(res.status, 400)
   })
 })

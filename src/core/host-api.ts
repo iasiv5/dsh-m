@@ -33,6 +33,7 @@ import type { RegistryController, RegistryControllerSnapshot } from './registry-
 import { RegistryConfigError } from './registry-controller.js'
 import { checkRegistryEntries } from './registry-check.js'
 import { parseMarketQueryInput, MarketQueryError, type MarketQueryIntake } from './market-query.js'
+import { fetchPublishedAt } from './published-at.js'
 import { servingPort, scheduleRestart } from './restart.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
@@ -561,6 +562,14 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             signal,
           })
           payload = { ...result }
+          break
+        }
+
+        case 'published-at': {
+          // ADR-0031（B5）：GUI 详情弹窗单条取数缝点——磁盘优先（命中零网络），非列表路径，无 withPublishedAt 参与。
+          const npm = typeof body.npm === 'string' ? body.npm.trim() : ''
+          if (npm === '') throw new ApiProtocolError(400, '参数 npm: 需非空字符串')
+          payload = { publishedAt: await fetchPublishedAt(npm, 12_000, signal) }
           break
         }
 

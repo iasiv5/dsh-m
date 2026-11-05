@@ -1859,3 +1859,62 @@ describe('score-once：单遍评分 + 显式排序 tie-break 保序', () => {
     assert.deepEqual(res.items.map((it) => it.id), ['o2--beta', 'o3--gamma', 'o1--alpha'], 'merged 现序即 downloads 降序，同分保持该序')
   })
 })
+
+describe('withPublishedAt 时间探查段（ADR-0031，issue #45）', () => {
+  const ISO = '2026-11-01T00:00:00.000Z'
+  /** 混合来源小清单：npm 条目 + github 条目（段只对 npm 条目取数，B7 非 npm 不显示）。 */
+  function mixedDeps(pubCalls, publishedAtImpl) {
+    const plugins = [
+      { id: 'p-npm', name: 'PNpm', description: 'd-npm', category: 'tools', tags: [], source: 'npm', npm: 'pubat-npm' },
+      { id: 'p-gh', name: 'PGh', description: 'd-gh', category: 'tools', tags: [], source: 'github', github: 'own/repo' },
+    ]
+    return fakeDeps({
+      loadRegistry: async () => readyLoaded(plugins, { configuredAddress: 'reg-pubat' }),
+      publishedAt: async (pkg) => { pubCalls.push(pkg); return publishedAtImpl(pkg) },
+    })
+  }
+
+  it('① 开启 + 取数成功：npm 条目带 publishedAt、github 条目不带、publishedAtComplete=true', async () => {
+    const pubCalls = []
+    const { deps } = mixedDeps(pubCalls, () => ISO)
+    const res = await listMarket(cfg, { withLatest: false, withPublishedAt: true, limit: 10 }, deps)
+    const npmItem = res.items.find((it) => it.id === 'p-npm')
+    const ghItem = res.items.find((it) => it.id === 'p-gh')
+    assert.equal(npmItem.publishedAt, ISO)
+    assert.ok(!('publishedAt' in ghItem), 'github 条目不携带 publishedAt（B7）')
+    assert.equal(res.publishedAtComplete, true)
+    assert.deepEqual(pubCalls, ['pubat-npm'], '只对 npm 条目取数')
+  })
+
+  it('② 单条取数失败：该条缺席 + publishedAtComplete=false（fail-open 不冒充）', async () => {
+    const pubCalls = []
+    const { deps } = mixedDeps(pubCalls, () => null)
+    const res = await listMarket(cfg, { withLatest: false, withPublishedAt: true, limit: 10 }, deps)
+    const npmItem = res.items.find((it) => it.id === 'p-npm')
+    assert.ok(!('publishedAt' in npmItem), '失败条目不产生键（Q44 纪律）')
+    assert.equal(res.publishedAtComplete, false)
+  })
+
+  it('③ 缺省（不传 withPublishedAt）：零漂移——无 publishedAt 键、结果无 publishedAtComplete 键', async () => {
+    const pubCalls = []
+    const { deps } = mixedDeps(pubCalls, () => ISO)
+    const res = await listMarket(cfg, { withLatest: false, limit: 10 }, deps)
+    assert.ok(res.items.every((it) => !('publishedAt' in it)))
+    assert.ok(!('publishedAtComplete' in res), '条件键：缺省态不存在（golden 零漂移前提）')
+    assert.equal(pubCalls.length, 0)
+  })
+
+  it('④ deadline 耗尽（社区 waiter 吃完预算，registry 秒回避开空页早退）：段跳过取数、publishedAtComplete=false', async () => {
+    const pubCalls = []
+    const { deps } = fakeDeps({
+      fetchCommunityCatalog: async () => {
+        await sleep(50)
+        return { state: { enabled: true, status: 'ready', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null }
+      },
+      publishedAt: async (pkg) => { pubCalls.push(pkg); return ISO },
+    })
+    const res = await listMarket(cfg, { withLatest: false, withPublishedAt: true, deadlineMs: 10, limit: 10 }, deps)
+    assert.equal(pubCalls.length, 0, '预算耗尽 → 跳过整段')
+    assert.equal(res.publishedAtComplete, false)
+  })
+})

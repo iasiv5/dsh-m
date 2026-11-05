@@ -259,8 +259,12 @@ _Avoid_: 缩放记忆、拉伸（口语）、窗口大小（过泛）
 _Avoid_: 对边锚定（操作系统桌面窗口的模型，本面板不采用）、锚点缩放
 
 **packument 访问器（Packument Accessor）**:
-对 npm 全量 packument 取数的唯一属主模块：一次取回按需派生视图（发布时戳表、版本表、readme 等），按（包， 生效 registry）记忆化共享给登记、预检与 B3 预热；latest 小端点探测与其缓存制度（ADR-0006）不在其辖区。
+对 npm 全量 packument 取数的唯一属主模块：一次取回按需派生视图（发布时戳表、版本表、readme 等），按（包， 生效 registry）记忆化共享给登记、预检、B3 预热与发布时刻缓存（ADR-0031）；latest 小端点探测与其缓存制度（ADR-0006）不在其辖区。
 _Avoid_: registry 元数据缓存（过泛）、times 缓存（只是派生视图之一）、packument 服务（不是服务，是进程内属主）
+
+**最后发布时间（Published At）**:
+收录条目对应 npm 包在 registry 的最后一次发布活动时刻（npm packument `time.modified`，缺席时回退各版本发布时刻的最大值）；维护状态的弱信号，仅供人与 agent 判断，不参与排序、过滤或安装决策。与「收录日期」（社区条目 `added`，被目录发现的时间）严格分工：语义不得混用、不得互相兜底；非 npm 来源条目不携带本字段；取数失败按缺席呈现，不冒充「很旧」或「很新」。
+_Avoid_: 更新时间（「有更新」是 latest 探测的版本号语义）、维护状态（本字段只是弱信号）、最后更新（同更新时间）
 
 **宿主安装守卫（Already-Installed Guard）**:
 DSH 0.2.1 起官方 plugin-manager 对 installBundle 的前置检查：spec 解析出的包名已在 profile manifest 中就先于 pnpm 拒绝，官方升级语义随之改为「先卸载再安装」；tarball/git 形态的 spec 包名在 pnpm 前不可知，不受其约束（ADR-0022）。

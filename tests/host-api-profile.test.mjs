@@ -129,7 +129,7 @@ function setupTrust({ trust, profile, overrides = {} } = {}) {
   return { dispatcher, calls }
 }
 
-const ALL_METHODS = ['ping', 'self-check', 'registry', 'market', 'installed', 'readme', 'status', 'install', 'uninstall', 'set-enabled', 'upgrade', 'restart', 'registry-config', 'registry-config-apply', 'set-community', 'registry-default-download', 'registry-diagnose', 'self-upgrade', 'no-such-method']
+const ALL_METHODS = ['ping', 'self-check', 'registry', 'market', 'published-at', 'installed', 'readme', 'status', 'install', 'uninstall', 'set-enabled', 'upgrade', 'restart', 'registry-config', 'registry-config-apply', 'set-community', 'registry-default-download', 'registry-diagnose', 'self-upgrade', 'no-such-method']
 
 let cacheRoot = ''
 beforeEach(() => {

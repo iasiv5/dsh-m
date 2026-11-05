@@ -169,3 +169,34 @@ describe('注册表状态行（retro 2026-11-01 第 7 项）', () => {
     assert.equal(out.registryNote, 'default-jsdelivr · 30 条 · 抓取于 2026-11-01T04:16:34.372Z · 过期缓存 · 状态 degraded · 错误 2 条')
   })
 })
+
+describe('renderSearch 发布时间（ADR-0031，issue #45）', () => {
+  const daysAgoIso = (d) => new Date(Date.now() - d * 86_400_000).toISOString()
+
+  it('① 条目带 publishedAt：行尾「 · 发布 <date>（8 天前）」', async () => {
+    const search = await loadSearch(() => resultOf([primaryItem()]))
+    const out = resultOf([{ ...primaryItem(), publishedAt: daysAgoIso(8) }])
+    const text = renderTextOf(search, out)
+    assert.match(text, / · 发布 \d{4}-\d{2}-\d{2}（8 天前）/, '行尾带发布段')
+  })
+
+  it('② 当天发布：显示「今天」', async () => {
+    const search = await loadSearch(() => resultOf([primaryItem()]))
+    const text = renderTextOf(search, resultOf([{ ...primaryItem(), publishedAt: daysAgoIso(0) }]))
+    assert.match(text, /发布 \d{4}-\d{2}-\d{2}（今天）/)
+  })
+
+  it('③ 无 publishedAt：输出不含「发布」段（缺席不冒充）', async () => {
+    const search = await loadSearch(() => resultOf([primaryItem()]))
+    const text = renderTextOf(search, resultOf([primaryItem()]))
+    assert.ok(!text.includes('发布'), '夹具文案无发布字样，缺席即整词不出现')
+  })
+
+  it('④ execute opts 恒开（B5 核心验收面）：withPublishedAt=true 且 withLatest=false', async () => {
+    const calls = []
+    const search = await loadSearch(() => resultOf([primaryItem()]), calls)
+    await search.execute({ query: 'x' })
+    assert.equal(calls[0].withPublishedAt, true)
+    assert.equal(calls[0].withLatest, false)
+  })
+})

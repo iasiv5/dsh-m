@@ -97,3 +97,25 @@ describe('dshm search 三端查询文法（0.9.92：market-query 单一入口，
     assert.ok(errText.includes('错误：非法 source: zone'), `stderr 应含统一文法报错，实际: ${errText}`)
   })
 })
+
+describe('dshm search 最后发布时间（ADR-0031，issue #45）', () => {
+  const daysAgoIso = (d) => new Date(Date.now() - d * 86_400_000).toISOString()
+
+  it('① execute opts：withPublishedAt=true 且 withLatest=false（B5 恒开）', async () => {
+    const { captured } = await runSearchCapture(['search', '--query', 'surf'], () => resultOf([item()]))
+    assert.equal(captured.withPublishedAt, true)
+    assert.equal(captured.withLatest, false)
+  })
+
+  it('② 条目带 publishedAt：输出「最后发布 <date>（8 天前）」行', async () => {
+    const { code, text } = await runSearch(() => resultOf([item({ publishedAt: daysAgoIso(8) })]))
+    assert.equal(code, 0)
+    assert.match(text, /最后发布 \d{4}-\d{2}-\d{2}（8 天前）/)
+  })
+
+  it('③ 无 publishedAt：输出不含「最后发布」（缺席不冒充）', async () => {
+    const { code, text } = await runSearch(() => resultOf([item()]))
+    assert.equal(code, 0)
+    assert.ok(!text.includes('最后发布'))
+  })
+})

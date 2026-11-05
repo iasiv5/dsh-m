@@ -23,6 +23,7 @@ import { readLauncherPackageVersion } from './core/dsh-version.js'
 import { dshProfileDirByName, isDshProfileName, DESKTOP_PROFILE_NAMES, WEB_PROFILE } from './core/env.js'
 import { loadRegistry, type LoadedRegistry, type RegistryConfig } from './core/registry.js'
 import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS, INSTALLED_CORE_DEADLINE_MS } from './core/market-query.js'
+import { publishedAtParts } from './core/published-at.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
 import { upgradeEffectLine } from './core/activation.js'
@@ -269,6 +270,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         offset: intake.offset,
         limit: intake.limit,
         withLatest: false,
+        withPublishedAt: true, // ADR-0031（B5）：维护信号进 CLI 输出
         namespace: 'cli',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
         profileDir: cliProfileDir,
@@ -291,6 +293,8 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         const zone = it.community === true ? '[社区] ' : ''
         out(`• ${it.name} (${it.id})${zone}${it.audience === 'internal' ? '[作者自用] ' : ''}· ${categoryLabelOf(it.category)} · ${it.source}${inst}`)
         out(`  ${it.description}`)
+        const pub = it.publishedAt ? publishedAtParts(it.publishedAt) : null
+        if (pub) out(`  最后发布 ${pub.date}（${pub.days === 0 ? '今天' : `${pub.days} 天前`}）`)
       }
       const shown = result.items.length
       const offset = intake.offset

@@ -27,10 +27,32 @@ function useModalDepth(active) {
   }, [active]);
 }
 
+// ADR-0031：展示格式化客户端内联（天数口径与 core publishedAtParts 一致——变化需两处同步，ADR Consequences 记录）
+function publishedDays(iso) {
+  return Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000));
+}
+
 function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeBusy, upgradeRec, profileKind, installRec, installNote }) {
   useModalDepth(true);
   const communityScreenshotSource = it.community === true || typeof it.owner === "string";
   const [primaryShotState, setPrimaryShotState] = useState({ id: null, screenshots: [] });
+  // ADR-0031（B5）：最后发布 prop 直读优先；缺失且 npm 在场时打开后单条 published-at 拉取（磁盘命中零网络），
+  // id 键控防跨条目串值（primaryShotState 同款）；失败静默落 null 不重试。
+  const [pubAtState, setPubAtState] = useState({ id: null, publishedAt: null });
+  const pubAt = it.publishedAt ?? (pubAtState.id === it.id ? pubAtState.publishedAt : null);
+  useEffect(() => {
+    setPubAtState({ id: it.id, publishedAt: it.publishedAt ?? null });
+    if (typeof it.npm !== "string" || it.npm.trim() === "" || it.publishedAt !== undefined) return;
+    let live = true;
+    api("published-at", { npm: it.npm })
+      .then((r) => {
+        if (live) setPubAtState({ id: it.id, publishedAt: r?.publishedAt ?? null });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [it.id, it.npm, it.publishedAt]);
   useEffect(() => {
     let live = true;
     const controller = new AbortController();
@@ -189,6 +211,12 @@ function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeB
         { className: "dsvm-kv" },
         kv(lookup("modal.category"), catLabel),
         it.added ? kv(lookup("modal.added"), fmtDate(it.added)) : null,
+        it.npm && pubAt
+          ? kv(
+              lookup("modal.publishedAt"),
+              `${fmtDate(pubAt)}（${publishedDays(pubAt) === 0 ? lookup("modal.today") : lookup("modal.daysAgo", { n: publishedDays(pubAt) })}）`,
+            )
+          : null,
         it.community === true
           ? kv(
               lookup("modal.dlwindow"),

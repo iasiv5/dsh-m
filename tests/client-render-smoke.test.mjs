@@ -334,6 +334,20 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(legacy.includes('dsvm-cmdrow'), 'profileKind 缺席（旧宿主）按 web 保留')
   })
 
+  // ADR-0031（issue #45）：详情弹窗「最后发布」kv 行——prop 直读（it.publishedAt）在场即渲染；
+  // 缺席（ Browse 态/取数失败）不渲染。SSR 不跑 effect，api 拉取路径由浏览器运行时消化（ADR-0023 三桶：接线不单测）。
+  it('DetailModal 最后发布行：publishedAt 在场渲染（EN 字典），缺席不渲染', () => {
+    const entry = { id: 'o1--demo', name: 'demo', description: 'd', category: 'theme', source: 'npm', npm: 'demo-pkg' }
+    const base = { labels: {}, busy: false, onClose: () => {}, onInstall: () => {} }
+    const iso = new Date(Date.now() - 8 * 86400000).toISOString() // 相对构造：8 天差 → '8d ago'（不随墙钟漂移）
+    const withPub = renderToString(h(components.__DetailModal, { it: { ...entry, publishedAt: iso }, ...base, profileKind: 'web' }))
+    assert.ok(withPub.includes('Published'), 'en 字典 modal.publishedAt 键渲染（node browserLang=en，双语容忍锚）')
+    assert.match(withPub, /8d ago/, '相对天数（en 字典 {n} 插值）')
+    assert.match(withPub, /\d{4}[/-]\d{2}[/-]\d{2}/, '日期渲染（fmtDate 本地化格式，不钉分隔符）')
+    const without = renderToString(h(components.__DetailModal, { it: entry, ...base, profileKind: 'web' }))
+    assert.ok(!without.includes('Published'), '缺席：行不渲染')
+  })
+
   // 0.9.15 安装信息就地进 Modal：终态行按 kind 着色 + ok 附重启提示；running record 渲染不抛
   //（ProgressLine 依赖 effect 轮询，SSR 首渲染为 null——冒烟只验终态行与不抛）
   it('DetailModal 安装终态行：ok/err/hint 着色 + ok 附重启提示；running record 渲染不抛', () => {

@@ -54,6 +54,7 @@ import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './searc
 import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
 import { stampUpgradeProjection, type UnsupportedReasonCode } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
+import { fetchPublishedAt } from './published-at.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
@@ -90,6 +91,9 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   /** 查询最新版本失败的说明（不阻塞列表） */
   latestError?: string
   latestErrorCode?: LatestErrorCode
+  /** 包级最后发布时刻（ADR-0031：npm packument `time.modified` 语义、全 ISO；缺失不产生键）。
+   *  消歧义（R6）：区别于 release-age.ts 版本级 publishedAt（epoch ms，发布等待期）——仅 npm 条目携带。 */
+  publishedAt?: string
   /** 社区收录条目标记（M1 Task 5）；主清单条目不带 */
   community?: true
   /** 主清单重叠标记（设计 2026-10-27）：社区浏览镜像可见、搜索池排除；client 据此渲染「精选收录」徽章 */
@@ -144,6 +148,9 @@ export interface MarketQuery extends RegistryRuntimeOptions {
   limit?: number
   /** core 默认 true；Host GUI 忽略 caller 值，tool/CLI 显式 false */
   withLatest?: boolean
+  /** 发布时刻探查段开关（ADR-0031）：默认 false（缺省态零漂移）；tools/CLI 搜索恒 true；
+   *  GUI 列表不开（详情走单条 published-at action）。 */
+  withPublishedAt?: boolean
   force?: boolean
   /** 探测两态（0.9.45 市场页两段加载，ADR-0013）：缺省 'full' 行为不变（缓存新鲜直用 + 未命中/
    *  过期 inline 探测）；'cache-only' 只回 TTL 内缓存命中、零网络，有缺口 → latestComplete=false
@@ -164,6 +171,8 @@ export interface MarketDeps {
   fetchCommunityCatalog: typeof defaultFetchCommunityCatalog
   /** enablement 合成注入（Task 13）；缺省 = composeEnablement */
   composeEnablement?: typeof composeEnablement
+  /** 发布时刻取数注入（ADR-0031；测试 stub 面）；缺省 = fetchPublishedAt（磁盘优先） */
+  publishedAt?: typeof fetchPublishedAt
 }
 
 /** profile package.json 的 dsh.profile.bundles 数组（读不到 → []；Task 13）。 */
@@ -211,6 +220,9 @@ export interface MarketResult {
   installedComplete: boolean
   latestComplete: boolean
   latestTimedOut: boolean
+  /** 发布时刻探查段完整性（ADR-0031，条件键：仅 `withPublishedAt===true` 时进入返回体——缺省态零漂移）：
+   *  false = 页内存在取数失败/超时/预算耗尽条目，其 `publishedAt` 缺席，不冒充完整。 */
+  publishedAtComplete?: boolean
   /** 社区清单状态 summary（M1 Task 5；source='primary' → skipped，配置关闭 → disabled） */
   community: CommunityRegistrySummary
 }
@@ -764,6 +776,31 @@ export async function listMarket(
     }
   }
 
+  // ADR-0031 发布时刻探查段（opt-in，B5）：页内 npm 条目并发 ≤ LATEST_WORKERS、共享 remaining()
+  // 预算（B6 fail-open：单条失败/超时 → 该条 publishedAt 缺席 + publishedAtComplete=false，
+  // 不阻塞列表）；非 npm 条目不取数（B7，不用 added 兜底）。条件键（见 MarketResult 注）。
+  let publishedAtComplete: boolean | undefined
+  if (opts.withPublishedAt === true && items.length > 0) {
+    publishedAtComplete = true
+    const npmItems = items.filter((it) => it.source === 'npm' && it.npm)
+    if (remaining() <= 0) {
+      publishedAtComplete = false
+    } else {
+      const lookup = d.publishedAt ?? fetchPublishedAt
+      await mapWithConcurrency(npmItems, LATEST_WORKERS, async (item) => {
+        const perBudget = Math.max(1, Math.min(remaining(), 12_000))
+        try {
+          const publishedAt = await lookup(item.npm!, perBudget, signal)
+          if (publishedAt !== null && publishedAt !== undefined) item.publishedAt = publishedAt
+          else publishedAtComplete = false
+        } catch (error) {
+          if (signal?.aborted) throw abortError()
+          publishedAtComplete = false
+        }
+      })
+    }
+  }
+
   return {
     items,
     total,
@@ -775,6 +812,7 @@ export async function listMarket(
     installedComplete,
     latestComplete,
     latestTimedOut,
+    ...((publishedAtComplete !== undefined) ? { publishedAtComplete } : {}),
     community: community.summary,
   }
 }

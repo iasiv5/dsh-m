@@ -20,6 +20,7 @@ import type { CommunityRegistrySummary } from './core/merged-market.js'
 import type { RegistryConfig, RegistryEntry, RegistryState } from './core/registry.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS, INSTALLED_CORE_DEADLINE_MS } from './core/market-query.js'
+import { publishedAtParts } from './core/published-at.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { appExitFromContext, scheduleRestart } from './core/restart.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
@@ -175,8 +176,8 @@ export function registerTools(
         { limitMax: 80, limitDefault: 10 },
       )
       const { category, source, offset, limit } = intake
-      // metadata-only：agent 卡片不需要 latest；与 Host GUI 共用 host namespace；
-      // deadline 44s 是本 waiter 的绝对上限（工具 timeout 45s 先到兜底）
+      // metadata-only：agent 卡片不需要 latest；发布时刻 opt-in 恒开（ADR-0031，B5——维护信号进卡片行）；
+      // 与 Host GUI 共用 host namespace；deadline 44s 是本 waiter 的绝对上限（工具 timeout 45s 先到兜底）
       const result = await m.listMarket(cfg, {
         query: String(args.query || ''),
         category,
@@ -184,6 +185,7 @@ export function registerTools(
         offset,
         limit,
         withLatest: false,
+        withPublishedAt: true,
         namespace: 'host',
         deadlineMs: SEARCH_CORE_DEADLINE_MS,
         signal: exec?.signal,
@@ -205,6 +207,7 @@ export function registerTools(
         offset,
         nextOffset,
         total: result.total,
+        ...(result.publishedAtComplete !== undefined ? { publishedAtComplete: result.publishedAtComplete } : {}),
         registry: summaryOf(result.registryState),
         registryNote: registryNoteOf(result.registryState),
         community: communityToolSummary(result.community),
@@ -225,6 +228,7 @@ export function registerTools(
           community: e.community === true,
           ...(e.audience === 'internal' ? { audience: 'internal' as const } : {}),
           ...(e.decoupled === true ? { decoupled: true as const } : {}),
+          ...(e.publishedAt !== undefined ? { publishedAt: e.publishedAt } : {}),
           downloads: e.downloads ?? null,
           stars: e.stars ?? null,
         })),
@@ -556,6 +560,7 @@ interface SearchOut {
     installedVersion?: string
     categoryLabel?: string
     community?: boolean
+    publishedAt?: string
     downloads?: number | null
     stars?: number | null
   }>
@@ -563,6 +568,7 @@ interface SearchOut {
   offset?: number
   nextOffset?: number | null
   registryNote?: string
+  publishedAtComplete?: boolean
 }
 interface ListOut {
   items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
@@ -625,7 +631,9 @@ function renderSearch(out: SearchOut): string {
     const inst = it.installed ? `（已安装 v${it.installedVersion || '?'}）` : ''
     const zone = it.community === true ? '[社区]' : ''
     const own = it.audience === 'internal' ? '[作者自用]' : ''
-    return `${i + 1}. ${it.name} · ${it.id}${zone}${own}${inst} · ${it.categoryLabel || it.category}`
+    const pub = it.publishedAt ? publishedAtParts(it.publishedAt) : null
+    const pubSeg = pub ? ` · 发布 ${pub.date}（${pub.days === 0 ? '今天' : `${pub.days} 天前`}）` : ''
+    return `${i + 1}. ${it.name} · ${it.id}${zone}${own}${inst} · ${it.categoryLabel || it.category}${pubSeg}`
   })
   // 翻页尾行（0.7.0 Task 5）：nextOffset 为空 = 已到末尾
   const pager =
