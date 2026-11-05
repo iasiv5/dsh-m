@@ -13,10 +13,10 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { listInstalledWithMeta, listMarket } from '../lib/core/market.js'
-import { listInstalledPlugins, readProfileDeps, readInstalledPluginReadme } from '../lib/core/installed.js'
+import { listInstalledPlugins, readProfileDeps, readInstalledPluginReadme, resolvePluginDir } from '../lib/core/installed.js'
 import { githubRepoFromRepository } from '../lib/core/installed.js'
 
 let dir
@@ -390,5 +390,78 @@ describe('listMarket 市场条目 icon join（ADR-0025 增补，主人修订）'
       rmSync(process.env.DSHM_CACHE_DIR, { recursive: true, force: true })
       delete process.env.DSHM_CACHE_DIR
     }
+  })
+})
+
+describe('resolvePluginDir：link 目标形态判定（issue #46/#47）', () => {
+  it('⑦ POSIX 绝对形态 link:/tmp/x → 非 null（现状回归守卫）', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:/tmp/x'), resolve(dir, '/tmp/x'))
+  })
+  it('① 盘符正斜杠 link:C:/x → 非 null（平台无关字面判定）', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:C:/x'), resolve(dir, 'C:/x'))
+  })
+  it('② 盘符反斜杠 link:C:\\x → 非 null', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:C:\\x'), resolve(dir, 'C:\\x'))
+  })
+  it('④ 盘符相对 link:C:x（无分隔符）→ null', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:C:x'), null)
+  })
+  it('⑤ 相对形态 link:./x 与 link:../x → 按 profileDir 基准解析', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:./x'), resolve(dir, './x'))
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:../x'), resolve(dir, '../x'))
+  })
+  it('⑥ 目标含 NUL → null（绝对与相对两形态都拒）', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:/tmp/x\0y'), null)
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:./x\0'), null)
+  })
+  it('⑧ 退化形态（空目标 / 点 / 双点）→ null（解析落 profile 自身或其父，回归守卫）', () => {
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:'), null)
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:.'), null)
+    assert.equal(resolvePluginDir(dir, 'pkg', 'link:..'), null)
+  })
+})
+
+describe('listInstalledPlugins：link 依赖归类（issue #46/#47）', () => {
+  it('① 相对 link 目标存在 → 与物化 npm 依赖共存，complete:true，source/path 为真实目标', async () => {
+    manifest({ dependencies: { 'pkg-n': '1.0.0', '@local/dev': 'link:./local/dev' } })
+    pkgJson('pkg-n', { name: 'pkg-n', version: '1.0.0', dsh: { client: { platform: 'web' } } })
+    mkdirSync(join(dir, 'local', 'dev'), { recursive: true })
+    writeFileSync(join(dir, 'local', 'dev', 'package.json'), JSON.stringify({ name: 'dev', version: '0.1.0', dsh: { client: { platform: 'web' } } }))
+    const res = await listInstalledPlugins(dir)
+    assert.equal(res.complete, true)
+    assert.deepEqual(res.items.map((it) => it.pkg), ['@local/dev', 'pkg-n'])
+    const link = res.items.find((it) => it.source === 'link')
+    assert.equal(link.path, resolve(dir, './local/dev'))
+    assert.equal(link.spec, 'link:./local/dev')
+  })
+  it('② 相对 link 目标缺失 → unknown → complete:false（partial 语义不变）', async () => {
+    manifest({ dependencies: { '@local/ghost': 'link:./missing/dev' } })
+    const res = await listInstalledPlugins(dir)
+    assert.equal(res.complete, false)
+    assert.deepEqual(res.items, [])
+    assert.equal(res.others, 0)
+  })
+  it('③ 盘符 link 目标不存在 → unknown → complete:false（宿主平台错配的诚实语义）', async () => {
+    manifest({ dependencies: { 'win-only': 'link:C:/dshm-issue46-probe-must-not-exist' } })
+    const res = await listInstalledPlugins(dir)
+    assert.equal(res.complete, false)
+    assert.deepEqual(res.items, [])
+  })
+  it('④ link 目标 manifest 无 dsh 字段 → others 计数（确认非 DSH 语义不变）', async () => {
+    manifest({ dependencies: { '@local/plain': 'link:./local/plain' } })
+    mkdirSync(join(dir, 'local', 'plain'), { recursive: true })
+    writeFileSync(join(dir, 'local', 'plain', 'package.json'), JSON.stringify({ name: 'plain', version: '0.1.0' }))
+    const res = await listInstalledPlugins(dir)
+    assert.equal(res.complete, true)
+    assert.deepEqual(res.items, [])
+    assert.equal(res.others, 1)
+  })
+  it('⑤ 相对 link 依赖的 README 从解析目标读取（触点④）', async () => {
+    manifest({ dependencies: { '@local/dev': 'link:./local/dev' } })
+    mkdirSync(join(dir, 'local', 'dev'), { recursive: true })
+    writeFileSync(join(dir, 'local', 'dev', 'package.json'), JSON.stringify({ name: 'dev', version: '0.1.0', dsh: {} }))
+    writeFileSync(join(dir, 'local', 'dev', 'README.md'), '# dev readme')
+    const r = await readInstalledPluginReadme('@local/dev', dir)
+    assert.equal(r.readme, '# dev readme')
   })
 })

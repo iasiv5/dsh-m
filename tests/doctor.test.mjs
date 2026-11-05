@@ -303,6 +303,18 @@ describe('checkAccount', () => {
     assert.equal(r.account[0].consistent, true)
   })
 
+  it('link: 相对 spec 按 profile 基准解析 → consistent（issue #46/#47）', async () => {
+    mkProfile({ 'pkg-rel': 'link:./linked-rel' }, lock([]))
+    mkdirSync(join(profile, 'linked-rel'), { recursive: true })
+    writeFileSync(join(profile, 'linked-rel', 'package.json'), JSON.stringify({ name: 'linked-rel', version: '3.1.0' }))
+    const r = await checkAccount(profile)
+    assert.equal(r.account[0].pin, 'link:./linked-rel')
+    assert.equal(r.account[0].installed, '3.1.0')
+    assert.equal(r.account[0].lockfile, null)
+    assert.equal(r.account[0].consistent, true)
+    assert.equal(r.findings.length, 0)
+  })
+
   it('非 9.0 lockfile → 不猜（lockfile 全 null，不产生 finding）', async () => {
     mkProfile({ 'pkg-g': '1.0.0' }, "lockfileVersion: '6.0'\nimporters: {}\n")
     mkInstalled('pkg-g', '1.0.0')

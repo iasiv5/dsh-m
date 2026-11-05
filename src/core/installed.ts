@@ -10,7 +10,7 @@
  * incomplete 展示与处理为后续独立任务。
  */
 import { open, readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { webProfileDir } from './env.js'
 import { readBundlePatchRows, type BundlePatchRows } from './patch-yaml.js'
 
@@ -69,14 +69,21 @@ export function parseSpecSource(spec: string): PluginSource {
  * - `link:` 是活的开发目录符号链接，解析真实目标（已装页展示本地路径有价值）；
  * - 其余（npm / github / file-tarball / file-dir）pnpm 都会把内容物化到 node_modules/<pkg>，
  *   统一从那里读。skillhub 同款语义——file: 特判回 tarball 路径是错的（读不到 package.json）。
+ * - link 目标形态（issue #46/#47）：绝对 = `isAbsolute`（宿主平台原生：POSIX `/x`、Windows `C:\x`、UNC）∪ 盘符正则 `/^[A-Za-z]:[\\/]/`（跨平台字面形态，ubuntu CI 可钉）；相对（含 bare `link:foo`）= 按 pnpm 语义以 profileDir 为基准解析。恒拒：`\0`、盘符相对 `C:x`、退化形态（解析落 profile 自身或其父）。`resolve(profileDir, target)` 一函数两形态——target 绝对时 resolve 忽略基准。
  */
 export function resolvePluginDir(profileDir: string, pkg: string, spec: string): string | null {
   if (!isSafePkgName(pkg)) return null
   const source = parseSpecSource(spec)
   if (source === 'link') {
     const target = String(spec).slice('link:'.length).trim()
-    if (!target.startsWith('/') || target.includes('\0')) return null
-    return resolve(target)
+    const absolute = isAbsolute(target) || /^[A-Za-z]:[\\/]/.test(target)
+    // 恒拒：\0；盘符相对（C:x，无分隔符）。
+    if (target.includes('\0') || (!absolute && /^[A-Za-z]:/.test(target))) return null
+    const dir = resolve(profileDir, target) // target 绝对时忽略基准——绝对/相对一函数两形态
+    // 退化相对形态（''/. / .. / ./ 等——解析落 profile 自身或其父）维持 null：
+    // 与今日 unknown 等价，不冒充 others、不自读 profile manifest（评审 R1-D1 裁决 A′）。
+    if (!absolute && (dir === resolve(profileDir) || dir === resolve(profileDir, '..'))) return null
+    return dir
   }
   return join(resolve(profileDir), 'node_modules', pkg)
 }
