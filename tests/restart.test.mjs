@@ -151,7 +151,7 @@ describe('helper spawn flags 与 windowsHide 源锚（issue #48）', () => {
     assert.deepEqual(replacementSpawnFlags(), { windowsHide: true })
   })
   it('helper 源码内插 flags——windowsHide 字面量恰 1 处（出现次数语义）', () => {
-    const src = restartHelperSource(base, { cwd: '/c' }, { out: '/o', err: '/e' }, 3081)
+    const src = restartHelperSource(base, { cwd: '/c' }, { out: '/o', err: '/e' }, 3081, 4242)
     assert.equal(src.split('"windowsHide":true').length - 1, 1)
     // usage 锚：spawn 行必须实际展开 flags（变异自证实证：仅钉声明行时，删 spawn 行 `...flags` 后声明行仍在、锚恒绿）
     assert.equal(src.split('shell: viaShell, ...flags }').length - 1, 1)
@@ -240,9 +240,13 @@ describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
       },
       async pumpUntilDone(maxSteps = 5000) {
         for (let i = 0; i < maxSteps && !doneFlag; i += 1) {
-          if (timers.length === 0) break
+          if (timers.length === 0) {
+            // S1 护栏：timers 耗尽而 main() 未收口 = 实现存在无 timer 死循环或提前 return 漏挂 then——显式失败，防夹具假绿
+            throw new Error('helper harness: timers exhausted before main() settled')
+          }
           await this.pump(1)
         }
+        if (!doneFlag) throw new Error(`helper harness: main() did not settle within ${maxSteps} pump steps`)
       },
     }
   }

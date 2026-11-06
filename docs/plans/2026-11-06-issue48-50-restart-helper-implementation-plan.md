@@ -105,6 +105,7 @@
 | `RestartResult`/文案链零变化（grill R1-Q6 前提） | Task 3 既有 6 例回归 + Task 4 全量 |
 | 结果回传 UI 不入本役（grill R1-Q6） | 计划外：发版后另开 issue（执行纪律尾注） |
 | 评审计划外建议三条（主人指令纳入，2026-11-06）：①成功行秒值 toFixed(1) 恒一位小数（+例①格式钉）；②alive 只认 ESRCH 判死（+vm 例 ⑫ 与 harness eperm 注入）；③变异副本用后即删 | Task 2（成功行模板块 + 例 ① 格式钉 / 例 ⑫ + harness）/ 执行纪律清理条款 |
+| 产出评审计划外建议 S1–S4 落地（主人指令，发版前批）：S1 pumpUntilDone 耗尽护栏（防夹具假绿）/ S2 Task 1 锚例统一 5 参（消 Q2 留痕）/ S4 helper note em-dash→ASCII 连字符（Windows OEM 代码页友好，运行时面零测试锚依赖）；S3 样本征集并入发版回帖，非代码改动 | tests harness + Task 1 锚例 / restart.ts 三条 note / 发版回帖文案 |
 | 发版 0.12.7 + 关 #48/#50（grill R1-Q5/Q6） | 计划外停点：当轮另行批准（执行纪律） |
 
 ---
@@ -128,7 +129,7 @@
       assert.deepEqual(replacementSpawnFlags(), { windowsHide: true })
     })
     it('helper 源码内插 flags——windowsHide 字面量恰 1 处（出现次数语义）', () => {
-      const src = restartHelperSource(base, { cwd: '/c' }, { out: '/o', err: '/e' }, 3081)
+      const src = restartHelperSource(base, { cwd: '/c' }, { out: '/o', err: '/e' }, 3081, 4242)
       assert.equal(src.split('"windowsHide":true').length - 1, 1)
       // usage 锚：spawn 行必须实际展开 flags（变异自证实证：仅钉声明行时，删 spawn 行 `...flags` 后声明行仍在、锚恒绿）
       assert.equal(src.split('shell: viaShell, ...flags }').length - 1, 1)
@@ -262,9 +263,13 @@
         },
         async pumpUntilDone(maxSteps = 5000) {
           for (let i = 0; i < maxSteps && !doneFlag; i += 1) {
-            if (timers.length === 0) break
+            if (timers.length === 0) {
+              // S1 护栏：timers 耗尽而 main() 未收口 = 实现存在无 timer 死循环或提前 return 漏挂 then——显式失败，防夹具假绿
+              throw new Error('helper harness: timers exhausted before main() settled')
+            }
             await this.pump(1)
           }
+          if (!doneFlag) throw new Error(`helper harness: main() did not settle within ${maxSteps} pump steps`)
         },
       }
     }
@@ -392,7 +397,7 @@
      '  const exitBy = Date.now() + oldExitTimeout',
      '  while (Date.now() < exitBy && alive(pid)) await sleep(100)',
      '  if (alive(pid)) {',
-     '    note(`restart failed: old instance (pid ${pid}) still alive after ${oldExitTimeout / 1000}s; replacement NOT started — safe to retry`)',
+     '    note(`restart failed: old instance (pid ${pid}) still alive after ${oldExitTimeout / 1000}s; replacement NOT started - safe to retry`)',
      '    return',
      '  }',
      '  if (port) {',
@@ -427,7 +432,7 @@
      '    while (Date.now() < graceBy && exitInfo === null && spawnError === null) await sleep(500)',
      '    if (spawnError !== null) return',
      '    if (exitInfo !== null) {',
-     '      note(`restart failed: replacement exited early (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal}) — see the output log beside this one`)',
+     '      note(`restart failed: replacement exited early (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal}) - see the output log beside this one`)',
      '    } else {',
      '      note(`replacement still running after ${nullPortGrace / 1000}s (no port to probe; assuming started)`)',
      '    }',
@@ -446,7 +451,7 @@
      '  } else if (bound) {',
      '    note(`replacement bound port ${port} after ${(Math.round((Date.now() - startedAt) / 100) / 10).toFixed(1)}s`)',
      '  } else {',
-     '    note(`restart failed: replacement did not bind port ${port} within ${upTimeout / 1000}s — see the output log beside this one`)',
+     '    note(`restart failed: replacement did not bind port ${port} within ${upTimeout / 1000}s - see the output log beside this one`)',
      '  }',
      '}',
      ```
