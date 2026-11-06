@@ -130,6 +130,8 @@
     it('helper 源码内插 flags——windowsHide 字面量恰 1 处（出现次数语义）', () => {
       const src = restartHelperSource(base, { cwd: '/c' }, { out: '/o', err: '/e' }, 3081)
       assert.equal(src.split('"windowsHide":true').length - 1, 1)
+      // usage 锚：spawn 行必须实际展开 flags（变异自证实证：仅钉声明行时，删 spawn 行 `...flags` 后声明行仍在、锚恒绿）
+      assert.equal(src.split('shell: viaShell, ...flags }').length - 1, 1)
     })
   })
   ```
@@ -247,6 +249,10 @@
         emitError(error) { if (errorHandler) errorHandler(error) },
         async pump(steps) {
           for (let i = 0; i < steps && timers.length > 0; i += 1) {
+            // 先排空微任务：listening() 的 queueMicrotask 连接结果必须先于其 500ms 兜底
+            // setTimeout 落定，否则兜底 timer 在 pump 中抢先 done(false) 误判端口未监听（执行偏差 #3）
+            await new Promise((r) => setImmediate(r))
+            if (timers.length === 0) break
             timers.sort((a, b) => a.at - b.at)
             const next = timers.shift()
             clock = next.at
@@ -346,7 +352,7 @@
   （用例 ⑤⑥⑧ 的「spawn 后触发事件」分两段 pump：main 同步跑到第一个 await 时 spawn 已发生（同步段无 timer），`pump(2)` 推进两拍后 `emitExit`/`emitError` 在循环进行中调用——由实现顺序保证；若首段 pump 后 handler 仍为 null，即实现未 spawn，断言红，形态可判读。）
 
 - Run: `npm run build` → `node --test tests/restart.test.mjs`
-- Expected: **红，且红形态恰好为**——Task 1 后模板仍是旧 main()：①③④⑤⑥⑦ 红在 note 断言（今日模板无任何 `restart failed:` / 成功行）；③b 红在成功行断言（今日模板对该 probe 序列放行 spawn，`spawnCalls` 断言本身绿、成功行缺失）；② 红 在 `spawnCalls.length === 0`（今日模板端口等待后照常 spawn）且无拒绝行；⑧⑨ 红在 `restart failed: could not start the replacement` **前缀断言**（今日模板已有裸 `could not start the replacement` 行——`src/core/restart.ts` ≈:252/:255，评审 R1-Q3 基线实测：无前缀断言对这两例恒绿）；⑩ 红 在 `const pid = 4242` 与四个时序常量锚计 0、三个删除面负向锚计 1（`starting anyway` / `Date.now() + 20000` / `Date.now() + 30000` 今日在场——评审 R1-Q6）；⑫ 红 在 `spawnCalls.length === 0` 与 still-alive 拒绝行（今日模板不消费 alive stub、对 `alive: () => true + eperm` 照常 spawn）；既有 6 例 + Task 1 两例保持绿。红例 12、绿 8；列表外红停下排查（例 ⑩ 移 Step 5，其红形态由 probe1b/1c 背书）。
+- Expected: **红，且红形态恰好为**——Task 1 后模板仍是旧 main()：①③④⑤⑥⑦ 红在 note 断言（今日模板无任何 `restart failed:` / 成功行）；③b 红在成功行断言（今日模板对该 probe 序列放行 spawn，`spawnCalls` 断言本身绿、成功行缺失）；② 红 在 `spawnCalls.length === 0`（今日模板端口等待后照常 spawn）且无拒绝行；⑧⑨ 红在 `restart failed: could not start the replacement` **前缀断言**（今日模板已有裸 `could not start the replacement` 行——`src/core/restart.ts` ≈:252/:255，评审 R1-Q3 基线实测：无前缀断言对这两例恒绿）；⑩ 红 在 `const pid = 4242` 与四个时序常量锚计 0、三个删除面负向锚计 1（`starting anyway` / `Date.now() + 20000` / `Date.now() + 30000` 今日在场——评审 R1-Q6）；⑫ 红 在 `spawnCalls.length === 0` 与 still-alive 拒绝行（今日模板不消费 alive stub、对 `alive: () => true + eperm` 照常 spawn）；既有 6 例 + Task 1 两例保持绿。**两阶段口径：Step 1 红例 11、绿 8（⑩ 移 Step 5 绿侧，其红形态经 probe1b/1c 实证背书）；Step 5 补 ⑩ 后套件 21 例全绿**；列表外红停下排查。
 - [ ] Step 2: 确认失败形态逐一吻合（红确认纪律：退出码非 0 + 具体红例名）
 - [ ] Step 3: 实现 `src/core/restart.ts`：
   1. `restartHelperSource` 函数 def（≈:211）上方新增导出常量（放在 Task 1 的 `replacementSpawnFlags` 附近，同区块）：
