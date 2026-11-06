@@ -2,7 +2,7 @@
 
 ## 目标
 
-- **单一事实源**：helper 对全部九个终态原子写 `last-restart.json`（`join(dshHome(), 'dshm', 'last-restart.json')`，`DSHM_LAST_RESTART_FILE` 整文件覆盖供测试），形状 `{ ok, via:'helper', tag, sha, port, requestChannel, at, elapsedMs, assumed?, reason? }`；文件持久保留到下次重启覆盖；`foldedAt` 由 host 折叠后回写（幂等标记，非消费即焚）。
+- **单一事实源**：helper 对全部九个终态原子写 `last-restart.json`（`join(dshHome(), 'dshm', 'last-restart.json')`，`DSHM_LAST_RESTART_FILE` 整文件覆盖供测试），形状 `{ ok, via:'helper', port, requestChannel, at, elapsedMs, assumed?, reason? }`（**实施期修正 #4：不含 tag/sha**——重启是宿主级操作，helper 与调用方均无插件身份，初稿形状引用安装流数据属设计缺口，实施红绿暴露后收敛，fold target 简化为 `dsh-m web`）；文件持久保留到下次重启覆盖；`foldedAt` 由 host 折叠后回写（幂等标记，非消费即焚）。
 - **呈现面 (a)**：host-api 新 action `last-restart`（纯磁盘读零网络，镜像 0.12.5 `published-at` 单条 action 惯例）→ 处理器内惰性折叠：`requestChannel ?? 'external' ∈ {cli, host-tool, external}` 且无 `foldedAt` 时经 `journalExternalOperation` 补 `kind:'restart'` journal 记录（成功失败都记）并回写 `foldedAt`；**panel 显式跳过折叠**（append 层 `channel='panel'` 拒绝不变量之上在折叠层可测地跳过），面板终态走 action + 横幅呈现。
 - **呈现面 (b)**：RestartBanner 在 `ping.boot` 变化确认后 fetch `last-restart`——成功经新回调 `onOutcome` 通知宿主组件（notify「重启完成（X.Xs）」）、失败通知原因、不可得静默保持现状；90s 超时文案改「重启未在 90 秒内确认完成——真实结果已落盘，可稍后查看操作记录」（双语值改，键不动）。
 - **呈现面 (c)**：`dshm_restart` 工具与 CLI restart 在发起请求时读状态文件，输出尾行「上次重启终态：…」（无文件/首次使用不输出）。
@@ -140,7 +140,7 @@
   - ② **缺失/损坏 → null**：env 指向不存在路径 → null；env 指向写入 `not json{{{` 的文件 → null 且不抛。
   - ③ **env 覆盖优先**：同一进程内先写路径 A 再切 env 到路径 B → read 为 null（B 未写）→ 证明缺省 `dshHome()` 路径未被触碰。
   - ④ **原子形态**：写后 glob 目录无 `.tmp-` 前缀残留文件。
-  - ⑤ **external 折叠**：预置 `requestChannel: 'host-tool'` 状态文件 + 钩子桩 `appendCalls.push(record)` → `foldLastRestartIntoJournal({ journalExternalOperation: 桩 })` 返回 `'folded'`；断言桩收 `{ kind: 'restart', target: 'dsh-m web（v1.2.3）' }` + result `'ok'`；再读文件断言 `foldedAt` 数值在场。
+  - ⑤ **external 折叠**：预置 `requestChannel: 'host-tool'` 状态文件 + 钩子桩 `appendCalls.push(record)` → `foldLastRestartIntoJournal({ journalExternalOperation: 桩 })` 返回 `'folded'`；断言桩收 `{ kind: 'restart', target: 'dsh-m web' }`（实施期修正 #4：无 tag 后缀）+ result `'ok'`；再读文件断言 `foldedAt` 数值在场。
   - ⑥ **panel 跳过**：预置 `requestChannel: 'panel'` → 返回 `'skipped-panel'`、桩零调用、文件**无** foldedAt。
   - ⑦ **幂等**：⑤ 的产物（foldedAt 在场）再折叠 → `'already-folded'`、桩仍 1 次。
   - ⑧ **absent**：无文件 → `'absent'`、桩零调用。
@@ -217,7 +217,7 @@
 - [ ] Step 2: 确认失败形态逐一吻合
 - [ ] Step 3: 实现 `src/core/restart.ts`：
   1. `restartHelperSource` 形参扩为 `(spawned, launch, logs, port, pid, statePath, stateDir, requestChannel)`；模板注入区（pid 行后）追加三行 `` `const statePath = ${JSON.stringify(statePath)}`, `` / `stateDir` / `requestChannel` 同款；
-  2. 模板 `const main` 行前加 `'const t0 = Date.now()',`；其后加 finish 定义行（单行形态，含 `fs.mkdirSync(stateDir, { recursive: true })` + `writeFileSync(statePath, JSON.stringify(Object.assign({ ok, via: "helper", tag, sha, port, requestChannel, at: Date.now(), elapsedMs: Date.now() - t0 }, extra || {})))`，全程 try/catch 吞错；**helper 单写者直写系 ADR-0032 §4 裁决——tmp+rename 原子替换仅宿主侧 foldedAt 回写承担，勿按「原子写」字面给模板加膨胀，R3-2**）；
+  2. 模板 `const main` 行前加 `'const t0 = Date.now()',`；其后加 finish 定义行（单行形态，含 `fs.mkdirSync(stateDir, { recursive: true })` + `writeFileSync(statePath, JSON.stringify(Object.assign({ ok, via: "helper", port, requestChannel, at: Date.now(), elapsedMs: Date.now() - t0 }, extra || {})))`，全程 try/catch 吞错；**helper 单写者直写系 ADR-0032 §4 裁决——tmp+rename 原子替换仅宿主侧 foldedAt 回写承担，勿按「原子写」字面给模板加膨胀，R3-2**；**状态形状不含 tag/sha（实施期修正 #4——设计缺口：初稿引用安装流数据，重启流程无插件身份，红绿暴露后收敛）**）；
   3. 九终态 `note(...)` 行后逐一插入 `finish(...)` 调用：旧进程拒绝/占口拒绝/spawn catch/error 事件/早退/绑定前退出/超时 → `finish(false, { reason: '<同义短句>' })`；绑定成功 → `finish(true)`；null-port still running → `finish(true, { assumed: true })`（`note` 行零改动）；
   4. `scheduleRestart` deps 块（:331）加 `channel?: OperationChannel`；import 行补 `import { lastRestartFile } from './restart-state.js'` 与 `import type { OperationChannel } from './external-journal.js'`；detached-helper 调用（:385-387）扩传 `statePath, stateDir, requestChannel`——`const statePath = deps.statePath ?? lastRestartFile()`（deps 亦可注 `statePath?: string` 供测试直控）、`const stateDir = dirname(statePath)`（`import { dirname } from 'node:path'` 补 import）、`const requestChannel = channel`；
   5. 头注补一行：「0.12.8（ADR-0032/#51）：helper 九终态写 last-restart.json（restart-state 属主），channel 随调用方注入」。
