@@ -26,7 +26,7 @@ import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS
 import { publishedAtParts } from './core/published-at.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
-import { readLastRestart } from './core/restart-state.js'
+import { readLastRestart, foldLastRestartIntoJournal } from './core/restart-state.js'
 import { upgradeEffectLine } from './core/activation.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { pathToFileURL } from 'node:url'
@@ -470,6 +470,8 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'restart': {
       requireYes(flags, '重启 DSH Web')
       const res = d.scheduleRestart(null, { channel: 'cli' })
+      // #51/ADR-0032（F1 修复）：惰性折叠外部通道 journal 先于读取——读取态携带 foldedAt（幂等证据）；fail-open（B6 不反噬）。
+      await foldLastRestartIntoJournal().catch(() => {})
       const last = await readLastRestart().catch(() => null)
       if (last) out(`⏮ 上次重启终态：${last.ok ? (last.assumed ? '成功（假定，无端口可探）' : `成功（${(last.elapsedMs / 1000).toFixed(1)}s）`) : `失败（${last.reason ?? '未知原因'}）`}`)
       out(`✅ 已请求重启（via ${res.via}）。服务恢复后刷新页面即可。`)

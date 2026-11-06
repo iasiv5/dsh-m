@@ -5,7 +5,7 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -173,6 +173,11 @@ describe('dshm restart --yes 上次重启终态行（issue #51 / ADR-0032）', (
     assert.ok(r.text.includes('⏮ 上次重启终态：成功（46.3s）'), r.text)
     assert.ok(r.text.includes('✅ 已请求重启（via helper）'), r.text)
     assert.deepEqual(channelCalls, [{ port: null, opts: { channel: 'cli' } }])
+    // F1 修复：CLI 读终态时惰性折叠外部通道 journal（外部通道操作记录可见性）
+    const journal = JSON.parse(readFileSync(process.env.DSHM_EXTERNAL_JOURNAL_FILE, 'utf8'))
+    assert.equal(journal.length, 1)
+    assert.equal(journal[0].kind, 'restart')
+    assert.equal(journal[0].channel, 'cli')
   })
   it('② 状态文件缺失 → 输出无 ⏮ 行（与今日逐字节一致）', async () => {
     process.env.DSHM_LAST_RESTART_FILE = join(cacheRoot, 'missing-last-restart.json')

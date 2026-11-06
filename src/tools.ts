@@ -23,7 +23,7 @@ import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS
 import { publishedAtParts } from './core/published-at.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { appExitFromContext, scheduleRestart, type RestartResult } from './core/restart.js'
-import { readLastRestart, type LastRestartState } from './core/restart-state.js'
+import { readLastRestart, foldLastRestartIntoJournal, type LastRestartState } from './core/restart-state.js'
 import type { OperationChannel } from './core/external-journal.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
@@ -538,6 +538,9 @@ export function registerTools(
     async execute() {
       assertWriteAllowed(profile, 'restart')
       const res = cloneJson(restart(null, 'host-tool'))
+      // #51/ADR-0032（F1 修复）：惰性折叠外部通道 journal 先于读取——读取态携带 foldedAt（幂等证据）；
+      // fold fail-open（B6 不反噬）；无此折叠，外部通道重启的终态只有面板横幅流程才落账。
+      await foldLastRestartIntoJournal().catch(() => {})
       const last = await readLastRestart().catch(() => null)
       return { ...res, ...(last ? { lastRestart: last } : {}) }
     },
