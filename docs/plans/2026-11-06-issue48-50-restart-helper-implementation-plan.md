@@ -104,6 +104,7 @@
 | pid 注入（#50 修法前提，评审修正项） | Task 2（可选形参 + 模板 `const pid` 行）+ Task 3（scheduleRestart 实参 + 签名收紧必填 + 接线钉） |
 | `RestartResult`/文案链零变化（grill R1-Q6 前提） | Task 3 既有 6 例回归 + Task 4 全量 |
 | 结果回传 UI 不入本役（grill R1-Q6） | 计划外：发版后另开 issue（执行纪律尾注） |
+| 评审计划外建议三条（主人指令纳入，2026-11-06）：①成功行秒值 toFixed(1) 恒一位小数（+例①格式钉）；②alive 只认 ESRCH 判死（+vm 例 ⑫ 与 harness eperm 注入）；③变异副本用后即删 | Task 2（成功行模板块 + 例 ① 格式钉 / 例 ⑫ + harness）/ 执行纪律清理条款 |
 | 发版 0.12.7 + 关 #48/#50（grill R1-Q5/Q6） | 计划外停点：当轮另行批准（执行纪律） |
 
 ---
@@ -167,14 +168,14 @@
 
 ### Task 2: helper 主流程重写（#50）——时序常量 + 模板 main() 重写 + vm 沙箱套件
 
-- 目标：11 条行为测试先红（今日模板：无 pid 注入、无拒绝路径、无成功行、无常量锚、旧字样在场），模板重写后全绿。
+- 目标：12 条行为测试先红（今日模板：无 pid 注入、无拒绝路径、无成功行、无常量锚、旧字样在场、不消费 alive stub），模板重写后全绿。
 - 涉及文件：Modify `tests/restart.test.mjs`、Modify `src/core/restart.ts`
 - 接口契约
   - Consumes：Task 1 的 `restartHelperSource`（export）与 `replacementSpawnFlags()`
   - Produces（Task 3 消费）：`restartHelperSource` 签名扩为 `(spawned, launch, logs, port, pid?)`——第 5 形参**可选** `pid?: number`（评审 R1-Q2：本任务即设必填会让 `npm run build` 的 tsc 门（scripts/build.mjs:23，execFileSync 传播非零退出）对仍传 4 参的调用点报 TS2554，build 红门横跨 Task 2→3；可选形参使 build 门全程绿。缺省时模板行内插 `const pid = undefined`——合法 JS，`alive(undefined)` 恒 false，与今日无 pid 感知等价；Task 3 接线时收紧为必填。模板含 `const pid = ${JSON.stringify(pid)}` 行）；导出常量 `OLD_EXIT_TIMEOUT_MS = 5_000`、`REPLACEMENT_UP_TIMEOUT_MS = 180_000`、`NULL_PORT_GRACE_MS = 10_000`、`PORT_HELD_GRACE_MS = 2_000`（评审 R1-Q4：端口占用判定的有界重探窗，≈实测 449ms 释放延迟的 4.5 倍；数值供模板内插与断言引用）
-- 验证范围：vm 沙箱真跑 helper `main()`，虚拟时钟覆盖：成功绑定 / 旧进程拒启 / 占口拒启 / 占用窗内释放放行（例 ③b，评审 R1-Q4）/ null-port 两种收尾 / 早退 / 超时 / spawn error / 同步 throw / 时序常量与 pid 内插同源锚 + 删除面负向锚（例 ⑩，评审 R1-Q6）
+- 验证范围：vm 沙箱真跑 helper `main()`，虚拟时钟覆盖：成功绑定（含秒值恒一位小数格式钉）/ 旧进程拒启 / 占口拒启 / 占用窗内释放放行（例 ③b，评审 R1-Q4）/ null-port 两种收尾 / 早退 / 超时 / spawn error / 同步 throw / EPERM 视同存活（例 ⑫，评审计划外建议②硬化）/ 时序常量与 pid 内插同源锚 + 删除面负向锚（例 ⑩，评审 R1-Q6）
 
-- [ ] Step 1: 写失败测试。`tests/restart.test.mjs` 顶部加 `import vm from 'node:vm'`；import 块补 `OLD_EXIT_TIMEOUT_MS, NULL_PORT_GRACE_MS, PORT_HELD_GRACE_MS, REPLACEMENT_UP_TIMEOUT_MS` 四个具名导入（本 describe 断言数值一致性用）；文件末尾追加（夹具与 harness 一并落入，测试自带全部依赖、不跨 describe 引用）：
+- [ ] Step 1: 写失败测试。`tests/restart.test.mjs` 顶部加 `import vm from 'node:vm'`；文件末尾追加（夹具与 harness 一并落入，测试自带全部依赖、不跨 describe 引用）。**本步不含例 ⑩ 与四常量具名导入**——具名导入在导出缺失时会模块链接期 SyntaxError、淹没行为红形态（执行注记，主人批准的实施修正）：⑩ 移至 Step 5 绿侧补入，其红形态（内插锚今日计 0 / 负向锚今日计 1）已由评审 probe1b/1c 独立实证：
 
   ```js
   describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
@@ -184,7 +185,7 @@
 
     /** helper 源码沙箱：stub 逐个对照 helper 内 require 面与全局面（node:child_process/fs/net、
      *  process.kill+env、setTimeout、Date.now），虚拟时钟由 pump 推进，时序确定、零真 sleep。 */
-    function runHelper(src, { alive = () => false, probes = [], spawnThrows = null } = {}) {
+    function runHelper(src, { alive = () => false, probes = [], spawnThrows = null, eperm = false } = {}) {
       const notes = []
       const spawnCalls = []
       let clock = 0
@@ -228,6 +229,7 @@
           kill(p) {
             const isAlive = alive(aliveIndex)
             aliveIndex += 1
+            if (isAlive && eperm) { const e = new Error(`kill EPERM ${p}`); e.code = 'EPERM'; throw e }
             if (!isAlive) { const e = new Error(`kill ESRCH ${p}`); e.code = 'ESRCH'; throw e }
           },
         },
@@ -268,6 +270,8 @@
       assert.equal(h.spawnCalls.length, 1)
       assert.equal(h.spawnCalls[0].o.windowsHide, true)
       assert.ok(h.notes.some((n) => n.includes('replacement bound port 3081 after')), h.notes.join(' | '))
+      const okLine = h.notes.find((n) => n.includes('replacement bound port 3081 after'))
+      assert.ok(okLine && /after \d+\.\ds/u.test(okLine), `成功行秒值恒一位小数: ${okLine}`)
       assert.ok(!h.notes.some((n) => n.includes('restart failed')), h.notes.join(' | '))
     })
     it('② 旧进程 5s 未退出 → 拒绝启动（fail-closed），无 spawn', async () => {
@@ -329,16 +333,12 @@
       await h.pumpUntilDone()
       assert.ok(h.notes.some((n) => n.includes('restart failed: could not start the replacement') && n.includes('boom')), h.notes.join(' | '))
     })
-    it('⑩ 时序常量与模板内插同源 + 删除面负向锚（出现次数语义，评审 R1-Q6）', () => {
-      const src = src5(3081)
-      assert.equal(src.split(`const oldExitTimeout = ${JSON.stringify(OLD_EXIT_TIMEOUT_MS)}`).length - 1, 1)
-      assert.equal(src.split(`const upTimeout = ${JSON.stringify(REPLACEMENT_UP_TIMEOUT_MS)}`).length - 1, 1)
-      assert.equal(src.split(`const nullPortGrace = ${JSON.stringify(NULL_PORT_GRACE_MS)}`).length - 1, 1)
-      assert.equal(src.split(`const heldGrace = ${JSON.stringify(PORT_HELD_GRACE_MS)}`).length - 1, 1)
-      assert.equal(src.split('const pid = 4242').length - 1, 1)
-      assert.equal(src.split('starting anyway').length - 1, 0)
-      assert.equal(src.split('Date.now() + 20000').length - 1, 0)
-      assert.equal(src.split('Date.now() + 30000').length - 1, 0)
+    it('⑫ 旧进程存在但 EPERM（进程在、信号被拒）→ 视同存活，5s 后拒绝启动（评审计划外建议②硬化）', async () => {
+      const h = runHelper(src5(3081), { alive: () => true, eperm: true })
+      await h.pumpUntilDone()
+      assert.equal(h.spawnCalls.length, 0)
+      const line = h.notes.find((n) => n.includes('still alive after 5s'))
+      assert.ok(line && line.includes('replacement NOT started'), h.notes.join(' | '))
     })
   })
   ```
@@ -346,7 +346,7 @@
   （用例 ⑤⑥⑧ 的「spawn 后触发事件」分两段 pump：main 同步跑到第一个 await 时 spawn 已发生（同步段无 timer），`pump(2)` 推进两拍后 `emitExit`/`emitError` 在循环进行中调用——由实现顺序保证；若首段 pump 后 handler 仍为 null，即实现未 spawn，断言红，形态可判读。）
 
 - Run: `npm run build` → `node --test tests/restart.test.mjs`
-- Expected: **红，且红形态恰好为**——Task 1 后模板仍是旧 main()：①③④⑤⑥⑦ 红在 note 断言（今日模板无任何 `restart failed:` / 成功行）；③b 红在成功行断言（今日模板对该 probe 序列放行 spawn，`spawnCalls` 断言本身绿、成功行缺失）；② 红 在 `spawnCalls.length === 0`（今日模板端口等待后照常 spawn）且无拒绝行；⑧⑨ 红在 `restart failed: could not start the replacement` **前缀断言**（今日模板已有裸 `could not start the replacement` 行——`src/core/restart.ts` ≈:252/:255，评审 R1-Q3 基线实测：无前缀断言对这两例恒绿）；⑩ 红 在 `const pid = 4242` 与四个时序常量锚计 0、三个删除面负向锚计 1（`starting anyway` / `Date.now() + 20000` / `Date.now() + 30000` 今日在场——评审 R1-Q6）；既有 6 例 + Task 1 两例保持绿。红例 11、绿 8；列表外红停下排查。
+- Expected: **红，且红形态恰好为**——Task 1 后模板仍是旧 main()：①③④⑤⑥⑦ 红在 note 断言（今日模板无任何 `restart failed:` / 成功行）；③b 红在成功行断言（今日模板对该 probe 序列放行 spawn，`spawnCalls` 断言本身绿、成功行缺失）；② 红 在 `spawnCalls.length === 0`（今日模板端口等待后照常 spawn）且无拒绝行；⑧⑨ 红在 `restart failed: could not start the replacement` **前缀断言**（今日模板已有裸 `could not start the replacement` 行——`src/core/restart.ts` ≈:252/:255，评审 R1-Q3 基线实测：无前缀断言对这两例恒绿）；⑩ 红 在 `const pid = 4242` 与四个时序常量锚计 0、三个删除面负向锚计 1（`starting anyway` / `Date.now() + 20000` / `Date.now() + 30000` 今日在场——评审 R1-Q6）；⑫ 红 在 `spawnCalls.length === 0` 与 still-alive 拒绝行（今日模板不消费 alive stub、对 `alive: () => true + eperm` 照常 spawn）；既有 6 例 + Task 1 两例保持绿。红例 12、绿 8；列表外红停下排查（例 ⑩ 移 Step 5，其红形态由 probe1b/1c 背书）。
 - [ ] Step 2: 确认失败形态逐一吻合（红确认纪律：退出码非 0 + 具体红例名）
 - [ ] Step 3: 实现 `src/core/restart.ts`：
   1. `restartHelperSource` 函数 def（≈:211）上方新增导出常量（放在 Task 1 的 `replacementSpawnFlags` 附近，同区块）：
@@ -376,7 +376,7 @@
   3. `listening` 行之后追加 alive 行：
 
      ```ts
-     'const alive = (p) => { try { process.kill(p, 0); return true } catch { return false } }',
+     'const alive = (p) => { try { process.kill(p, 0); return true } catch (e) { return e && e.code === "ESRCH" ? false : true } }',
      ```
 
   4. **整个 `const main = async () => { ... }` 模板块（从 `'const main = async () => {'` 到 `'}'`、`'main()'` 之前）替换为**：
@@ -438,7 +438,7 @@
      '  if (exitInfo !== null) {',
      '    note(`restart failed: replacement exited before binding port ${port} (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal})`)',
      '  } else if (bound) {',
-     '    note(`replacement bound port ${port} after ${Math.round((Date.now() - startedAt) / 100) / 10}s`)',
+     '    note(`replacement bound port ${port} after ${(Math.round((Date.now() - startedAt) / 100) / 10).toFixed(1)}s`)',
      '  } else {',
      '    note(`restart failed: replacement did not bind port ${port} within ${upTimeout / 1000}s — see the output log beside this one`)',
      '  }',
@@ -447,8 +447,27 @@
 
      （注意 TS 侧引号形态：含 helper 运行期 `${...}` 的行一律写成 TS **单引号**串——`${}` 与反引号保持字面量直达 helper 运行时；TS 侧插值仅限 `${JSON.stringify(...)}` 行。`exitInfo.signal` 的假值分支用 `=== null` 判断（Node exit 事件 signal 为 null 时表正常退出），与 vm 例 ⑤⑥ 的 `signal none`/`signal SIGTERM` 断言对应。）
   5. `scheduleRestart` 的实参传递**不在本任务**（挪至 Task 3 作接线钉的 TDD 红起点；本任务 vm 例直调 `restartHelperSource`，不依赖该实参）。
-- [ ] Step 4: 复跑同两条命令 → 全绿（既有 6 例 + Task 1 两例 + 新 10 例；若 ⑤⑥ 首段 pump 时序与实现不符，先核实现 spawn 是否发生在首轮推进，不改断言迁就实现）
-- [ ] Step 5: checkpoint commit（可选）
+- [ ] Step 4: 复跑同两条命令 → 全绿（既有 6 例 + Task 1 两例 + 新 12 例；若 ⑤⑥⑧ 首段 pump 时序与实现不符，先核实现 spawn 是否发生在首轮推进，不改断言迁就实现）
+- [ ] Step 5: 补例 ⑩ 并更新 import 块（`OLD_EXIT_TIMEOUT_MS, NULL_PORT_GRACE_MS, PORT_HELD_GRACE_MS, REPLACEMENT_UP_TIMEOUT_MS` 四个具名导入，此时导出已存在、链接安全）：
+
+  ```js
+  // import 块（≈:10-17）补入四个常量后，describe 末尾（例 ⑫ 之后）追加：
+  it('⑩ 时序常量与模板内插同源 + 删除面负向锚（出现次数语义，评审 R1-Q6）', () => {
+    const src = src5(3081)
+    assert.equal(src.split(`const oldExitTimeout = ${JSON.stringify(OLD_EXIT_TIMEOUT_MS)}`).length - 1, 1)
+    assert.equal(src.split(`const upTimeout = ${JSON.stringify(REPLACEMENT_UP_TIMEOUT_MS)}`).length - 1, 1)
+    assert.equal(src.split(`const nullPortGrace = ${JSON.stringify(NULL_PORT_GRACE_MS)}`).length - 1, 1)
+    assert.equal(src.split(`const heldGrace = ${JSON.stringify(PORT_HELD_GRACE_MS)}`).length - 1, 1)
+    assert.equal(src.split('const pid = 4242').length - 1, 1)
+    assert.equal(src.split('starting anyway').length - 1, 0)
+    assert.equal(src.split('Date.now() + 20000').length - 1, 0)
+    assert.equal(src.split('Date.now() + 30000').length - 1, 0)
+  })
+  ```
+
+- Run: `npm run build` → `node --test tests/restart.test.mjs`
+- Expected: 全绿（⑩ 四内插锚计 1 + pid 锚计 1 + 三负向锚计 0；其余 20 例保持绿）
+- [ ] Step 6: checkpoint commit（可选）
 
 ### Task 3: scheduleRestart 接线（TDD）+ 既有回归
 
@@ -524,12 +543,12 @@
   - `npm run build`
   - `npm test`
   - `npm run typecheck`
-- Expected: 三条命令退出码全 0；`npm test` 2087 + 新增 14 例（Task 1 两例 + Task 2 十一例 + Task 3 一例）量级全绿，与基线 2087/2087（2026-11-06）对照零基线外红例
+- Expected: 三条命令退出码全 0；`npm test` 2087 + 新增 15 例（Task 1 两例 + Task 2 十二例 + Task 3 一例）量级全绿，与基线 2087/2087（2026-11-06）对照零基线外红例
 - [ ] Step 2（可选，主人手动，Windows 实机——#48/#50 的真实环境形态）：普通 web 宿主 `node <dsh>/lib/bin.js --profile <名> --port <端口> --no-open` 升到含本修复的版本后：
   1. 面板/`dshm_restart` 触发重启 → 观察无命令行闪窗（可用 #48 报告者的 WinEvent 探针方法论；普通肉眼观察即可初判）；
   2. `%TEMP%\dshm-restart-*.err.log` 最新一对出现 `[dsh-m] replacement bound port <端口> after X.Xs`，无 `restart failed:`；
   3. 占口实验：另起任意进程监听该端口后触发重启 → err.log 出现 `[dsh-m] restart failed: port ... still held by another process ... replacement NOT started`，且无新 dsh 进程产生。
-- [ ] Step 3: 输出修改摘要（逐文件可归因：`restart.ts` 常量（含 PORT_HELD_GRACE_MS）+flags 纯函数+模板重写+接线实参与签名收紧；`restart.test.mjs` 三个 describe 14 例；计划外改动为零）
+- [ ] Step 3: 输出修改摘要（逐文件可归因：`restart.ts` 常量（含 PORT_HELD_GRACE_MS）+flags 纯函数+模板重写+接线实参与签名收紧；`restart.test.mjs` 三个 describe 15 例；计划外改动为零）
 
 ## 执行纪律
 
@@ -537,15 +556,16 @@
 - 按任务顺序执行；每任务先跑该任务验证再进下一任务；不无声跳步、合并步或改变任务目标。
 - Task 1/Task 2 的红形态清单是**判据**：红例多、少、或名不符 → 停下排查（夹具/环境/锚漂移），不猜。行号锚漂移一律以符号锚重定位。
 - 两处关键锚变异自证（Task 1 Step 5 windowsHide、Task 3 Step 5 pid）输出落盘留证——它们各自是该修复点的唯一自动防线。
+- 变异自证副本（`.dsh-research/issue4850-mutation-check/`）证据 log 落盘 `.dsh-research/issue4850-plan-review-scratch/` 后**即刻删除副本**（评审计划外建议③），避免占盘；后续评审需要现场可按本计划重建。
 - 当前分支 `main`：实现提交前向主人确认（grill R2-Q4 已批「docs(plan) → 单个 fix 提交 → 发版」结构；开工前仍按纪律确认工作树状态）。
 - 全部任务完成后运行最终验证并输出修改摘要；**停在这里**——`npm run release`（0.12.7 版本 bump/CHANGELOG/tag/publish）、#48/#50 回帖（@appllove，附 Windows 验收邀请）与关闭、结果回传新 issue 开设，均属不可逆公开动作，另等当轮明确批准（dsh-m AGENTS.md 发版规矩）。
 - CHANGELOG 顶条要点（供发版批次起草，非本任务）：中文/英文各一条 0.12.7 修复条目——Windows 自重启闪窗修复（helper 内层 spawn `windowsHide`）；helper 端口判定改为 PID 存活判定（修复重复实例、67% 假失败、30s 白等三缺陷）；端口被外部占用/旧进程未退出时不再强行启动（明确失败日志，可安全重试）；`dshm_restart`/CLI null-port 路径纳入同一时序治理。compatibility 注明：helper 日志行格式变化（新增 `restart failed:` 前缀与成功行）、`dshm-restart-*.err.log` 中旧 `starting anyway`/`20s` 字样消失、失败时不再产生替代进程（行为变更）。
 
 ## 最终验证
 
-- `npm run build` → `npm test`（全绿，原退出码 0；与基线 2087 对照 +14 例）
+- `npm run build` → `npm test`（全绿，原退出码 0；与基线 2087 对照 +15 例）
 - `npm run typecheck`（0 错误）
-- `node --test tests/restart.test.mjs` 单套件复跑（既有 6 例零改动 + 新 14 例全绿）
+- `node --test tests/restart.test.mjs` 单套件复跑（既有 6 例零改动 + 新 15 例全绿）
 - `node --test tests/host-api.test.mjs tests/host-api-profile.test.mjs`（注入桩断言面回归绿）
 - 两处关键锚变异自证记录齐全（Task 1 Step 5 / Task 3 Step 5）
 - Windows 实机验收（Task 4 Step 2）为主人可选步骤；未执行时以 vm 行为套件 + 停点说明交付，发版后回帖邀请报告者复验
