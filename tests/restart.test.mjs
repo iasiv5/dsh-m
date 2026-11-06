@@ -162,12 +162,18 @@ describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
   const base = { file: 'node.exe', args: ['-NoProfile', '-Command', 'x'], viaShell: false, detached: false }
   const logs = { out: '/tmp/out.log', err: '/tmp/err.log' }
   const src5 = (port, pid = 4242) => restartHelperSource(base, { cwd: '/c' }, logs, port, pid)
+  const statePath = '/tmp/dshm-test/last-restart.json'
+  const stateDir = '/tmp/dshm-test'
+  const src8 = (port, pid = 4242, sp = statePath, sd = stateDir, rc = 'host-tool') =>
+    restartHelperSource(base, { cwd: '/c' }, logs, port, pid, sp, sd, rc)
 
   // helper 源码沙箱：stub 逐个对照 helper 内 require 面与全局面（node:child_process/fs/net、
   // process.kill+env、setTimeout、Date.now），虚拟时钟由 pump 推进，时序确定、零真 sleep。
   function runHelper(src, { alive = () => false, probes = [], spawnThrows = null, eperm = false } = {}) {
     const notes = []
     const spawnCalls = []
+    const stateWrites = []
+    const mkdirCalls = []
     let clock = 0
     let probeIndex = 0
     let aliveIndex = 0
@@ -188,7 +194,13 @@ describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
           return { spawn: (file, args, o) => { spawnCalls.push({ file, args, o }); if (spawnThrows) throw spawnThrows; return child } }
         }
         if (spec === 'node:fs') {
-          return { appendFileSync: (f, line) => notes.push(line), openSync: () => 7 }
+          return {
+            appendFileSync: (f, line) => notes.push(line),
+            openSync: () => 7,
+            // #51：helper 终态落盘触面（mkdirSync(stateDir) + writeFileSync(statePath, JSON)）
+            mkdirSync: (p) => { mkdirCalls.push(p) },
+            writeFileSync: (p, txt) => { stateWrites.push({ path: p, state: JSON.parse(txt) }) },
+          }
         }
         if (spec === 'node:net') {
           return {
@@ -223,6 +235,8 @@ describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
     return {
       notes,
       spawnCalls,
+      stateWrites,
+      mkdirCalls,
       emitExit(code, signal) { if (exitHandler) exitHandler(code, signal) },
       emitError(error) { if (errorHandler) errorHandler(error) },
       async pump(steps) {
@@ -339,9 +353,57 @@ describe('restart helper 主流程（vm 沙箱真跑，issue #50）', () => {
     assert.equal(src.split('Date.now() + 20000').length - 1, 0)
     assert.equal(src.split('Date.now() + 30000').length - 1, 0)
   })
+
+  describe('restart helper 终态落盘（issue #51 / ADR-0032）', () => {
+      // 基底 stub 序列 = 既有 vm 例 N 原样（①=例①、②=例②、③=例③、④=例④），既有断言保留不改，新断言纯追加。
+      it('① 绑定成功 → writeFileSync 恰 1 次：ok=true、elapsedMs 数值、无 reason/assumed 键、mkdir 恰 stateDir', async () => {
+        let polls = 3
+        const h = runHelper(src8(3081), { alive: () => polls-- > 0, probes: ['error', 'error', 'error', 'connect'] })
+        await h.pumpUntilDone()
+        assert.equal(h.spawnCalls.length, 1)
+        assert.equal(h.stateWrites.length, 1)
+        assert.equal(h.stateWrites[0].path, statePath)
+        assert.equal(h.stateWrites[0].state.ok, true)
+        assert.equal(h.stateWrites[0].state.via, 'helper')
+        assert.ok(typeof h.stateWrites[0].state.elapsedMs === 'number')
+        assert.ok(!('reason' in h.stateWrites[0]) && !('assumed' in h.stateWrites[0]))
+        assert.deepEqual(h.mkdirCalls, [stateDir])
+      })
+      it('② 旧进程 5s 未退出 → stateWrites[0] ok=false 且 reason 含 still alive', async () => {
+        const h = runHelper(src8(3081), { alive: () => true })
+        await h.pumpUntilDone()
+        assert.equal(h.spawnCalls.length, 0)
+        assert.equal(h.stateWrites.length, 1)
+        assert.equal(h.stateWrites[0].state.ok, false)
+        assert.ok(h.stateWrites[0].state.reason.includes('still alive'))
+      })
+      it('③ 端口仍被外部占用 → stateWrites[0] ok=false 且 reason 含 still held', async () => {
+        const h = runHelper(src8(3081), { alive: () => false, probes: ['connect'] })
+        await h.pumpUntilDone()
+        assert.equal(h.spawnCalls.length, 0)
+        assert.equal(h.stateWrites.length, 1)
+        assert.equal(h.stateWrites[0].state.ok, false)
+        assert.ok(h.stateWrites[0].state.reason.includes('still held'))
+      })
+      it('④ port=null 成功路径 → stateWrites[0] ok=true 且 assumed=true（无端口可探的假定成功分层）', async () => {
+        const h = runHelper(src8(null))
+        await h.pumpUntilDone()
+        assert.equal(h.spawnCalls.length, 1)
+        assert.equal(h.stateWrites.length, 1)
+        assert.equal(h.stateWrites[0].state.ok, true)
+        assert.equal(h.stateWrites[0].state.assumed, true)
+      })
+      it('⑤ 注入锚：statePath/stateDir/requestChannel 三行内插恰各 1 处 + finish 定义行恰 1 处（出现次数语义）', () => {
+        const src = src8(3081)
+        assert.equal(src.split('const statePath = ').length - 1, 1)
+        assert.equal(src.split('const stateDir = ').length - 1, 1)
+        assert.equal(src.split('const requestChannel = ').length - 1, 1)
+        assert.equal(src.split('const finish = (ok, extra) =>').length - 1, 1)
+      })
+    })
 })
 
-describe('scheduleRestart helper 分支接线（issue #48/#50）', () => {
+  describe('scheduleRestart helper 分支接线（issue #48/#50）', () => {
   it('helper 源码携带真实 pid 与 windowsHide；500ms kill 定时器照常', () => {
     const timer = fakeTimer()
     const killed = []
@@ -373,5 +435,31 @@ describe('scheduleRestart helper 分支接线（issue #48/#50）', () => {
     assert.deepEqual(killed, [])
     timer.timers.at(-1).fn()
     assert.deepEqual(killed, [[4242, 'SIGTERM']])
+  })
+})
+
+describe('scheduleRestart channel 接线（issue #51 / ADR-0032）', () => {
+  it('⑥ channel=cli → 注入 requestChannel 进 helper 源码（接线钉；对应 cli.ts 直调 scheduleRestart(null, { channel: cli }) 形态）', () => {
+    const timer = fakeTimer()
+    let spawned = null
+    const result = scheduleRestart(3081, {
+      pid: 4242,
+      uid: 1039,
+      cgroup: '0::/user.slice/user-1039.slice/user@1000.service/app.slice/plain.slice',
+      env: {},
+      channel: 'cli',
+      setTimeout: timer.setTimeout,
+      kill: () => {},
+      nodeExecutable: () => '/usr/bin/node',
+      restartLaunch: () => ({ file: 'dsh', args: [], cwd: '/c', viaShell: false }),
+      spawn(file, args, options) {
+        spawned = { file, args, options }
+        return { pid: 8000, unref() {}, once() {} }
+      },
+    })
+    assert.equal(result.via, 'helper')
+    assert.ok(spawned)
+    const src = spawned.args[1]
+    assert.equal(src.split('const requestChannel = "cli"').length - 1, 1)
   })
 })

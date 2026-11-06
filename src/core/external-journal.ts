@@ -29,6 +29,7 @@ export type ExternalOperationKind =
   | 'upgrade'
   | 'self-upgrade'
   | 'toggle'
+  | 'restart'
   | 'desktop-install'
   | 'desktop-uninstall'
   | 'desktop-upgrade'

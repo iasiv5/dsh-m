@@ -205,7 +205,7 @@ function TwoStepButton({ label, confirmLabel, busyLabel, className, onConfirm, d
   );
 }
 
-function RestartBanner({ note, onDone, desktop, onRestarted }) {
+function RestartBanner({ note, onDone, desktop, onRestarted, onOutcome }) {
   const [phase, setPhase] = useState("idle"); // idle | restarting | waiting
   const [err, setErr] = useState(null);
   const restart = useCallback(async () => {
@@ -237,6 +237,13 @@ function RestartBanner({ note, onDone, desktop, onRestarted }) {
         }
         if (nextRestartWait({ phase: "after-ping", bootChanged }) === "done") break;
       }
+      // #51（ADR-0032）：boot 变化后读重启终态（helper 可能仍在就绪等待，缺失则静默保持现状）
+      if (onOutcome) {
+        try {
+          const last = await api("last-restart");
+          if (last && last.available && last.state) onOutcome(last.state);
+        } catch { /* 终态通知失败不阻塞重启完成 */ }
+      }
       // Do not force window.location.reload() here. DSH Web owns the browser
       // connection and has its own background recovery/retry loop; a full-page
       // reload during the auth/route handoff can land on a blank error page.
@@ -250,7 +257,7 @@ function RestartBanner({ note, onDone, desktop, onRestarted }) {
       setPhase("idle");
       setErr(String((e && e.message) || e));
     }
-  }, [onDone, onRestarted]);
+  }, [onDone, onOutcome, onRestarted]);
   // 0.9.72 滚轮治理：横幅文本超限才有滚动语义，不满限时不挂 contain（吞滚轮病灶同款）
   const text = phase === "restarting" ? lookup("restart.doing") :
     phase === "waiting" ? lookup("restart.waiting") :

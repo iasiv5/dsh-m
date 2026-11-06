@@ -856,7 +856,7 @@ function MarketPanel({ onClose }) {
                 ? h("div", { className: toast.kind === "err" ? "dshm-banner err" : "dshm-banner" },
                     h("span", { className: `dshm-banner-text${toastScrollCls}`, ref: toastTextRef }, toast.text))
                 : null,
-              banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true, onRestarted: reloadPing }) : null,
+              banner ? h(RestartBanner, { note: banner.text, onDone: () => setBanner(null), desktop: banner.desktop === true, onRestarted: reloadPing, onOutcome: (s) => notify(s.ok ? (s.assumed ? { kind: "ok", text: lookup("restart.done.assumed") } : { kind: "ok", text: lookup("restart.done.ok", { elapsed: (s.elapsedMs / 1000).toFixed(1) + "s" }) }) : { kind: "error", text: lookup("restart.done.failed", { reason: s.reason ?? "" }) }) }) : null,
             )
           : null,
         // resize 热区（panel resize）：透明无视觉；pointer-only 供性（aria-hidden）。

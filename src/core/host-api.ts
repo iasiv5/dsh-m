@@ -34,7 +34,9 @@ import { RegistryConfigError } from './registry-controller.js'
 import { checkRegistryEntries } from './registry-check.js'
 import { parseMarketQueryInput, MarketQueryError, type MarketQueryIntake } from './market-query.js'
 import { fetchPublishedAt } from './published-at.js'
-import { servingPort, scheduleRestart } from './restart.js'
+import { servingPort, scheduleRestart, type RestartResult } from './restart.js'
+import { foldLastRestartIntoJournal, readLastRestart } from './restart-state.js'
+import type { OperationChannel } from './external-journal.js'
 import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
 import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
@@ -77,8 +79,12 @@ export interface HostApiOverrides {
   getCommunitySummary?: typeof getCommunitySummary
   /** Task 7：self-upgrade 委派事务（缺省 = runProfileTransaction） */
   runTransaction?: typeof runProfileTransaction
-  /** Host 注入 appExit 后的重启调度器；测试可替换。 */
-  scheduleRestart?: typeof scheduleRestart
+  /** Host 注入 appExit 后的重启调度器；测试可替换。channel 随调用方（panel）注入（#51/ADR-0032）。 */
+  scheduleRestart?: (port: number | null, channel?: OperationChannel) => RestartResult
+  /** #51/ADR-0032：重启终态读取（测试可替换；生产 = restart-state 实现）。 */
+  lastRestart?: typeof readLastRestart
+  /** #51/ADR-0032：终态惰性折叠（测试可替换；panel 通道折叠层显式跳过）。 */
+  foldLastRestart?: typeof foldLastRestartIntoJournal
   /** DSH 运行版本解析（ping.dshVersion 数据源）；测试可替换。 */
   resolveDshVersion?: typeof resolveDshVersion
   /** Task 14：开关委派的官方服务探测（ctx.get('pluginManager')）；测试可替换。 */
@@ -322,6 +328,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     getCommunitySummary: ctx.deps?.getCommunitySummary ?? getCommunitySummary,
     runTransaction: ctx.deps?.runTransaction ?? runProfileTransaction,
     scheduleRestart: ctx.deps?.scheduleRestart ?? scheduleRestart,
+    lastRestart: ctx.deps?.lastRestart ?? readLastRestart,
+    foldLastRestart: ctx.deps?.foldLastRestart ?? foldLastRestartIntoJournal,
     resolveDshVersion: ctx.deps?.resolveDshVersion ?? resolveDshVersion,
     getService: ctx.deps?.getService,
     toggle: ctx.deps?.togglePlugin ?? togglePlugin,
@@ -795,8 +803,18 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'restart': {
           // 0.9.0：Desktop 不触发旧 helper（Electron 生命周期归官方；杀子进程=红线）
           assertWriteAllowed(profile, 'restart')
-          const result = d.scheduleRestart(servingPort(req))
+          const result = d.scheduleRestart(servingPort(req), 'panel')
           payload = { ...result }
+          break
+        }
+
+        case 'last-restart': {
+          // #51（ADR-0032）：重启终态读缝点——磁盘读零网络 + 惰性折叠外部通道进 journal。
+          // 折叠返回 'fold-failed' 时不反噬读取（B6：宿主仍正常呈现上次终态，下次调用重试折叠）。
+          if (d.foldLastRestart) await d.foldLastRestart()
+          else await foldLastRestartIntoJournal()
+          const state = d.lastRestart ? await d.lastRestart() : await readLastRestart()
+          payload = state === null ? { available: false } : { available: true, state }
           break
         }
 

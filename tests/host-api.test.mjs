@@ -240,18 +240,18 @@ describe('host-api：method 响应', () => {
     assert.ok(res.body.boot)
   })
 
-  it('restart 委派注入的生命周期调度器并传递 serving port', async () => {
+  it('restart 委派注入的生命周期调度器并传递 serving port 与 panel 通道（issue #51 / ADR-0032）', async () => {
     let calledWith = undefined
     const { dispatcher } = setup({
-      scheduleRestart: (port) => {
-        calledWith = port
+      scheduleRestart: (port, channel) => {
+        calledWith = { port, channel }
         return { pid: 1, helperPid: undefined, via: 'app-exit' }
       },
     })
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'restart' } })
     assert.equal(res.status, 200)
     assert.equal(res.body.via, 'app-exit')
-    assert.equal(calledWith, 3080)
+    assert.deepEqual(calledWith, { port: 3080, channel: 'panel' })
   })
 
   it('registry 返回 plugins + registryState；force 放行同源', async () => {
@@ -1048,5 +1048,86 @@ describe('host-api published-at（ADR-0031：详情弹窗单条取数缝点，B5
     const { dispatcher } = setup()
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'published-at', npm: '' } })
     assert.equal(res.status, 400)
+  })
+})
+
+describe('host-api last-restart（issue #51 / ADR-0032：终态读缝点 + 惰性折叠）', () => {
+  let dir
+  let prevLast
+  let prevJournal
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'dshm-last-restart-api-'))
+    prevLast = process.env.DSHM_LAST_RESTART_FILE
+    prevJournal = process.env.DSHM_EXTERNAL_JOURNAL_FILE
+    // R1-1：双 env 隔离——②/④ 走真钩子写 journal，不隔离将污染测试机真实数据且断言非确定
+    process.env.DSHM_LAST_RESTART_FILE = join(dir, 'last-restart.json')
+    process.env.DSHM_EXTERNAL_JOURNAL_FILE = join(dir, 'external-operations.json')
+  })
+  afterEach(() => {
+    if (prevLast === undefined) delete process.env.DSHM_LAST_RESTART_FILE
+    else process.env.DSHM_LAST_RESTART_FILE = prevLast
+    if (prevJournal === undefined) delete process.env.DSHM_EXTERNAL_JOURNAL_FILE
+    else process.env.DSHM_EXTERNAL_JOURNAL_FILE = prevJournal
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+  async function presetState(state) {
+    const { writeLastRestart } = await import('../lib/core/restart-state.js')
+    await writeLastRestart(state)
+  }
+
+  async function journalCount() {
+    const { readFileSync } = await import('node:fs')
+    try {
+      const parsed = JSON.parse(readFileSync(process.env.DSHM_EXTERNAL_JOURNAL_FILE, 'utf8'))
+      return Array.isArray(parsed) ? parsed.length : 0
+    } catch {
+      return 0
+    }
+  }
+
+  it('① 状态文件缺失 → { available: false }（不折叠、不抛）', async () => {
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'last-restart' } })
+    assert.equal(res.status, 200)
+    assert.deepEqual(res.body, { ok: true, available: false })
+  })
+
+  it('② external 状态 → available:true + state 透传 + journal 收 restart 记录', async () => {
+    await presetState({ ok: true, via: 'helper', port: 3080, requestChannel: 'host-tool', at: Date.now(), elapsedMs: 46300 })
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'last-restart' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.available, true)
+    assert.equal(res.body.state.ok, true)
+    assert.equal(res.body.state.assumed, undefined)
+    assert.equal(await journalCount(), 1, '折叠恰补一条 journal 记录')
+    const journal = JSON.parse((await import('node:fs')).readFileSync(process.env.DSHM_EXTERNAL_JOURNAL_FILE, 'utf8'))
+    assert.equal(journal[0].kind, 'restart')
+    assert.equal(journal[0].channel, 'host-tool')
+    assert.equal(journal[0].result, 'ok')
+  })
+
+  it('③ panel 状态 → available:true + journal 零新增（不变量在折叠层显式可测）', async () => {
+    await presetState({ ok: true, via: 'helper', port: 3080, requestChannel: 'panel', at: Date.now(), elapsedMs: 46300 })
+    const { dispatcher } = setup()
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'last-restart' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.available, true)
+    assert.equal(await journalCount(), 0)
+  })
+
+  it('④ 二次调用 → already-folded 幂等（journal 记录数仍为 1）', async () => {
+    await presetState({ ok: false, via: 'helper', port: 3080, requestChannel: 'host-tool', at: Date.now(), elapsedMs: 5210, reason: 'port 3081 still held' })
+    const { dispatcher } = setup()
+    const r1 = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'last-restart' } })
+    assert.equal(r1.body.available, true)
+    assert.equal(await journalCount(), 1)
+    const r2 = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'last-restart' } })
+    assert.equal(r2.body.available, true)
+    assert.equal(r2.body.state.foldedAt !== undefined, true, 'foldedAt 已回写')
+    assert.equal(await journalCount(), 1, '幂等：journal 记录数不变')
+    assert.equal(r2.body.state.reason, 'port 3081 still held', '失败态 reason 透传')
   })
 })

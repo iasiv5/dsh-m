@@ -68,3 +68,12 @@ describe('issue #41：notify.buildApprovalPending 三键双字典在场（评审
     }
   })
 })
+
+describe('issue #51：restart 终态通知四键双字典在场（动态 lookup 于 main.jsx onOutcome / operations-card op.kind）', () => {
+  it('ZH/EN 均含 restart.done 三键与 op.kind.restart', () => {
+    for (const k of ['restart.done.ok', 'restart.done.assumed', 'restart.done.failed', 'op.kind.restart']) {
+      assert.ok(k in ZH, `ZH 缺 ${k}`)
+      assert.ok(k in EN, `EN 缺 ${k}`)
+    }
+  })
+})

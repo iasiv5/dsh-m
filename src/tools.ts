@@ -22,7 +22,9 @@ import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS, INSTALLED_CORE_DEADLINE_MS } from './core/market-query.js'
 import { publishedAtParts } from './core/published-at.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
-import { appExitFromContext, scheduleRestart } from './core/restart.js'
+import { appExitFromContext, scheduleRestart, type RestartResult } from './core/restart.js'
+import { readLastRestart, type LastRestartState } from './core/restart-state.js'
+import type { OperationChannel } from './core/external-journal.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
 import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from './core/profile-ops.js'
@@ -75,7 +77,7 @@ export interface ToolMarketDeps {
   installFromRegistry?: typeof installFromRegistry
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
-  restart?: typeof scheduleRestart
+  restart?: (port: number | null, channel?: OperationChannel) => RestartResult
   togglePlugin?: typeof coreTogglePlugin
   /** 0.9.0：Desktop adapter 注入（测试可替换；生产 = profile-ops 实现） */
   desktopInstall?: typeof desktopInstallFromRegistry
@@ -107,6 +109,15 @@ function registryNoteOf(state: RegistryState): string {
   return parts.join(' · ')
 }
 
+/** 上次重启终态尾行（#51/ADR-0032）：状态文件缺失 → 空串（输出零变化）；assumed 不显耗时（R2-2）。 */
+function lastRestartTail(last?: LastRestartState): string {
+  if (!last) return ''
+  const body = last.ok
+    ? (last.assumed ? '成功（假定，无端口可探）' : `成功（${(last.elapsedMs / 1000).toFixed(1)}s）`)
+    : `失败（${last.reason ?? '未知原因'}）`
+  return `\n上次重启终态：${body}`
+}
+
 export function registerTools(
   ctx: Context,
   cfg: RegistryConfig,
@@ -124,8 +135,8 @@ export function registerTools(
     desktopUninstall: deps.desktopUninstall ?? desktopUninstall,
     desktopUpgrade: deps.desktopUpgrade ?? desktopUpgradeFromRegistry,
   }
-  const restart = deps.restart ?? ((port: number | null = null) =>
-    scheduleRestart(port, { appExit: appExitFromContext(ctx) }))
+  const restart = deps.restart ?? ((port: number | null = null, channel?: OperationChannel) =>
+    scheduleRestart(port, { appExit: appExitFromContext(ctx), channel }))
   const toggle = deps.togglePlugin ?? coreTogglePlugin
   // 开关委派服务探测（ADR-0001）：运行时按存在性，不判版本号。
   // 0.9.8：host.ts 共用解析器（双上下文 + 惰性拉起）优先；缺省退回外层 ctx 一次性 get（旧行为）。
@@ -513,7 +524,7 @@ export function registerTools(
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => [{
         type: 'text',
-        text: `已请求重启 DSH web（via ${(value as { via?: string }).via}）。服务恢复后 DSH Web 会在后台自动重连。对用户最多一句短话。`,
+        text: `已请求重启 DSH web（via ${(value as { via?: string }).via}）。服务恢复后 DSH Web 会在后台自动重连。对用户最多一句短话。${lastRestartTail((value as { lastRestart?: LastRestartState | undefined }).lastRestart)}`,
       }],
       presentationMeta: (_args, value) => ({ kind: 'dshm-restart', ...(value as object) }),
     },
@@ -526,7 +537,9 @@ export function registerTools(
     timeoutMs: 15_000,
     async execute() {
       assertWriteAllowed(profile, 'restart')
-      return cloneJson(restart(null))
+      const res = cloneJson(restart(null, 'host-tool'))
+      const last = await readLastRestart().catch(() => null)
+      return { ...res, ...(last ? { lastRestart: last } : {}) }
     },
   }))
 

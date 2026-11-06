@@ -4,13 +4,17 @@
  * 只有无法使用 appExit 且能从 cgroup 识别服务时，才通过 manager-owned transient
  * systemd-run 任务调用 systemctl 作为兼容兜底，避免 helper 留在待停止 unit cgroup。
  * 安全：restart 端点必须通过 trustedRestartRequest（Origin 与 Host 同源）。
+ * 0.12.8（ADR-0032/#51）：helper 九终态写 last-restart.json（restart-state 属主），
+ * 调用通道随调用方注入（panel/cli/host-tool）供终态折叠归属。
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import type { IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { dshArgv, nodeExecutable } from './dsh-cli.js'
+import { lastRestartFile } from './restart-state.js'
+import type { OperationChannel } from './external-journal.js'
 
 function headerString(raw: string | string[] | undefined): string | undefined {
   if (raw === undefined) return undefined
@@ -214,6 +218,9 @@ export function restartHelperSource(
   logs: { out: string; err: string },
   port: number | null,
   pid: number,
+  statePath: string,
+  stateDir: string,
+  requestChannel: string,
 ): string {
   return [
     "const { spawn } = require('node:child_process')",
@@ -229,6 +236,9 @@ export function restartHelperSource(
     `const port = ${JSON.stringify(port)}`,
     `const flags = ${JSON.stringify(replacementSpawnFlags())}`,
     `const pid = ${JSON.stringify(pid)}`,
+    `const statePath = ${JSON.stringify(statePath)}`,
+    `const stateDir = ${JSON.stringify(stateDir)}`,
+    `const requestChannel = ${JSON.stringify(requestChannel)}`,
     `const oldExitTimeout = ${JSON.stringify(OLD_EXIT_TIMEOUT_MS)}`,
     `const upTimeout = ${JSON.stringify(REPLACEMENT_UP_TIMEOUT_MS)}`,
     `const nullPortGrace = ${JSON.stringify(NULL_PORT_GRACE_MS)}`,
@@ -243,11 +253,14 @@ export function restartHelperSource(
     '  setTimeout(() => done(false), 500)',
     '})',
     'const alive = (p) => { try { process.kill(p, 0); return true } catch (e) { return e && e.code === "ESRCH" ? false : true } }',
+    'const t0 = Date.now()',
+    "const finish = (ok, extra) => { try { fs.mkdirSync(stateDir, { recursive: true }); fs.writeFileSync(statePath, JSON.stringify(Object.assign({ ok, via: 'helper', port, requestChannel, at: Date.now(), elapsedMs: Date.now() - t0 }, extra || {}))) } catch {} }",
     'const main = async () => {',
     '  const exitBy = Date.now() + oldExitTimeout',
     '  while (Date.now() < exitBy && alive(pid)) await sleep(100)',
     '  if (alive(pid)) {',
     '    note(`restart failed: old instance (pid ${pid}) still alive after ${oldExitTimeout / 1000}s; replacement NOT started - safe to retry`)',
+    '    finish(false, { reason: "old instance still alive" })',
     '    return',
     '  }',
     '  if (port) {',
@@ -255,6 +268,7 @@ export function restartHelperSource(
     '    while (await listening()) {',
     '      if (Date.now() >= heldBy) {',
     '        note(`restart failed: port ${port} still held by another process after the old instance exited; replacement NOT started`)',
+    '        finish(false, { reason: "port still held by another process" })',
     '        return',
     '      }',
     '      await sleep(250)',
@@ -269,11 +283,13 @@ export function restartHelperSource(
     '    child = spawn(file, args, { cwd, detached, stdio: ["ignore", out, err], env: process.env, shell: viaShell, ...flags })',
     '  } catch (error) {',
     '    note(`restart failed: could not start the replacement: ${error && error.message ? error.message : error}`)',
+    '    finish(false, { reason: "could not start the replacement" })',
     '    return',
     '  }',
     '  child.on("error", (error) => {',
     '    spawnError = error',
     '    note(`restart failed: could not start the replacement: ${error && error.message ? error.message : error}`)',
+    '    finish(false, { reason: "could not start the replacement" })',
     '  })',
     '  child.on("exit", (code, signal) => { exitInfo = { code, signal } })',
     '  child.unref()',
@@ -283,8 +299,10 @@ export function restartHelperSource(
     '    if (spawnError !== null) return',
     '    if (exitInfo !== null) {',
     '      note(`restart failed: replacement exited early (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal}) - see the output log beside this one`)',
+    '      finish(false, { reason: "replacement exited early" })',
     '    } else {',
     '      note(`replacement still running after ${nullPortGrace / 1000}s (no port to probe; assuming started)`)',
+    '      finish(true, { assumed: true })',
     '    }',
     '    return',
     '  }',
@@ -298,10 +316,13 @@ export function restartHelperSource(
     '  if (spawnError !== null) return',
     '  if (exitInfo !== null) {',
     '    note(`restart failed: replacement exited before binding port ${port} (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal})`)',
+    '    finish(false, { reason: "replacement exited before binding port" })',
     '  } else if (bound) {',
     '    note(`replacement bound port ${port} after ${(Math.round((Date.now() - startedAt) / 100) / 10).toFixed(1)}s`)',
+    '    finish(true)',
     '  } else {',
     '    note(`restart failed: replacement did not bind port ${port} within ${upTimeout / 1000}s - see the output log beside this one`)',
+    '    finish(false, { reason: "replacement did not bind port" })',
     '  }',
     '}',
     'main()',
@@ -339,6 +360,8 @@ export function scheduleRestart(
     uid?: number
     /** DSH launcher lifecycle hook, available in both 0.1.2-rc.1 and 0.1.5-rc.1. */
     appExit?: AppExit
+    /** 调用通道（#51/ADR-0032）：注入 helper requestChannel 供终态折叠归属（panel 不折）。 */
+    channel?: OperationChannel
     /** Injectable environment for deterministic tests. */
     env?: NodeJS.ProcessEnv
     /** Injectable systemd policy facts; omitted in production and queried when needed. */
@@ -382,9 +405,10 @@ export function scheduleRestart(
   const logErr = join(tmpdir(), `dshm-restart-${stamp}.err.log`)
   let helper
   try {
+    const statePath = lastRestartFile()
     helper = (deps.spawn ?? spawn)(
       (deps.nodeExecutable ?? nodeExecutable)(),
-      ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port, pid)],
+      ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port, pid, statePath, dirname(statePath), deps.channel ?? 'external')],
       {
         detached: true,
         stdio: 'ignore',

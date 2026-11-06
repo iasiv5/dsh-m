@@ -156,3 +156,31 @@ describe('ADR-0030：dshm CLI 门禁放开 + 写命令接线', () => {
     assert.equal(captured[0].profile, 'aqua', 'registry/社区缓存按 profile 分段')
   })
 })
+
+describe('dshm restart --yes 上次重启终态行（issue #51 / ADR-0032）', () => {
+  it('① 状态文件存在 → 输出含 ⏮ 上次重启终态：成功（46.3s）', async () => {
+    process.env.DSHM_LAST_RESTART_FILE = join(cacheRoot, 'last-restart.json')
+    const { writeLastRestart } = await import('../lib/core/restart-state.js')
+    await writeLastRestart({ ok: true, via: 'helper', port: 3080, requestChannel: 'cli', at: Date.now(), elapsedMs: 46300 })
+    const channelCalls = []
+    const r = await runCapture(['restart', '--yes'], {
+      scheduleRestart: (port, opts) => {
+        channelCalls.push({ port, opts })
+        return { pid: 1, helperPid: undefined, via: 'helper' }
+      },
+    })
+    assert.equal(r.code, 0)
+    assert.ok(r.text.includes('⏮ 上次重启终态：成功（46.3s）'), r.text)
+    assert.ok(r.text.includes('✅ 已请求重启（via helper）'), r.text)
+    assert.deepEqual(channelCalls, [{ port: null, opts: { channel: 'cli' } }])
+  })
+  it('② 状态文件缺失 → 输出无 ⏮ 行（与今日逐字节一致）', async () => {
+    process.env.DSHM_LAST_RESTART_FILE = join(cacheRoot, 'missing-last-restart.json')
+    const r = await runCapture(['restart', '--yes'], {
+      scheduleRestart: () => ({ pid: 1, helperPid: undefined, via: 'helper' }),
+    })
+    assert.equal(r.code, 0)
+    assert.ok(!r.text.includes('⏮'), r.text)
+    assert.ok(r.text.includes('✅ 已请求重启（via helper）。服务恢复后刷新页面即可。'), r.text)
+  })
+})

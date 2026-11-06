@@ -26,6 +26,7 @@ import { parseMarketQueryInput, PRIMARY_CATEGORY_LABELS, SEARCH_CORE_DEADLINE_MS
 import { publishedAtParts } from './core/published-at.js'
 import { COMMUNITY_CATEGORY_LABELS } from './core/community.js'
 import { scheduleRestart } from './core/restart.js'
+import { readLastRestart } from './core/restart-state.js'
 import { upgradeEffectLine } from './core/activation.js'
 import { unsupportedCauseLabel } from './core/upgrade-target.js'
 import { pathToFileURL } from 'node:url'
@@ -52,6 +53,8 @@ export interface CliDeps {
   uninstallPlugin?: typeof uninstallPlugin
   upgradePlugin?: typeof upgradePlugin
   togglePlugin?: typeof coreTogglePlugin
+  /** #51/ADR-0032：CLI 通道注入（测试桩走此位；生产缺省走真实现）。 */
+  scheduleRestart?: typeof scheduleRestart
 }
 
 export interface CliIo {
@@ -220,6 +223,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     uninstallPlugin: deps.uninstallPlugin ?? uninstallPlugin,
     upgradePlugin: deps.upgradePlugin ?? upgradePlugin,
     togglePlugin: deps.togglePlugin ?? coreTogglePlugin,
+    scheduleRestart: deps.scheduleRestart ?? scheduleRestart,
   }
   const { cmd, flags, positionals } = parseArgs(argv)
   const cfg = cliConfig()
@@ -465,7 +469,9 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
 
     case 'restart': {
       requireYes(flags, '重启 DSH Web')
-      const res = scheduleRestart(null)
+      const res = d.scheduleRestart(null, { channel: 'cli' })
+      const last = await readLastRestart().catch(() => null)
+      if (last) out(`⏮ 上次重启终态：${last.ok ? (last.assumed ? '成功（假定，无端口可探）' : `成功（${(last.elapsedMs / 1000).toFixed(1)}s）`) : `失败（${last.reason ?? '未知原因'}）`}`)
       out(`✅ 已请求重启（via ${res.via}）。服务恢复后刷新页面即可。`)
       return 0
     }

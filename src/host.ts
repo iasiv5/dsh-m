@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { createApiDispatcher, type RequestTrustCheck } from './core/host-api.js'
+import type { OperationChannel } from './core/external-journal.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
 import { wireRegistrySettings, unwrapConfig } from './core/settings-compat.js'
@@ -61,7 +62,7 @@ export function apply(ctx: Context, config: Config): void {
   // DSH 0.1.2-rc.1 / 0.1.5-rc.1 / 0.1.7-rc.1 / 0.1.7-rc.2 都经 dsh-cmdline 暴露 appExit；
   // using it avoids guessing the service unit from release-specific cgroups.
   const appExit = appExitFromContext(ctx)
-  const restart = (port: number | null = null) => scheduleRestart(port, { appExit })
+  const restart = (port: number | null = null, channel?: OperationChannel) => scheduleRestart(port, { appExit, channel })
 
   // 开关委派的官方服务探测（ADR-0001）：运行时按服务存在性探测，不判 DSH 版本号。
   // 0.9.8 与 dsh-market 同源修正（Windows 实机 2026-10-01）：pluginManager 是惰性服务，
