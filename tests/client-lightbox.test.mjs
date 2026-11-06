@@ -20,7 +20,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
@@ -29,7 +29,8 @@ const src = readFileSync(join(root, 'src/client/main.jsx'), 'utf8')
 const stylesSrc = readFileSync(join(root, 'src/client/styles.js'), 'utf8')
 const chromeSrc = readFileSync(join(root, 'src/client/chrome.jsx'), 'utf8')
 const detailModalSrc = readFileSync(join(root, 'src/client/detail-modal.jsx'), 'utf8')
-const { lbStep, lbNeighbors, swipeDir } = await import(join(root, 'src/client/lightbox.js'))
+// win32 盘符路径作 ESM specifier 会 ERR_UNSUPPORTED_ESM_URL_SCHEME——统一 pathToFileURL（跨平台）
+const { lbStep, lbNeighbors, swipeDir } = await import(pathToFileURL(join(root, 'src/client/lightbox.js')).href)
 
 describe('lbStep 环形步进（灯箱 ‹›/键盘 ←→ 共用）', () => {
   it('向前/向后回绕', () => {

@@ -7,12 +7,13 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
+import { linkDirSync } from './fixtures/link-dir.mjs'
 
 const ORIGIN = 'http://127.0.0.1:3080'
 
@@ -70,7 +71,7 @@ describe('doctor method', () => {
 
   it('响应信封 { ok:true, report } 且 report 为完整 DoctorReport（对 fixture profile 真跑）', async () => {
     writeFileSync(join(profile, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\n')
-    symlinkSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x')) // 1 悬空
+    linkDirSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x')) // 1 悬空
     writeFileSync(join(profile, 'package.json.bak-20260903'), '{}') // 1 残留
     writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
     const { status, body } = await callDoctor(profile)

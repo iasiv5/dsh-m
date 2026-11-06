@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { manifestIconToDataUri, attachInstalledIconDataUris, attachEntryIconDataUris, MAX_ICON_BYTES } from '../lib/core/installed-icon.js'
+import { linkDirSync } from './fixtures/link-dir.mjs'
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
 const PNG_1PX = Buffer.from(
@@ -25,11 +26,10 @@ function makeRealPkg(withIcon = true) {
 }
 
 describe('manifestIconToDataUri', () => {
-  it('合法 svg（经 symlink 安装目录访问）→ 逐字节 data URI（R-3Q1 root 面）', async (t) => {
-    if (process.platform === 'win32') t.skip('symlink 需要特权，CI Windows 跳过')
+  it('合法 svg（经链接安装目录访问，win32 即 junction——pnpm 生产形态）→ 逐字节 data URI（R-3Q1 root 面）', async () => {
     const real = makeRealPkg()
     const link = join(dirname(real), 'pkg-link')
-    symlinkSync(real, link, 'dir')
+    linkDirSync(real, link)
     const uri = await manifestIconToDataUri(link, './icon.svg')
     assert.equal(uri, `data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`)
   })
@@ -58,7 +58,7 @@ describe('manifestIconToDataUri', () => {
   })
 
   it('icon 文件为指向包外的 symlink → null（R-3Q1 target 面，官方点名防御场景）', async (t) => {
-    if (process.platform === 'win32') t.skip('symlink 需要特权，CI Windows 跳过')
+    if (process.platform === 'win32') return t.skip('文件链接不可 junction，免特权 win32 跳过（Windows 未开开发者模式/非管理员）')
     const tmp = mkdtempSync(join(tmpdir(), 'dshm-icon-'))
     const real = join(tmp, 'pkg')
     mkdirSync(real)
@@ -91,13 +91,12 @@ describe('manifestIconToDataUri', () => {
     assert.equal(await manifestIconToDataUri(real, undefined), null)
   })
 
-  it('exports <pkg>/icon 兜底：best-effort 永不 throw，成功则 data URI（评审 R-3Q1 契约钉「永不炸」）', async (t) => {
-    if (process.platform === 'win32') t.skip('symlink 需要特权，CI Windows 跳过')
+  it('exports <pkg>/icon 兜底：best-effort 永不 throw，成功则 data URI（评审 R-3Q1 契约钉「永不炸」）', async () => {
     const real = makeRealPkg(false)
     writeFileSync(join(real, 'icon.svg'), SVG)
     writeFileSync(join(real, 'package.json'), JSON.stringify({ name: 'dshm-icon-fixture-pkg', exports: { './icon': './icon.svg' } }))
     const link = join(dirname(real), 'pkg-link')
-    symlinkSync(real, link, 'dir')
+    linkDirSync(real, link)
     const uri = await manifestIconToDataUri(link, undefined, 'dshm-icon-fixture-pkg')
     // 临时目录不在任何 node_modules 链上时 resolve 失败 → null；解析成功 → data URI。两者皆合法。
     assert.ok(uri === null || uri.startsWith('data:image/svg+xml;base64,'), `unexpected: ${String(uri).slice(0, 80)}`)

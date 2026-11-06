@@ -21,7 +21,8 @@ describe('search-normalize-corpus 固定格式：每条用例独占一行', () =
 
   it('cases 每条独占一行，且逐行解析后与 JSON 解析结果一致', () => {
     const obj = JSON.parse(text)
-    const lines = text.split('\n')
+    // /\r?\n/：CRLF 检出（Windows autocrlf）下行尾 \r 会令下方 /,$/ 尾锚失配、逗号剥不掉
+    const lines = text.split(/\r?\n/)
     const start = lines.findIndex((l) => l.includes('"cases":['))
     assert.ok(start >= 0, '缺少 "cases":[ 起始行')
     const caseLines = lines.slice(start + 1).filter((l) => l.length > 0 && !l.startsWith(']}'))

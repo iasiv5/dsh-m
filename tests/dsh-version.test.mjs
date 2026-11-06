@@ -83,16 +83,22 @@ describe('dsh-version：readLauncherPackageVersion', () => {
     }
   })
 
-  it('pnpm 全局 shim 形态（F1，0.9.29 装机验收实证）：argv[1] 是指向真实 bin.js 的符号链接 → realpath 后解析出版本', () => {
+  it('pnpm 全局 shim 形态（F1，0.9.29 装机验收实证）：argv[1] 是指向真实 bin.js 的符号链接 → realpath 后解析出版本', (t) => {
     const { root, lib } = makeTree()
     try {
       // 真实包树：@deepseek-ai/dsh/package.json + lib/bin.js
       writeFileSync(join(root, '@deepseek-ai', 'dsh', 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.2.0-rc.2' }))
       writeFileSync(join(lib, 'bin.js'), '// launcher entry stub')
-      // pnpm home 里的全局 shim：符号链接（本机实况 ~/.local/share/pnpm/dsh 同形态）
+      // pnpm home 里的全局 shim：符号链接（本机实况 ~/.local/share/pnpm/dsh 同形态）。
+      // 文件链接不可 junction，免特权 win32 环境按仓内先例 skip。
       const pnpmHome = join(root, 'pnpm-home')
       mkdirSync(pnpmHome, { recursive: true })
-      symlinkSync(join(lib, 'bin.js'), join(pnpmHome, 'dsh'))
+      try {
+        symlinkSync(join(lib, 'bin.js'), join(pnpmHome, 'dsh'))
+      } catch (err) {
+        if (err?.code === 'EPERM') return t.skip('当前环境无符号链接权限（Windows 未开开发者模式/非管理员）')
+        throw err
+      }
       const v = readLauncherPackageVersion({ argv: ['node', join(pnpmHome, 'dsh')] })
       assert.equal(v, '0.2.0-rc.2')
     } finally {

@@ -4,13 +4,14 @@
  */
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { detectLayout, analyzeFarm, listResidue, checkAccount, runDoctor } from '../lib/core/doctor.js'
+import { linkDirSync } from './fixtures/link-dir.mjs'
 
 let root
 beforeEach(() => {
@@ -93,13 +94,13 @@ describe('analyzeFarm', () => {
   })
 
   it('祖先链遍历命中父目录共享店（farmChecked>0，评审 R1.2 反空转）', async () => {
-    symlinkSync(join(home, 'rt', 'x'), join(scopeAt(home), 'dsh-x')) // 悬空也计入 farmChecked
+    linkDirSync(join(home, 'rt', 'x'), join(scopeAt(home), 'dsh-x')) // 悬空也计入 farmChecked
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm.length, 1)
   })
 
   it('悬空 → error finding（check=farm-liveness，title 含包名，hint 提 know-how 014）', async () => {
-    symlinkSync(join(home, 'gone-store', 'node_modules', '@deepseek-ai', 'dsh-x'), join(scopeAt(home), 'dsh-x'))
+    linkDirSync(join(home, 'gone-store', 'node_modules', '@deepseek-ai', 'dsh-x'), join(scopeAt(home), 'dsh-x'))
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm[0].state, 'dangling')
     assert.equal(r.findings.length, 1)
@@ -112,7 +113,7 @@ describe('analyzeFarm', () => {
   it('dsh 伞包指向旧运行时 store → stale-target（只进清单不产生 finding）；两级提取第一级（目录名版本段）', async () => {
     const target = join(home, 'store', '@deepseek-ai+dsh@0.1.7-rc.2_abc123ef', 'node_modules', '@deepseek-ai', 'dsh')
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, join(scopeAt(home), 'dsh'))
+    linkDirSync(target, join(scopeAt(home), 'dsh'))
     const r = await analyzeFarm(profile, 'hoisted', '0.2.0-rc.2')
     assert.equal(r.farm[0].state, 'stale-target')
     assert.equal(r.farm[0].targetVersion, '0.1.7-rc.2')
@@ -122,7 +123,7 @@ describe('analyzeFarm', () => {
   it('非 dsh 伞包（如 cordis）版本不同于 runtime 也不判 stale——跨命名空间不比较（误报纪律）', async () => {
     const target = join(home, 'rt', '.pnpm', '@deepseek-ai+cordis@4.0.1_deadbeef99', 'node_modules', '@deepseek-ai', 'cordis')
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, join(scopeAt(home), 'cordis'))
+    linkDirSync(target, join(scopeAt(home), 'cordis'))
     const r = await analyzeFarm(profile, 'hoisted', '0.2.0-rc.2')
     assert.equal(r.farm[0].state, 'healthy')
     assert.equal(r.farm[0].targetVersion, '4.0.1')
@@ -133,7 +134,7 @@ describe('analyzeFarm', () => {
     const target = join(home, 'rt', '.pnpm', 'node_modules', '@deepseek-ai', 'dsh-tools')
     mkdirSync(target, { recursive: true })
     writeFileSync(join(target, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-tools', version: '0.1.7-rc.2' }))
-    symlinkSync(target, join(scopeAt(home), 'dsh-tools'))
+    linkDirSync(target, join(scopeAt(home), 'dsh-tools'))
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm[0].state, 'healthy')
     assert.equal(r.farm[0].targetVersion, '0.1.7-rc.2')
@@ -142,7 +143,7 @@ describe('analyzeFarm', () => {
   it('runtimeVersion=null → 不判 stale、记降级 unknowns；dsh 旧 store 也记 healthy（评审 R1.3 降级路径）', async () => {
     const target = join(home, 'store', '@deepseek-ai+dsh@0.1.7-rc.2_abc123ef', 'node_modules', '@deepseek-ai', 'dsh')
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, join(scopeAt(home), 'dsh'))
+    linkDirSync(target, join(scopeAt(home), 'dsh'))
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm[0].state, 'healthy')
     assert.ok(r.unknowns.some((u) => u.includes('stale')))
@@ -151,7 +152,7 @@ describe('analyzeFarm', () => {
   it('dsh 伞包指向当前运行时版本 → healthy 不 stale', async () => {
     const target = join(home, 'store', '@deepseek-ai+dsh@0.2.0-rc.2_abc123ef', 'node_modules', '@deepseek-ai', 'dsh')
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, join(scopeAt(home), 'dsh'))
+    linkDirSync(target, join(scopeAt(home), 'dsh'))
     const r = await analyzeFarm(profile, 'hoisted', '0.2.0-rc.2')
     assert.equal(r.farm[0].state, 'healthy')
   })
@@ -159,7 +160,7 @@ describe('analyzeFarm', () => {
   it('两级提取皆失败 → targetVersion=null 聚合进 unknowns（不逐条刷屏）', async () => {
     const target = join(home, 'weird') // 存在但无 package.json、路径无版本段
     mkdirSync(target, { recursive: true })
-    symlinkSync(target, join(scopeAt(home), 'weird'))
+    linkDirSync(target, join(scopeAt(home), 'weird'))
     const r = await analyzeFarm(profile, 'hoisted', null)
     assert.equal(r.farm[0].targetVersion, null)
     assert.equal(r.unknowns.filter((u) => u.includes('无法解析')).length, 1)
@@ -295,7 +296,7 @@ describe('checkAccount', () => {
     writeFileSync(join(target, 'package.json'), JSON.stringify({ name: 'linked-pkg', version: '2.0.0' }))
     mkProfile({ 'pkg-f': `link:${target}` }, lock([]))
     mkdirSync(join(profile, 'node_modules'), { recursive: true })
-    symlinkSync(target, join(profile, 'node_modules', 'pkg-f'))
+    linkDirSync(target, join(profile, 'node_modules', 'pkg-f'))
     const r = await checkAccount(profile)
     assert.equal(r.account[0].pin, `link:${target}`)
     assert.equal(r.account[0].installed, '2.0.0')
@@ -408,14 +409,14 @@ describe('runDoctor', () => {
   function buildFixture() {
     writeFileSync(join(profile, 'pnpm-workspace.yaml'), 'nodeLinker: hoisted\n')
     // 农场：1 悬空 + 1 dsh stale + 1 健康
-    symlinkSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x'))
+    linkDirSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x'))
     const staleTarget = join(home, 'store', '@deepseek-ai+dsh@0.1.7-rc.2_abc123ef', 'node_modules', '@deepseek-ai', 'dsh')
     mkdirSync(staleTarget, { recursive: true })
-    symlinkSync(staleTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh'))
+    linkDirSync(staleTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh'))
     const okTarget = join(home, 'rt', '.pnpm', 'node_modules', '@deepseek-ai', 'dsh-tools')
     mkdirSync(okTarget, { recursive: true })
     writeFileSync(join(okTarget, 'package.json'), JSON.stringify({ version: '0.1.7-rc.2' }))
-    symlinkSync(okTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh-tools'))
+    linkDirSync(okTarget, join(home, 'node_modules', '@deepseek-ai', 'dsh-tools'))
     // 残留：1 个 bak
     writeFileSync(join(profile, 'package.json.bak-20260903'), '{}')
     // 账实：2 个依赖（含双市场）三处一致
@@ -491,7 +492,7 @@ describe('dshm doctor（CLI 子命令）', () => {
   afterEach(() => rmSync(home, { recursive: true, force: true }))
 
   it('--json 可解析；有 error（悬空）时 exit 1；stale 维度显示降级而非 0', async () => {
-    symlinkSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x')) // 悬空 → error
+    linkDirSync(join(home, 'gone'), join(home, 'node_modules', '@deepseek-ai', 'dsh-x')) // 悬空 → error
     writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: {} }))
     const r = runCli(['doctor', '--json'], home)
     assert.equal(r.status, 1)
