@@ -208,11 +208,12 @@ export function appExitFromContext(context: unknown): AppExit | undefined {
   }
 }
 
-function restartHelperSource(
+export function restartHelperSource(
   spawned: { file: string; args: string[]; viaShell: boolean; detached: boolean },
   launch: { cwd: string },
   logs: { out: string; err: string },
   port: number | null,
+  pid: number,
 ): string {
   return [
     "const { spawn } = require('node:child_process')",
@@ -226,6 +227,12 @@ function restartHelperSource(
     `const logOut = ${JSON.stringify(logs.out)}`,
     `const logErr = ${JSON.stringify(logs.err)}`,
     `const port = ${JSON.stringify(port)}`,
+    `const flags = ${JSON.stringify(replacementSpawnFlags())}`,
+    `const pid = ${JSON.stringify(pid)}`,
+    `const oldExitTimeout = ${JSON.stringify(OLD_EXIT_TIMEOUT_MS)}`,
+    `const upTimeout = ${JSON.stringify(REPLACEMENT_UP_TIMEOUT_MS)}`,
+    `const nullPortGrace = ${JSON.stringify(NULL_PORT_GRACE_MS)}`,
+    `const heldGrace = ${JSON.stringify(PORT_HELD_GRACE_MS)}`,
     'const sleep = (ms) => new Promise(r => setTimeout(r, ms))',
     "const note = (line) => { try { fs.appendFileSync(logErr, `[dsh-m] ${line}\\n`) } catch {} }",
     'const listening = () => new Promise((resolve) => {',
@@ -235,34 +242,89 @@ function restartHelperSource(
     '  probe.on("error", () => done(false))',
     '  setTimeout(() => done(false), 500)',
     '})',
+    'const alive = (p) => { try { process.kill(p, 0); return true } catch (e) { return e && e.code === "ESRCH" ? false : true } }',
     'const main = async () => {',
+    '  const exitBy = Date.now() + oldExitTimeout',
+    '  while (Date.now() < exitBy && alive(pid)) await sleep(100)',
+    '  if (alive(pid)) {',
+    '    note(`restart failed: old instance (pid ${pid}) still alive after ${oldExitTimeout / 1000}s; replacement NOT started — safe to retry`)',
+    '    return',
+    '  }',
     '  if (port) {',
-    '    const until = Date.now() + 30000',
-    '    while (Date.now() < until && await listening()) await sleep(250)',
-    '    if (await listening()) note(`port ${port} was still in use after 30s; starting anyway`)',
-    '    await sleep(300)',
-    '  } else {',
-    '    await sleep(1500)',
+    '    const heldBy = Date.now() + heldGrace',
+    '    while (await listening()) {',
+    '      if (Date.now() >= heldBy) {',
+    '        note(`restart failed: port ${port} still held by another process after the old instance exited; replacement NOT started`)',
+    '        return',
+    '      }',
+    '      await sleep(250)',
+    '    }',
     '  }',
     "  let child",
+    '  let spawnError = null',
+    '  let exitInfo = null',
     '  try {',
     '    const out = fs.openSync(logOut, "a")',
     '    const err = fs.openSync(logErr, "a")',
-    '    child = spawn(file, args, { cwd, detached, stdio: ["ignore", out, err], env: process.env, shell: viaShell })',
-    '    child.on("error", (error) => note(`could not start the replacement: ${error && error.message ? error.message : error}`))',
-    '    child.unref()',
+    '    child = spawn(file, args, { cwd, detached, stdio: ["ignore", out, err], env: process.env, shell: viaShell, ...flags })',
     '  } catch (error) {',
-    '    note(`could not start the replacement: ${error && error.message ? error.message : error}`)',
+    '    note(`restart failed: could not start the replacement: ${error && error.message ? error.message : error}`)',
     '    return',
     '  }',
-    '  if (!port) { await sleep(3000); return }',
-    '  const upBy = Date.now() + 20000',
-    '  while (Date.now() < upBy && !(await listening())) await sleep(500)',
-    '  if (!(await listening())) note(`the replacement did not bind port ${port} within 20s — see the output log beside this one`)',
+    '  child.on("error", (error) => {',
+    '    spawnError = error',
+    '    note(`restart failed: could not start the replacement: ${error && error.message ? error.message : error}`)',
+    '  })',
+    '  child.on("exit", (code, signal) => { exitInfo = { code, signal } })',
+    '  child.unref()',
+    '  if (!port) {',
+    '    const graceBy = Date.now() + nullPortGrace',
+    '    while (Date.now() < graceBy && exitInfo === null && spawnError === null) await sleep(500)',
+    '    if (spawnError !== null) return',
+    '    if (exitInfo !== null) {',
+    '      note(`restart failed: replacement exited early (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal}) — see the output log beside this one`)',
+    '    } else {',
+    '      note(`replacement still running after ${nullPortGrace / 1000}s (no port to probe; assuming started)`)',
+    '    }',
+    '    return',
+    '  }',
+    '  const startedAt = Date.now()',
+    '  const upBy = Date.now() + upTimeout',
+    '  let bound = false',
+    '  while (Date.now() < upBy && exitInfo === null && spawnError === null && !bound) {',
+    '    bound = await listening()',
+    '    if (!bound) await sleep(500)',
+    '  }',
+    '  if (spawnError !== null) return',
+    '  if (exitInfo !== null) {',
+    '    note(`restart failed: replacement exited before binding port ${port} (code ${exitInfo.code === null ? "null" : exitInfo.code} signal ${exitInfo.signal === null ? "none" : exitInfo.signal})`)',
+    '  } else if (bound) {',
+    '    note(`replacement bound port ${port} after ${(Math.round((Date.now() - startedAt) / 100) / 10).toFixed(1)}s`)',
+    '  } else {',
+    '    note(`restart failed: replacement did not bind port ${port} within ${upTimeout / 1000}s — see the output log beside this one`)',
+    '  }',
     '}',
     'main()',
   ].join('\n')
 }
+
+/**
+ * #48：helper 内层 spawn 必须带 windowsHide —— helper 自身 detached 无控制台，
+ * 不设此 flag 时 Windows 会为控制台子系统子进程新分配可见窗口（闪窗）；非 Windows 为 no-op。
+ */
+export function replacementSpawnFlags(): Record<string, boolean> {
+  return { windowsHide: true }
+}
+
+/** 等旧进程退出上限：Windows 实测 TerminateProcess 后端口释放 449ms（issue #50 实测），5s 为 10 倍余量。 */
+export const OLD_EXIT_TIMEOUT_MS = 5_000
+/** 等替代进程绑定端口的就绪上限：冷启动实测 38–73s（issue #50 报告者 43 对日志）；20s 判据恒误报已删。 */
+export const REPLACEMENT_UP_TIMEOUT_MS = 180_000
+/** port=null（dshm_restart 工具 / CLI 路径）无端口可探，仅监测替代进程秒退的宽限窗口。 */
+export const NULL_PORT_GRACE_MS = 10_000
+/** 端口占用判定有界重探窗（评审 R1-Q4）：旧进程死后端口释放实测 449ms（issue #50 单样本，20ms 轮询），
+ *  2s ≈ 4.5 倍。首探 held 后每 250ms 重探，窗内释放即放行；窗满仍 held 判外部占用，拒绝启动。 */
+export const PORT_HELD_GRACE_MS = 2_000
 
 export function scheduleRestart(
   port: number | null = null,
@@ -322,7 +384,7 @@ export function scheduleRestart(
   try {
     helper = (deps.spawn ?? spawn)(
       (deps.nodeExecutable ?? nodeExecutable)(),
-      ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port)],
+      ['-e', restartHelperSource(spawned, launch, { out: logOut, err: logErr }, port, pid)],
       {
         detached: true,
         stdio: 'ignore',
