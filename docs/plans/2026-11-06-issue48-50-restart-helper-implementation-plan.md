@@ -165,7 +165,7 @@
      }
      ```
 - [ ] Step 4: 复跑同两条命令 → 全绿（既有 6 例 + 新 2 例；本套件现状 6 例全不触 helper 分支，无联动）
-- [ ] Step 5: **关键锚变异自证**（该源锚是 #48 修复的唯一自动防线；按 CODING-STANDARDS:57「隔离副本」执行，评审 R1-Q5）：`cp -a` 仓库到 `/home/ubuntu/workspace/.dsh-research/issue4850-mutation-check/`（含 node_modules）→ 在**副本**把内层 spawn 行的 `, ...flags` 删掉 → 副本内 `npm run build` → `node --test tests/restart.test.mjs` 确认变异被捕获——**红形态（产出评审 R1-⑪ 勘误后口径）**：flags 锚例红在 **usage 断言**（`split('shell: viaShell, ...flags }').length - 1` 计 0）；同例内声明行断言不红（`"windowsHide":true` 仍计 1——这正是变异自证抓获「仅钉声明行」原锚过弱、强化 usage 锚的依据，执行偏差 #2）。若在全量测试文件（含 vm 套件）上复演，另加 vm 例 ① 行为红（`spawnCalls[0].o.windowsHide` undefined），双例同锚变异点 → 副本内恢复（src 用真仓文件覆盖回写）→ **重建** → 复跑绿。变异与恢复的命令输出落盘留存；真实工作树全程零改动。
+- [ ] Step 5: **关键锚变异自证**（该源锚是 #48 修复的唯一自动防线；按 CODING-STANDARDS:57「隔离副本」执行，评审 R1-Q5）：`cp -a` 仓库到 `/home/ubuntu/workspace/.dsh-research/issue4850-mutation-check/`（含 node_modules）→ 在**副本**把内层 spawn 行的 `, ...flags` 删掉 → 副本内 `npm run build` → `node --test tests/restart.test.mjs` 确认变异被捕获——**红形态（产出评审 R1-⑪ 勘误后口径）**：flags 锚例红在 **usage 断言**（`split('shell: viaShell, ...flags }').length - 1` 计 0）；同例内声明行断言不红（`"windowsHide":true` 仍计 1——这正是变异自证抓获「仅钉声明行」原锚过弱、强化 usage 锚的依据，执行偏差 #2）。若在全量测试文件（含 vm 套件）上复演，另加 vm 例 ① 行为红（`spawnCalls[0].o.windowsHide` undefined），双例同锚变异点 → 副本内恢复（src 用真仓文件覆盖回写）→ **重建** → 复跑绿。变异与恢复的命令输出落盘留存；真实工作树全程零改动。**时点口径注（产出评审 R1-Q4 补正文）**：执行期变异红 1 例（Task 1 阶段 vm 套件尚未存在，`mutation1-red.log` 7 pass/1 fail）；在含 vm 套件的全量测试文件上复演红 2 例（另加 vm 例 ① 行为红，同锚变异点）——两读数均为正确形态，差异是测试文件所处阶段不同（留证：b318d42 commit message + 本注）。
 - [ ] Step 6: checkpoint commit（可选，自然边界；commit message 列改动点与本步变异自证结论）
 
 ### Task 2: helper 主流程重写（#50）——时序常量 + 模板 main() 重写 + vm 沙箱套件
