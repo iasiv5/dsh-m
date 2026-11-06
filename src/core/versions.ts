@@ -2,6 +2,8 @@
  * 最新版本解析（DESIGN.md §3：版本不写死，运行时实查）。
  * npm：registry /latest（pnpm 安装本身会按 lock integrity 校验 tarball）。
  * GitHub：优先最新 release/tag（更新提示只跟稳定版走，不跟 main HEAD——中间提交可能不稳定）；
+ * 无 release 且无 tag 的仓库回退默认分支 HEAD（'HEAD' 标记，对齐 dsh-market：
+ * 该形态此前直接抛「仓库没有任何 tag」导致 GitHub 单一源插件完全不可安装）。
  * 未认证限额 60 次/小时，自用足够。
  *
  * 0.9.86（ADR-0019）：npm registry 元数据族（npmVersion/npmPackument/npmPackumentReadme/
@@ -184,7 +186,14 @@ async function fetchGithubTag(repo: string, timeoutMs: number, signal: AbortSign
       `${apiBase}/repos/${repo}/tags`,
       { timeoutMs, signal, headers, onRequest: reserve },
     )
-    if (!Array.isArray(tags) || !tags.length) throw new Error(`仓库没有任何 tag: ${repo}`)
+    if (!Array.isArray(tags) || !tags.length) {
+      // 3) 兜底（对齐 dsh-market）：仓库从未发 release/tag → 默认分支 HEAD。
+      //    commits/HEAD 由 GitHub API 自动解引用默认分支头 commit，一次请求使
+      //    github:owner/repo（无 #fragment）形态可安装/可升级；tag 字段返回 'HEAD'
+      //    标记——semver 提示面对此类条目不产假更新徽章（SHA 面提示待后续评估）。
+      const headSha = await githubTagSha(repo, 'HEAD', timeoutMs, signal, budget, apiBase)
+      return { tag: 'HEAD', sha: headSha }
+    }
     const first = tags[0]
     const name = typeof first.name === 'string' ? first.name : ''
     if (!name) throw new Error(`tag 信息无效: ${repo}`)

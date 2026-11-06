@@ -55,7 +55,7 @@ function ghHandler(opts = {}) {
       return jsonResponse({ tag_name: 'v1.2.3' })
     }
     if (url.includes('/commits/')) return jsonResponse({ sha: opts.commitSha ?? SHA })
-    if (url.endsWith('/tags')) return jsonResponse([{ name: 'v0.1.0', commit: { sha: SHA } }])
+    if (url.endsWith('/tags')) return jsonResponse(opts.tags === 'empty' ? [] : [{ name: 'v0.1.0', commit: { sha: SHA } }])
     throw new Error('unexpected url: ' + url)
   }
 }
@@ -132,6 +132,18 @@ describe('githubLatestTag 预算接线（wire 层 reserve）', () => {
     const tag = await githubLatestTag('o/r', 20_000, undefined, budget)
     assert.equal(tag.tag, 'v0.1.0')
     assert.equal(fetchCalls.length, 3, 'releases 404 + tags + commits/{ref} 解引用')
+  })
+
+  it('tagless 仓库 HEAD 兜底（对齐 dsh-market）：releases 404 + tags 空 → commits/HEAD 解引用', async () => {
+    installMockFetch(ghHandler({ releases: '404', tags: 'empty' }))
+    const budget = createGithubRequestBudget({ perRequestMax: 5 })
+    const tag = await githubLatestTag('o/r', 20_000, undefined, budget)
+    assert.equal(tag.tag, 'HEAD', 'tag 字段返回 HEAD 标记（semver 提示面不产假更新徽章）')
+    assert.equal(tag.sha, SHA)
+    assert.equal(fetchCalls.length, 3, 'releases 404 + tags + commits/HEAD')
+    assert.ok(fetchCalls[2].includes('/commits/HEAD'))
+    for (let i = 0; i < 2; i++) assert.equal(budget.reserve(), 'ok')
+    assert.equal(budget.reserve(), 'exhausted', '5-3=2 后耗尽')
   })
 
   it('重定向跳也计数：releases 302 → 第二跳 reserve', async () => {
@@ -605,6 +617,36 @@ describe('M2 Task 1：github apiBase 贯穿与 fallback 解引用', () => {
     const sha = await githubTagSha('o/r', 'v9.9.9', 20_000, undefined, undefined, apiBase)
     assert.equal(sha, SHA)
     assert.ok(hits.some((u) => u.includes('/commits/v9.9.9')))
+  })
+
+  it('tagless 仓库 HEAD 兜底（对齐 dsh-market）：releases 404 + tags 空 → commits/HEAD 解引用，3 请求', async () => {
+    const s3 = await new Promise((resolve) => {
+      const h = []
+      const s = createServer((req, res) => {
+        h.push(req.url)
+        const url = req.url || ''
+        const json = (body, status = 200) => {
+          res.writeHead(status, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(body))
+        }
+        if (url.includes('/releases/latest')) return json({}, 404)
+        if (url.includes('/tags')) return json([])
+        if (url.includes('/commits/')) return json({ sha: SHA })
+        json({}, 404)
+      })
+      s.listen(0, '127.0.0.1', () => resolve(s))
+      s.__hits = h
+    })
+    const base3 = `http://127.0.0.1:${s3.address().port}`
+    try {
+      const tag = await githubLatestTag('o/r', 20_000, undefined, undefined, base3)
+      assert.equal(tag.tag, 'HEAD', 'tag 字段返回 HEAD 标记（semver 提示面对此类条目不产假更新徽章）')
+      assert.equal(tag.sha, SHA, 'commits/HEAD 自动解引用默认分支头 commit')
+      assert.equal(s3.__hits.length, 3)
+      assert.ok(s3.__hits[2].includes('/commits/HEAD'))
+    } finally {
+      await new Promise((r) => s3.close(r))
+    }
   })
 })
 
