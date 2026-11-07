@@ -160,16 +160,17 @@ if (OFFLINE) {
         if (probe.skip) {
           warned = true
           console.warn(`⚠ ${where} 守卫预检跳过：${probe.skip}`)
-        } else if (!probe.guard.ok) {
+        } else if (probe.guard.violations.length > 0) {
           failed = true
           for (const v of probe.guard.violations) {
             console.error(`✗ ${where} 守卫预检不通过：${v.code}: ${v.detail}——市场安装将被拦截补偿`)
           }
+        } else {
+          // unavailable-only（如多条件 exports 保守跳过）：fail-open，与装后守卫同款取舍——只 warn 不红
           for (const u of probe.guard.unavailable) {
+            warned = true
             console.warn(`⚠ ${where} 守卫预检不可定（fail-open）：${u.reason}`)
           }
-        } else {
-          console.log(`✓ ${where} 守卫预检通过（tarball 三项检查）`)
         }
       } catch (err) {
         warned = true
