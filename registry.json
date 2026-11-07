@@ -53,6 +53,17 @@
       "homepage": "https://github.com/woniuniuniu/dsh-media-desk"
     },
     {
+      "id": "agentero-dsh",
+      "name": "DSH Agentero",
+      "description": "科研工作台：文献库、笔记与 PDF 阅读器接入侧栏，Agent 可查文献、代写笔记；需 Agentero Vault 与 CLI。详见仓库。",
+      "category": "cui-picks",
+      "tags": ["科研","文献","PDF","笔记"],
+      "source": "npm",
+      "npm": "agentero-dsh",
+      "github": "poco-ai/agentero-dsh-plugin",
+      "homepage": "https://github.com/poco-ai/agentero-dsh-plugin"
+    },
+    {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
@@ -289,7 +300,7 @@
     },
     {
       "id": "dsh-mcp-tools",
-      "name": "MCP Tools",
+      "name": "DSH MCP Tools",
       "description": "MCP 工具管理器：添加 MCP 服务器（HTTP / stdio）、配请求头、存前测连通性、逐工具开关。",
       "category": "watchlist",
       "tags": ["MCP","工具集成","设置"],
@@ -313,10 +324,10 @@
     },
     {
       "id": "dsh-pet",
-      "name": "DSH 桌宠",
+      "name": "DSH Pet",
       "description": "桌面宠物：百余段透明动画，可多开、拖拽互动，跟随会话状态换动作、播余额气泡；支持 AI 视频自造宠物。",
       "category": "watchlist",
-      "tags": ["动画","桌面宠物","多开","余额"],
+      "tags": ["动画","桌宠","多开","余额"],
       "source": "npm",
       "npm": "dsh-pet",
       "github": "PC2005-cloud/dsh-pet",
@@ -325,7 +336,7 @@
     },
     {
       "id": "dsh-provider-card",
-      "name": "DSH 角色卡",
+      "name": "DSH Provider Card",
       "description": "切换模型时在输入框旁出角色卡：身份名、六轴分数、额度提示与台词；精选多卡覆盖主流 provider。",
       "category": "watchlist",
       "tags": ["角色卡","模型选择","界面美化"],
@@ -337,7 +348,7 @@
     },
     {
       "id": "qiaomu-rss-dsh",
-      "name": "乔木 RSS",
+      "name": "DSH 乔木 RSS",
       "description": "RSS 阅读器：乔木精选与个人订阅，原文、译文与改写切换，AI 原生对话伴读，含 OPML 迁移与 Agent 工具。详见仓库。",
       "category": "watchlist",
       "tags": ["阅读","翻译","订阅","播客"],
@@ -402,7 +413,7 @@
     },
     {
       "id": "dsh-guizang-design",
-      "name": "歸藏设计",
+      "name": "DSH 歸藏设计",
       "description": "歸藏设计：网页 PPT、图文卡片与网页排版共用设计系统，另有去 AI 味与语气档案，可一键做同风格的下一份。",
       "category": "cui-picks",
       "alsoCategories": ["guizang"],
