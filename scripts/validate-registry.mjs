@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
 import { fetchPublishedCategories, unsupportedCategories } from './registry-categories.mjs'
+import { probeNpmInstallability } from './registry-installability.mjs'
 
 const OFFLINE = process.argv.includes('--offline')
 
@@ -152,6 +153,28 @@ if (OFFLINE) {
     if (entry.npm) {
       await existsOnNpm(entry.npm)
       console.log(`✓ ${where} npm 包存在：${entry.npm}`)
+      // 装后守卫预检（2026-11-07 agentero-dsh 实录）：收录时预跑三项检查，命中 violation =
+      // 市场安装必被拦截补偿（收录过但装不上没有任何别的机器闸）。网络类失败 skip 不判红。
+      try {
+        const probe = await probeNpmInstallability(entry.npm)
+        if (probe.skip) {
+          warned = true
+          console.warn(`⚠ ${where} 守卫预检跳过：${probe.skip}`)
+        } else if (!probe.guard.ok) {
+          failed = true
+          for (const v of probe.guard.violations) {
+            console.error(`✗ ${where} 守卫预检不通过：${v.code}: ${v.detail}——市场安装将被拦截补偿`)
+          }
+          for (const u of probe.guard.unavailable) {
+            console.warn(`⚠ ${where} 守卫预检不可定（fail-open）：${u.reason}`)
+          }
+        } else {
+          console.log(`✓ ${where} 守卫预检通过（tarball 三项检查）`)
+        }
+      } catch (err) {
+        warned = true
+        console.warn(`⚠ ${where} 守卫预检异常：${err instanceof Error ? err.message : String(err)}`)
+      }
       if (Array.isArray(entry.verified) && entry.verified.length > 0) {
         try {
           for (const v of verifiedPollution(entry.verified, await publishedVersions(entry.npm))) {

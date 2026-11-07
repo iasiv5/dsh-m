@@ -220,6 +220,9 @@ export class InstallGuardError extends Error {
     this.restartSafe = fields.restartSafe
     this.compensation = fields.compensation
     this.repairBasis = fields.repairBasis
+    // 守卫拦截结构化落 journal（2026-11-07 agentero-dsh 实录）：单点接线覆盖全部构造位点，
+    // violation code/detail 此前只在 GUI 文案里、host 端零落账，事后诊断要读码 + tarball 取证重建。
+    console.error(guardJournalLine(this))
   }
 
   /**
@@ -440,6 +443,26 @@ async function candidateKeyOf(repo: string, sha: string, timeoutMs: number): Pro
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * 装后守卫拦截的结构化 journal 行（2026-11-07 agentero-dsh 实录）：violations 的 code/detail
+ * 此前只在 GUI 文案里、host 端零落账，事后诊断要读码 + tarball 取证重建根因。
+ * 由 InstallGuardError 构造器经 console.error 落 journald（026：console 通道可达 journal）；
+ * 单行 JSON，detail 截 200 字符防刷屏。
+ */
+export function guardJournalLine(err: InstallGuardError): string {
+  const violations = err.violations.map((v) => ({
+    code: v.code,
+    detail: (v.detail ?? '').slice(0, 200),
+  }))
+  const head = JSON.stringify({
+    pkg: err.violations[0]?.pkg ?? 'unknown',
+    kind: err.kind,
+    violations,
+    compensation: err.compensation?.status ?? null,
+  })
+  return `[dsh-m:guard] ${head}`
 }
 
 /** 补偿执行 + InstallGuardError 抛出（四态 → needsRestart/restartSafe 映射；rejected 复读 profile 实况）。 */
