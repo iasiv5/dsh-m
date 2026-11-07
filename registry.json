@@ -104,6 +104,20 @@
       "homepage": "https://github.com/T-Auto/dsh-ops"
     },
     {
+      "id": "dsh-send-later",
+      "name": "延时发送",
+      "description": "输入框旁排程延时或指定时刻消息，到点自动发进当前会话，默认「继续」；可选集成 quota-watch。已适配 0.2.2-rc.1，详见仓库。",
+      "category": "essentials",
+      "alsoCategories": ["self-dev"],
+      "tags": ["定时消息","排程","继续","额度恢复"],
+      "verified": ["0.2.2-rc.1"],
+      "source": "npm",
+      "npm": "dsh-send-later",
+      "github": "iasiv5/dsh-send-later",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-send-later@0/icon.svg",
+      "homepage": "https://github.com/iasiv5/dsh-send-later"
+    },
+    {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
       "description": "跳过 BrowserAuth，替换官方 Connection，免 Token；已测 Web 0.2.2-rc.1。Desktop 自动休眠。",
