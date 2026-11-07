@@ -7,6 +7,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - **Merged materialization / displacement / identity indexes**: `src/core/merged-market.ts`; tests and integration harness: `tests/merged-market.test.mjs`.
 - **Market result assembly and filtering**: `src/core/market.ts`; behavior tests: `tests/market.test.mjs`; full-return golden snapshots and reusable `goldDeps` fixture: `tests/market-golden.test.mjs`.
 - **Query input grammar only**: `src/core/market-query.ts` and `tests/market-query.test.mjs`. This suite does not provide a `listMarket` integration harness.
+- **cordis.patch.yml 解析三纯函数（行枚举/行覆盖编辑/覆盖行读取）**: `src/core/patch-yaml.ts`。写 patch fixture 前先读它——口径：根非序列/坏 YAML/注释-only 文件 = `readable:false`（不可读），「可读的空 patch」规范形态是 `[]`（2026-11-07 install-guard 壳豁免轮实录：注释-only 夹具多付一轮红）。
 - **Upgrade-target resolution（升级目标解析，ADR-0028）**: `src/core/upgrade-target.ts`; tests: `tests/upgrade-target.test.mjs`. Sole judge of installed-plugin → installable-entry / unsupported; projection and both upgrade ladders consume it.
 - **Market card rendering and badge wiring**: `src/client/market-tab.jsx`; SSR/source-anchor checks: `tests/client-render-smoke.test.mjs`; i18n key coverage: `tests/client-i18n.test.mjs`.
 - **Installed-package enumeration and manifest metadata**: `src/core/installed.ts`; tests: `tests/installed.test.mjs`.
