@@ -2,6 +2,8 @@
  * 装后假成功守卫三项检查（M2 Task 2 / DESIGN.md §3「装后假成功守卫」）：
  * ① NO_DSH_MARKER——包内无 dsh 插件标记（package.json 的 dsh.bundle/dsh.client 键或包内 cordis.patch.yml）；
  * ② ENTRY_UNRESOLVABLE——入口不可解析（exports/main 指向文件在包目录内不存在，或 realpath 越界）；
+ *   bundle 壳豁免（2026-11-07，agentero-dsh 0.1.6 实录）：无入口声明 + patch 带 insert 行 = 纯补丁/
+ *   依赖清单壳（真插件入口在子包），壳的交付物就是 patch 行本身 → 不拦；patch 零 insert 行仍拦（无交付物）；
  * ③ LOADER_ID_CONFLICT——新增包的 loader insert id 与现存 id 冲突（两个同 id entry 会让下次开机
  *    整个 profile 起不来）。
  *
@@ -129,6 +131,14 @@ function entryTargetOf(pkgJson: Record<string, unknown>): { target: string } | {
 async function checkEntry(pkg: string, pkgDir: string, pkgJson: Record<string, unknown>): Promise<GuardViolation | GuardUnavailable | null> {
   const resolved = entryTargetOf(pkgJson)
   if ('none' in resolved) {
+    // bundle 壳豁免（agentero-dsh 0.1.6 实录）：无入口声明 + patch 带 insert 行 = 纯补丁/依赖清单壳，
+    // 真插件入口在子包，壳的交付物就是 patch 行本身 → 合法形态不拦；patch 零 insert 行（无交付物）
+    // 仍拦；坏 YAML → unavailable（判定不可定，fail-open 由调用方处置）。
+    const shellIds = await insertIdsOf(pkgDir)
+    if (shellIds === 'unreadable') {
+      return { pkg, reason: `bundle patch 不可读（坏 YAML），壳豁免判定不可定: ${pkgDir}` }
+    }
+    if (shellIds.length > 0) return null
     return { pkg, code: 'ENTRY_UNRESOLVABLE', detail: 'package.json 缺少 exports/main 入口声明' }
   }
   if ('conservative' in resolved) {

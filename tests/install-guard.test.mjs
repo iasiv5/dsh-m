@@ -115,13 +115,33 @@ describe('② ENTRY_UNRESOLVABLE', () => {
     assert.equal(r.unavailable[0].pkg, 'pkg-cond')
   })
 
-  it('无 exports 用 main；main 也无 → ENTRY_UNRESOLVABLE', async () => {
+  it('无 exports 用 main；main 也无且无 patch 交付物 → ENTRY_UNRESOLVABLE', async () => {
     makePkg('pkg-main', { pkgJson: { name: 'pkg-main', main: 'index.js', dsh: {} }, entry: 'index.js' })
-    makePkg('pkg-noentry', { pkgJson: { name: 'pkg-noentry', dsh: {} }, entry: 'index.js' })
+    makePkg('pkg-noentry', { pkgJson: { name: 'pkg-noentry', dsh: {} }, patch: null })
     const r = await verifyInstalledAdditions({ profileDir, addedPkgs: ['pkg-main', 'pkg-noentry'] })
     assert.equal(r.violations.length, 1)
     assert.equal(r.violations[0].pkg, 'pkg-noentry')
     assert.equal(r.violations[0].code, 'ENTRY_UNRESOLVABLE')
+  })
+
+  it('bundle 壳豁免：无入口声明 + patch 有 insert 行 → 合法（agentero-dsh 0.1.6 形态实录）', async () => {
+    makePkg('pkg-shell', { pkgJson: { name: 'pkg-shell', version: '0.1.6', dsh: { bundle: { patch: './cordis.patch.yml' } } } })
+    const r = await verifyInstalledAdditions({ profileDir, addedPkgs: ['pkg-shell'] })
+    assert.equal(r.ok, true, '壳的交付物就是 patch 行（真插件在子包），无入口不算假成功')
+    assert.deepEqual(r.violations, [])
+  })
+
+  it('无入口 + patch 零 insert 行 → 仍 ENTRY_UNRESOLVABLE（无交付物 = 假成功）', async () => {
+    makePkg('pkg-empty-shell', { pkgJson: { name: 'pkg-empty-shell', dsh: { bundle: { patch: './cordis.patch.yml' } } }, patch: '[]\n' })
+    const r = await verifyInstalledAdditions({ profileDir, addedPkgs: ['pkg-empty-shell'] })
+    assert.equal(r.violations[0].code, 'ENTRY_UNRESOLVABLE')
+  })
+
+  it('无入口 + patch 坏 YAML → unavailable（壳豁免判定不可定，fail-open）', async () => {
+    makePkg('pkg-bad-shell', { pkgJson: { name: 'pkg-bad-shell', dsh: {} }, patch: '\tbroken: [yaml' })
+    const r = await verifyInstalledAdditions({ profileDir, addedPkgs: ['pkg-bad-shell'] })
+    assert.equal(r.violations.length, 0)
+    assert.equal(r.unavailable[0].pkg, 'pkg-bad-shell')
   })
 
   it('入口文件缺失 → ENTRY_UNRESOLVABLE', async () => {
