@@ -42,6 +42,17 @@
       "homepage": "https://github.com/ccch1mneyyy/dsh-TUI"
     },
     {
+      "id": "dsh-media-desk",
+      "name": "自媒体工作台",
+      "description": "灵感墙记灵感，一键成稿脚本、标题、封面、配图与分镜，可排期复盘；需 DSH 0.2.x。详见仓库。",
+      "category": "cui-picks",
+      "tags": ["自媒体","内容创作","小红书","排期"],
+      "source": "npm",
+      "npm": "dsh-media-desk",
+      "github": "woniuniuniu/dsh-media-desk",
+      "homepage": "https://github.com/woniuniuniu/dsh-media-desk"
+    },
+    {
       "id": "dsh-better-sidebar",
       "name": "DSH Better Sidebar",
       "description": "开放的侧边栏底座，支持三方拓展注册侧边栏页面；内置文件编辑、终端、侧边对话、Git 与子代理页。",
