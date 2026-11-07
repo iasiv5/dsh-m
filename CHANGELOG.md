@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.9 新增：装后守卫 bundle 壳豁免 + 拦截结构化 journal + validate-registry 装后守卫预检（agentero-dsh 形态实录）
+
+- **背景**：纯 bundle 壳包（实录 agentero-dsh 0.1.6：tarball 仅 package.json/README/cordis.patch.yml，真插件入口在 agentero-dsh-host/library/notes/pdf 四子包）被装后守卫 ② ENTRY_UNRESOLVABLE 误拦补偿；守卫拦截的 violation code/detail 只活在 GUI 文案、host 端零落账，事后诊断要读码 + tarball 取证重建；收录门禁（npm/GitHub/homepage/icon 存在性）对「收录过但装不上」没有机器闸——三个缺口同一次实录全部暴露。
+- **做法**：① 守卫②新增 bundle 壳豁免：无入口声明（无 exports/main）且包内 cordis.patch.yml 带 insert 行 = 合法壳（交付物就是 patch 行本身）不拦；patch 零 insert 行仍拦（无入口无行 = 假成功）；patch 坏 YAML → unavailable fail-open。② `guardJournalLine(err)`（market-mutation 导出）：InstallGuardError 构造器单点接线 `console.error` 落 journald（026 双通道口径的 console 侧），单行 `[dsh-m:guard] {pkg,kind,violations,compensation}`，detail 截 200 字符，覆盖全部 7 个构造位点。③ validate-registry 在线段新增装后守卫预检（`scripts/registry-installability.mjs`）：npm 条目拉 latest tarball → 解包到临时 node_modules → 对根包跑三项检查，命中 violation 判 error（市场安装必被拦截补偿）；网络类失败 skip/异常 warn 不判红（「预检自身失败不拦安装」同款取舍）。
+- **测试**：新增 11 例（journal 4 含构造器单点源锚 / 安装性预检 4 含 scoped 与缺 dist.tarball 分支 / 壳豁免轮 3）+ 改写 1 例（无入口且无 patch 仍拦）；源锚卫生守卫当场拦下一处 `\n` 字面量断言（改码点构造后复绿）；全量 npm test 2144/2144 + typecheck 0。
+- **兼容性**：InstallGuardError 构造即产生一行 stderr journal（三端 GUI/工具展示语义不变）；validate-registry 在线模式每个 npm 条目多一次 tarball 下载与三项检查（数秒级；`--offline` 跳过）；守卫②对「无 patch 的无入口包」语义不变仍拦，壳豁免仅放行 patch 带 insert 行形态；registry 内置快照随包更新至 36 条（本轮收录 dsh-send-later / dsh-media-desk / agentero-dsh）。回退面：revert 对应提交 + 版本递增。
+
 ### 0.12.8 新增：重启终态回传三面呈现——helper 终态落盘 + 惰性折叠 + 操作记录/横幅/工具可见（issue #51，ADR-0032）
 
 - **背景**：#50（已随 0.12.7 修复关闭）「独立问题」段指出：detached helper 的成功/失败终态只写 `%TEMP%\dshm-restart-*` 日志，`dshm_restart`/面板/CLI 一律呈现「已请求重启」——0.12.7 已让 helper 把终态**写进日志**，但日志通道对普通用户仍不可见，UI 语义与真实结果的鸿沟尚存。
@@ -1008,6 +1015,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.9 Added: post-install guard bundle-shell exemption + structured guard-block journal + validate-registry installability precheck (agentero-dsh case)
+
+- **Background**: pure bundle-shell packages (case: agentero-dsh 0.1.6 — the tarball ships only package.json/README/cordis.patch.yml while the real plugin entries live in the four subpackages) were falsely blocked by post-install guard check ② ENTRY_UNRESOLVABLE and compensated; guard violation code/detail lived only in GUI copy with zero host-side journal, so post-mortem diagnosis required code reading plus tarball forensics; and the registry gates (npm/GitHub/homepage/icon existence) had no machine check for "registered but not installable" — all three gaps surfaced in a single incident.
+- **What changed**: ① guard check ② gains a bundle-shell exemption: no entry declaration (no exports/main) plus an in-package cordis.patch.yml carrying insert rows = a legal shell whose deliverable is the patch rows themselves — no longer blocked; zero insert rows still blocks (no entry and no rows = fake success); unreadable patch YAML → unavailable fail-open. ② `guardJournalLine(err)` (exported from market-mutation): InstallGuardError's constructor is the single wiring point emitting one `[dsh-m:guard] {pkg,kind,violations,compensation}` line via console.error to journald (the console side of the 026 dual-channel note), details truncated at 200 chars, covering all 7 construction sites. ③ validate-registry online mode gains an installability precheck (`scripts/registry-installability.mjs`): for npm entries it fetches the latest tarball, extracts it into a temp node_modules, and runs the three checks against the root package; a violation fails validation (the market install would be blocked and compensated), while network failures skip/warn without failing validation (same trade-off as "precheck failures do not block installs").
+- **Tests**: 11 new cases (journal 4 incl. the constructor single-point source anchor / installability 4 incl. scoped names and the missing-dist.tarball branch / shell-exemption round 3) + 1 rewritten (no entry and no patch still blocks); the source-anchor hygiene guard caught a `\n` literal assertion on the spot (rewritten via codepoint construction, back to green); full npm test 2144/2144 + clean typecheck.
+- **Compatibility**: constructing InstallGuardError now emits one stderr journal line (GUI/tool presentation unchanged); validate-registry online mode adds one tarball download + three checks per npm entry (seconds-scale; `--offline` skips); guard ② semantics for entry-less packages without a patch are unchanged (still blocks) and the shell exemption only admits the patch-with-insert-rows form; the bundled registry snapshot ships 36 entries (this round: dsh-send-later / dsh-media-desk / agentero-dsh). Rollback: revert the commits + version bump.
 
 ### 0.12.8 Added: restart terminal-state reporting on three surfaces — helper state file + lazy journal folding + operations record / banner / tool visibility (issue #51, ADR-0032)
 
