@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.10 修复：README 相对链接/图片死链——渲染期取值收敛进构建期（issue #52）
+
+- **背景**：issue #52（appllove）：README 渲染中相对链接/图片全部归 `#`——`RENDER_REPO` 构建期设好、`ExtLink`/`MdImg` 渲染期才读（`finally` 已复位）。实测 22 插件 62.7% 链接、47% 图片死链。既有单测假绿根因：测试假 h 立即解析函数组件、`safeUrl` 在窗口内执行；真 React 渲染期才执行。
+- **做法**：①构建期预解析（方案 A）：`mdInline`/`mdHtmlInline` 八处 props 构造点就地 `safeUrl`，组件收到已解析值；组件体 `safeUrl` 保留（幂等）作安全闸。②C8 危险 scheme 硬化：`safeUrl` 仓库相对分支前拒绝非 http/mailto 的 scheme 归 `#`（评审发现方案 A 会使带基址 `javascript:` 逃逸成 blob URL），安全闸与基址解耦。③F2 同族修复：`mdHtmlBlock` 递归 `renderMarkdown(inner, depth + 1)` 的 `depth + 1` 误落 `opts` 位——包裹块内块结构 repo 丢失死链且 depth 恒 0 护栏从不生效；改显式透传 `{ repo }` + depth 归位。
+- **测试**：新增 12 例（deferred-h 夹具 + children 合并收集器 + 真 React renderToString SSR），8 红转绿 + 4 守护；C4 变异自证（fail 5 红名单精确 → 恢复 RESTORE-VERIFIED → 负对照翻红）；红灯复演恰 8 红；行为零变化格 29 输入 × 2 态对照探针逐行验证；全量 npm test 2156/2156 + typecheck 0；计划经 writing-plans + R1/R2 独立评审 + 章程化复审（5 项全闭环）与产出评审（14 项核证零问题）。
+- **兼容性**：有基址时相对链接/图片恢复解析（blob/HEAD、raw/HEAD）；带基址 `#锚` 跳仓库页同名锚；root-relative `/path` 锚仓库根；>8 层包裹嵌套首次真实触发 depth 护栏降级（仅单行病理嵌套可达）；badge 行危险 scheme 包裹 a→span（终 href 同 `#`）；无基址全部语义不变。回退面：revert 对应提交 + 版本递增。
+
 ### 0.12.9 新增：装后守卫 bundle 壳豁免 + 拦截结构化 journal + validate-registry 装后守卫预检（agentero-dsh 形态实录）
 
 - **背景**：纯 bundle 壳包（实录 agentero-dsh 0.1.6：tarball 仅 package.json/README/cordis.patch.yml，真插件入口在 agentero-dsh-host/library/notes/pdf 四子包）被装后守卫 ② ENTRY_UNRESOLVABLE 误拦补偿；守卫拦截的 violation code/detail 只活在 GUI 文案、host 端零落账，事后诊断要读码 + tarball 取证重建；收录门禁（npm/GitHub/homepage/icon 存在性）对「收录过但装不上」没有机器闸——三个缺口同一次实录全部暴露。
@@ -1015,6 +1022,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.10 Fixed: dead relative links/images in README preview — URL resolution moved from React render time into the build window (issue #52)
+
+- **Background**: issue #52 (appllove): all relative links/images in rendered READMEs resolved to `#` — `RENDER_REPO` was set at build time but read by `ExtLink`/`MdImg` at React render time, after the `finally` had restored it. Measured 62.7% of links and 47% of images dead across 22 installed plugins. Existing unit tests stayed green because the test fake-h resolves function components immediately; real React executes them at render time.
+- **What changed**: ① eager resolution (option A): `safeUrl` is now called at the eight props-construction sites in `mdInline`/`mdHtmlInline` (inside the synchronous window); components receive resolved values, and the component-body `safeUrl` stays as an idempotent security gate. ② C8 hardening: `safeUrl` rejects scheme-like input other than http/mailto before the repo-relative branch (review found option A would let `javascript:` escape into a blob URL with a repo base); the gate no longer depends on the base. ③ F2, a same-family build-time bug: `renderMarkdown(inner, depth + 1)` passed `depth + 1` into the `opts` slot, losing the repo inside HTML wrapper blocks and permanently disabling the 0.9.47 depth guard; now passes `{ repo: RENDER_REPO }` explicitly and threads `depth` correctly.
+- **Tests**: 12 new cases (deferred-h fixture with children merging + real-React `renderToString` SSR), 8 red→green + 4 guards; C4 mutation self-check (fail 5 with exact red list → restore RESTORE-VERIFIED → negative control flips red); red-light replay on the old implementation yields exactly 8 red; zero-change grid verified line-by-line with a 29-input × 2-state probe; full npm test 2156/2156 + clean typecheck; plan reviewed via writing-plans self-check + R1/R2 independent reviews + charter review (5 issues closed) and output review (14 verifications, zero issues).
+- **Compatibility**: with a repo base, relative links/images resolve again (blob/HEAD, raw/HEAD); `#anchor` links jump to the repo page anchor (0.9.49 intent finally effective); root-relative `/path` anchors to the repo root; >8-deep wrapper nesting now genuinely trips the depth guard (pathological single-line chains only); badge-row dangerous-scheme links wrap in `span` instead of `a` (final href still `#`); no-base behavior unchanged. Rollback: revert the commit + version bump.
 
 ### 0.12.9 Added: post-install guard bundle-shell exemption + structured guard-block journal + validate-registry installability precheck (agentero-dsh case)
 
