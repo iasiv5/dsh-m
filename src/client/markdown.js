@@ -16,7 +16,7 @@
  * ②仓库基址锚定——renderMarkdown(src, { repo: "owner/repo" }) 后，相对 href/src 锚定到
  * GitHub blob/HEAD（链接）与 raw.githubusercontent/HEAD（图片），无基址时保持原行为（归 #）。
  */
-// 渲染级仓库基址（同步渲染：renderMarkdown 进出即设置/恢复，无并发重入问题）
+// 渲染级仓库基址（#52 起：仅在 renderMarkdown 同步窗口内读取；渲染期组件体只收到已解析值，幂等安全闸与全局无关）
 let RENDER_REPO = ""; // "owner/repo"；空 = 无基址（相对 URL 一律归 #，0.9.47 及以前行为）
 
 // "owner/repo" 或 GitHub 仓库 URL/形态 → "owner/repo"（仅 github.com；其余返回 ""）
@@ -41,6 +41,8 @@ export function safeUrl(u, kind) {
     if (t.length > 1 && RENDER_REPO && kind === "link") return `https://github.com/${RENDER_REPO}#${t.slice(1)}`;
     return t;
   }
+  // #52：危险 scheme 不得借仓库相对分支逃逸成 blob/raw URL（组件体闸门只覆盖无基址面）
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(t) && !/^(https?:\/\/|mailto:)/i.test(t)) return "#";
   if (RENDER_REPO && (kind === "img" || kind === "link")) {
     const path = t.replace(/^(?:\.\/|\.\.\/|\/)+/, "");
     return kind === "img"
@@ -208,15 +210,16 @@ function mdInline(text, kb) {
       // [![徽章](img)](link)：badge 常见嵌套，图在链内
       const im = /^!\[([^\]]*)\]\(([^)]*)\)/.exec(tok.slice(1));
       const lm = /\]\(([^)]*)\)\s*$/.exec(tok);
-      const img = h(MdImg, { src: im && im[2], alt: im && im[1] });
+      const img = h(MdImg, { src: safeUrl(im && im[2], "img"), alt: im && im[1] });
       const href = lm && lm[1];
-      nodes.push(href && safeUrl(href, "link") !== "#" ? h(ExtLink, { key: k, href }, img) : h("span", { key: k }, img));
+      const linkHref = safeUrl(href, "link");
+      nodes.push(href && linkHref !== "#" ? h(ExtLink, { key: k, href: linkHref }, img) : h("span", { key: k }, img));
     } else if (tok.startsWith("![") || tok.startsWith("<![")) {
       const im = /^!\[([^\]]*)\]\(([^)]*)\)$/.exec(tok);
-      nodes.push(h(MdImg, { key: k, src: im && im[2], alt: im && im[1] }));
+      nodes.push(h(MdImg, { key: k, src: safeUrl(im && im[2], "img"), alt: im && im[1] }));
     } else if (tok.startsWith("[")) {
       const lm = /^\[([^\]]*)\]\(([^)]*)\)$/.exec(tok);
-      nodes.push(h(ExtLink, { key: k, href: lm && lm[2] }, mdInline(lm ? lm[1] : tok, k)));
+      nodes.push(h(ExtLink, { key: k, href: safeUrl(lm && lm[2], "link") }, mdInline(lm ? lm[1] : tok, k)));
     } else if (tok.startsWith("`")) {
       nodes.push(h("code", { key: k }, tok.slice(1, -1)));
     } else if (tok.startsWith("**")) {
@@ -388,7 +391,7 @@ function mdHtmlInline(src, kb) {
       continue;
     } else if (name === "img") {
       const attrs = parseHtmlAttrs(m[3]);
-      cur().push(h(MdImg, { key, src: attrs.src, alt: attrs.alt, title: attrs.title, style: htmlImgStyle(attrs) }));
+      cur().push(h(MdImg, { key, src: safeUrl(attrs.src, "img"), alt: attrs.alt, title: attrs.title, style: htmlImgStyle(attrs) }));
     } else if (name === "br" || name === "hr") {
       cur().push(h(name, { key }));
     } else if (HTML_VOID_TAGS.has(name) || m[4]) {
@@ -396,7 +399,7 @@ function mdHtmlInline(src, kb) {
     } else if (HTML_INLINE_MAP[name]) {
       const attrs = parseHtmlAttrs(m[3]);
       if (name === "a") {
-        stack.push({ name, kids: [], build: (kids) => h(ExtLink, { key, href: attrs.href, title: attrs.title }, kids) });
+        stack.push({ name, kids: [], build: (kids) => h(ExtLink, { key, href: safeUrl(attrs.href, "link"), title: attrs.title }, kids) });
       } else {
         const type = HTML_INLINE_MAP[name];
         const style = htmlAlignStyle(attrs);
@@ -444,7 +447,7 @@ function mdHtmlBlock(raw, kb, depth) {
   let inner = s.slice(om[0].length, om[0].length + cm.index);
   const attrs = parseHtmlAttrs(om[2] || "");
   const style = htmlAlignStyle(attrs);
-  const inlineKids = () => (isInlineOnlyHtml(inner) ? mdHtmlInline(inner, kb) : renderMarkdown(inner, depth + 1));
+  const inlineKids = () => (isInlineOnlyHtml(inner) ? mdHtmlInline(inner, kb) : renderMarkdown(inner, { repo: RENDER_REPO }, depth + 1));
   if (tag === "details") {
     const sm = /<summary[^>]*>([\s\S]*?)<\/summary>/i.exec(inner);
     let sumNode = null;

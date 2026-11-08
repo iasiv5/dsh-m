@@ -7,6 +7,8 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { safeUrl, createMarkdown } from '../src/client/markdown.js'
+import { createElement } from 'react'
+import { renderToString } from 'react-dom/server'
 
 // 假 h：模仿 React.createElement 语义——展平数组 children、解析函数组件
 // （现行实现大量使用 h("p", {key}, mdInline(...)) 数组传参与 h(ExtLink, ...) 组件传参）
@@ -334,3 +336,91 @@ describe('0.9.49 链接归一与已装基址配套', () => {
     assert.equal(img[0].children[0].props.src, '#f')
   })
 })
+
+describe('#52 渲染期取值修复（deferred h 模仿真 React）', () => {
+  // 真 React.createElement 语义：函数组件不在 createElement 期执行，渲染期才调用
+  const deferredH = (type, props, ...children) => {
+    const kids = children.flat(Infinity);
+    return typeof type === "function"
+      ? { $$comp: type, props: props || {}, children: kids }
+      : { type, props, children: kids };
+  };
+  // 渲染期求值收集器：把 $$comp 一路调用穿并收集最终 a[href]/img[src]。
+  // 注意：函数组件的 children 必须并回 props 再调用（React 对函数组件合并 children），
+  // 否则 ExtLink 解构不到 children、TA3 徽章内层图不可见（R1-3 实录）。
+  function renderedUrls(node) {
+    const out = { links: [], imgs: [] };
+    const walk = (x) => {
+      if (!x || typeof x !== "object") return;
+      if (Array.isArray(x)) return void x.forEach(walk);
+      if (x.$$comp) return void walk(x.$$comp({ ...x.props, children: x.children }));
+      if (typeof x.props?.href === "string") out.links.push(x.props.href);
+      if (typeof x.props?.src === "string") out.imgs.push(x.props.src);
+      const kids = x.children;
+      if (Array.isArray(kids)) kids.forEach(walk);
+      else if (kids && typeof kids === "object") walk(kids);
+    };
+    walk(node);
+    return out;
+  }
+  const dmd = createMarkdown(deferredH);
+  const REPO = { repo: 'o/r' };
+  const BLOB = (p) => `https://github.com/o/r/blob/HEAD/${p}`;
+  const RAW = (p) => `https://raw.githubusercontent.com/o/r/HEAD/${p}`;
+
+  it('TA1 有基址：markdown 相对链接渲染期取到 blob URL', () => {
+    const t = dmd.renderMarkdown('[配置](CONFIGURATION.md)', REPO);
+    assert.deepEqual(renderedUrls(t).links, [BLOB('CONFIGURATION.md')]);
+  });
+  it('TA2 有基址：markdown 相对图片渲染期取到 raw URL', () => {
+    const t = dmd.renderMarkdown('![b](docs/x.png)', REPO);
+    assert.deepEqual(renderedUrls(t).imgs, [RAW('docs/x.png')]);
+  });
+  it('TA3 徽章图包链：内外两层渲染期都解析（issue 复现主例）', () => {
+    const t = dmd.renderMarkdown('[![b](i.png)](l.md)', REPO);
+    const r = renderedUrls(t);
+    assert.deepEqual(r.links, [BLOB('l.md')]);
+    assert.deepEqual(r.imgs, [RAW('i.png')]);
+  });
+  it('TA4 HTML <a>/<img>：行内 HTML 路径渲染期解析', () => {
+    const t = dmd.renderMarkdown('<a href="docs/g.md">x</a>\n\n<img src="docs/g.png">', REPO);
+    const r = renderedUrls(t);
+    assert.deepEqual(r.links, [BLOB('docs/g.md')]);
+    assert.deepEqual(r.imgs, [RAW('docs/g.png')]);
+  });
+  it('TA5 有基址锚点：渲染期取到仓库页锚（0.9.49 意图生产首次生效）', () => {
+    const t = dmd.renderMarkdown('[a](#faq)', REPO);
+    assert.deepEqual(renderedUrls(t).links, ['https://github.com/o/r#faq']);
+  });
+  it('TA6 绝对 URL 不回归（守护）', () => {
+    const t = dmd.renderMarkdown('[x](https://a.com)', REPO);
+    assert.deepEqual(renderedUrls(t).links, ['https://a.com']);
+  });
+  it('TA7 无基址相对链接归 #（守护，0.9.47 及以前行为）', () => {
+    const t = dmd.renderMarkdown('[a](b.md)');
+    assert.deepEqual(renderedUrls(t).links, ['#']);
+  });
+  it('TA8 带基址安全闸：javascript: 不借仓库分支逃逸（守护，钉 C8）', () => {
+    const t = dmd.renderMarkdown('[x](javascript:alert(1))', REPO);
+    assert.deepEqual(renderedUrls(t).links, ['#']);
+  });
+  it('TA9 有基址 root-relative：/path 锚仓库根（随主修复定型）', () => {
+    const t = dmd.renderMarkdown('[x](/abs/path)', REPO);
+    assert.deepEqual(renderedUrls(t).links, [BLOB('abs/path')]);
+  });
+  it('TF1 F2：包裹块内块结构递归不再丢基址', () => {
+    const t = dmd.renderMarkdown('<div>\n\n# H\n\n[x](docs/g.md)\n\n</div>', REPO);
+    assert.deepEqual(renderedUrls(t).links, [BLOB('docs/g.md')]);
+  });
+  it('TF2 F2：12 层深包裹护栏语义保持（无 URL 泄漏，节点数不膨胀）', () => {
+    const t = dmd.renderMarkdown('<div>'.repeat(12) + 'core' + '</div>'.repeat(12));
+    const r = renderedUrls(t);
+    assert.equal(r.links.length + r.imgs.length, 0);
+    assert.ok(t.length <= 5, `节点数应被护栏收敛: ${t.length}`);
+  });
+  it('TA10 真 React SSR 端到端：renderToString 与 deferred 收集同构（防夹具漂移，R2-6）', () => {
+    const rmd = createMarkdown(createElement);
+    const html = renderToString(createElement('div', null, rmd.renderMarkdown('[配置](CONFIGURATION.md)', REPO)));
+    assert.ok(html.includes(`href="${BLOB('CONFIGURATION.md')}"`), html);
+  });
+});
