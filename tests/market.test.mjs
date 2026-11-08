@@ -1914,11 +1914,16 @@ describe('withPublishedAt 时间探查段（ADR-0031，issue #45）', () => {
     assert.equal(pubCalls.length, 0)
   })
 
-  it('④ deadline 耗尽（社区 waiter 吃完预算，registry 秒回避开空页早退）：段跳过取数、publishedAtComplete=false', async () => {
+  it('④ deadline 耗尽（时钟注入跨步进，免真睡眠——CI 墙钟回拨免疫，0.12.10 flake 收口）：段跳过取数、publishedAtComplete=false', async () => {
     const pubCalls = []
+    const t0 = 1_700_000_000_000
+    let t = t0
     const { deps } = fakeDeps({
+      now: () => t,
       fetchCommunityCatalog: async () => {
-        await sleep(50)
+        // 社区 waiter 挂起期间时钟越过 deadline（与原 sleep(50) 真睡眠等价语义；
+        // 0.12.10 实录：真睡眠版在 CI 墙钟回拨下偶发放行——改注入钟后确定性）
+        t = t0 + 60_000
         return { state: { enabled: true, status: 'ready', version: null, checkedAt: null, fetchedAt: null, route: null, count: 0, errors: [], warnings: [] }, catalog: null }
       },
       publishedAt: async (pkg) => { pubCalls.push(pkg); return ISO },

@@ -173,6 +173,9 @@ export interface MarketDeps {
   composeEnablement?: typeof composeEnablement
   /** 发布时刻取数注入（ADR-0031；测试 stub 面）；缺省 = fetchPublishedAt（磁盘优先） */
   publishedAt?: typeof fetchPublishedAt
+  /** deadline 时钟注入（0.12.10 后续：CI VM 墙钟回拨可让 deadlineRace 的单调计时与 Date.now 读数错位、
+   *  预算用例偶发红并阻塞 publish 门禁——listMarket 的 startedAt/remaining 改读注入钟，缺省 Date.now 行为零变化） */
+  now?: () => number
 }
 
 /** profile package.json 的 dsh.profile.bundles 数组（读不到 → []；Task 13）。 */
@@ -561,7 +564,8 @@ export async function listMarket(
   deps: Partial<MarketDeps> = {},
 ): Promise<MarketResult> {
   const d: MarketDeps = { ...marketDeps(), ...deps }
-  const startedAt = Date.now()
+  const now = d.now ?? Date.now
+  const startedAt = now()
   const deadlineMs = typeof opts.deadlineMs === 'number' && Number.isFinite(opts.deadlineMs) && opts.deadlineMs > 0
     ? opts.deadlineMs
     : DEFAULT_DEADLINE_MS
@@ -573,7 +577,7 @@ export async function listMarket(
   const withLatest = opts.withLatest !== false
   const maxLimit = withLatest ? WITH_LATEST_MAX : METADATA_ONLY_MAX
   const signal = opts.signal
-  const remaining = () => deadlineAt - Date.now()
+  const remaining = () => deadlineAt - now()
 
   const registryTask = d.loadRegistry(cfg, { namespace, signal, force: opts.force, deadlineMs, profile: opts.profile })
   const installedTask: Promise<Awaited<ReturnType<MarketDeps['listInstalledPlugins']>> | null> =
