@@ -423,4 +423,12 @@ describe('#52 渲染期取值修复（deferred h 模仿真 React）', () => {
     const html = renderToString(createElement('div', null, rmd.renderMarkdown('[配置](CONFIGURATION.md)', REPO)));
     assert.ok(html.includes(`href="${BLOB('CONFIGURATION.md')}"`), html);
   });
+  it('TA11 badge+危险 scheme：包裹钉为 span 且图片仍解析（C8 声明面钉守，产出评审建议）', () => {
+    const t = dmd.renderMarkdown('[![b](i.png)](javascript:alert(1))', REPO);
+    const root = t[0].children[0];
+    assert.equal(root.type, 'span', 'C8 使 gate 判 # → span 包裹（零变化格声明面，防 gate 重构回归）');
+    const r = renderedUrls(t);
+    assert.deepEqual(r.imgs, [RAW('i.png')]);
+    assert.deepEqual(r.links, []);
+  });
 });
