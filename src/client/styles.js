@@ -377,9 +377,15 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-interactive-bg-selected,#4f46e5);transition:width .3s}
-.dshm-entry{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:calc(100% + 4px);height:42px;margin:4px -2px;padding:0 10px 0 8px;border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:14px;line-height:22px;cursor:pointer;overflow:hidden}
+/* issue #55 P1：入口几何变量化——默认值逐字等于 0.12.10 现值，缺省态零漂移；
+   用户/皮肤经 --dshm-entry-* 覆写即改，不再改 node_modules。硬约束（越界即裁字/不可点）：
+   height ≥ line-height+2；height ≥ 20。
+   issue #55 P2：横向对齐宿主刻度——弃 margin -2px / width+4px 外溢 trick，改宿主现成解法
+   border-inline 透明边吃 paint-inset + padding-inline 9px：内容起点 8+3+9=20px 与官方面板行/
+   设置行对齐（原 14px 差 6px）；hover 高亮同时从越出可用区 2px 收回为与官方行同宽。 */
+.dshm-entry{box-sizing:border-box;display:flex;align-items:center;gap:8px;width:100%;height:var(--dshm-entry-height,42px);margin:var(--dshm-entry-margin-y,4px) 0;padding:0 9px;border:0;border-inline:var(--dsh-sidebar-paint-inset,3px) solid transparent;border-radius:var(--dshm-entry-radius,var(--dsw-radius-md,12px));background:transparent;color:var(--dsw-alias-label-primary,inherit);font:inherit;font-size:var(--dshm-entry-font-size,14px);line-height:var(--dshm-entry-line-height,22px);cursor:pointer;overflow:hidden}
 .dshm-entry:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(38,49,72,.06))}
-.dshm-entry svg{flex:none;width:16px;height:16px}
+.dshm-entry svg{flex:none;width:var(--dshm-entry-icon,16px);height:var(--dshm-entry-icon,16px)}
 .dshm-entry span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 收起（rail）态：与宿主设置入口 / dsh-skins 同几何——36×36 圆形、margin 8/10、
    图标 18、内容水平居中。缺这套会导致收起时图标偏离轴线且行距不齐（实测左偏 ~4px）。
@@ -387,10 +393,13 @@ button.dshm-badge:hover{filter:brightness(.95)}
    起点（左侧）；桌面 rail 窄只有 ~4px 可感知，手机宽 rail 左偏 ~22px（手机截图像素
    实测：齿轮/调色盘/鲸鱼 cx≈99-100，市场四宫格 cx=77.5，rail 中线≈100）。auto
    margin 与 dsh-skins rail 包装层 justify-content:center 等效（palette cx=100.5）。 */
-.dshm-entry.rail{width:36px;height:36px;margin:8px auto 10px;padding:0;justify-content:center;border-radius:50%;gap:0}
+.dshm-entry.rail{width:var(--dshm-entry-rail,36px);height:var(--dshm-entry-rail,36px);margin:8px auto 10px;padding:0;justify-content:center;border-radius:50%;gap:0}
 .dshm-entry.rail svg{width:18px;height:18px}
+/* 锚级列向改写只能以 !important 表达：宿主 ANCHOR_STYLE 以内联样式钉 display:contents，
+   非 important 声明对内联恒败（dsh-client-ui-renderer ANCHOR_STYLE）；列向为同槽多注册者
+   （cordis/dsh-skins）纵向堆叠承重，不可收窄。子规则按 issue #55 §3 收窄到自有条目。 */
 [data-slot="sidebar.footer.action"]{display:flex!important;flex-direction:column;width:100%;min-width:0}
-[data-slot="sidebar.footer.action"]>*{flex:none;min-width:0}
+[data-slot="sidebar.footer.action"]>.dshm-entry{flex:none;min-width:0}
 .dshm-empty{text-align:center;color:var(--dsw-alias-label-caption,#6b7280);font-size:13px;padding:32px 0}
 /* 头部 dsh-m 版本角标：等宽小字圆角，静态展示不加粗不可点（0.7.5 起改显 dsh-m 版本） */
 .dshm-dshchip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);background:var(--dsw-alias-bg-layer-1,#f5f6f8);color:var(--dsw-alias-label-secondary,#4b5563);border-radius:999px;padding:5px 10px;font:11px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;flex:none}
