@@ -126,7 +126,9 @@ html[data-windows-titlebar]:not([data-fullscreen]) .dshm-overlay.full::before{di
 .dshm-xbtn:hover{border-color:var(--dsw-alias-label-caption,#9ca3af);color:var(--dsw-alias-label-primary,inherit);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.18)}
 .dshm-xbtn:active{box-shadow:inset 0 2px 3px rgba(0,0,0,.15)}
 .dsvm-filterwrap{position:relative;margin-left:auto;display:inline-flex}
-.dsvm-filterback{position:fixed;inset:0;z-index:25}
+/* .dsvm-filterback 已退役（2026-11-09 bug #3）：fixed 全屏背板会被任何祖先的 backdrop-filter/
+   containment 捕获为包含块而塌缩（dsh-skins frost 分类行玻璃实证）。「点外部即收」改由
+   filter-outside-close.js 文档级捕获守卫承担（接线在 market-tab.jsx filterTrigger）。 */
 .dsvm-filterpop{position:absolute;top:calc(100% + 6px);right:0;z-index:30;width:250px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;background:var(--dsw-alias-bg-elevated,var(--dsw-alias-bg-base,#fff));background:color-mix(in srgb,var(--dsw-alias-bg-base,#fff) 92%,transparent);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:12px;box-shadow:0 18px 48px rgba(2,6,23,.25);padding:12px}
 .dsvm-filtergroup{display:flex;flex-direction:column}
 .dsvm-filtergt{font-size:11px;color:var(--dsw-alias-label-caption,#9ca3af);margin-bottom:4px}

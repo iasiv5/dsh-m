@@ -38,3 +38,26 @@ test("issue #56：搜索态说明行——挂现成 .dshm-hint，仅 searching �
 test("issue #56：filter.searchhint 双字典落键（ZH/EN 出现次数各 1，合计 2）", () => {
   assert.equal(count(i18nSrc, '"filter.searchhint": "'), 2, "ZH/EN 各落一次（client-i18n 键集配对守卫同面承重）");
 });
+
+test("bug #3（点外部即收）：DOM 背板退役 + 文档级守卫接线（判定模块单测在 client-filter-outside-close.test.mjs）", () => {
+  assert.equal(
+    count(marketTabSrc, 'className: "dsvm-filterback"'),
+    0,
+    "背板元素退役——dsh-skins frost 给 .dsvm-chipswrap 加 backdrop-filter 后其成为 fixed 后代包含块，背板塌缩失效（headless 探针矩阵定谳）",
+  );
+  assert.equal(
+    count(readFileSync(join(root, "src/client/styles.js"), "utf8"), ".dsvm-filterback{position:fixed"),
+    0,
+    "背板 CSS 规则同步退役（needle 取规则首段形态，注释性历史提述不误伤）",
+  );
+  assert.equal(
+    count(marketTabSrc, "createOutsideCloseGuard"),
+    2,
+    "守卫接线在（import + 调用恰好各 1；判定逻辑本体由 client-filter-outside-close.test.mjs 承重）",
+  );
+  assert.equal(
+    count(marketTabSrc, "filterWrapRef"),
+    3,
+    "wrap ref 全链在（声明 + effect 闭包 + JSX ref 挂点）",
+  );
+});

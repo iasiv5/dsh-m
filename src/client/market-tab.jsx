@@ -11,11 +11,12 @@ const ZONE_TABS = [
 ];
 
 const h = React.createElement;
-const { useState, useEffect, useLayoutEffect } = React;
+const { useState, useEffect, useLayoutEffect, useRef } = React;
 import { api } from "./hooks.js";
 import { lookup, browserLang, communityLabels } from "./i18n.js";
 import { DEFAULT_PAGE_SIZE, MARKET_PAGE_SIZES, pageItems, marketNotice, scrollBodyTop, preferredPagerBehavior, filterScrollKey } from "./market-state.js";
 import { backdropCloseHandlers } from "./backdrop.js";
+import { createOutsideCloseGuard } from "./filter-outside-close.js";
 import { activeKindOp } from "./operations-view.js";
 import { performUpgradeFlow } from "./upgrade-flow.js";
 import { restartBannerDecision } from "./panel-ops.js";
@@ -50,6 +51,20 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
+  }, [filterOpen]);
+  // bug #3（主人 2026-11-09 肉眼实证）：浮层「点外部即收」改文档级捕获守卫——旧 DOM 背板
+  // .dsvm-filterback{position:fixed;inset:0} 在 dsh-skins frost 家族给 .dsvm-chipswrap 加
+  // backdrop-filter 后塌缩失效（backdrop-filter 使其成为 fixed 后代包含块，背板困在分类行
+  // 盒内，headless 探针矩阵定谳）。文档级监听对任意祖先 containment/backdrop-filter/z 层免疫。
+  // 防拖拽误关沿 backdrop.js（0.9.27）语义：按下/释放配对 + 位移超阈值视为拖拽不关。
+  const filterWrapRef = useRef(null);
+  useEffect(() => {
+    if (!filterOpen || typeof document === "undefined") return;
+    const guard = createOutsideCloseGuard({
+      getWrapEl: () => filterWrapRef.current,
+      onClose: () => setFilterOpen(false),
+    });
+    return guard.attach(document);
   }, [filterOpen]);
   // 收藏详情（0.7.2 修复）：收藏卡点击可开详情 Modal——快照字段不全，打开时先解析完整条目
   //（两分区当前页内存直查 → market API 按 id 精确查 → 快照兜底，下架条目也能看基本信息）
@@ -349,8 +364,7 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
   const filterTrigger = zone === "community"
     ? h(
         "div",
-        { className: "dsvm-filterwrap", key: "__filter" },
-        filterOpen ? h("div", { className: "dsvm-filterback", onClick: () => setFilterOpen(false) }) : null,
+        { className: "dsvm-filterwrap", key: "__filter", ref: filterWrapRef },
         h(
           "button",
           // 0.7.3：独立于分类 chips 的筛选按钮样式（方角矩形 + 前置 chevron，参考 dsh-market）
