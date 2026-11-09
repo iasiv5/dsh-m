@@ -316,25 +316,27 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
     ? h(
         "div",
         { className: "dsvm-filterpop", onClick: (e) => e.stopPropagation() },
-        // 0.9.25 跨区搜索：搜索态排序两组隐藏（query 命中时相关性恒优先，排序只剩 tie-break）；页大小组恒在
-        ...(searching
-          ? []
-          : [
-              h(
-                "div",
-                { className: "dsvm-filtergroup" },
-                h("div", { className: "dsvm-filtergt" }, lookup("filter.sortfield")),
-                ...[["downloads", "filter.field.downloads"], ["stars", "filter.field.stars"], ["added", "filter.field.added"]].map(([f, key]) =>
-                  optRow(lookup(key), curSortField === f, () => updateQuery({ sort: { field: f, dir: curSortDir } }))),
-              ),
-              h(
-                "div",
-                { className: "dsvm-filtergroup" },
-                h("div", { className: "dsvm-filtergt" }, lookup("filter.sortdir")),
-                ...[["desc", "filter.dir.desc"], ["asc", "filter.dir.asc"]].map(([d, key]) =>
-                  optRow(lookup(key), curSortDir === d, () => updateQuery({ sort: { field: curSortField, dir: d } }))),
-              ),
-            ]),
+        // issue #56：搜索态说明行（挂现成 .dshm-hint，先例 community.fallback）——如实交代相关性恒优先、
+        // 排序作用于同分条目之间，消解「选了排序但列表没按预期重排」的困惑
+        searching ? h("div", { className: "dshm-hint", key: "searchhint" }, lookup("filter.searchhint")) : null,
+        // 0.9.25 曾在搜索态隐藏这两组（理由「排序只剩 tie-break」）；issue #56 实测推翻其量级前提：
+        // 同分带常态大于页容量，tie-break 决定首屏 32 条中的最多 31 条，放回两组恢复用户入口。
+        // core 排序语义不动：相关性仍第一关键字（market.test.mjs「相关性优先于用户排序」锚原样），
+        // 默认同分 tie-break 仍 downloads 降序缺省序（同文件 0.9.68 score-once 组）
+        h(
+          "div",
+          { className: "dsvm-filtergroup" },
+          h("div", { className: "dsvm-filtergt" }, lookup("filter.sortfield")),
+          ...[["downloads", "filter.field.downloads"], ["stars", "filter.field.stars"], ["added", "filter.field.added"]].map(([f, key]) =>
+            optRow(lookup(key), curSortField === f, () => updateQuery({ sort: { field: f, dir: curSortDir } }))),
+        ),
+        h(
+          "div",
+          { className: "dsvm-filtergroup" },
+          h("div", { className: "dsvm-filtergt" }, lookup("filter.sortdir")),
+          ...[["desc", "filter.dir.desc"], ["asc", "filter.dir.asc"]].map(([d, key]) =>
+            optRow(lookup(key), curSortDir === d, () => updateQuery({ sort: { field: curSortField, dir: d } }))),
+        ),
         h(
           "div",
           { className: "dsvm-filtergroup" },
