@@ -98,7 +98,7 @@ describe('灯箱 v2 结构锚（0.9.60 根因修复 + 评审吸收守卫）', ()
 describe('灯箱 0.9.62 影院自持（皮肤碰撞修复）+ 加载指示', () => {
   it('影院遮罩自持：background !important（清单定长，新增须显式登记；ADR-0023 第一刀：计数随 CSS 迁 styles.js，实测四处全在 styles.js）', () => {
     assert.ok(stylesSrc.includes('.dsvm-lightbox{position:fixed;top:var(--dsh-windows-titlebar-height,0px);left:0;right:0;bottom:0;z-index:2147483200;background:rgba(0,0,0,.88)!important'), '影院深色遮罩 !important 自持（dsh-skins ADR-0007 浅色 tint 碰撞实拍）')
-    assert.equal((stylesSrc.match(/!important/g) || []).length, 4, '!important 定长：注释提及×2 + 影院自持×1 + sidebar footer 兼容×1（0.9.70 拖拽自持退役清单回归）——新增须改本断言登记')
+    assert.equal((stylesSrc.match(/!important/g) || []).length, 5, '!important 定长：注释提及×3 + 影院自持×1 + sidebar footer 兼容×1（0.9.70 拖拽自持退役清单回归；+1 = issue #55 锚级列向注释「只能以 !important 表达」）——新增须改本断言登记')
     assert.equal((src.match(/!important/g) || []).length, 0, 'main.jsx 侧零残留（CSS 出仓后 JS 面不得新增）')
   })
   it('拖拽态观感与静止态一致（0.9.70 修订）：仅光标/阴影变化，玻璃与 blur 不动', () => {
