@@ -313,13 +313,13 @@
     {
       "id": "dsh-archive-trash",
       "name": "DSH Archive Trash",
-      "description": "会话删除：任意会话行内一键删、多选批量清空、可还原回收站；删和还原都立刻生效不用重启。",
+      "description": "会话删除：行内一键删、多选批量清空、可还原回收站，另扫空会话与游离会话；删还原都立刻生效不用重启。",
       "category": "watchlist",
       "tags": ["会话管理","归档","回收站","清理"],
       "source": "npm",
       "npm": "dsh-archive-trash",
       "github": "hongdougao111/dsh-archive-trash",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-archive-trash@0.4.0/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-archive-trash@0/icon.svg",
       "homepage": "https://github.com/hongdougao111/dsh-archive-trash"
     },
     {
