@@ -3,7 +3,7 @@
 // 纯 fs 逻辑，临时目录直测，不触真实 profile。
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { symlinkSync, linkSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } from "node:fs";
+import { symlinkSync, linkSync, mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { atomicReplace, sha256 } from "../scripts/hot-deploy.mjs";
