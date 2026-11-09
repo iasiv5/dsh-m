@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
 import { fetchPublishedCategories, unsupportedCategories } from './registry-categories.mjs'
 import { probeNpmInstallability } from './registry-installability.mjs'
+import { reachable } from './registry-url-probe.mjs'
 
 const OFFLINE = process.argv.includes('--offline')
 
@@ -114,19 +115,10 @@ async function existsOnGithub(repo) {
   if (!res.ok) throw new Error(`GitHub 仓库 ${repo} → HTTP ${res.status}`)
 }
 
-async function reachable(url, attempt = 0) {
-  for (let i = 0; i < 2; i++) {
-    try {
-      const res = await fetch(url, { method: 'HEAD', redirect: 'follow', headers: { 'user-agent': 'dsh-m-registry-check' } })
-      if (res.ok || res.status === 405) return
-      throw new Error(`HTTP ${res.status}`)
-    } catch (err) {
-      if (i === 1) throw new Error(`URL 不可达：${url}（${err instanceof Error ? err.message : err}）`)
-      await new Promise((r) => setTimeout(r, 1500))
-      void attempt
-    }
-  }
-}
+// URL 可达性探测抽至 scripts/registry-url-probe.mjs（纯逻辑 + deps 注入，tests 直测）。
+// 判定口径：5xx = 探测面服务器故障（非死链证据）→ fail-open warn 不判红；
+// 404 等确定性非 ok / 网络异常 → 抛错走 ✗（retro 2026-11-09 ①：GitHub 匿名超时事故
+// 曾把 36 条 homepage 探测成片打红、purge 被 needs 连带跳过两轮）。
 
 // ---------- 分类发布态门禁（retro 2026-11-01 第 3 项；仅在线模式） ----------
 // 未知分类会让旧版 dsh-m 整份拒绝 registry：registry 的分类必须已被 npm 上最新已发布版本支持。
@@ -194,8 +186,13 @@ if (OFFLINE) {
     }
     for (const [key, url] of [['homepage', entry.homepage], ['icon', entry.icon]]) {
       if (!url) continue
-      await reachable(url)
-      console.log(`✓ ${where} ${key} 可达`)
+      const verdict = await reachable(url)
+      if (verdict === 'warn') {
+        warned = true
+        console.warn(`⚠ ${where} ${key} 探测面 5xx（服务器故障，非死链证据）——fail-open 不判红，合并前人工点开确认 ${url}`)
+      } else {
+        console.log(`✓ ${where} ${key} 可达`)
+      }
     }
   } catch (err) {
     failed = true
