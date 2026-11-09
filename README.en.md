@@ -49,6 +49,28 @@ On a headless Web host, you can also run `dsh plugin --profile web add dsh-m`. R
 
 A custom registry may come from HTTPS, a local absolute path, or `file://` (HTTP is for loopback debugging only); limits are 2 MiB and 1,000 entries. A custom source is an independent snapshot and **does not sync automatically** with the default curated registry. If it fails, its own last good cache remains in use; dsh-m never silently switches back to the default. See the [registry copy guide](https://github.com/iasiv5/dsh-m/blob/main/docs/registry-copy-guide.md) and [design document](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) for the full rules.
 
+## Customizing the footer entry geometry
+
+Since 0.12.11 the sidebar footer's market entry exposes seven CSS variables (defaults equal the shipped values — unset means zero drift). Override them from the host's custom CSS (e.g. dsh-skins' custom-style entry); no need to touch plugin files:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `--dshm-entry-height` | `42px` | Expanded height; must be ≥ line-height + 2px (text clipping) and ≥ 20px (click-target floor) |
+| `--dshm-entry-margin-y` | `4px` | Vertical margins (default footprint 50px, matching sibling slot entries) |
+| `--dshm-entry-radius` | host `--dsw-radius-md` (12px) | Corner radius |
+| `--dshm-entry-font-size` | `14px` | Font size |
+| `--dshm-entry-line-height` | `22px` | Line height |
+| `--dshm-entry-icon` | `16px` | Icon size |
+| `--dshm-entry-rail` | `36px` | Collapsed (rail) circle size |
+
+Example — compact tier (36px footprint, no clipping):
+
+```css
+:root { --dshm-entry-height: 32px; --dshm-entry-margin-y: 2px; }
+```
+
+The entry itself rides the host row scale (content starts at 20px, aligned with official panel/settings rows; dsh-skins ≥ 1.5.30 matches).
+
 ## Agent tools & CLI
 
 | Agent tools | Purpose |

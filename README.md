@@ -49,6 +49,28 @@ dsh-m 把 DeepSeek Harness（DSH）的插件**发现、安装、管理与更新*
 
 自定义地址支持 HTTPS、本机绝对路径或 `file://`（HTTP 仅限 loopback 调试），清单大小 ≤ 2 MiB、条目 ≤ 1,000。自定义源是独立快照，**不会自动同步默认精选**；源失效时保留该源最近的成功缓存，不会暗中切回默认。添加精选条目或了解完整校验规则，请看 [清单文案指南](https://github.com/iasiv5/dsh-m/blob/main/docs/registry-copy-guide.md)与[设计文档](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)。
 
+## 自定义页脚入口几何
+
+0.12.11 起，侧栏页脚的市场入口提供七个 CSS 变量（缺省值=现值，不写零漂移）。在宿主自定义 CSS（如 dsh-skins 的自定义样式入口）覆写即可，无需改插件文件：
+
+| 变量 | 缺省 | 说明 |
+|---|---|---|
+| `--dshm-entry-height` | `42px` | 展开态高度；须 ≥ 行高+2px（否则文字被裁切）且 ≥ 20px（可点区下限） |
+| `--dshm-entry-margin-y` | `4px` | 上下外边距（缺省总占用 50px，与同槽位条目一致） |
+| `--dshm-entry-radius` | 宿主 `--dsw-radius-md`（12px） | 圆角 |
+| `--dshm-entry-font-size` | `14px` | 字号 |
+| `--dshm-entry-line-height` | `22px` | 行高 |
+| `--dshm-entry-icon` | `16px` | 图标尺寸 |
+| `--dshm-entry-rail` | `36px` | 收起态圆形尺寸 |
+
+示例——紧凑档（总占用 36px，不裁字）：
+
+```css
+:root { --dshm-entry-height: 32px; --dshm-entry-margin-y: 2px; }
+```
+
+入口本身已对齐宿主行刻度（内容起点 20px，与官方面板行/设置行一致；dsh-skins ≥ 1.5.30 同刻度）。
+
 ## Agent 工具与 CLI
 
 | Agent 工具 | 能做什么 |
