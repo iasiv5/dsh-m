@@ -9,7 +9,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
  * dsh-tools 0.2.2-rc.1 运行时 register 支持 (definition, options)（lib/index.js :433，options.when
  * 步时激活 + 装配期可见性过滤 :533/:551），类型声明滞后为单参（types/index.d.ts:636）——
  * issue #57 / ADR-0035 会话开关经 when 谓词门控，此处按运行时契约窄化类型。
- * 8 个 dshm_* 工具全部经此注册（grep「registerGated(ctx」应恰 8 处）。
+ * 8 个 dshm_* 工具全部经此注册（自验：grep -c '^  registerGated(ctx, defineTool' 恰 8——行首锚定后定义行与注释行天然不匹配）。
  */
 function registerGated(ctx: Context, definition: ReturnType<typeof defineTool>, when: () => boolean): void {
   ;(ctx.tools.register as unknown as (d: ReturnType<typeof defineTool>, o: { when: () => boolean }) => void).call(ctx.tools, definition, { when })

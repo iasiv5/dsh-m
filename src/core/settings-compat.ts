@@ -56,6 +56,8 @@ export function unwrapConfig(source: unknown): RegistryConfig {
     cacheTtlMin?: unknown
     communityCatalog?: unknown
     communityCatalogPin?: unknown
+    sessionTools?: unknown
+    sessionPrompt?: unknown
   } | null | undefined
   const out: RegistryConfig = {}
   if (raw && typeof raw === 'object') {
@@ -64,6 +66,8 @@ export function unwrapConfig(source: unknown): RegistryConfig {
     if (typeof raw.cacheTtlMin === 'number') out.cacheTtlMin = raw.cacheTtlMin
     if (typeof raw.communityCatalog === 'boolean') out.communityCatalog = raw.communityCatalog
     if (typeof raw.communityCatalogPin === 'string') out.communityCatalogPin = raw.communityCatalogPin
+    if (typeof raw.sessionTools === 'boolean') out.sessionTools = raw.sessionTools
+    if (typeof raw.sessionPrompt === 'boolean') out.sessionPrompt = raw.sessionPrompt
   }
   return out
 }

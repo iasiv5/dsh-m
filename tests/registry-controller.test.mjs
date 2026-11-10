@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 
 import { createRegistryController, readAcceptedSourceMetadata } from '../lib/core/registry-controller.js'
+import { unwrapConfig } from '../lib/core/settings-compat.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -427,10 +428,18 @@ describe('registry-controller：0.9.0 双 profile', () => {
 })
 
 describe('registry-controller：session 开关字段 watch 同步（issue #57 / ADR-0035）', () => {
-  it('externalWrite 广播 → controller.config 原地更新（仅落键；registryUrl 未变 early-return 路径仍同步）', async () => {
+  it('经真实 unwrapConfig 广播通路 → controller.config 原地更新（仅落键；registryUrl 未变 early-return 路径仍同步）', async () => {
+    // 生产形态镜像：scope 存原始值，watch 广播经 unwrapConfig（settings-compat :131/:159/:180 三代同构）
+    // ——广播链不含 session 字段白名单时本用例必红（评审批 2 P1 夹具假绿封堵）
     const fs = fakeStore()
+    const rawStore = fs.store
+    const store = {
+      get: () => unwrapConfig(rawStore.get()),
+      update: rawStore.update,
+      watch: (cb) => rawStore.watch((next, prev) => cb(unwrapConfig(next), unwrapConfig(prev))),
+    }
     const controller = createRegistryController({})
-    controller.attachStore(fs.store)
+    controller.attachStore(store)
     await controller.snapshot()
     assert.equal(controller.config.configStatus ?? undefined, undefined) // config 是纯 RegistryConfig，无状态键
     assert.equal(controller.config.sessionTools, undefined) // 基线：缺省不物化

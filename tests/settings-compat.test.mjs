@@ -127,6 +127,13 @@ describe('unwrapValue / unwrapConfig', () => {
     assert.deepEqual(unwrapConfig(null), {})
     assert.deepEqual(unwrapConfig(undefined), {})
   })
+
+  it('unwrapConfig 透传 session 开关字段（issue #57 / ADR-0035）：boolean 保留、脏值丢弃、缺省不物化', () => {
+    const cfg = unwrapConfig({ sessionTools: false, sessionPrompt: true })
+    assert.deepEqual(cfg, { sessionTools: false, sessionPrompt: true })
+    assert.deepEqual(unwrapConfig({ sessionTools: 'yes', sessionPrompt: 1 }), {})
+    assert.deepEqual(unwrapConfig({}), {})
+  })
 })
 
 describe('detectSettingsKind', () => {

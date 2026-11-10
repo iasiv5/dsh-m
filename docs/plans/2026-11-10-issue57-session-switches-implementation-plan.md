@@ -16,7 +16,7 @@
 ```
 设置页（Config schema 自动生成，新增两字段）
   └─ settings 三代通路（wireRegistrySettings：legacy register / forms volatile / unknown 降级）
-       └─ store.watch(next=unwrapConfig 全量快照)
+       └─ store.watch(next=unwrapConfig(RegistryConfig **白名单提取**——执行期评审 P1 修正：白名单必须扩入 session 两字段，否则装载态与 live 态双双剥离、开关形同虚设))
             └─ handleExternalWatch：syncCommunityFields 旁新增 session 两字段「仅落键」同步   ← 新
                  （必须置于 registryUrl early-return 之前，否则 ready 态短路跳过同步）
                       ↓ 原地写共享 config 对象（controller.config，host.ts:103 传给 registerTools）
@@ -112,7 +112,7 @@
   - Produces: `handleExternalWatch` 同步行为（Task 4 live 语义、V5 实机验证依赖）
 - 验证范围：`npm run build && node --test tests/registry-controller.test.mjs`
 
-- [ ] Step 1: 写失败测试——断言出口已钉死（执行期修正）：controller 内部 `const config = { ...initial }` **拷贝**传入对象（registry-controller.ts :117），「共享」发生在 controller→tools 方向而非调用方→controller——断言打 `controller.config` 公开 readonly 访问器（:53/:393，即 registerTools 实际收到的同一对象）；watch 注入口用本文件既有 `fakeStore.externalWrite(patch)`（同文件顶层 fixture，守卫跨 describe 闭包禁令）。**异步冲刷：fixture 广播走 `queueMicrotask`（:45/:63），每次 externalWrite 后必须 `await sleep(30)` 再断言（沿本文件 sleep(30) 先例 :306/:323/:356），同步断言落空 = 永红**：
+- [ ] Step 1: 写失败测试——断言出口已钉死（执行期修正）：controller 内部 `const config = { ...initial }` **拷贝**传入对象（registry-controller.ts :117），「共享」发生在 controller→tools 方向而非调用方→controller——断言打 `controller.config` 公开 readonly 访问器（:53/:393，即 registerTools 实际收到的同一对象）；watch 注入口用本文件既有 `fakeStore.externalWrite(patch)` 且**广播包一层真实 `unwrapConfig`**（生产形态镜像：settings-compat 三代通路广播均经 unwrapConfig 白名单——评审批 2 P1：裸 patch 广播绕过白名单剥离 = 夹具假绿，P1 修复后此用例对白名单缺字段必红；同文件顶层 fixture，守卫跨 describe 闭包禁令）。**异步冲刷：fixture 广播走 `queueMicrotask`（:45/:63），每次 externalWrite 后必须 `await sleep(30)` 再断言（沿本文件 sleep(30) 先例 :306/:323/:356），同步断言落空 = 永红**：
   - A（placement 关键态）：`const cfg = {}` → `createRegistryController(cfg)` → `attachStore(fs.store)` → `await controller.snapshot()`（ready 态）→ `fs.externalWrite({ sessionTools: false })`（registryUrl 未变 = 走 early-return 路径）→ `await sleep(30)` → 断言 `cfg.sessionTools === false`
   - B（仅落键）：`fs.externalWrite({})`（广播不含 session 字段）→ `await sleep(30)` → 断言 `cfg.sessionTools` 仍为 `false`（不被改写为 undefined）
   - C：`fs.externalWrite({ sessionTools: true, sessionPrompt: true })` → `await sleep(30)` → 断言两键均为 `true`
