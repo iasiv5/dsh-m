@@ -58,6 +58,8 @@ export type DesktopOpsErrorCode =
   | 'rollback-failed'
   // ADR-0026：本地/非线上来源不从线上升级（合成条目 fail-closed 的结构化转译，B5 边界）
   | 'upgrade-unsupported'
+  // ADR-0034（issue #65）：执行能力门——spawn 已知不可用且官方 manager 无法兜底时的结构化拒绝
+  | 'no-exec-capability'
 
 // 0.9.19：等待期失败翻译移入 release-age.ts（describeReleaseAgeFailure）——全量违规解析 +
 // 目标/旁包分述。0.9.10 版只取第一条违规并把旁包名字当成本次目标、给「改用 DSH Web」的
@@ -98,7 +100,8 @@ export interface DesktopEnsureService {
   ensureService?: (timeoutMs?: number) => Promise<DesktopManagerLike | undefined>
 }
 
-async function resolveManager(
+/** ADR-0034：exec-route 门复用同一探测语义（getService 直取 → ensureService 惰性拉起）。 */
+export async function resolveManager(
   deps: DesktopEnsureService & { getService?: () => DesktopManagerLike | undefined },
 ): Promise<DesktopManagerLike | undefined> {
   const direct = deps.getService?.()

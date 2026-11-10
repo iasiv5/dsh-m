@@ -8,7 +8,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { InstallGuardError } from '../lib/core/market-mutation.js'
+import { DesktopOpsError } from '../lib/core/profile-ops.js'
 import { webProfileDir } from '../lib/core/env.js'
+
+/** ADR-0034 hermetic 桩：既有用例的 gate 恒 spawn（迁移表落点，真探测只在生产）。 */
+const spawnRouteStub = async () => ({ route: 'spawn' })
 
 async function registerWith(installBehavior) {
   const { registerTools } = await import('../lib/tools.js')
@@ -17,6 +21,7 @@ async function registerWith(installBehavior) {
   registerTools(ctx, { timeoutMs: 50 }, {
     installFromRegistry: installBehavior,
     upgradePlugin: installBehavior,
+    routeWebMutation: spawnRouteStub,
   })
   return registered
 }
@@ -96,7 +101,7 @@ describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具
     const { registerTools } = await import('../lib/tools.js')
     const registered = []
     const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {}, get: (n) => (n === 'profileContext' ? profileContext : undefined) }
-    registerTools(ctx, { timeoutMs: 50 }, coreOverrides)
+    registerTools(ctx, { timeoutMs: 50 }, { routeWebMutation: spawnRouteStub, ...coreOverrides })
     return registered
   }
 
@@ -246,5 +251,71 @@ describe('issue #41：desktop needsBuildApproval 未遂——诚实渲染 + appr
     assert.ok(!('approvedBuilds' in calls[1]), '不传参不得出现显式键')
     await tool.execute({ pkg: 'plug-a', approvedBuilds: [] })
     assert.ok(!('approvedBuilds' in calls[2]), '空数组视为缺省（与 core 条件展开语义对齐）')
+  })
+})
+
+describe('ADR-0034：web 执行能力门接线（install/upgrade/uninstall 三站点，issue #65）', () => {
+  const ondeviceCtx = { name: 'ondevice', dir: '/h/profiles/ondevice' }
+
+  // 本 describe 自带夹具（不引用兄弟 describe 闭包——CODING-STANDARDS 纪律）
+  async function registerGateWith(profileContext, coreOverrides = {}) {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {}, get: (n) => (n === 'profileContext' ? profileContext : undefined) }
+    registerTools(ctx, { timeoutMs: 50 }, { routeWebMutation: spawnRouteStub, ...coreOverrides })
+    return registered
+  }
+
+  it('install delegate → desktopInstall 接管，installFromRegistry 未被调', async () => {
+    const markers = { desktop: 0, web: 0 }
+    const registered = await registerGateWith(ondeviceCtx, {
+      routeWebMutation: async () => ({ route: 'delegate', manager: { installBundle: async () => ({}) } }),
+      desktopInstall: async () => { markers.desktop += 1; return { ok: true, pkg: 'p', via: 'delegate-marker' } },
+      installFromRegistry: async () => { markers.web += 1; throw new Error('web 臂不应被调') },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_install')
+    const out = await tool.execute({ id: 'pkg-a' })
+    assert.equal(out.via, 'delegate-marker')
+    assert.equal(markers.desktop, 1)
+    assert.equal(markers.web, 0)
+  })
+
+  it('uninstall delegate → desktopUninstall 接管，uninstallPlugin 未被调', async () => {
+    const markers = { desktop: 0, web: 0 }
+    const registered = await registerGateWith(ondeviceCtx, {
+      routeWebMutation: async () => ({ route: 'delegate', manager: { removeBundle: async () => ({}) } }),
+      desktopUninstall: async () => { markers.desktop += 1; return { pkg: 'pkg-u', via: 'delegate-marker' } },
+      uninstallPlugin: async () => { markers.web += 1; throw new Error('web 臂不应被调') },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_uninstall')
+    const out = await tool.execute({ pkg: 'pkg-u' })
+    assert.equal(out.via, 'delegate-marker')
+    assert.equal(markers.desktop, 1)
+    assert.equal(markers.web, 0)
+  })
+
+  it('upgrade refuse → 结构化 DesktopOpsError 透出，upgradePlugin 未被调', async () => {
+    let web = 0
+    const registered = await registerGateWith(ondeviceCtx, {
+      routeWebMutation: async () => ({ route: 'refuse', error: new DesktopOpsError('no-exec-capability', '环境不可执行子进程（测试注入）') }),
+      upgradePlugin: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const tool = registered.find((t) => t.name === 'dshm_upgrade')
+    await assert.rejects(
+      () => tool.execute({ pkg: 'pkg-g' }),
+      (err) => err instanceof DesktopOpsError && err.code === 'no-exec-capability' && /环境不可执行子进程/.test(err.message),
+    )
+    assert.equal(web, 0)
+  })
+
+  it('spawn 桩 → web 臂照常；routeWebMutation 收到 op 实参', async () => {
+    const ops = []
+    const registered = await registerGateWith(ondeviceCtx, {
+      routeWebMutation: async (deps) => { ops.push(deps.op); return { route: 'spawn' } },
+      installFromRegistry: async (id, _cfg, _opts, _deps) => ({ id, pkg: 'p', spec: 'p@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }),
+    })
+    const tool = registered.find((t) => t.name === 'dshm_install')
+    await tool.execute({ id: 'pkg-a' })
+    assert.deepEqual(ops, ['install'])
   })
 })

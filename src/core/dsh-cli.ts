@@ -352,6 +352,56 @@ export function nodeExecutable(argv0: string | undefined = process.argv0, execPa
   return execPath
 }
 
+/** 官方桌面载体（dshmarket #975 同款窄正则）：只认该 scoped 包的 cli.js，不接受任意叫 cli.js 的应用（防 PATH 遮蔽）。 */
+const DESKTOP_CARRIER_RE = /[\\/]node_modules[\\/]@deepseek-ai[\\/]dsh-desktop-host[\\/]lib[\\/]cli\.js$/
+/** 入口在 Electron asar 归档内：Electron fs shim 可读、OS 不能 chdir 进归档（dshmarket #1146）。 */
+const ASAR_ENTRY_RE = /[\\/][^\\/]+\.asar[\\/]/i
+
+export type DshLaunchSource = 'entry' | 'carrier' | 'path-fallback'
+
+export interface DshLaunch {
+  file: string
+  args: string[]
+  cwd: string | undefined
+  viaShell: boolean
+  source: DshLaunchSource
+  entry: string | undefined
+}
+
+/**
+ * launch 识别（ADR-0034，issue #65）：dshArgv 的超集——多带 source 溯源与原始 entry。
+ * 三形态：entry（bin.js/bin.ts/dsh shim）、carrier（桌面载体 cli.js，cwd=undefined）、
+ * path-fallback（PATH 上的 dsh）。载体/asar 命中时 cwd=undefined（子进程继承 launcher cwd）。
+ */
+export function resolveDshLaunch(input: {
+  argv?: readonly string[]
+  execArgv?: readonly string[]
+  execPath?: string
+  argv0?: string
+  platform?: NodeJS.Platform
+} = {}): DshLaunch {
+  const argv = input.argv ?? process.argv
+  const execArgv = input.execArgv ?? process.execArgv
+  const execPath = input.execPath ?? process.execPath
+  const argv0 = input.argv0 ?? process.argv0
+  const platform = input.platform ?? process.platform
+  const entry = argv[1]
+  const carrier = entry !== undefined && DESKTOP_CARRIER_RE.test(entry)
+  if (entry !== undefined && (carrier || /[\\/](?:bin\.(?:js|ts)|dsh)$/.test(entry))) {
+    const abs = resolve(entry)
+    const entryInAsar = ASAR_ENTRY_RE.test(abs)
+    return {
+      file: nodeExecutable(argv0, execPath),
+      args: [...execArgv, abs],
+      cwd: carrier || entryInAsar ? undefined : dirname(abs),
+      viaShell: false,
+      source: carrier ? 'carrier' : 'entry',
+      entry,
+    }
+  }
+  return { file: 'dsh', args: [], cwd: undefined, viaShell: platform === 'win32', source: 'path-fallback', entry }
+}
+
 /** 宿主进程内时重入自身 entry（skillhub 同款）；否则退回 PATH 上的 dsh。 */
 export function dshArgv(input: {
   argv?: readonly string[]
@@ -360,18 +410,8 @@ export function dshArgv(input: {
   argv0?: string
   platform?: NodeJS.Platform
 } = {}): DshArgv {
-  const argv = input.argv ?? process.argv
-  const execArgv = input.execArgv ?? process.execArgv
-  const execPath = input.execPath ?? process.execPath
-  const argv0 = input.argv0 ?? process.argv0
-  const platform = input.platform ?? process.platform
-  const node = nodeExecutable(argv0, execPath)
-  const entry = argv[1]
-  if (entry !== undefined && /[\\/](?:bin\.(?:js|ts)|dsh)$/.test(entry)) {
-    const abs = resolve(entry)
-    return { file: node, args: [...execArgv, abs], cwd: dirname(abs), viaShell: false }
-  }
-  return { file: 'dsh', args: [], cwd: undefined, viaShell: platform === 'win32' }
+  const launch = resolveDshLaunch(input)
+  return { file: launch.file, args: launch.args, cwd: launch.cwd, viaShell: launch.viaShell }
 }
 
 /** pnpm 9 需要 -w 于 workspace 根；其他主版本在非 workspace 下拒绝 -w。 */
@@ -670,6 +710,13 @@ export async function runDshPlugin(
       },
     })
   } catch (err) {
+    // ADR-0034（issue #65）：spawn 级失败（Node 原始形态 `spawn <file> <ERRNO>`）补一行 launch 溯源，
+    // 让「为什么落到 PATH 回退」现场自带答案；deps.dshArgv 注入 = 测试上下文，不增强（溯源行
+    // 为 ASCII，不含 pnpm 分类标记词，classifyPnpmError/isPrepareBlocked 判读不受染）。
+    if (deps.dshArgv === undefined && err instanceof Error && /^spawn .+ [A-Z][A-Z0-9]*$/.test(err.message)) {
+      const launch = resolveDshLaunch()
+      err.message += ` [dsh-m launch: source=${launch.source} entry=${launch.entry ?? '(none)'} file=${launch.file}]`
+    }
     // 失败/超时时也把原因写入状态端点，轮询侧能看到错误终态
     const text = err instanceof Error ? err.message : String(err)
     if (progress.error === null) progress.error = text.slice(0, 800)

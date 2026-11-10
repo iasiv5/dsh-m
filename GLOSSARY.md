@@ -85,6 +85,18 @@ _Avoid_: 更新集合（未区分聚合与行级）、可更新集合
 开关写路径先探测官方 pluginManager 服务并委派、服务缺席时退回 loader 直操作与文件编辑的架构形态；探测按服务存在性，不判 DSH 版本号。读路径始终自读，不随写路径切换。
 _Avoid_: 兼容层（与 settings 兼容层混淆）、版本分支
 
+**载体入口（carrier entry）**:
+宿主以官方桌面载体包（`@deepseek-ai/dsh-desktop-host` 的 `lib/cli.js`）启动时 `process.argv[1]` 的形态；与 launcher bin（`bin.js`/`bin.ts`/无扩展名 `dsh` shim）并列的合法 launch 身份，插件命令与重启共用同一识别。只认该 scoped 包，不接受任意叫 cli.js 的应用。
+_Avoid_: 桌面入口（与 profile kind 的 desktop 混淆）、cli.js 泛指（窄正则防 PATH 遮蔽）
+
+**launch 溯源（launch provenance）**:
+spawn 级失败错误信息里携带的一行现场事实（识别来源 entry/carrier/path-fallback、原始 argv[1]、选定执行文件）；回答「为什么落到 PATH 回退」，不是诊断模式开关。
+_Avoid_: 诊断日志（它是错误文案的一部分）、调试模式
+
+**执行能力门（exec capability gate）**:
+web 写操作进事务前的路径判定——spawn 可用则照旧；spawn 已知不可用（launch 落 PATH 回退且 PATH 上无可执行 `dsh`）才委派官方 pluginManager 或结构化拒绝。判据是纯文件系统事实，不做真实进程探测。desktop 分支不进本门。
+_Avoid_: 能力降级（不改变任何已可用路径）、manager 优先路由（gate 只作用于残局）
+
 **实测版本清单（Verified Runtimes）**:
 收录条目中记录实测通过的历史运行时版本数组；是实测声明而非预测声明，只用于展示与收录质量提示，不做安装拦截依据。解耦条目不携带本数组（见「解耦条目」）。
 _Avoid_: 兼容范围（semver range 才是范围声明）、compat

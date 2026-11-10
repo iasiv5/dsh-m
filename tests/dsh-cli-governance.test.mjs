@@ -10,7 +10,7 @@ import { mkdtempSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { makeAddViaLadder, runDshPlugin, removeDshPlugin, makeDshRunner } from '../lib/core/dsh-cli.js'
+import { makeAddViaLadder, runDshPlugin, removeDshPlugin, makeDshRunner, isPrepareBlocked, classifyPnpmError } from '../lib/core/dsh-cli.js'
 
 const PREPARE = 'needs to execute build scripts (node-sass) ERR_PNPM_IGNORED_BUILDS'
 const HOIST = '命令失败 (exit 1): ERR_PNPM_PUBLIC_HOIST_PATTERN_DIFF boom'
@@ -338,5 +338,48 @@ describe('ADR-0030 收口：viaShell（Windows cmd.exe 兜底）路径的 cmd �
   it('viaShell=false（Node 直启）+ 名字含 % → 放行（不经过 cmd.exe，无此面）', async () => {
     const out = await runDshPlugin('a%b', ['add', 'pkg-a@1.0.0'], { dshArgv: nodeArgv, runCommand: noopRun, profileDir: '/tmp/p' })
     assert.equal(out, 'ok')
+  })
+})
+
+describe('ADR-0034：runDshPlugin spawn 级失败溯源行（issue #65）', () => {
+  const errRun = (message) => async () => { throw new Error(message) }
+
+  it('生产路径（不注入 dshArgv）spawn EACCES → 错误带 [dsh-m launch: source=path-fallback … file=dsh]', async () => {
+    await assert.rejects(
+      () => runDshPlugin('aqua', ['add', 'pkg-a@1.0.0'], { runCommand: errRun('spawn dsh EACCES'), profileDir: '/tmp/p' }),
+      (err) => {
+        assert.match(err.message, / \[dsh-m launch: source=path-fallback entry=.+ file=dsh\]/, '溯源行：source/entry/file 现场')
+        assert.equal(isPrepareBlocked(err.message), false, '溯源行不得染 pnpm 分类面')
+        assert.equal(
+          classifyPnpmError(err.message).class,
+          classifyPnpmError('spawn dsh EACCES').class,
+          '分类不因溯源行改变',
+        )
+        return true
+      },
+    )
+  })
+
+  it('注入 dshArgv（测试上下文）→ 不 enrich（钉裁决）', async () => {
+    const fakeDshArgv = () => ({ file: '/bin/echo', args: [], cwd: '/tmp', viaShell: false })
+    await assert.rejects(
+      () => runDshPlugin('aqua', ['add', 'pkg-a@1.0.0'], { dshArgv: fakeDshArgv, runCommand: errRun('spawn dsh EACCES'), profileDir: '/tmp/p' }),
+      (err) => {
+        assert.equal(err.message, 'spawn dsh EACCES')
+        return true
+      },
+    )
+  })
+
+  it('非 spawn 级错误（exit 失败/超时）→ 不 enrich', async () => {
+    for (const message of ['命令失败 (exit 1): boom', '命令超时 200ms']) {
+      await assert.rejects(
+        () => runDshPlugin('aqua', ['add', 'pkg-a@1.0.0'], { runCommand: errRun(message), profileDir: '/tmp/p' }),
+        (err) => {
+          assert.equal(err.message, message)
+          return true
+        },
+      )
+    }
   })
 })

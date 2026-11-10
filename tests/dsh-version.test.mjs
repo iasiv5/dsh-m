@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { parseDshVersionOutput, readAppAsarVersion, readLauncherPackageVersion, resetDshVersionCacheForTest, resolveDshVersion, resolveDshVersionWith } from '../lib/core/dsh-version.js'
+import { parseDshVersionOutput, readAppAsarVersion, readLauncherPackageVersion, resetDshVersionCacheForTest, resolveDshVersion, resolveDshVersionWith, spawnDshVersion } from '../lib/core/dsh-version.js'
 
 describe('dsh-version：parseDshVersionOutput', () => {
   it('裸版本 / v 前缀 / 带散文 / rc 与 build 元数据', () => {
@@ -301,5 +301,34 @@ describe('dsh-version：resolveDshVersion 生产 memo（S3 备案随版落地）
     } finally {
       resetDshVersionCacheForTest()
     }
+  })
+})
+
+describe('dsh-version：spawnDshVersion 走 dshArgv 解析（ADR-0034 chip 同链，issue #65）', () => {
+  const NODE = process.execPath
+
+  it('载体/entry 形态：注入 argv 指向 stub bin.js → 真实子进程解析出版本（chip 复活）', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dshm-spawnver-'))
+    try {
+      const lib = join(home, 'lib')
+      mkdirSync(lib, { recursive: true })
+      const stub = join(lib, 'bin.js')
+      writeFileSync(stub, "process.stdout.write('9.9.9\\n')\n")
+      const v = await spawnDshVersion(3000, { argv: ['node', stub], execArgv: [], execPath: NODE, argv0: NODE, platform: 'linux' })
+      assert.equal(v, '9.9.9')
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('entry 不存在 + node 可执行文件不存在 → spawn ENOENT 走 error 事件 → null（hermetic 负例）', async () => {
+    const v = await spawnDshVersion(3000, {
+      argv: ['node', '/nonexistent/dir/bin.js'],
+      execArgv: [],
+      execPath: '/nonexistent/node',
+      argv0: '/nonexistent/node',
+      platform: 'linux',
+    })
+    assert.equal(v, null)
   })
 })

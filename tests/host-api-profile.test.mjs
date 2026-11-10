@@ -16,6 +16,9 @@ import { readUpgradeIntent } from '../lib/core/upgrade-intent.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
+/** ADR-0034 hermetic 桩：既有用例的 gate 恒 spawn（迁移表落点，真探测只在生产）。 */
+const spawnRouteStub = async () => ({ route: 'spawn' })
+
 function mockReq({ method = 'POST', headers = {}, body } = {}) {
   const req = new EventEmitter()
   req.method = method
@@ -123,6 +126,8 @@ function setupTrust({ trust, profile, overrides = {} } = {}) {
         calls.desktopUninstall.push({ pkg, deps })
         return { pkg, liveDisabled: false, needsRestart: true, leftovers: [], via: 'desktop-manager', output: '' }
       },
+      // ADR-0034：web 执行能力门 hermetic 缺省（真探测只在生产；评审 H1——端侧无 PATH dsh 环境本套件必须绿）
+      routeWebMutation: spawnRouteStub,
       ...overrides,
     },
   })
@@ -531,5 +536,23 @@ describe('ADR-0030 源结构锚：host-api web 写分支接线计数（计划 T6
   it("src/core/host-api.ts 中 'profileDir: profile.dir' 出现次数 = 13（出现次数语义，非行数）", () => {
     const src = readFileSync(new URL('../src/core/host-api.ts', import.meta.url), 'utf8')
     assert.equal(src.split('profileDir: profile.dir').length - 1, 13, '读 5 + desktop 委派 4 + 市场读 4（基线 8 + web 写分支 5）')
+  })
+})
+
+describe('ADR-0034：web 执行能力门 refuse 信封（评审 M2 补例，issue #65）', () => {
+  it('web profile install refuse → 409 + code no-exec-capability + failureClass systemic', async () => {
+    const { dispatcher, calls } = setupTrust({
+      trust: () => undefined,
+      profile: { name: 'ondevice', kind: 'web', dir: '/h/profiles/ondevice', source: 'host' },
+      overrides: {
+        routeWebMutation: async () => ({ route: 'refuse', error: new DesktopOpsError('no-exec-capability', '环境不可执行子进程（测试注入）') }),
+      },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-i' } })
+    assert.equal(res.status, 409)
+    assert.equal(res.body.ok, false)
+    assert.equal(res.body.code, 'no-exec-capability')
+    assert.equal(res.body.failureClass, 'systemic', '非 target 白名单码 → systemic（批量短路语义）')
+    assert.equal(calls.install.length, 0, '事务未动')
   })
 })

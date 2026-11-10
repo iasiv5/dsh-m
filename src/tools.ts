@@ -28,6 +28,7 @@ import type { OperationChannel } from './core/external-journal.js'
 import { togglePlugin as coreTogglePlugin, type ToggleResult } from './core/toggle.js'
 import { resolveActiveProfile, assertWriteAllowed, type ActiveProfile } from './core/active-profile.js'
 import { desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry } from './core/profile-ops.js'
+import { routeWebMutation } from './core/exec-route.js'
 
 /** 分类中文标签（0.7.0 Task 5）：精选 5 类（单一事实源 market-query PRIMARY_CATEGORY_LABELS）+ 社区已知标签（单一事实源 COMMUNITY_CATEGORY_LABELS）；未知 slug 原样。 */
 function categoryLabelOf(category: string): string {
@@ -88,6 +89,8 @@ export interface ToolMarketDeps {
   /** 0.9.8：官方服务探测/惰性拉起（host.ts 共用同一解析器；缺省退回外层 ctx 一次性 get） */
   getService?: () => unknown
   ensureService?: (timeoutMs?: number) => Promise<unknown>
+  /** ADR-0034（issue #65）：web 执行能力门（测试注入缝；生产 = exec-route 实现） */
+  routeWebMutation?: typeof routeWebMutation
 }
 
 function cloneJson(value: unknown) {
@@ -143,6 +146,7 @@ export function registerTools(
   const getService = deps.getService ?? ((): unknown =>
     (ctx as unknown as { get?: (name: string) => unknown }).get?.('pluginManager'))
   const ensureService = deps.ensureService
+  const routeGate = deps.routeWebMutation ?? routeWebMutation
 
   ctx.tools.register(defineTool({
     name: 'dshm_search',
@@ -325,12 +329,17 @@ export function registerTools(
       const version = typeof args.version === 'string' && args.version.trim() ? args.version.trim() : undefined
       const force = args.force === true
       // 0.9.0：desktop → 官方 pluginManager 委派（新包）；未知 profile → 结构化拒绝
-      if (profile.kind !== 'web') {
+      const desktopInstallArm = async () => {
         assertWriteAllowed(profile, 'install')
         // 0.9.8：补传服务解析 deps（此前漏传 → desktop 安装恒 no-manager，实机 2026-10-01）
         // issue #41：approvedBuilds 条件展开（空数组视为缺省，与 core :515 同构）——不传时 opts 形态零漂移
         return cloneJson(await m.desktopInstall(id, cfg, { version, forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { getService: getService as never, ensureService: ensureService as never }))
       }
+      if (profile.kind !== 'web') return desktopInstallArm()
+      // ADR-0034（issue #65）：web 执行能力门——spawn 残局委派 desktop ops / 结构化拒绝（进事务前）
+      const route = await routeGate({ getService: getService as never, ensureService: ensureService as never, op: 'install' })
+      if (route.route === 'refuse') throw route.error
+      if (route.route === 'delegate') return desktopInstallArm()
       try {
         // ADR-0030：web 分支补 profileDir/profileName（此前缺省落 webProfileDir()——issue #39 写路径错配）
         return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
@@ -404,10 +413,15 @@ export function registerTools(
       const target = String(args.pkg || '').trim()
       if (!target) throw new Error('缺少 pkg')
       assertWriteAllowed(profile, 'uninstall')
-      // 0.9.8：desktop → 官方管理器 removeBundle（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
-      if (profile.kind !== 'web') {
+      const desktopUninstallArm = async () => {
+        // 0.9.8：desktop → 官方管理器 removeBundle（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
         return cloneJson(await m.desktopUninstall(target, { getService: getService as never, ensureService: ensureService as never, profileDir: profile.dir, channel: 'host-tool' }))
       }
+      if (profile.kind !== 'web') return desktopUninstallArm()
+      // ADR-0034（issue #65）：web 执行能力门
+      const route = await routeGate({ getService: getService as never, ensureService: ensureService as never, op: 'uninstall' })
+      if (route.route === 'refuse') throw route.error
+      if (route.route === 'delegate') return desktopUninstallArm()
       return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
     },
   }))
@@ -499,11 +513,16 @@ export function registerTools(
       if (!target) throw new Error('缺少 pkg')
       const force = args.force === true
       assertWriteAllowed(profile, 'upgrade')
-      // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
-      if (profile.kind !== 'web') {
+      const desktopUpgradeArm = async () => {
+        // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前该工具在 desktop 走 web 事务必然错位）
         // issue #41：approvedBuilds 条件展开（空数组视为缺省，与 core :515 同构）——不传时 opts 形态零漂移
         return cloneJson(await m.desktopUpgrade(target, cfg, { forceIncompatible: force, namespace: 'host', profile: profile.name, profileDir: profile.dir, channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { getService: getService as never, ensureService: ensureService as never }))
       }
+      if (profile.kind !== 'web') return desktopUpgradeArm()
+      // ADR-0034（issue #65）：web 执行能力门
+      const route = await routeGate({ getService: getService as never, ensureService: ensureService as never, op: 'upgrade' })
+      if (route.route === 'refuse') throw route.error
+      if (route.route === 'delegate') return desktopUpgradeArm()
       try {
         return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
       } catch (err) {

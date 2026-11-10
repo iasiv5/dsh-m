@@ -12,12 +12,16 @@ import { join } from 'node:path'
 import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
+import { DesktopOpsError } from '../lib/core/profile-ops.js'
 import { readUpgradeIntent, resolveUpgradeIntent, writeUpgradeIntent } from '../lib/core/upgrade-intent.js'
 import { clearPublishedAtCacheForTest } from '../lib/core/published-at.js'
 import { resetNpmRouteForTests } from '../lib/core/npm-route.js'
 
 const ORIGIN = 'http://127.0.0.1:3080'
 const JSON_HEADERS = { 'content-type': 'application/json', origin: ORIGIN, host: '127.0.0.1:3080' }
+
+/** ADR-0034 hermetic 桩：既有用例的 gate 恒 spawn（迁移表落点，真探测只在生产）。 */
+const spawnRouteStub = async () => ({ route: 'spawn' })
 
 function entry(i) {
   return {
@@ -140,6 +144,8 @@ function setup(overrides = {}, controllerInitial = {}, installedResult = null) {
         route: null, acceptedCount: 0, upstreamCount: null, displaced: 0,
         skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [],
       }),
+      // ADR-0034：web 执行能力门 hermetic 缺省（真探测只在生产；mutation 用例经 overrides 覆盖）
+      routeWebMutation: spawnRouteStub,
       ...overrides,
     },
   })
@@ -814,6 +820,8 @@ describe('host-api：0.4.0 set-enabled / forceIncompatible（Task 14）', () => 
           throw new Error('不应触达')
         }),
         getService: () => undefined, // 生产由 host.ts 注入 ctx.get('pluginManager')
+        // ADR-0034：web 执行能力门 hermetic 缺省
+        routeWebMutation: spawnRouteStub,
       },
     })
     return { dispatcher, seen }
@@ -1133,5 +1141,89 @@ describe('host-api last-restart（issue #51 / ADR-0032：终态读缝点 + 惰�
     assert.equal(r2.body.state.foldedAt !== undefined, true, 'foldedAt 已回写')
     assert.equal(await journalCount(), 1, '幂等：journal 记录数不变')
     assert.equal(r2.body.state.reason, 'port 3081 still held', '失败态 reason 透传')
+  })
+})
+
+describe('ADR-0034：panel web 执行能力门（install/uninstall/upgrade/self-upgrade 四站点，issue #65）', () => {
+  const delegateStub = async () => ({ route: 'delegate', manager: { installBundle: async () => ({}) } })
+  const refuseStub = (label) => async () => ({ route: 'refuse', error: new DesktopOpsError('no-exec-capability', `环境不可执行子进程（测试注入·${label}）`) })
+
+  it('install delegate → desktopInstall 接管，installFromRegistry 未被调', async () => {
+    let web = 0
+    const { dispatcher } = setup({
+      routeWebMutation: delegateStub,
+      desktopInstall: async () => ({ ok: true, pkg: 'p', via: 'delegate-marker' }),
+      installFromRegistry: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.via, 'delegate-marker')
+    assert.equal(web, 0)
+  })
+
+  it('install refuse → 409 信封：code no-exec-capability + failureClass systemic（既有映射臂）', async () => {
+    let web = 0
+    const { dispatcher } = setup({
+      routeWebMutation: refuseStub('install'),
+      installFromRegistry: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a' } })
+    assert.equal(res.status, 409)
+    assert.equal(res.body.ok, false)
+    assert.equal(res.body.code, 'no-exec-capability')
+    assert.equal(res.body.failureClass, 'systemic')
+    assert.match(res.body.error, /环境不可执行子进程（测试注入·install）/)
+    assert.equal(web, 0, '事务未动')
+  })
+
+  it('uninstall delegate → desktopUninstall 接管', async () => {
+    let web = 0
+    const { dispatcher } = setup({
+      routeWebMutation: delegateStub,
+      desktopUninstall: async () => ({ pkg: 'pkg-u', via: 'delegate-marker' }),
+      uninstallPlugin: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'uninstall', pkg: 'pkg-u' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.via, 'delegate-marker')
+    assert.equal(web, 0)
+  })
+
+  it('upgrade delegate → desktopUpgrade 接管', async () => {
+    let web = 0
+    const { dispatcher } = setup({
+      routeWebMutation: delegateStub,
+      desktopUpgrade: async () => ({ pkg: 'pkg-g', via: 'delegate-marker' }),
+      upgradePlugin: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'pkg-g' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.via, 'delegate-marker')
+    assert.equal(web, 0)
+  })
+
+  it('self-upgrade delegate → desktopSelfUpgradeViaTarball 接管，payload 形态同 desktop 臂', async () => {
+    let web = 0
+    const { dispatcher } = setup({
+      routeWebMutation: delegateStub,
+      desktopSelfUpgradeViaTarball: async () => ({ pkg: 'dsh-m', version: '9.9.9', needsRestart: true }),
+      selfUpgrade: async () => { web += 1; throw new Error('web 臂不应被调') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade' } })
+    assert.equal(res.status, 200)
+    assert.equal(res.body.version, '9.9.9')
+    assert.equal(res.body.needsRestart, true)
+    assert.equal(web, 0)
+  })
+
+  it('spawn 桩 → web 臂照常；routeWebMutation 收到 op 实参', async () => {
+    const ops = []
+    const { dispatcher } = setup({
+      routeWebMutation: async (deps) => { ops.push(deps.op); return { route: 'spawn' } },
+      installFromRegistry: async (id, _cfg, _opts, _deps) => ({ id, pkg: 'p', spec: 'p@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }),
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a' } })
+    assert.equal(res.status, 200)
+    assert.deepEqual(ops, ['install'])
   })
 })

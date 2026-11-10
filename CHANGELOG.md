@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.13 修复：鸿蒙等无 `dsh` PATH 宿主安装必然失败——载体入口识别 + web 执行能力门（issue #65，ADR-0034）
+
+- **背景**：issue #65（ak22117）：鸿蒙端侧 DSHM（profile `ondevice`）安装必败 `spawn dsh EACCES`，回滚也失败并误报「profile 可能需要人工修复」。根因（对比分析锁死）：dshmarket 1.73.5（#975）起识别官方桌面载体入口 `@deepseek-ai/dsh-desktop-host/lib/cli.js`（端侧宿主的 `argv[1]` 即此形态），dsh-m 的 `dshArgv` 无此分支 → 落 PATH 回退 `spawn('dsh')`，鸿蒙沙箱下被拦；同机 dshmarket 可装是差集实证。
+- **做法**：①`resolveDshLaunch`（dshArgv 超集）port 载体分支与 asar 入口 cwd 豁免（#1146）；`dshArgv` 改为四字段显式投影（返回形状零变化）；②`runDshPlugin` 对 spawn 级失败错误追加 `[dsh-m launch: …]` 溯源行（source/entry/file 现场）；③执行能力门（`exec-route.ts`）：web kind 四写操作（install/upgrade/uninstall/self-upgrade）进事务前——launch 落 PATH 回退且 PATH 上无可执行 `dsh` 时，官方 pluginManager 具备所需方法则委派 desktop ops（同路同账），服务/方法缺席则 `DesktopOpsError('no-exec-capability')` 结构化拒绝（事务未动，不再出现回滚失败恐慌文案）；④版本 chip 第三通路 `spawnDshVersion` 改走 `dshArgv` 解析（载体宿主 chip 复活）。
+- **测试**：dsh-launch 7 例（载体/asar/窄 regex 负例/形状稳定）、governance 溯源 3 例、dsh-version spawn 通路 2 例（真实子进程）、exec-route 15 例（决策矩阵/PATH 探测/编排缝）、tools-install 门接线 4 例、host-api 门接线 6 例（409 信封 failureClass systemic）；全量 npm test + typecheck 0；关键接线锚单点变异自证。
+- **兼容性**：正常宿主零漂移（entry/carrier 命中或 PATH `dsh` 可执行的宿主行为逐字节不变；desktop 分支零探测零改动）；新增 `DesktopOpsErrorCode` `'no-exec-capability'`（host-api 信封走既有 DesktopOpsError 映射 → 409 + failureClass systemic，批量升级短路语义随之成立）；`restartLaunch` 同源受益（载体宿主重启身份修正）；scope out：ladder pnpm 恢复步骤的端侧 EACCES、`readLauncherPackageVersion` 载体语义、CLI 三命令不加门。回退面：revert 实现提交 + 版本递增。
+
 ### 0.12.12 特性：更新聚合口径排除「意图停用」插件 + 已装页探测 TTL 化（issue #53/#59，ADR-0033 + ADR-0008 修订）
 
 - **背景**：issue #53（appllove）与 #59（Niefee）先后提出「红点/全部更新不应计入已停用插件」「插件多、更新太耗时」。既有口径两难：按活体观察 `enabled` 过滤会把「宿主门控挡下（peer 失配）」的插件一并剔除——dsh-ops 0.4.4 反例证明升级通道是这类插件唯一自愈路径（#53 据此拒绝过原案）；经比对同业 dshmarket 1.73.17，意图用持久层记录表达后两种停用天然可区分，存在第三条路（ADR-0033）。耗时侧根因不在升级集合而在探测缓存：已装页每次挂载先删共享缓存条目再全量重探（原 ADR-0008 ttlMin=0 语义）。
@@ -1036,6 +1043,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.13 Fixed: installs always fail on hosts without a PATH `dsh` (HarmonyOS ondevice) — carrier-entry launch identity + web exec capability gate (issue #65, ADR-0034)
+
+- **Background**: issue #65 (ak22117): on HarmonyOS ondevice DSHM (profile `ondevice`) every install fails with `spawn dsh EACCES`, rollback fails too, and the panel reports a scary "profile may need manual repair". Root cause (pinned by differential analysis): dshmarket ≥1.73.5 (#975) recognizes the official desktop carrier entry `@deepseek-ai/dsh-desktop-host/lib/cli.js` — exactly the ondevice host's `argv[1]` shape — while dsh-m's `dshArgv` lacked that branch and fell back to PATH `spawn('dsh')`, which the HarmonyOS sandbox denies; dshmarket installs fine on the same device (differential proof).
+- **Changes**: ① `resolveDshLaunch` (superset of `dshArgv`) ports the carrier branch and the asar-entry cwd exemption (#1146); `dshArgv` becomes an explicit four-field projection (return shape unchanged); ② `runDshPlugin` appends a `[dsh-m launch: …]` provenance line (source/entry/file) to spawn-level failures; ③ exec capability gate (`exec-route.ts`): before any web-kind mutation (install/upgrade/uninstall/self-upgrade) — when launch fell back to PATH and no executable `dsh` exists there, delegate to the official pluginManager via the desktop ops path when the required method is present, otherwise fail fast with `DesktopOpsError('no-exec-capability')` before the transaction (no more rollback-panic copy); ④ the version chip's third path (`spawnDshVersion`) now spawns via `dshArgv` resolution (chip revives on carrier hosts).
+- **Tests**: dsh-launch 7 cases (carrier / asar / narrow-regex negatives / shape stability), governance provenance 3, dsh-version spawn path 2 (real child process), exec-route 15 (decision matrix / PATH probe / orchestration seams), tools-install gate wiring 4, host-api gate wiring 6 (409 envelope failureClass systemic); full npm test + typecheck 0; key wiring anchors mutation-verified.
+- **Compatibility**: zero drift on healthy hosts (entry/carrier hits or executable PATH `dsh` behave byte-for-byte the same; desktop branches untouched and unprobed); new `DesktopOpsErrorCode` `'no-exec-capability'` (rides the existing DesktopOpsError envelope → 409 + failureClass systemic, batch-upgrade short-circuit semantics follow); `restartLaunch` benefits from the same identity fix; out of scope: ladder pnpm recovery steps on exec-denied devices, `readLauncherPackageVersion` carrier semantics, CLI commands (no gate). Rollback: revert implementation commits + version bump.
 
 ### 0.12.12 Added: update aggregates exclude intent-disabled plugins + installed-page probe TTL (issue #53/#59, ADR-0033 + ADR-0008 revision)
 

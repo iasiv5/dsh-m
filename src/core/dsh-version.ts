@@ -54,7 +54,7 @@ export function readLauncherPackageVersion(input: Parameters<typeof dshArgv>[0] 
   }
 }
 
-function spawnDshVersion(timeoutMs: number): Promise<string | null> {
+export function spawnDshVersion(timeoutMs: number, input: Parameters<typeof dshArgv>[0] = {}): Promise<string | null> {
   return new Promise((resolveP) => {
     let settled = false
     const done = (v: string | null): void => {
@@ -65,7 +65,11 @@ function spawnDshVersion(timeoutMs: number): Promise<string | null> {
     }
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn('dsh', ['--version'], { stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' })
+      // ADR-0034（issue #65）：chip 第三通路改走 dshArgv 解析——载体宿主 spawn(node, cli.js) 复活；
+      // PATH 回退宿主形态与旧实现逐参一致（file='dsh'、shell=win32 同源）；stdio 三通道原样；
+      // 不传 cwd（--version 无 cwd 语义，全形态零漂移）。
+      const argv = dshArgv(input)
+      child = spawn(argv.file, [...argv.args, '--version'], { stdio: ['ignore', 'pipe', 'ignore'], shell: argv.viaShell })
     } catch {
       done(null)
       return

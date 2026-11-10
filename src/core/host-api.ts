@@ -41,6 +41,7 @@ import { togglePlugin, ToggleError, type PluginManagerLike } from './toggle.js'
 import { IncompatibleError } from './compat-check.js'
 import { ProfileUnsupportedError, assertWriteAllowed, type ActiveProfile } from './active-profile.js'
 import { DesktopOpsError, desktopInstallFromRegistry, desktopToggle, desktopUninstall, desktopUpgradeFromRegistry, desktopSelfUpgradeViaTarball } from './profile-ops.js'
+import { routeWebMutation } from './exec-route.js'
 import { UpgradePathUnsupportedError } from './upgrade-target.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
@@ -108,6 +109,8 @@ export interface HostApiOverrides {
   removeExternalOperation?: typeof removeExternalOperation
   /** 0.10.0 D3 自升级专用通道（desktop self-upgrade；测试注入假件）。 */
   desktopSelfUpgradeViaTarball?: typeof desktopSelfUpgradeViaTarball
+  /** ADR-0034（issue #65）：web 执行能力门（测试注入缝；生产 = exec-route 实现） */
+  routeWebMutation?: typeof routeWebMutation
   /** 0.10.0 开机对账（self-check 每进程一次；测试注入真实现 + DSHM_UPGRADE_INTENT_FILE 隔离）。 */
   readUpgradeIntent?: typeof readUpgradeIntent
   resolveUpgradeIntent?: typeof resolveUpgradeIntent
@@ -338,6 +341,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
     desktopUninstall: ctx.deps?.desktopUninstall ?? desktopUninstall,
     desktopUpgrade: ctx.deps?.desktopUpgrade ?? desktopUpgradeFromRegistry,
     desktopSelfUpgradeViaTarball: ctx.deps?.desktopSelfUpgradeViaTarball ?? desktopSelfUpgradeViaTarball,
+    routeWebMutation: ctx.deps?.routeWebMutation ?? routeWebMutation,
     readUpgradeIntent: ctx.deps?.readUpgradeIntent ?? readUpgradeIntent,
     resolveUpgradeIntent: ctx.deps?.resolveUpgradeIntent ?? resolveUpgradeIntent,
     writeUpgradeIntent: ctx.deps?.writeUpgradeIntent ?? writeUpgradeIntent,
@@ -422,11 +426,16 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
 
         case 'self-upgrade': {
           assertWriteAllowed(profile, 'self-upgrade')
+          // ADR-0034（issue #65）：web 执行能力门（desktop kind 零探测直走委派臂）
+          const route = profile.kind === 'web'
+            ? await d.routeWebMutation({ getService: d.getService as never, ensureService: d.ensureService as never, op: 'self-upgrade' })
+            : { route: 'delegate' as const }
+          if (route.route === 'refuse') throw route.error
           // 0.10.0 D3 自升级专用通道（desktop）：tarball 直装。0.10.2 实证修订：0.2.1 守卫经
           // specPackageName 对 tarball URL 同样解析包名（自升级写穿后宿主完成路径自触守卫 = post-write
           // 伪失败），由 D3 的账实复读改判兜住；通道分治不变——remove+registry-spec 通用两步仍不达自升级。
           // 恒 panel 语义零外部日志（ADR-0018），intent 预写/收口在 core 层。
-          if (profile.kind !== 'web') {
+          if (profile.kind !== 'web' || route.route === 'delegate') {
             const managed = await d.desktopSelfUpgradeViaTarball(ctx.pkg.name, ctx.pkg.version, {
               timeoutMs: cfg().timeoutMs,
               signal,
@@ -681,8 +690,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         case 'install': {
           const id = strArg(body, 'id')
           if (!id) throw new ApiProtocolError(400, '缺少 id')
-          // 0.9.0：desktop → 官方 pluginManager 委派（新包）；web → 既有事务
-          if (profile.kind !== 'web') {
+          // ADR-0034（issue #65）：web 执行能力门——desktop kind 零探测直走委派臂；web 残局委派/结构化拒绝（进事务前）
+          const route = profile.kind === 'web'
+            ? await d.routeWebMutation({ getService: d.getService as never, ensureService: d.ensureService as never, op: 'install' })
+            : { route: 'delegate' as const }
+          if (route.route === 'refuse') throw route.error
+          // 0.9.0：desktop → 官方 pluginManager 委派（新包）；web 残局 → 同路同账
+          if (profile.kind !== 'web' || route.route === 'delegate') {
             assertWriteAllowed(profile, 'install')
             payload = { ...(await d.desktopInstall(id, cfg(), {
               version: typeof body.version === 'string' ? body.version : undefined,
@@ -721,8 +735,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
           assertWriteAllowed(profile, 'uninstall')
+          // ADR-0034（issue #65）：web 执行能力门（desktop kind 零探测直走委派臂）
+          const route = profile.kind === 'web'
+            ? await d.routeWebMutation({ getService: d.getService as never, ensureService: d.ensureService as never, op: 'uninstall' })
+            : { route: 'delegate' as const }
+          if (route.route === 'refuse') throw route.error
           // 0.9.8：desktop → 官方管理器 removeBundle（dsh-market 同策略；此前结构化拒绝）
-          if (profile.kind !== 'web') {
+          if (profile.kind !== 'web' || route.route === 'delegate') {
             payload = { ...(await d.desktopUninstall(target, { getService: d.getService, ensureService: d.ensureService, profileDir: profile.dir, channel: 'panel' })) }
             break
           }
@@ -750,8 +769,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const target = strArg(body, 'pkg')
           if (!target) throw new ApiProtocolError(400, '缺少 pkg')
           assertWriteAllowed(profile, 'upgrade')
+          // ADR-0034（issue #65）：web 执行能力门（desktop kind 零探测直走委派臂）
+          const route = profile.kind === 'web'
+            ? await d.routeWebMutation({ getService: d.getService as never, ensureService: d.ensureService as never, op: 'upgrade' })
+            : { route: 'delegate' as const }
+          if (route.route === 'refuse') throw route.error
           // 0.9.8：desktop → 官方管理器覆盖安装（dsh-market 同策略；此前结构化拒绝）
-          if (profile.kind !== 'web') {
+          if (profile.kind !== 'web' || route.route === 'delegate') {
             payload = { ...(await d.desktopUpgrade(target, cfg(), {
               forceIncompatible: boolArg(body.forceIncompatible),
               namespace: 'host',
