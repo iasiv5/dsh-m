@@ -179,6 +179,19 @@
       "homepage": "https://github.com/iasiv5/dsh-quota-watch"
     },
     {
+      "id": "dsh-stock-kanban",
+      "name": "DSH Stock Kanban",
+      "description": "多市场盯盘胶囊：A股/港股/美股/加密货币自选、持仓盈亏与目标价，分时/K 线详情；可选集成 quota-watch，已适配 0.2.2-rc.1。",
+      "category": "self-dev",
+      "tags": ["股票","行情","ETF","投资"],
+      "verified": ["0.2.2-rc.1"],
+      "source": "npm",
+      "npm": "dsh-stock-kanban",
+      "github": "iasiv5/dsh-stock-kanban",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-stock-kanban@0/icon.svg",
+      "homepage": "https://github.com/iasiv5/dsh-stock-kanban"
+    },
+    {
       "id": "dsh-surf",
       "name": "DSH Surf",
       "description": "网络冲浪入口：设置一级菜单一键打开 Selkies/Chrome 远程桌面，视频流直连；需自建容器与认证反代。版本无关，详见仓库。",
