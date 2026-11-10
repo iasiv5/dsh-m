@@ -66,8 +66,20 @@ profile `dsh.profile.bundles` 数组的增删，多行插件（含配置补丁�
 _Avoid_: bundle 开关（口语可，文档用术语）
 
 **运行相位（Live Phase）**:
-loader fiber 状态在已装页的投影（active / failed / pending / loading / unloading / 无 fiber 即已停用）；是观察量不是存储量，与开关状态互为印证。
-_Avoid_: 状态（过载词）、健康度
+loader fiber 状态在已装页的投影（active / failed / pending / loading / unloading / 无 fiber 即未运行）；是观察量不是存储量，与开关状态互为印证。
+_Avoid_: 状态（过载词）、健康度、已停用（无 fiber 只说明未运行，不断言停用原因）
+
+**意图停用（Intent Disabled）**:
+持久层用户意图记录的并集：Bundle 退选（有补丁层但不在 `dsh.profile.bundles`）∪ 行覆盖 `disabled: true`。更新聚合口径唯一认可的排除判据；宿主门控拦截、加载失败、loader 未挂载都不写这两类记录，故永不构成意图停用。
+_Avoid_: 已停用（含混——enabled:false 有多种成因，不可混称）、disabled（裸词）
+
+**未运行（Not Running）**:
+活体观察 enabled:false 且非意图停用的中性表述；只描述现状、不断言原因（宿主门控拦截、loader 未挂载、加载失败都可能），用于界面标签与已装列表排序。
+_Avoid_: 已停用（断言了意图）、异常（加载失败只是成因之一）
+
+**更新聚合口径（Update Aggregate Scope）**:
+已装页红点计数与「全部更新」目标集的成员判定：有更新且非意图停用。与行级通道（每卡片更新按钮，只看有无更新）严格分工：聚合可排除意图停用，行级永不过滤。
+_Avoid_: 更新集合（未区分聚合与行级）、可更新集合
 
 **委派降级（Delegate-with-Fallback）**:
 开关写路径先探测官方 pluginManager 服务并委派、服务缺席时退回 loader 直操作与文件编辑的架构形态；探测按服务存在性，不判 DSH 版本号。读路径始终自读，不随写路径切换。
