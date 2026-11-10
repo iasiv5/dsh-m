@@ -69,6 +69,18 @@ _Avoid_: bundle 开关（口语可，文档用术语）
 loader fiber 状态在已装页的投影（active / failed / pending / loading / unloading / 无 fiber 即未运行）；是观察量不是存储量，与开关状态互为印证。
 _Avoid_: 状态（过载词）、健康度、已停用（无 fiber 只说明未运行，不断言停用原因）
 
+**会话注入开关（Session Injection Switches）**:
+`sessionTools` / `sessionPrompt` 两个配置门控的统称：前者门控 8 个 `dshm_*` 会话工具的装配注册，后者门控 `tool:dshm` 系统提示词段注入；均缺省开，翻转后新装配即时生效（watch 链原地同步，不重启）。与「开关（Enablement Toggle）」是两类概念——那是对已装插件运行状态的切换，这是对会话注入面的门控；面板「设置」tab 的 Agent 集成卡是唯一控制入口。
+_Avoid_: 会话工具开关（单指 sessionTools 时可用「Agent 工具开关」，统称时禁用——与 Enablement Toggle 混用）、注入开关（裸词）
+
+**注入三态（Injection States）**:
+会话注入开关组合的三个可达态：**全开**（缺省，工具 + 引导段齐注入，引导段为瘦身版）、**仅工具**（只关 `sessionPrompt`，工具在但仅在显式要求时使用）、**全关**（纯 UI 市场）。`sessionTools` 关 ⇒ `sessionPrompt` 恒视为关，故「工具关 + 段开」不是可达态。
+_Avoid_: 四态（不可达态不是态）、半开
+
+**级联钳制（Cascade Clamp）**:
+`sessionTools=false` 时提示词段强制不注入、与 `sessionPrompt` 取值无关的装配期规则；存储保留 `sessionPrompt` 原值（仅落键不覆写），钳制发生在装配期 resolve，重开工具后先前选择自动恢复。
+_Avoid_: 级联关闭（暗示存储被覆写）、强制同步
+
 **意图停用（Intent Disabled）**:
 持久层用户意图记录的并集：Bundle 退选（有补丁层但不在 `dsh.profile.bundles`）∪ 行覆盖 `disabled: true`。更新聚合口径唯一认可的排除判据；宿主门控拦截、加载失败、loader 未挂载都不写这两类记录，故永不构成意图停用。
 _Avoid_: 已停用（含混——enabled:false 有多种成因，不可混称）、disabled（裸词）

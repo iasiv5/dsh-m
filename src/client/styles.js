@@ -314,6 +314,7 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-settings-grid{display:grid;gap:10px;grid-template-columns:4fr 7fr;min-width:0}
 .dshm-settings-grid>.dshm-section{margin:0;min-width:0}
 .dshm-settings-grid>.dshm-section:nth-child(3){grid-column:1/-1}
+.dshm-settings-grid>.dshm-section:nth-child(4){grid-column:1/-1}
 .dshm-settings-grid>.dshm-ops-card{grid-column:1/-1}
 /* 三列制门控 = 容器宽度而非全屏态（0.9.88，panel resize 伴生修复）：还原态可拉到
    任意宽，≥1100px 时「关于」升第三列；顺带修正旧账——

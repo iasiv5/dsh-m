@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.15 特性：Agent 集成卡——会话注入开关收编市场面板设置页（issue #57 续）
+
+- **背景**：0.12.14 的两开关只挂在宿主自动生成设置卡上，用户反馈找不到入口（主人实测确认）。
+- **做法**：①市场面板「设置」tab 新增「AI 会话集成」通宽卡——两行开关（会话工具 / 系统提示词引导）+ 描述 + 级联锁定态（工具关 ⇒ 提示词开关锁定 + 白话 hint，存储值显示不覆写）；②新 `set-session` 路由 + controller `setSessionFields`（内存即时 + store 持久化 + 失败回滚，镜像 setCommunity 完整形态）；③新 `session-toggle` 操作记录（成败皆记，meta.field 区分两字段，对齐 community-toggle 口径）；④Config 两字段加 `.hidden(true)`（面板单入口；宿主设置卡若仍渲染则回退双入口）。
+- **测试**：全量 npm test + typecheck 0（registry-controller setSessionFields 3 例、host-api set-session 路由 3 例、client 渲染锚/冻结面/级联源码锚、operations-view dir 徽章家族、关键锚三处单点变异自证）。
+- **兼容性**：面板新卡纯新增面；`.hidden` meta 使宿主设置卡不再渲染两字段（渲染器不认时回退双入口，README 标注面板主入口）；装配语义与 0.12.14 零变化（写链终点相同）；其余三卡与 CLI 零改动。回退面：revert 实现提交 + 版本递增。
+
 ### 0.12.14 特性：会话面双开关——dshm_* 工具与提示词段可控注入（issue #57，ADR-0035）
 
 - **背景**：issue #57（PrimaryFantasty）：8 个 `dshm_*` 会话工具与 `tool:dshm` 系统提示词段默认注入且不可关闭——变更面（安装/升级/卸载常驻会话「容易开缺口」）与打扰面（全话题行为引导段）都没有开关。
@@ -1050,6 +1057,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.15 Feature: Agent integration card — session injection switches move into the panel settings tab (issue #57 follow-up)
+
+- **Background**: the 0.12.14 switches only lived on the host-generated settings card, which users could not find (confirmed by the owner).
+- **Changes**: ① the panel settings tab gains an "AI session integration" full-width card — two switch rows (session tools / system prompt guidance) with descriptions and a cascade-locked state (tools off ⇒ the guidance switch renders locked with a plain-language hint, showing the stored value without overwriting it); ② new `set-session` route + controller `setSessionFields` (in-memory immediate + store persistence + failure rollback, mirroring the full setCommunity shape); ③ new `session-toggle` operation record (recorded on both success and failure, `meta.field` distinguishes the two fields, aligned with the community-toggle convention); ④ both Config fields gain `.hidden(true)` (panel single entry; falls back to dual entry if the host settings card still renders them).
+- **Tests**: full `npm test` + typecheck 0 (registry-controller setSessionFields 3 cases, host-api set-session route 3 cases, client render anchors / freeze surface / cascade source anchors, operations-view dir badge family, three single-point mutation proofs on key anchors).
+- **Compatibility**: the panel card is purely additive; the `.hidden` meta removes the two fields from the host settings card (falls back to dual entry if the renderer ignores it, README notes the panel as the primary entry); assembly semantics identical to 0.12.14 (same write-chain endpoint); the other three cards and the CLI are untouched. Rollback: revert the implementation commit + version bump.
 
 ### 0.12.14 Feature: session-surface dual switches — controllable injection for dshm_* tools and the prompt section (issue #57, ADR-0035)
 

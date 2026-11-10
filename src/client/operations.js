@@ -53,14 +53,14 @@ export function externalToRecord(er) {
 }
 
 /**
- * @typedef {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'} OpKind
+ * @typedef {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'|'session-toggle'} OpKind
  * @typedef {'queued'|'running'|'input'|'done'|'warned'|'failed'|'superseded'} OpStatus
  */
 
 /**
  * @typedef {Object} OperationRecord
  * @property {string} id
- * @property {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'} kind
+ * @property {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'|'session-toggle'} kind
  * @property {string} target install=收录 id；upgrade/uninstall/toggle=包名；community-toggle=community-catalog；
  *                            registry-url=目标地址（恢复默认为 "(default)"）
  * @property {'queued'|'running'|'input'|'done'|'warned'|'failed'|'superseded'} status

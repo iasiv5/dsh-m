@@ -42,14 +42,20 @@ function live<T>(field: Schema<T>): Schema<T> {
   return typeof volatile === 'function' ? volatile.call(field) : field
 }
 
+/** .hidden(true)：宿主设置卡不渲染该字段（0.12.15 Agent 集成卡单入口，面板为唯一控制面）；旧 schemastery 缺方法时静默跳过（live 同款 guard）。 */
+function hide<T>(field: Schema<T>): Schema<T> {
+  const hidden = (field as unknown as { hidden?: (v?: boolean) => Schema<T> }).hidden
+  return typeof hidden === 'function' ? hidden.call(field, true) : field
+}
+
 export const Config: Schema<Config> = Schema.object({
   registryUrl: live(Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）')),
   timeoutMs: live(Schema.number().default(20000).description('上游请求超时（毫秒）')),
   cacheTtlMin: live(Schema.number().default(60).description('registry 缓存时长（分钟）')),
   communityCatalog: live(Schema.boolean().default(true).description('社区清单：awesome-dsh-plugin 全量社区目录叠加进市场（只读，live 生效）')),
   communityCatalogPin: live(Schema.string().description('社区目录版本锁定：精确 semver（如 2026.928.1），空值跟随 latest')),
-  sessionTools: live(Schema.boolean().default(true).description('会话工具：关闭后新会话不再提供 dshm_* 工具（即时生效）；市场页面与 dshm 命令行不受影响')),
-  sessionPrompt: live(Schema.boolean().default(true).description('会话提示词引导：关闭后新会话不再注入 dshm 用法段，工具仅在显式要求时使用；会话工具关闭时本项不生效')),
+  sessionTools: live(hide(Schema.boolean().default(true).description('会话工具：关闭后新会话不再提供 dshm_* 工具（即时生效）；市场页面与 dshm 命令行不受影响'))),
+  sessionPrompt: live(hide(Schema.boolean().default(true).description('会话提示词引导：关闭后新会话不再注入 dshm 用法段，工具仅在显式要求时使用；会话工具关闭时本项不生效'))),
 })
 
 export function apply(ctx: Context, config: Config): void {

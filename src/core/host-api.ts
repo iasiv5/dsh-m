@@ -212,7 +212,7 @@ function boolArg(v: unknown): boolean {
   return v === true || v === 'true' || v === 1 || v === '1'
 }
 
-function snapshotPayload(snap: RegistryControllerSnapshot, config?: { communityCatalog?: boolean; communityCatalogPin?: string }): Record<string, unknown> {
+function snapshotPayload(snap: RegistryControllerSnapshot, config?: { communityCatalog?: boolean; communityCatalogPin?: string; sessionTools?: boolean; sessionPrompt?: boolean }): Record<string, unknown> {
   return {
     registryUrl: snap.configuredAddress,
     configuredAddress: snap.configuredAddress,
@@ -225,6 +225,9 @@ function snapshotPayload(snap: RegistryControllerSnapshot, config?: { communityC
     // 社区两键（M1 Task 6）：设置页回显数据源
     communityCatalog: config?.communityCatalog,
     communityCatalogPin: config?.communityCatalogPin,
+    // session 两键（0.12.15 Agent 集成卡）：设置页回显数据源（undefined 时 JSON 序列化缺席 = 仅落键口径）
+    sessionTools: config?.sessionTools,
+    sessionPrompt: config?.sessionPrompt,
   }
 }
 
@@ -862,6 +865,25 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           // 0.8.0 设置页社区开关：live 生效（内存）+ store 持久化；无需主清单重载
           if (typeof body.enabled !== 'boolean') throw new ApiProtocolError(400, '缺少 enabled（必须为 boolean）')
           const snap = await ctx.controller.setCommunity(body.enabled)
+          payload = { applied: true, ...snapshotPayload(snap, cfg()) }
+          break
+        }
+
+        case 'set-session': {
+          // 0.12.15 设置页 Agent 集成卡：live 生效（内存）+ store 持久化；无需主清单重载
+          const patch: { sessionTools?: boolean; sessionPrompt?: boolean } = {}
+          if (body.sessionTools !== undefined) {
+            if (typeof body.sessionTools !== 'boolean') throw new ApiProtocolError(400, 'sessionTools 必须为 boolean')
+            patch.sessionTools = body.sessionTools
+          }
+          if (body.sessionPrompt !== undefined) {
+            if (typeof body.sessionPrompt !== 'boolean') throw new ApiProtocolError(400, 'sessionPrompt 必须为 boolean')
+            patch.sessionPrompt = body.sessionPrompt
+          }
+          if (patch.sessionTools === undefined && patch.sessionPrompt === undefined) {
+            throw new ApiProtocolError(400, '至少提供一个 session 开关字段（boolean）')
+          }
+          const snap = await ctx.controller.setSessionFields(patch)
           payload = { applied: true, ...snapshotPayload(snap, cfg()) }
           break
         }

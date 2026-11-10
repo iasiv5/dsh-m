@@ -353,3 +353,15 @@ describe('#36 在途谓词：isInflightStatus / activeMutateOp / activeProgressO
     assert.equal(activeKindOp([], 'upgrade'), null)
   })
 })
+
+describe('issue57 session-toggle：dir 徽章家族扩展（Agent 集成卡操作记录）', () => {
+  it('session-toggle 按 meta.on 出方向徽章；meta.field 随行不影响行 VM', () => {
+    const on = opRowVm({ kind: 'session-toggle', target: '会话工具', status: 'done', meta: { field: 'sessionTools', on: true }, createdAt: 1000, updatedAt: 1500 })
+    assert.equal(on.dir, 'on')
+    assert.equal(on.target, '会话工具')
+    const off = opRowVm({ kind: 'session-toggle', target: '系统提示词引导', status: 'failed', meta: { field: 'sessionPrompt', on: false }, createdAt: 2000, updatedAt: 2600 })
+    assert.equal(off.dir, 'off')
+    const noMeta = opRowVm({ kind: 'session-toggle', target: 'x', status: 'done', meta: { field: 'sessionTools' }, createdAt: 3000, updatedAt: 3500 })
+    assert.equal(noMeta.dir, null)
+  })
+})

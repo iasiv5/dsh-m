@@ -37,6 +37,10 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
   // 社区开关（0.8.0）：null = 尚未从 registry-config 初始化；切换乐观更新，失败回滚
   const [communityOn, setCommunityOn] = useState(null);
   const [communityBusy, setCommunityBusy] = useState(false);
+  // 会话注入开关（issue #57 / ADR-0035）：null = 尚未从 registry-config 初始化；缺省开（!== false 口径，
+  // 禁镜像 communityOn 的 === true——评审批 1 C 项：undefined 显示成「关」与装配语义相反）
+  const [sessionOn, setSessionOn] = useState(null);
+  const [sessionBusy, setSessionBusy] = useState(false);
 
   const cfgData = cfgState.data;
   useEffect(() => {
@@ -45,6 +49,14 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
   useEffect(() => {
     if (communityOn === null && cfgData) setCommunityOn(cfgData.communityCatalog === true);
   }, [cfgData, communityOn]);
+  useEffect(() => {
+    if (sessionOn === null && cfgData) {
+      setSessionOn({
+        sessionTools: cfgData.sessionTools !== false,
+        sessionPrompt: cfgData.sessionPrompt !== false,
+      });
+    }
+  }, [cfgData, sessionOn]);
 
   const refresh = async () => {
     setBusy(true);
@@ -154,6 +166,53 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
       ? { cls: "warn", label: lookup("settings.community.status.stale") }
       : { cls: "ok", label: lookup("settings.status.ready") };
 
+  // Agent 集成卡（issue #57 / ADR-0035）：session 注入开关——checked = 存储值，
+  // 级联只锁交互不锁显示（tools off ⇒ prompt 开关锁定 + hint，存储原值保留，重开工具后自动恢复）
+  const toolsOff = sessionOn ? sessionOn.sessionTools === false : false;
+  const sessionLocked = sessionOn === null || sessionBusy;
+  const promptLocked = sessionLocked || toolsOff;
+  const applySession = async (patch) => {
+    const field = patch.sessionTools !== undefined ? "sessionTools" : "sessionPrompt";
+    const labelKey = field === "sessionTools" ? "settings.agent.tools" : "settings.agent.prompt";
+    const mainLabel = lookup(labelKey);
+    const prev = sessionOn ? sessionOn[field] : undefined;
+    setSessionOn({ ...(sessionOn || {}), ...patch });
+    setSessionBusy(true);
+    try {
+      await api("set-session", patch);
+      // 设置类终态直落记录（DESIGN §2.6 口径）：成败皆记，meta.field 区分两字段
+      recordSettingsOp("session-toggle", mainLabel, "done", { field, on: patch[field] });
+      notify({ kind: "ok", text: lookup(patch[field] ? `${labelKey}.on.ok` : `${labelKey}.off.ok`), needsRestart: false });
+    } catch (e) {
+      if (sessionOn) setSessionOn({ ...sessionOn, [field]: prev });
+      recordSettingsOp("session-toggle", mainLabel, "failed", { field, on: patch[field] }, String((e && e.message) || e));
+      notify({ kind: "err", text: lookup("settings.agent.toggle.failed", { err: (e && e.message) || e }) });
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+  const toolsSwitch = h(
+    "label",
+    { className: `dshm-switch${sessionOn && sessionOn.sessionTools !== false ? " on" : ""}${sessionLocked ? " locked" : ""}` },
+    h("input", {
+      type: "checkbox",
+      checked: sessionOn ? sessionOn.sessionTools !== false : false,
+      disabled: sessionLocked,
+      onChange: (e) => applySession({ sessionTools: e.target.checked }),
+    }),
+    h("span", { className: "dshm-switch-slider" }),
+  );
+  const promptSwitch = h(
+    "label",
+    { className: `dshm-switch${sessionOn && sessionOn.sessionPrompt !== false ? " on" : ""}${promptLocked ? " locked" : ""}`, title: lookup("settings.agent.prompt.cascade") },
+    h("input", {
+      type: "checkbox",
+      checked: sessionOn ? sessionOn.sessionPrompt !== false : false,
+      disabled: promptLocked,
+      onChange: (e) => applySession({ sessionPrompt: e.target.checked }),
+    }),
+    h("span", { className: "dshm-switch-slider" }),
+  );
   // 社区卡（0.9.x 布局重构）：清爽列表行复用器；开关 = 列表末行，关态 = 提示 + 开关行
   const kvlineRow = (labelKey, valueNode) =>
     h(
@@ -291,6 +350,22 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
       ),
     ),
     // ④ 操作记录：恒通宽卡（第二批搬迁），进行中常驻 + 已结束滚动区，空态 hint 导览
+    // ④ Agent 集成卡（issue #57 / ADR-0035）：会话注入开关（设计简报 2026-11-11 定稿；文案 C' 版钉死）
+    Section(
+      lookup("settings.agent.title"),
+      h("div", { className: "dshm-kvline-row" },
+        h("span", { className: "rl" }, lookup("settings.agent.tools")),
+        toolsSwitch,
+      ),
+      h("div", { className: "dshm-hint" }, lookup("settings.agent.tools.desc")),
+      h("div", { className: "dshm-kvline-row" },
+        h("span", { className: "rl" }, lookup("settings.agent.prompt")),
+        promptSwitch,
+      ),
+      h("div", { className: "dshm-hint" }, lookup("settings.agent.prompt.desc")),
+      toolsOff ? h("div", { className: "dshm-hint" }, lookup("settings.agent.prompt.cascade")) : null,
+    ),
+    // ⑤ 操作记录：恒通宽卡（第二批搬迁），进行中常驻 + 已结束滚动区，空态 hint 导览
     h(OperationsCard, { records: opsRecords, onClearFinished: onOpsClearFinished, onRemove: onOpsRemove }),
   );
 }

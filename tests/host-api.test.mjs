@@ -1227,3 +1227,29 @@ describe('ADR-0034：panel web 执行能力门（install/uninstall/upgrade/self-
     assert.deepEqual(ops, ['install'])
   })
 })
+
+it('set-session 切换 session 字段并在 registry-config 回显（0.12.15 Agent 集成卡）', async () => {
+  const { dispatcher } = setup()
+  const off = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-session', sessionTools: false } })
+  assert.equal(off.status, 200)
+  assert.equal(off.body.applied, true)
+  assert.equal(off.body.sessionTools, false)
+  const cfg = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'registry-config' } })
+  assert.equal(cfg.body.sessionTools, false)
+  const on = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-session', sessionPrompt: false } })
+  assert.equal(on.status, 200)
+  assert.equal(on.body.sessionPrompt, false)
+  assert.equal(on.body.sessionTools, false) // 前次翻转保持
+})
+
+it('set-session 空 body → 400', async () => {
+  const { dispatcher } = setup()
+  const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-session' } })
+  assert.equal(res.status, 400)
+})
+
+it('set-session 非布尔字段 → 400', async () => {
+  const { dispatcher } = setup()
+  const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'set-session', sessionTools: 'x' } })
+  assert.equal(res.status, 400)
+})
