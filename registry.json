@@ -181,7 +181,7 @@
     {
       "id": "dsh-stock-kanban",
       "name": "DSH Stock Kanban",
-      "description": "多市场盯盘胶囊：A股/港股/美股/加密货币自选、持仓盈亏与目标价，分时/K 线详情；可选集成 quota-watch，已适配 0.2.2-rc.1。",
+      "description": "盯盘胶囊：A股/港股/美股/加密货币自选、拖拽排序、持仓盈亏与目标价，分时/K 线；可选集成 quota-watch，已适配 0.2.2-rc.1。",
       "category": "self-dev",
       "tags": ["股票","行情","ETF","投资"],
       "verified": ["0.2.2-rc.1"],
