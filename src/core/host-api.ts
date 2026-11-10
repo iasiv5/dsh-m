@@ -620,9 +620,10 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
         }
 
         case 'installedUpdates': {
-          // 两段加载（ADR-0008）第二段：probeMode 'only' → ttlMin=0 永远新鲜（先删共享缓存条目再重探）。
-          // 响应只保留更新字段且含全部已装项（latestError 项也在——client 的「检查未完成」依赖它），
-          // 不携带 items/others 全量负载。
+          // 两段加载（ADR-0008 修订）第二段：probeMode 'only' → TTL 30min（原 ttlMin=0 先删共享
+          // 条目再重探，误伤浏览页缓存 + 每次挂载全量重探耗时显著，issue #59）；force=true 请求级
+          // 穿透（设置页强刷第四腿）——全量重探、失败保留旧缓存。响应只保留更新字段且含全部已装
+          // 项（latestError 项也在——client 的「检查未完成」依赖它），不携带 items/others 全量负载。
           await ctx.controller.ensureReady()
           const result = await d.listInstalledWithMeta(cfg(), {
             namespace: 'host',
@@ -631,6 +632,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             probeMode: 'only',
             icon: false,
             signal,
+            // 缺省不落键（字段缺席 = 未透传），true 才透传——测试钉「缺省 undefined」
+            ...(body.force === true ? { force: true } : {}),
           })
           payload = {
             updates: result.items.map((it) => ({

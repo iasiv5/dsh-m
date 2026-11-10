@@ -454,7 +454,7 @@ describe('host-api：method 响应', () => {
     assert.equal(calls.listInstalled[0].probeMode, 'full')
   })
 
-  it('installedUpdates：TTL=0 探测 + 七字段全量裁剪（两段加载第二段）', async () => {
+  it('installedUpdates：TTL=30 探测 + force 透传 + 七字段全量裁剪（两段加载第二段，ADR-0008 修订）', async () => {
     const installedResult = {
       items: [
         { pkg: 'pkg-a', name: 'A', version: '1.0.0', description: '', homepage: '', spec: '1.0.0', source: 'npm', dsh: true, path: '/x/a', outdated: true, latestVersion: '2.0.0' },
@@ -467,6 +467,10 @@ describe('host-api：method 响应', () => {
     const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installedUpdates' } })
     assert.equal(res.status, 200)
     assert.equal(calls.listInstalled[0].probeMode, 'only')
+    assert.equal(calls.listInstalled[0].force, undefined, '缺省不透传 force')
+    const resForce = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'installedUpdates', force: true } })
+    assert.equal(resForce.status, 200)
+    assert.equal(calls.listInstalled[1].force, true, 'force 透传 listInstalledWithMeta')
     assert.equal(res.body.updates.length, 2, 'latestError 项（outdated=false）也在 updates 内')
     for (const u of res.body.updates) {
       assert.deepEqual(new Set(Object.keys(u)), new Set(['pkg', 'latestVersion', 'latestTag', 'latestSha', 'outdated', 'latestError', 'latestErrorCode']))

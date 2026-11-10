@@ -19,6 +19,6 @@ test("0.9.85 关于卡链接行尾挂裸版本号（缺失态零占位、零悬�
 });
 
 test("0.9.84 pluginVersion 接线 SettingsTab（ping 单一事实源，不新增数据通路）", () => {
-  assert.ok(stSrc.includes("function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onOpsClearFinished, onOpsRemove, version })"), "SettingsTab 签名收 version 在（settings-tab.jsx）");
+  assert.ok(stSrc.includes("function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates, opsRecords, onOpsClearFinished, onOpsRemove, version })"), "SettingsTab 签名收 version 在（settings-tab.jsx；onForceUpdates 为 ADR-0008 修订第四腿，0.12.12）");
   assert.ok(/h\(SettingsTab, \{[^}]*version: pluginVersion/s.test(src), "调用点传 version: pluginVersion 在（MarketPanel，main.jsx 保留区）");
 });

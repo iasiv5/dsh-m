@@ -8,7 +8,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { installedViewModel, registrySourceKey } from '../src/client/installed-view.js'
+import { installedViewModel, registrySourceKey, sortDisabledLast } from '../src/client/installed-view.js'
 
 describe('installedViewModel', () => {
   it('githubRepo 优先级：registryGithub > githubRepo > spec 抽取 > null', () => {
@@ -188,5 +188,39 @@ describe('全部更新批量接线（issue #10）', () => {
   it('⑤ 收尾提示文案双字典在位（i18n.js zh/en 各一枚）', () => {
     const i18nSrc = readFileSync(new URL('../src/client/i18n.js', import.meta.url), 'utf8')
     assert.equal(i18nSrc.split('"installed.upgradeAll.selfLast"').length - 1, 2, 'zh/en 各一枚')
+  })
+})
+
+describe('sortDisabledLast：停用行沉底（ADR-0033，issue #53/#59）', () => {
+  // 行为断言直引纯函数（node --test 加载不了 .jsx，评审 R1-P4 在案）
+  const it0 = (pkg, userDisabled) => ({ pkg, userDisabled })
+  it('① 停用行沉底，非停用行组内保持原序', () => {
+    const sorted = sortDisabledLast([it0('a'), it0('off1', true), it0('b'), it0('off2', true), it0('c')])
+    assert.deepEqual(sorted.map((x) => x.pkg), ['a', 'b', 'c', 'off1', 'off2'])
+  })
+  it('② 无停用项原样返回（同序）', () => {
+    const items = [it0('a'), it0('b')]
+    assert.deepEqual(sortDisabledLast(items).map((x) => x.pkg), ['a', 'b'])
+  })
+  it('③ 全停用项原样返回（同序）', () => {
+    const items = [it0('off2', true), it0('off1', true)]
+    assert.deepEqual(sortDisabledLast(items).map((x) => x.pkg), ['off2', 'off1'])
+  })
+  it('④ 空数组安全', () => {
+    assert.deepEqual(sortDisabledLast([]), [])
+  })
+  it('⑤ userDisabled 缺席视为非停用；原数组不被改写', () => {
+    const items = [it0('off', true), it0('on')]
+    const sorted = sortDisabledLast(items)
+    assert.deepEqual(sorted.map((x) => x.pkg), ['on', 'off'])
+    assert.equal(items[0].pkg, 'off')
+    assert.equal(items[1].pkg, 'on')
+  })
+})
+
+describe('installed-tab.jsx 沉底调用点（ADR-0033，源串锚）', () => {
+  const tabSrc = readFileSync(new URL('../src/client/installed-tab.jsx', import.meta.url), 'utf8')
+  it('卡片渲染前调用 sortDisabledLast（先例形态：client-installed-updates.test.mjs :140）', () => {
+    assert.equal(tabSrc.split('sortDisabledLast(').length - 1 >= 1, true)
   })
 })

@@ -412,3 +412,109 @@ describe('composeEnablement：载体/子路径条目认领（issue #2，官方 c
     assert.equal(row.toggleable, true)
   })
 })
+
+describe('composeEnablement：userDisabled 派生（ADR-0033）', () => {
+  // (a) Bundle 退选：有补丁层但不在 bundles → 意图停用；有补丁层非 no-entry
+  // 退选后 loader 树无本行（bundle 未选 → 宿主不挂载），活体权威下 matches 为空 → enabled:false
+  it('(a) bundle 退选：不在 bundles + 有补丁层 → userDisabled:true，无 lockReason', () => {
+    const rows = composeEnablement({
+      items: [item('retired-pkg', SINGLE)],
+      loaderEntries: [],
+      bundles: [],
+      profileOverrides: [],
+    })
+    const row = rows.get('retired-pkg')
+    assert.equal(row.userDisabled, true)
+    assert.equal(row.enabled, false)
+    assert.equal(row.lockReason, undefined)
+    assert.equal(row.toggleable, true)
+  })
+
+  // (b) 行覆盖活体分支：loader 行 disabled + profileOverrides 命中 disabled:true
+  it('(b) 行覆盖：活体分支也查 overrideIndex → userDisabled:true', () => {
+    const rows = composeEnablement({
+      items: [item('row-off-pkg', SINGLE)],
+      loaderEntries: [entry('row-off-pkg', { disabled: true })],
+      bundles: ['row-off-pkg'],
+      profileOverrides: [{ id: 'demo', disabled: true }],
+    })
+    const row = rows.get('row-off-pkg')
+    assert.equal(row.userDisabled, true)
+    assert.equal(row.enabled, false)
+  })
+
+  // (c) dsh-ops 守护红例：在 bundles、无覆盖、loader 零匹配 → enabled:false 但 userDisabled 缺席
+  it('(c) 门控挡下：in bundles + 无覆盖 + loader 零匹配 → enabled:false 且 userDisabled 缺席', () => {
+    const rows = composeEnablement({
+      items: [item('gated-pkg', SINGLE)],
+      loaderEntries: [],
+      bundles: ['gated-pkg'],
+      profileOverrides: [],
+    })
+    const row = rows.get('gated-pkg')
+    assert.equal(row.enabled, false)
+    assert.equal('userDisabled' in row, false)
+    assert.equal(row.toggleable, true)
+  })
+
+  // (d) no-entry：不在 bundles、无 patchRows → 纯依赖，userDisabled 缺席
+  it('(d) no-entry：不在 bundles + patchRows 缺失 → userDisabled 缺席 + lockReason no-entry', () => {
+    const rows = composeEnablement({
+      items: [item('lib-only', undefined)],
+      loaderEntries: null,
+      bundles: [],
+      profileOverrides: [],
+    })
+    const row = rows.get('lib-only')
+    assert.equal('userDisabled' in row, false)
+    assert.equal(row.lockReason, 'no-entry')
+  })
+
+  // (e) CLI 分支回归：disabledByOverride 原语义不变 + userDisabled 同例共存
+  it('(e) CLI 分支：行覆盖 → enabled:false 且 userDisabled:true 共存', () => {
+    const rows = composeEnablement({
+      items: [item('cli-off-pkg', SINGLE)],
+      loaderEntries: null,
+      bundles: ['cli-off-pkg'],
+      profileOverrides: [{ id: 'demo', disabled: true }],
+    })
+    const row = rows.get('cli-off-pkg')
+    assert.equal(row.enabled, false)
+    assert.equal(row.userDisabled, true)
+  })
+
+  // (f) 多行包混合形态（评审 R2-P6）：首行 override disabled:true + 次行活体启用
+  // toggle.ts :234 只取 inserts[0] 写覆盖 + :249 setLivePluginDisabled 包级翻转——
+  // 重启后次行无覆盖被挂载 → enabled:true 与 userDisabled:true 并存（意图停用与活体正交）
+  it('(f) 多行包混合：首行覆盖 + 次行活体启用 → userDisabled:true 且 enabled:true 并存', () => {
+    const dual = { inserts: [{ id: 'dual-a', name: 'dual-pkg' }, { id: 'dual-b', name: 'dual-pkg' }], configRows: 0, readable: true }
+    const rows = composeEnablement({
+      items: [item('dual-pkg', dual)],
+      loaderEntries: [entry('dual-pkg', { state: 2 }), { id: 'dual-b', options: { name: 'dual-pkg' }, disabled: false, fiber: { state: 2 } }],
+      bundles: ['dual-pkg'],
+      profileOverrides: [{ id: 'dual-a', disabled: true }],
+    })
+    const row = rows.get('dual-pkg')
+    assert.equal(row.userDisabled, true)
+    assert.equal(row.enabled, true)
+  })
+
+  // 全形状 deepEqual 钉（形态 f 互证）：userDisabled 与 enabled/phase/toggleable 并存形状
+  it('全形状：混合形态下 userDisabled 与完整 enablement 形状并存', () => {
+    const dual = { inserts: [{ id: 'dual-a', name: 'dual-pkg' }, { id: 'dual-b', name: 'dual-pkg' }], configRows: 0, readable: true }
+    const rows = composeEnablement({
+      items: [item('dual-pkg', dual)],
+      loaderEntries: [entry('dual-pkg', { state: 2 }), { id: 'dual-b', options: { name: 'dual-pkg' }, disabled: false, fiber: { state: 2 } }],
+      bundles: ['dual-pkg'],
+      profileOverrides: [{ id: 'dual-a', disabled: true }],
+    })
+    assert.deepEqual(rows.get('dual-pkg'), {
+      pkg: 'dual-pkg',
+      enabled: true,
+      phase: 'active',
+      granularity: 'bundle',
+      toggleable: true,
+      userDisabled: true,
+    })
+  })
+})

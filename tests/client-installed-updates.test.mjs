@@ -245,3 +245,57 @@ describe('#35 summarizeUnsupportedReasons / skippedUnsupportedNotice', () => {
     assert.ok(!src.includes('skippedUnsupported"'), '退役键不得残留 lookup 直接量')
   })
 })
+
+describe('聚合口径排除意图停用（ADR-0033，issue #53/#59）', () => {
+  const mk = (pkg, over = {}) => ({ ...base, pkg, name: pkg.toUpperCase(), version: '1.0.0', ...over })
+  const out = (over = {}) => ({ outdated: true, ...over })
+
+  it('① 意图停用项不入 outdatedCount、不入 targets', () => {
+    const items = [
+      mk('on', out()),
+      mk('off', out({ userDisabled: true })),
+    ]
+    assert.equal(installedUpdateStats(items).outdatedCount, 1)
+    const batch = batchUpgradeOrder(items)
+    assert.equal(batch.targets.length, 1)
+    assert.equal(batch.targets[0].pkg, 'on')
+  })
+
+  it('② 门控挡下（enabled:false 无 userDisabled 键）照旧计入', () => {
+    const items = [mk('gated', out({ enabled: false }))]
+    assert.equal(installedUpdateStats(items).outdatedCount, 1)
+    assert.equal(batchUpgradeOrder(items).targets.length, 1)
+  })
+
+  it('③ 加载失败（phase failed）与 no-entry 纯依赖照旧计入', () => {
+    const items = [mk('failed', out({ phase: 'failed' })), mk('deplib', out({ lockReason: 'no-entry' }))]
+    assert.equal(installedUpdateStats(items).outdatedCount, 2)
+    assert.equal(batchUpgradeOrder(items).targets.length, 2)
+  })
+
+  it('④ self（dsh-m）照旧收尾，即便列表里还有停用项', () => {
+    const items = [mk('off', out({ userDisabled: true })), mk('dsh-m', out())]
+    const batch = batchUpgradeOrder(items)
+    assert.equal(batch.targets.length, 1)
+    assert.equal(batch.targets[0].pkg, 'dsh-m')
+    assert.equal(batch.selfIncluded, true)
+  })
+
+  it('⑤ userDisabled:false 显式值视为非停用', () => {
+    const items = [mk('on2', out({ userDisabled: false }))]
+    assert.equal(installedUpdateStats(items).outdatedCount, 1)
+    assert.equal(batchUpgradeOrder(items).targets.length, 1)
+  })
+
+  it('⑥ 混合形态钉子（评审 R2-P6）：userDisabled:true 且 enabled:true 且 outdated 仍被排除', () => {
+    const items = [mk('weird', out({ enabled: true, userDisabled: true }))]
+    assert.equal(installedUpdateStats(items).outdatedCount, 0)
+    assert.equal(batchUpgradeOrder(items).targets.length, 0)
+  })
+
+  it('⑦ incompleteCount 不受本役影响（latestError 计数口径不变）', () => {
+    const items = [mk('err', out({ userDisabled: true, latestError: '更新检查未完成：超时', latestErrorCode: 'timeout' }))]
+    assert.equal(installedUpdateStats(items).incompleteCount, 1)
+    assert.equal(installedUpdateStats(items).outdatedCount, 0)
+  })
+})

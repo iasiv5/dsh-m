@@ -26,7 +26,7 @@ function configStatusLabel(status) {
   return lookup(`settings.status.${status || "loading"}` || "settings.status.loading");
 }
 
-function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onOpsClearFinished, onOpsRemove, version }) {
+function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates, opsRecords, onOpsClearFinished, onOpsRemove, version }) {
   const reg = useAsync((force) => api("registry", force ? { force: true } : {}), []);
   const cfgState = useAsync(() => api("registry-config"), []);
   const [busy, setBusy] = useState(false);
@@ -57,6 +57,9 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, opsRecords, onO
       await reloadRegistryState().catch(() => undefined);
       // 0.9.45 P2（ADR-0013）：强刷穿透探测缓存——市场两区以 force 重取（core peek 旧值兜底 + 全页重探）
       onForceMarket?.();
+      // ADR-0008 修订第四腿：fire-and-forget 预热已装更新缓存（installedUpdates force 穿透），
+      // 已装页下次挂载 TTL 内即时命中；在途时用户切到已装页会并发重探一次（与双挂载行为同形）
+      onForceUpdates?.();
       notify({ kind: "ok", text: lookup("registry.refreshed"), needsRestart: false });
     } finally {
       setBusy(false);

@@ -33,6 +33,8 @@ export interface PluginEnablement {
   /** 单 insert 行插件 → 行覆盖；多行/不可解析 → Bundle 选择 */
   granularity: 'row' | 'bundle'
   toggleable: boolean
+  /** 意图停用（ADR-0033）：Bundle 退选 ∪ 行覆盖 disabled:true；仅 true 落键（沿 community:true 省略惯例）。 */
+  userDisabled?: true
   lockReason?: 'protected' | 'self' | 'no-entry'
 }
 
@@ -140,6 +142,11 @@ export function composeEnablement(input: ComposeEnablementInput): Map<string, Pl
     const matches = loaderEntries !== null ? findLoaderEntries(loaderEntries, pkg, ownedIds) : []
     const entry = matches[0] ?? null
     const inBundles = bundles.includes(pkg)
+    // 用户意图停用的持久层信号（ADR-0033）：行覆盖 disabled:true（活体/CLI 两分支共用）；
+    // hasPatchLayer 提前（Bundle 退选判据要用了）——有补丁层却不在 bundles = 用户退选，非纯依赖
+    const disabledByOverride = rowIds.some((id) => overrideIndex.get(id) === true)
+    const hasPatchLayer = Boolean(item.patchRows?.readable && item.patchRows.inserts.length)
+    const userDisabled = (!inBundles && hasPatchLayer) || disabledByOverride
 
     let enabled: boolean
     let phase: LivePhase = null
@@ -153,13 +160,10 @@ export function composeEnablement(input: ComposeEnablementInput): Map<string, Pl
       if (liveRow !== undefined) phase = mapPhase(liveRow.fiber)
     } else {
       // CLI 无 loader 形态：在 bundles 且其补丁行无 disabled 覆盖 → 视为启用
-      const disabledByOverride = rowIds.some((id) => overrideIndex.get(id) === true)
       enabled = inBundles && !disabledByOverride
     }
 
     let lockReason: PluginEnablement['lockReason']
-    // 有补丁层却不在 bundles = Bundle 退选（dsh-m / 官方插件页可再开），不是纯依赖
-    const hasPatchLayer = Boolean(item.patchRows?.readable && item.patchRows.inserts.length)
     if (pkg === 'dsh-m') lockReason = 'self'
     else if (PROTECTED_MODULES.includes(pkg)) lockReason = 'protected'
     else if (entry === null && !inBundles && !hasPatchLayer) lockReason = 'no-entry'
@@ -171,6 +175,8 @@ export function composeEnablement(input: ComposeEnablementInput): Map<string, Pl
       phase,
       granularity,
       toggleable: lockReason === undefined,
+      // 意图停用仅 true 落键（沿 community:true 省略惯例）——门控挡下/失败/no-entry 永不构成
+      ...(userDisabled ? { userDisabled: true } : {}),
       ...(lockReason === undefined ? {} : { lockReason }),
     })
   }

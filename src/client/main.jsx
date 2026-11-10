@@ -816,6 +816,8 @@ function MarketPanel({ onClose }) {
           version: pluginVersion,
           onRegistryChanged,
           onForceMarket: () => marketReloadAll(true),
+          // ADR-0008 修订第四腿：穿透已装更新探测缓存（force 全量重探、失败不动缓存），预热共享内存缓存
+          onForceUpdates: () => { void api("installedUpdates", { force: true }).catch(() => undefined); },
           opsRecords: opRecords,
           onOpsClearFinished: () => {
             opsStore.clearFinished();

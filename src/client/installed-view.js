@@ -58,3 +58,12 @@ export function registrySourceKey(data) {
   };
   return map[data.source] || data.source;
 }
+
+/** 停用行沉底（ADR-0033，issue #53/#59）：意图停用（userDisabled）排到列表尾部，
+ * 其余保持原相对顺序（稳定分区）。纯展示排序——不改变集合、不影响 batchUpgradeOrder
+ * （集合相同顺序无关）；行级「更新」按钮与徽标不受此限。 */
+export function sortDisabledLast(items) {
+  return [...(Array.isArray(items) ? items : [])].sort(
+    (a, b) => (a?.userDisabled === true ? 1 : 0) - (b?.userDisabled === true ? 1 : 0),
+  );
+}

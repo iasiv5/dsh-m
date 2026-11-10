@@ -7,7 +7,7 @@ const h = React.createElement;
 const { useState } = React;
 import { api } from "./hooks.js";
 import { lookup } from "./i18n.js";
-import { installedViewModel } from "./installed-view.js";
+import { installedViewModel, sortDisabledLast } from "./installed-view.js";
 import { toggleViewModel, toggleNoticeKeys } from "./toggle-view.js";
 import { applyInstalledUpdates, batchUpgradeOrder, summarizeBatch, skippedUnsupportedNotice } from "./installed-updates.js";
 import { activeMutateOp, activeProgressOp, mutateStateForPkg } from "./operations-view.js";
@@ -111,6 +111,8 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
   if (error) return h("div", { className: "dshm-err" }, lookup("failed.read", { err: error }));
   // 两段加载（ADR-0008）：items 指向 merged 视图；updates 未到时即第一段原样（卡片暂无更新提示，常态安静）
   const items = applyInstalledUpdates((data && data.items) || [], updateRows);
+  // ADR-0033：停用行沉底（纯展示排序，集合不变——batch 仍取原 items，顺序无关）
+  const visibleItems = sortDisabledLast(items);
   // issue #10 修复③：批量目标定序单源（dsh-m 收尾）——按钮计数/可见性/批量循环共用一份
   const batch = batchUpgradeOrder(items);
   if (!items.length) return h("div", { className: "dshm-empty" }, `${lookup("installed.empty")} (${data.profileDir})`);
@@ -177,7 +179,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
     h(
       "div",
       { className: "dshm-cards" },
-      items.map((it) => {
+      visibleItems.map((it) => {
         const vm = installedViewModel(it);
         // 0.11.10：逐行在途派生——disabled 为同包任一在途即禁用；busy 按在途操作 kind 区分（见 mutateStateForPkg）
         const mut = mutateStateForPkg(ops.records, it.pkg);

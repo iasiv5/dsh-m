@@ -45,7 +45,9 @@ export function installedUpdateStats(items) {
   let incompleteCount = 0
   for (const it of arr) {
     if (!it || typeof it !== 'object') continue
-    if (it.outdated === true) outdatedCount += 1
+    // ADR-0033（issue #53/#59）：意图停用（Bundle 退选 ∪ 行覆盖）不入红点；门控挡下/
+    // 加载失败/no-entry/self 照旧计入——userDisabled 是唯一排除判据，无附加守卫
+    if (it.outdated === true && it.userDisabled !== true) outdatedCount += 1
     if (typeof it.latestError === 'string' && it.latestError !== '') incompleteCount += 1
   }
   return { outdatedCount, incompleteCount }
@@ -71,6 +73,8 @@ export function batchUpgradeOrder(items) {
   const unsupported = []
   for (const it of arr) {
     if (!it || typeof it !== 'object' || it.outdated !== true) continue
+    // ADR-0033：意图停用不入批量升级目标（红点同口径）；行级「更新」按钮不受此限
+    if (it.userDisabled === true) continue
     if (typeof it.pkg !== 'string' || it.pkg === '') continue
     if (it.upgradePath === 'unsupported') {
       unsupported.push(it)

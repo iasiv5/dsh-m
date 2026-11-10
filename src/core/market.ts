@@ -269,6 +269,9 @@ export interface InstalledResult {
 
 /** 探测全局 deadline 缺省（毫秒）；ADR-0024 起供 market-mutation 跨模块取用。 */
 export const DEFAULT_DEADLINE_MS = 60_000
+/** 已装页第二段（'only'）探测 TTL（分钟）。ADR-0008 修订：原 0（先删共享条目全量重探）→ 30，
+ * 对齐 dshmarket UPDATES_TTL_MS；手动穿透走 force（请求级跳过缓存捷径），不用 ttlMin=0（在案禁令）。 */
+export const INSTALLED_UPDATES_TTL_MIN = 30
 /** withLatest 上限 = 96（0.7.0 Task 7：50→96，opt-in 页大小；默认页 24、0.9.28 起 32，探测负载仍低于 0.6.x 默认 50——
  * 96/页冷缓存最坏情况被 60s deadline 框死为 latestError 不阻塞列表，Q46「探测对象=页面条目」不动；
  * 人工验收阈值：96/页冷缓存 latestError > 20% 即回退默认页大小并重议）。 */
@@ -991,12 +994,13 @@ export async function listInstalledWithMeta(
   // ADR-0026 投影落点②：健康臂在 registryId 写入后装配（catalog 判定可达）
   for (const it of items) stampUpgradeProjection(it)
   // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
-  // 'only' 面板第二段 ttlMin=0 永远新鲜（readLatestCache(key,0) 先删共享条目再重探：host ns 下浏览页/
-  // 工具的 TTL 命中被刷新为更新值，预算消耗速率上升、上限不变，超限走 latestError 降级）。
+  // 'only' 面板第二段 TTL 30min（ADR-0008 修订：原 ttlMin=0 先删共享条目再重探，误伤浏览页/工具
+  // TTL 缓存 + 每次挂载全量重探耗时显著（issue #59）；30min 对齐 dshmarket UPDATES_TTL_MS；
+  // 手动穿透走 force——peek 不删除纪律，latest-cache 在案约束「不得以 ttlMin=0 当 force 穿透用」）。
   if ((opts.probeMode ?? 'full') !== 'none') {
     // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
     await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-    await probeLatest(items, { merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? 0 : Math.max(0, cfg.cacheTtlMin ?? 60) }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+    await probeLatest(items, { merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? INSTALLED_UPDATES_TTL_MIN : Math.max(0, cfg.cacheTtlMin ?? 60), force: opts.probeMode === 'only' ? opts.force === true : false }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
   }
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
@@ -1023,7 +1027,7 @@ function matchInstalled(
 /** 已装页 latest 探测（Q46 已装页豁免，但 GitHub 计入 request 预算 + 宿主滚动窗口）。 */
 async function probeLatest(
   items: InstalledItem[],
-  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number; lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined },
+  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number; force?: boolean; lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined },
   d: MarketDeps,
   rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
 ): Promise<void> {
@@ -1037,7 +1041,9 @@ async function probeLatest(
         ? latestCacheKey(rt.namespace, 'npm-only', { source: 'npm', id: item.pkg, npm: item.pkg })
         : null
     if (cacheKey) {
-      const cached = readLatestCache(cacheKey, ctx.ttlMin)
+      // force：跳过缓存捷径全量重探（ADR-0008 修订）；失败臂只标 latestError 不动缓存——
+      // 旧值保留（readLatestCache 过期删除语义不经过，peek 纪律同源），无空徽标窗口
+      const cached = ctx.force === true ? null : readLatestCache(cacheKey, ctx.ttlMin)
       if (cached) {
         applyProbe(item, cached)
       } else if (rt.remaining() > 0) {

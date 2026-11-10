@@ -570,22 +570,34 @@ describe('listInstalledWithMeta probeMode', () => {
     assert.equal(res.items[0].latestVersion, undefined)
   })
 
-  it("probeMode 'only'：缓存预热仍强制重探（ttlMin=0 穿透）", async () => {
+  it("probeMode 'only'：TTL 30min 内命中缓存（秒回零探测，ADR-0008 修订）", async () => {
     const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
-    let stub = '2.0.0'
-    const probeDeps = {
+    await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(calls.npm.length, 1)
+    const res = await listInstalledWithMeta(cfg, { probeMode: 'only' }, deps)
+    assert.equal(calls.npm.length, 1, "TTL 内 'only' 不得重复探测")
+    assert.equal(res.items[0].latestVersion, '2.0.0')
+  })
+
+  it("probeMode 'only' + force：全量重探，失败保留旧缓存条目（ADR-0006 peek 纪律）", async () => {
+    const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
+    await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(calls.npm.length, 1)
+    // force + 探测失败：npmLatest 抛错 → 响应 latestError，但缓存旧值不得被删（先删后探禁令）
+    const failDeps = {
       ...deps,
       npmLatest: async (pkg) => {
         calls.npm.push(pkg)
-        return { version: stub, integrity: 'sha512-x', tarball: `https://example.com/${pkg}.tgz` }
+        throw new Error('registry unreachable')
       },
     }
-    await listInstalledWithMeta(cfg, {}, probeDeps)
-    assert.equal(calls.npm.length, 1)
-    stub = '3.0.0'
-    const res = await listInstalledWithMeta(cfg, { probeMode: 'only' }, probeDeps)
-    assert.equal(calls.npm.length, 2, "'only' 应穿透缓存重新探测")
-    assert.equal(res.items[0].latestVersion, '3.0.0')
+    const res = await listInstalledWithMeta(cfg, { probeMode: 'only', force: true }, failDeps)
+    assert.ok(res.items[0].latestError, 'force 重探失败应标 latestError')
+    // 红侧核心：失败后旧缓存条目仍在——下一次无 force 调用 TTL 内命中，拿到旧值 2.0.0
+    const again = await listInstalledWithMeta(cfg, { probeMode: 'only' }, deps)
+    assert.equal(calls.npm.length, 2, 'force 例本身全量重探一次')
+    assert.equal(again.items[0].latestVersion, '2.0.0', '失败后旧缓存保留，TTL 命中拿到旧值')
+    assert.equal(calls.npm.length, 2, 'again 走缓存零新增探测')
   })
 
   it("缺省 'full'：TTL 内二次调用走缓存", async () => {
