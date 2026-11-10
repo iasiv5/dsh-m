@@ -4,7 +4,18 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+
+/**
+ * dsh-tools 0.2.2-rc.1 运行时 register 支持 (definition, options)（lib/index.js :433，options.when
+ * 步时激活 + 装配期可见性过滤 :533/:551），类型声明滞后为单参（types/index.d.ts:636）——
+ * issue #57 / ADR-0035 会话开关经 when 谓词门控，此处按运行时契约窄化类型。
+ * 8 个 dshm_* 工具全部经此注册（grep「registerGated(ctx」应恰 8 处）。
+ */
+function registerGated(ctx: Context, definition: ReturnType<typeof defineTool>, when: () => boolean): void {
+  ;(ctx.tools.register as unknown as (d: ReturnType<typeof defineTool>, o: { when: () => boolean }) => void).call(ctx.tools, definition, { when })
+}
 import { installTimeoutMs } from './core/env.js'
+import { SESSION_PROMPT_SECTION_NAME, SESSION_PROMPT_SECTION_ORDER, resolveSessionPromptText, sessionToolsEnabled } from './core/session-gate.js'
 import {
   listInstalledWithMeta,
   listMarket,
@@ -148,7 +159,7 @@ export function registerTools(
   const ensureService = deps.ensureService
   const routeGate = deps.routeWebMutation ?? routeWebMutation
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_search',
     description:
       'Search the DSH plugin marketplace (dsh-m) and show clickable plugin cards. ALWAYS call this instead of web_search or bash when the user wants to find/recommend/browse DSH plugins (插件). Call EXACTLY ONCE per user message; extract a real keyword (主题, 搜索) rather than pasting the whole sentence. Dual catalog: ~23 hand-curated 精选 entries plus a 6,000+ community catalog — default searches all; pass source="community" or "primary" to zone in. Returns 10 cards by default; use offset (take nextOffset from the result) for more batches. Cards may carry audience="internal" (作者自用; do not proactively recommend to general users unless the user names one or asks about internal rollout) and decoupled=true (版本无关, survives DSH upgrades without per-release adaptation). After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
@@ -249,9 +260,9 @@ export function registerTools(
         })),
       })
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_list',
     description:
       'List plugins installed in the current DSH profile (web or desktop), annotated with 市场安装/非市场安装, sources, and outdated flags. Use when the user asks what plugins are installed or wants to manage local plugins.',
@@ -296,9 +307,9 @@ export function registerTools(
         })),
       })
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_install',
     description:
       'Install a plugin from the dsh-m registry into the current web profile after the user names one (装 dsh-skins / 安装 web-search). Pass the id from dshm_search results. npm 源锁定最新精确版本，github 源锁定 commit SHA。安装前做 peer 兼容预检（只检 @deepseek-ai/dsh(-*)；github 源不预检）：不兼容时返回结构化结果，向用户说明风险，用户确认后带 force: true 重试（force 等价 forceIncompatible）。Do not print CLI commands. After success, tell the user it needs a restart of dsh web, and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the install succeeded.',
@@ -351,9 +362,9 @@ export function registerTools(
         throw err
       }
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_toggle',
     description:
       'Toggle a DSH plugin on/off (切换运行状态). Pass pkg from dshm_list and enabled (true=启用 / false=停用). 可逆操作：默认先与用户确认；用户同一句消息已明确表达（如「把 skins 关掉」）可直接执行。结果 applied=live 时告知已即时生效；restart-required 时提示需重启并提供 dshm_restart。受保护插件（dsh-m 自身与官方宿主命脉）会被拒绝。',
@@ -388,9 +399,9 @@ export function registerTools(
       }
       return cloneJson(await toggle(target, args.enabled, { getService: getService as never, channel: 'host-tool', profileDir: profile.dir, profileName: profile.name }))
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_uninstall',
     description:
       'Uninstall a DSH plugin from the current DSH profile by package name (pkg from dshm_list). Confirm with the user BEFORE calling. Does not delete plugin data; reports leftover paths instead.',
@@ -424,9 +435,9 @@ export function registerTools(
       if (route.route === 'delegate') return desktopUninstallArm()
       return cloneJson(await m.uninstallPlugin(target, cfg, { namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_outdated',
     description:
       'Check installed DSH plugins for newer versions (npm latest / GitHub HEAD). Use when the user asks about updates or 升级. Read-only.',
@@ -482,9 +493,9 @@ export function registerTools(
         incompleteCount,
       })
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_upgrade',
     description:
       'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade succeeded.',
@@ -532,9 +543,9 @@ export function registerTools(
         throw err
       }
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
-  ctx.tools.register(defineTool({
+  registerGated(ctx, defineTool({
     name: 'dshm_restart',
     description:
       'Restart DSH web so newly installed/uninstalled/upgraded plugins take effect. ONLY call after the user agrees (用户同意重启后). DSH Web reconnects in the background after the service comes back.',
@@ -563,7 +574,7 @@ export function registerTools(
       const last = await readLastRestart().catch(() => null)
       return { ...res, ...(last ? { lastRestart: last } : {}) }
     },
-  }))
+  }), () => sessionToolsEnabled(cfg))
 
   ctx.inject(['systemPrompt'], (c) => {
     const prompt = (c as unknown as {
@@ -572,18 +583,11 @@ export function registerTools(
       }
     }).systemPrompt
     prompt.section({
-      name: 'tool:dshm',
-      order: 211,
-      text: [
-        'Finding / recommending / browsing DSH plugins (插件) in the personal marketplace: you MUST call dshm_search, never web_search or bash. One call per user message; extract a real keyword. After cards appear, reply with AT MOST one short sentence. Do not print install commands.',
-        `Plugin categories: ${Object.entries(PRIMARY_CATEGORY_LABELS).map(([k, v]) => `${k}=${v}`).join(', ')}.`,
-        'Install only after the user names a card: dshm_install with its id. Then one short sentence mentioning the restart requirement; offer dshm_restart.',
-        'For installed plugins, call dshm_list / dshm_outdated. Upgrade only after the user confirms which one: dshm_upgrade. Uninstall only after confirmation: dshm_uninstall. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_install/dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade or install succeeded.',
-        'dshm_toggle switches a plugin on/off: confirm first unless the user already said it in the same message (把 skins 关掉 → execute directly); report live vs restart-required accordingly. ',
-        'dshm_restart only after the user agrees to restart; afterwards tell them to refresh once the page recovers.',
-        // issue #41 更正（0.9.8 起能力表已放开 upgrade/uninstall/self-upgrade，旧句反向误导）——仅 restart 仍拒绝
-        'dsh-m operates on the current host profile (web or desktop, per ping.profile): on desktop install/upgrade/uninstall/self-upgrade/toggle all work via the official plugin manager; only restart is refused with guidance — relay it instead of retrying.',
-      ].join(' '),
+      name: SESSION_PROMPT_SECTION_NAME,
+      order: SESSION_PROMPT_SECTION_ORDER,
+      // issue #57 / ADR-0035：text 改函数——每次装配求值（dsh-system-prompt :389），关闭态返回空段被
+      // renderPrompt 过滤（:119）；级联真值表单一事实源在 session-gate，文本 R1 主人已定稿。
+      text: () => resolveSessionPromptText(cfg),
     })
   })
 }

@@ -128,6 +128,10 @@ export interface RegistryConfig {
   communityCatalog?: boolean
   /** 社区清单 npm 版本 pin（可选，精确 semver；Task 5 透传社区 loader） */
   communityCatalogPin?: string
+  /** 会话工具开关（issue #57 / ADR-0035；undefined = 开） */
+  sessionTools?: boolean
+  /** 提示词段开关（issue #57 / ADR-0035；undefined = 开，tools off 时级联不生效） */
+  sessionPrompt?: boolean
 }
 
 export function registrySummary(state: RegistryState): RegistrySummary {

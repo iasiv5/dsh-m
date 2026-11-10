@@ -17,7 +17,7 @@ const pkg = require('../package.json') as { name: string; version: string }
 
 export const name = 'dshm'
 
-// dshm_* 七个工具（src/tools.ts）
+// dshm_* 八个工具（src/tools.ts）
 export const inject: string[] = ['tools']
 
 export interface Config {
@@ -26,6 +26,10 @@ export interface Config {
   cacheTtlMin?: number
   communityCatalog?: boolean
   communityCatalogPin?: string
+  /** issue #57 / ADR-0035：会话工具开关（undefined = 开） */
+  sessionTools?: boolean
+  /** issue #57 / ADR-0035：提示词段开关（undefined = 开；tools off 时级联强制不注入） */
+  sessionPrompt?: boolean
 }
 
 /**
@@ -44,6 +48,8 @@ export const Config: Schema<Config> = Schema.object({
   cacheTtlMin: live(Schema.number().default(60).description('registry 缓存时长（分钟）')),
   communityCatalog: live(Schema.boolean().default(true).description('社区清单：awesome-dsh-plugin 全量社区目录叠加进市场（只读，live 生效）')),
   communityCatalogPin: live(Schema.string().description('社区目录版本锁定：精确 semver（如 2026.928.1），空值跟随 latest')),
+  sessionTools: live(Schema.boolean().default(true).description('会话工具：关闭后新会话不再提供 dshm_* 工具（即时生效）；市场页面与 dshm 命令行不受影响')),
+  sessionPrompt: live(Schema.boolean().default(true).description('会话提示词引导：关闭后新会话不再注入 dshm 用法段，工具仅在显式要求时使用；会话工具关闭时本项不生效')),
 })
 
 export function apply(ctx: Context, config: Config): void {

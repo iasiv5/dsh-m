@@ -95,6 +95,17 @@ dshm restart --yes
 
 GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；独立 CLI 则操作 web profile，唯一例外是只读体检 `dshm doctor --profile desktop`，其余命令的 `--profile desktop` 会被拒绝——Desktop 插件管理走官方插件管理页。`--force` 可在用户已确认 peer 不兼容风险后用于安装或升级。`registry`、`search`、`outdated` 在清单不可用时明确失败，`list` 仍可列已装插件。完整参数与运行策略见[设计文档](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)。
 
+### 会话开关（dshm_* 工具与提示词注入）
+
+设置页两个开关，均默认开启、**新开会话即时生效**（已发生会话的上下文不追溯清洗）：
+
+| 设置 | 开（缺省） | 关 |
+|---|---|---|
+| 会话工具 `sessionTools` | 8 个 `dshm_*` 工具随对话可用 | 新会话不再提供这些工具（并级联关掉提示词引导）；市场页面与 `dshm` CLI 不受影响 |
+| 会话提示词 `sessionPrompt` | 系统提示词含 dshm 用法引导段 | 引导段不注入——工具仍在，但仅在显式要求时使用，模型不再主动接管插件类请求 |
+
+三个可达态：全开（缺省）/ 仅工具（只关提示词）/ 全关。注意两点：会话工具关闭期间，跨插件的会话内安装/升级不可用，可走市场页面按钮或重新打开开关；settings 形态未识别的老宿主上，开关变化在插件重载后生效。
+
 ## 兼容与常见问题
 
 | DSH Web 代际 | 设置通路 | 核验情况 |

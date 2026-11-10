@@ -425,3 +425,31 @@ describe('registry-controller：0.9.0 双 profile', () => {
     }
   })
 })
+
+describe('registry-controller：session 开关字段 watch 同步（issue #57 / ADR-0035）', () => {
+  it('externalWrite 广播 → controller.config 原地更新（仅落键；registryUrl 未变 early-return 路径仍同步）', async () => {
+    const fs = fakeStore()
+    const controller = createRegistryController({})
+    controller.attachStore(fs.store)
+    await controller.snapshot()
+    assert.equal(controller.config.configStatus ?? undefined, undefined) // config 是纯 RegistryConfig，无状态键
+    assert.equal(controller.config.sessionTools, undefined) // 基线：缺省不物化
+
+    // A：placement 关键态——registryUrl 未变（handleExternalWatch 走 early-return 路径）也必须同步
+    fs.externalWrite({ sessionTools: false })
+    await sleep(30) // fixture 广播走 queueMicrotask（:45/:63），同步断言落空
+    assert.equal(controller.config.sessionTools, false)
+
+    // B：仅落键——广播不含 session 字段，不得物化 undefined 键
+    fs.externalWrite({})
+    await sleep(30)
+    assert.equal(controller.config.sessionTools, false)
+    assert.equal('sessionPrompt' in controller.config, false)
+
+    // C：双开
+    fs.externalWrite({ sessionTools: true, sessionPrompt: true })
+    await sleep(30)
+    assert.equal(controller.config.sessionTools, true)
+    assert.equal(controller.config.sessionPrompt, true)
+  })
+})

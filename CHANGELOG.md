@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.14 特性：会话面双开关——dshm_* 工具与提示词段可控注入（issue #57，ADR-0035）
+
+- **背景**：issue #57（PrimaryFantasty）：8 个 `dshm_*` 会话工具与 `tool:dshm` 系统提示词段默认注入且不可关闭——变更面（安装/升级/卸载常驻会话「容易开缺口」）与打扰面（全话题行为引导段）都没有开关。
+- **做法**：①设置页新增 `sessionTools` / `sessionPrompt` 两个开关（缺省开，live 生效：关闭后**新装配**即不再注入，新开会话干净）；②级联规则：会话工具关闭 ⇒ 提示词段强制不注入（三个可达态：全开/仅工具/全关，均自洽）；③提示词段瘦身（约 230 词 → 60 词）：触发规则、确认纪律、needsBuildApproval 协议在 8 个工具 description 里已逐条携带，段内只留路由强化与 web/desktop profile 差异一句（去重依据=工具 description 现场）；④实现零 disposer 零重注册：工具经 `when` 谓词逐步求值、段 text 改函数每次装配求值，settings 变更经 watch 链原地同步共享 config（三代 settings 通路，未知形态降级为重载后生效）。
+- **测试**：全量 npm test + typecheck 0（session-gate 真值表/文本锚/接线 11 例、registry-controller watch 同步仅落键 1 例、关键接线锚三处单点变异自证）。
+- **兼容性**：提示词段文本为**有意变更**（缺省升级后新会话即见瘦身版，路由强化保留）；两新字段纯新增面（缺省开=行为不变）；市场 UI（/dshm HTTP 通路）与 dshm CLI 完全不受影响；`sessionTools=false` 时跨插件的会话内安装/升级不可用（官方 plugin manager 或重开开关兜底）；已发生会话的上下文不追溯清洗——以「新会话干净」为准并在设置描述注明；settings 形态未识别的老宿主上开关变化需插件重载后生效。回退面：revert 实现提交 + 版本递增。
+
 ### 0.12.13 修复：鸿蒙等无 `dsh` PATH 宿主安装必然失败——载体入口识别 + web 执行能力门（issue #65，ADR-0034）
 
 - **背景**：issue #65（ak22117）：鸿蒙端侧 DSHM（profile `ondevice`）安装必败 `spawn dsh EACCES`，回滚也失败并误报「profile 可能需要人工修复」。根因（对比分析锁死）：dshmarket 1.73.5（#975）起识别官方桌面载体入口 `@deepseek-ai/dsh-desktop-host/lib/cli.js`（端侧宿主的 `argv[1]` 即此形态），dsh-m 的 `dshArgv` 无此分支 → 落 PATH 回退 `spawn('dsh')`，鸿蒙沙箱下被拦；同机 dshmarket 可装是差集实证。
@@ -1043,6 +1050,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.14 Feature: session-surface dual switches — controllable injection for dshm_* tools and the prompt section (issue #57, ADR-0035)
+
+- **Background**: issue #57 (PrimaryFantasty): the 8 `dshm_*` session tools and the `tool:dshm` system-prompt section were injected by default with no way to turn them off — a mutation surface (install/upgrade/uninstall permanently resident in sessions, "opens a gap") and an interference surface (all-topic behavioral steering) with no switch.
+- **What changed**: ① two settings switches `sessionTools` / `sessionPrompt` (default on, live: once turned off, new assemblies stop injecting — a newly opened session is clean); ② cascade: tools off ⇒ prompt section forcibly off (three coherent states: all on / tools only / all off); ③ prompt section slimmed (~230 → 60 words): trigger rules, confirmation discipline and the needsBuildApproval protocol already live verbatim in the 8 tool descriptions, so the section keeps only a routing reinforcement and the web/desktop profile note (dedup evidence = the tool description texts on site); ④ zero disposers, zero re-registration: tools gate via a per-step `when` predicate, the section text is a per-assembly function, and settings changes sync in place through the watch chain (all three settings generations; unrecognized shapes degrade to plugin-reload semantics).
+- **Tests**: full `npm test` + typecheck 0 (11 session-gate truth-table/text-anchor/wiring cases, 1 registry-controller watch-sync case, three single-point mutation proofs on the key wiring anchors).
+- **Compatibility**: the prompt-section text change is **intentional** (sessions opened after upgrading see the slim section; the routing reinforcement is retained); the two fields are purely additive (default on = unchanged behavior); the market UI (/dshm HTTP path) and the dshm CLI are unaffected; with `sessionTools=false`, in-conversation install/upgrade across plugins is unavailable (the official plugin manager or re-enabling the switch covers it); already-open sessions are not retroactively cleaned — "new sessions are clean" is the contract, noted in the settings description; on hosts with an unrecognized settings shape, switch changes take effect after the plugin reloads. Rollback: revert the implementation commit + version bump.
 
 ### 0.12.13 Fixed: installs always fail on hosts without a PATH `dsh` (HarmonyOS ondevice) — carrier-entry launch identity + web exec capability gate (issue #65, ADR-0034)
 

@@ -238,6 +238,11 @@ export function createRegistryController(
   function handleExternalWatch(next: RegistryConfig): Promise<void> {
     if (disposed) return Promise.resolve()
     syncCommunityFields(next)
+    // issue #57 / ADR-0035：session 开关字段仅落键同步（undefined 不物化）——
+    // 必须在 lastSelfWrite/registryUrl early-return 之前：ready 态地址未变时 those paths 短路，
+    // session 字段变更不带 registryUrl 变化，绕过即永不同步（Task 5 M2 变异锚）
+    if (next.sessionTools !== undefined) config.sessionTools = next.sessionTools
+    if (next.sessionPrompt !== undefined) config.sessionPrompt = next.sessionPrompt
     const raw = trimAddress(next.registryUrl)
     if (lastSelfWrite !== null && raw === lastSelfWrite) {
       lastSelfWrite = null
