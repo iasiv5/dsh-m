@@ -419,15 +419,19 @@ button.dshm-dshchip:disabled{cursor:default;opacity:.75}
 .dshm-dot.err{color:#ef4444}
 .dshm-dot.idle{color:#9ca3af}
 .dshm-dot.busy{color:#f59e0b}
-.dshm-switch{position:relative;display:inline-flex;align-items:center;width:34px;height:19px;border-radius:10px;background:var(--dsw-alias-fill-secondary,#d1d5db);cursor:pointer;transition:background .15s;flex:none;margin-left:auto}
-/* 热区扩展（2026-10-13 UX 修复）：视觉 34×19 不变，可点面积经伪元素扩到 46×31——
+.dshm-switch{position:relative;display:inline-flex;align-items:center;width:36px;height:20px;border-radius:999px;background:var(--dsw-alias-border-l3,#d1d5db);cursor:pointer;transition:background .12s;flex:none;margin-left:auto}
+/* 热区扩展（2026-10-13 UX 修复）：视觉 36×20 不变，可点面积经伪元素扩到 48×32——
    小目标 + 整卡大目标相邻的误触半径收敛；开关距卡边 12px，-6px 外溢不越出自身卡片 */
-.dshm-switch::before{content:"";position:absolute;inset:-6px;border-radius:14px}
+.dshm-switch::before{content:"";position:absolute;inset:-6px;border-radius:16px}
 .dshm-switch input{display:none}
+/* on 轨道/旋钮三 token 与原生 Switch（dsh-client-ui-primitives）逐值同源：轨道 on=
+   brand-primary、旋钮 on=label-primary-foreground、旋钮 off=switch-thumb——深色模式的
+   白轨黑钮反色由主题调色板自动给出，无需媒体查询（2026-11-11 主人验收对齐） */
 .dshm-switch.on{background:var(--dsw-alias-brand-primary,#0083b0)}
-.dshm-switch.locked{opacity:.45;cursor:not-allowed}
-.dshm-switch-slider{position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
-.dshm-switch.on .dshm-switch-slider{left:17px}
+.dshm-switch.locked{opacity:.5;cursor:not-allowed}
+.dshm-switch-slider{position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--dsw-alias-label-primary-foreground,#fff);transition:transform .12s ease, background .12s ease;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.dshm-switch:not(.on) .dshm-switch-slider{background:var(--dsw-alias-switch-thumb,#fff)}
+.dshm-switch.on .dshm-switch-slider{transform:translateX(16px)}
 /* 兼容确认遮罩 z 层（issue #31，0.10.24）：阻断式顶层弹层须压过自家面板(2147483000)/
    详情 Modal(2147483100)/灯箱(2147483200)——0.10.23 及以前 z-index:60 是自家 z 方案离群值，
    dsh-mobile 移动层（235–250）亦能压过它；组件侧已 portal 挂 body（market-tab.jsx），
