@@ -57,7 +57,8 @@ try {
       'const { InstalledTab } = require("./installed-tab.jsx");\n' +
       'const { MarketTab } = require("./market-tab.jsx");\n' +
       'const { OperationsCard } = require("./operations-card.jsx");\n' +
-      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard, __TwoStepButton: TwoStepButton };\n',
+      'const { AgentCard, createSessionGateStore } = require("./agent-integration-card.jsx");\n' +
+      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard, __AgentCard: AgentCard, __createSessionGateStore: createSessionGateStore, __TwoStepButton: TwoStepButton };\n',
   )
   const compOut = join(outDir, 'render-smoke-components.cjs')
   await build({
@@ -654,5 +655,40 @@ describe('评审 P2 源码锚：primaryOverlap → 精选收录徽章接线', ()
       'cardOf 徽章接线漂移：primaryOverlap → badge.inCurated 条件未在 market-tab.jsx 找到',
     )
     assert.ok(i18nSrc.includes('"badge.inCurated": "精选"') && i18nSrc.includes('"badge.inCurated": "Curated"'), 'i18n 双语键缺失')
+  })
+})
+
+describe('issue57 R3：Agent 集成卡（官方插件页 plugins.bundle.config 座位卡）', () => {
+  const stubController = (status, value) => ({
+    getSnapshot: () => ({ status, value, writable: status === 'ready' }),
+    subscribe: () => () => {},
+    set: () => Promise.resolve(),
+  })
+
+  it('SSR：全开态——标题/两开关/描述/无级联 hint（EN 字面，#41 纪律）', () => {
+    const store = components.__createSessionGateStore()
+    store.attach(stubController('ready', { sessionTools: true, sessionPrompt: true }))
+    const html = renderToString(h(components.__AgentCard, { store }))
+    assert.ok(html.includes('AI session integration'), '标题缺失')
+    assert.ok(html.includes('Session tools (AI assistant plugin actions)'), '工具标签缺失')
+    assert.ok(html.includes('System prompt guidance'), '提示词标签缺失')
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 2, '卡内应恰 2 个开关')
+    assert.ok(!html.includes('>Session tools are off'), '全开态不应出现级联 hint 行（title tooltip 含同文案属合法）')
+    store.dispose?.()
+  })
+
+  it('SSR：tools off——级联 hint 在场且 prompt 开关锁定', () => {
+    const store = components.__createSessionGateStore()
+    store.attach(stubController('ready', { sessionTools: false, sessionPrompt: true }))
+    const html = renderToString(h(components.__AgentCard, { store }))
+    assert.ok(html.includes('Session tools are off'), '级联 hint 缺失')
+    assert.equal((html.match(/disabled/g) || []).length >= 1, true, 'prompt 开关应禁用')
+    store.dispose?.()
+  })
+
+  it('SSR：loading 态——两开关均禁用', () => {
+    const store = components.__createSessionGateStore()
+    const html = renderToString(h(components.__AgentCard, { store }))
+    assert.equal((html.match(/disabled="/g) || []).length, 2, 'loading 态两开关禁用（disabled= 属性形态计数）')
   })
 })

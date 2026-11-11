@@ -247,3 +247,16 @@
 - **新增**：locale/zh.json + en.json 三键（settings.group.session=「AI 会话集成」、settings.sessionTools=「会话工具（AI 助手操作插件）」、settings.sessionPrompt=「系统提示词引导」）
 - 记录口径：插件页翻转走 DSH 设置表单（DESIGN §2.6：不留痕）——session-toggle 记录类型随面板卡一并移除
 - 版本仍为 0.12.15（未发布，条目改写自由）
+
+## 修订 R3（2026-11-11 主人裁决）：开关落位官方插件页（plugins.bundle.config 座位卡），面板卡方案作废
+
+主人实机后两次裁决收敛：①面板设置 tab 的卡是噪声（R2 已回退 ✓）；②dsh-market 的 `plugins.detail.section` 折叠槽「点开才显示」不可接受。解码实证（子代理报告，锚点充分）：**官方插件页设置区的正确扩展点 = 插件自注册 `plugins.bundle.config` 槽位**（slot-contract.d.ts 契约定义；dsh-context 活样本：自绘分组卡 + configForms 读写，直接平铺无折叠）。
+
+R3 最终形态（替代 R1 面板卡路线）：
+- **新增（客户端唯一增量）**：`src/client/agent-integration-card.jsx` —— ①`plugins.bundle.config` 座位注册（`key: "dsh-m"` = npm 包名；`whileServed(["dshm"])` = settings ns=entry id "dshm"；两 id 不同=头号坑）②自绘「AI 会话集成」卡：分组标题 + 两行开关（会话工具/系统提示词引导）+ 描述 + 级联锁定，值读 `configForms.get("dshm")` 快照、写 `form.mutate`
+- **服务端零改动**：R2 的回退状态即最终状态（写路径 = form.mutate → remote.settings.mutate → 宿主 settings 服务 → config-editor 落 patch + loader 原地提交 → **P1 watch 同步链原样工作** → 装配谓词读新值）
+- **消解项**：session-toggle 操作记录（插件页卡写入 = DSH 设置表单通道，DESIGN §2.6 口径不留痕——比 R1 的定制记录更一致）；hidden meta（R2 已移除 ✓ 保持）；级联钳制语义不变（session-gate 保留）
+- **C' 文案**：b49ac87 的 i18n 键 git 恢复（7 键 + 失败键）
+- 文档：README/GLOSSARY 的入口措辞已是插件页形态（R2 落 ✓）；CHANGELOG 0.12.15 条目的「做法/兼容性」行改写为座位卡机制
+
+验收：插件 → dsh-m 详情页出现 `section[data-plugin-config]` 内的「AI 会话集成」卡；翻转 → PATCH `id: dshm` 条目 config 增键 + UI 即时回读；市场设置 tab 三卡不变。

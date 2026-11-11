@@ -25,6 +25,7 @@ const { hasShellTakeover } = require("./shell-takeover.js");
 
 // ---------- i18n（ADR-0023 第一刀：词典与取值函数出仓 src/client/i18n.js，main.jsx 仅保留装配） ----------
 const { lookup, ZH, EN } = require("./i18n.js");
+const { registerAgentIntegrationCard } = require("./agent-integration-card.jsx");
 
 // （0.7.0 Task 8：客户端 CATEGORIES 表已由 market-state.js zoneChips 取代）
 
@@ -1133,6 +1134,8 @@ function apply(ctx) { // eslint-disable-line no-unused-vars -- loader 契约
       }
     }, "dshm-locale");
   });
+  // Agent 集成卡（issue #57 / 0.12.15 R3）：官方插件页设置区的会话注入开关（plugins.bundle.config 座位）
+  registerAgentIntegrationCard(ctx);
   slots.inject("sidebar.footer.action", () =>
     safeRegister(
       slots,
