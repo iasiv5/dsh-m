@@ -42,7 +42,6 @@ function live<T>(field: Schema<T>): Schema<T> {
   return typeof volatile === 'function' ? volatile.call(field) : field
 }
 
-
 export const Config: Schema<Config> = Schema.object({
   registryUrl: live(Schema.string().description('registry 地址：空值使用默认官方清单；支持 HTTPS URL、loopback HTTP URL 或本机绝对路径/file://（整体覆盖默认清单，live 生效）')),
   timeoutMs: live(Schema.number().default(20000).description('上游请求超时（毫秒）')),
