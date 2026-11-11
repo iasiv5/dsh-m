@@ -12,7 +12,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 - **背景**：0.12.14 的两开关只挂在宿主自动生成设置卡上，用户反馈找不到入口（主人实测确认）。
 - **做法**：①两开关以「AI 会话集成」分组呈现在**官方插件页**（插件 → dsh-m）设置区——自绘座位卡渲染（插件自注册 plugins.bundle.config 槽位——dsh-context 同款机制；宿主不渲染未注册座位的 Config），翻转经宿主设置服务 live 生效（watch 链原地同步，0.12.14 已验证）；②市场面板设置 tab 回归三卡纯净布局（0.12.14 曾短暂加入面板卡，未发布即按主人裁决移除）；③级联语义不变（工具关 ⇒ 提示词引导关，存储保留原值）。
-- **测试**：全量 npm test + typecheck 0（Agent 集成卡 SSR 三态用例、registry-controller watch 同步用例、session-gate 级联真值表、render-smoke 冻结面守卫、configForms 附着读写）。
+- **测试**：全量 npm test + typecheck 0（Agent 集成卡 SSR 四态用例：全开/tools off/字段缺席/loading；session-gate 级联真值表与 registry-controller watch 同步为 0.12.14 既有防线延续；座位注册链路归实机验证）。
 - **兼容性**：开关主入口 = 官方插件页设置区（自绘座位卡渲染，无 hidden 依赖）；市场面板设置 tab 回归三卡；装配语义与 0.12.14 零变化；CLI 零改动。回退面：revert 实现提交 + 版本递增。
 
 ### 0.12.14 特性：会话面双开关——dshm_* 工具与提示词段可控注入（issue #57，ADR-0035）
@@ -1062,7 +1062,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 - **Background**: the 0.12.14 switches only lived on the host-generated settings card, which users could not find (confirmed by the owner).
 - **Changes**: ① the two switches now live in an "AI session integration" group on the **official plugin page** (Plugins → dsh-m) settings area — a self-drawn seat card (the plugin self-registers the plugins.bundle.config slot — the dsh-context mechanism; the host renders no Config for unseated plugins), flips take effect live via the host settings service (in-place watch-chain sync, verified in 0.12.14); ② the market panel settings tab returns to its clean three-card layout (a panel card briefly existed in unreleased builds and was removed per owner decision); ③ cascade semantics unchanged (tools off ⇒ guidance off, stored values preserved).
-- **Tests**: full `npm test` + typecheck 0 (Agent card SSR three-state cases, registry-controller watch-sync cases, session-gate cascade truth tables, render-smoke freeze-surface guards, configForms attach read/write).
+- **Tests**: full `npm test` + typecheck 0 (Agent card SSR four-state cases: all-on / tools off / absent fields / loading; session-gate cascade truth tables and registry-controller watch-sync are 0.12.14-era defenses carried forward; seat registration chain verified on the live machine).
 - **Compatibility**: the primary entry for the switches is the official plugin page settings area (self-drawn seat-card rendering, no hidden-meta dependency); the market panel settings tab returns to its three-card layout; assembly semantics identical to 0.12.14; the dshm CLI is untouched. Rollback: revert the implementation commit + version bump.
 
 ### 0.12.14 Feature: session-surface dual switches — controllable injection for dshm_* tools and the prompt section (issue #57, ADR-0035)
