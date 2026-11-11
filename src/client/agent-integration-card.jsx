@@ -62,12 +62,12 @@ export function AgentCard({ store }) {
   const state = React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const toolsOn = state.sessionTools !== false;
   const promptOn = state.sessionPrompt !== false;
-  const toolsLocked = state.status === "loading";
-  const promptLocked = state.status === "loading" || toolsOn === false;
-  const switchRow = (labelKey, descKey, on, locked, onChange, titleKey) => [
+  const toolsLocked = state.status === "loading" || state.status === "unavailable";
+  const promptLocked = state.status === "loading" || state.status === "unavailable" || toolsOn === false;
+  const switchRow = (labelKey, descKey, on, locked, onChange) => [
     h("div", { className: "dshm-kvline-row" },
       h("span", { className: "rl" }, lookup(labelKey)),
-      h("label", { className: `dshm-switch${on ? " on" : ""}${locked ? " locked" : ""}`, title: lookup(titleKey) },
+      h("label", { className: `dshm-switch${on ? " on" : ""}${locked ? " locked" : ""}` },
         h("input", { type: "checkbox", checked: on, disabled: locked, onChange: (e) => onChange(e.target.checked) }),
         h("span", { className: "dshm-switch-slider" })),
     ),
@@ -76,9 +76,9 @@ export function AgentCard({ store }) {
   return h("div", { className: "dshm-agent-card" },
     h("div", { className: "dshm-agent-card-title" }, lookup("settings.agent.title")),
     ...switchRow("settings.agent.tools", "settings.agent.tools.desc", toolsOn, toolsLocked,
-      (v) => store.setField("sessionTools", v), "settings.agent.tools"),
+      (v) => store.setField("sessionTools", v)),
     ...switchRow("settings.agent.prompt", "settings.agent.prompt.desc", promptOn, promptLocked,
-      (v) => store.setField("sessionPrompt", v), "settings.agent.prompt.cascade"),
+      (v) => store.setField("sessionPrompt", v)),
     toolsOn === false ? h("div", { className: "dshm-hint" }, lookup("settings.agent.prompt.cascade")) : null,
   );
 }

@@ -12,7 +12,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 - **背景**：0.12.14 的两开关只挂在宿主自动生成设置卡上，用户反馈找不到入口（主人实测确认）。
 - **做法**：①两开关以「AI 会话集成」分组呈现在**官方插件页**（插件 → dsh-m）设置区——Config 平铺字段经宿主设置表单原生渲染（dsh-context 同款形态），翻转经宿主设置服务 live 生效（watch 链原地同步，0.12.14 已验证）；②市场面板设置 tab 回归三卡纯净布局（0.12.14 曾短暂加入面板卡，未发布即按主人裁决移除）；③级联语义不变（工具关 ⇒ 提示词引导关，存储保留原值）。
-- **测试**：全量 npm test + typecheck 0（registry-controller setSessionFields 3 例、host-api set-session 路由 3 例、client 渲染锚/冻结面/级联源码锚、operations-view dir 徽章家族、关键锚三处单点变异自证）。
+- **测试**：全量 npm test + typecheck 0（Agent 集成卡 SSR 三态用例、registry-controller watch 同步用例、session-gate 级联真值表、render-smoke 冻结面守卫、configForms 附着读写）。
 - **兼容性**：开关主入口 = 官方插件页设置区（DSH 设置表单原生渲染，无 hidden 依赖）；市场面板设置 tab 回归三卡；装配语义与 0.12.14 零变化；CLI 零改动。回退面：revert 实现提交 + 版本递增。
 
 ### 0.12.14 特性：会话面双开关——dshm_* 工具与提示词段可控注入（issue #57，ADR-0035）
@@ -1062,7 +1062,7 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 - **Background**: the 0.12.14 switches only lived on the host-generated settings card, which users could not find (confirmed by the owner).
 - **Changes**: ① the two switches now live in an "AI session integration" group on the **official plugin page** (Plugins → dsh-m) settings area — flat Config fields rendered natively by the host settings form (same shape as dsh-context), flips take effect live via the host settings service (in-place watch-chain sync, verified in 0.12.14); ② the market panel settings tab returns to its clean three-card layout (a panel card briefly existed in unreleased builds and was removed per owner decision); ③ cascade semantics unchanged (tools off ⇒ guidance off, stored values preserved).
-- **Tests**: full `npm test` + typecheck 0 (registry-controller setSessionFields 3 cases, host-api set-session route 3 cases, client render anchors / freeze surface / cascade source anchors, operations-view dir badge family, three single-point mutation proofs on key anchors).
+- **Tests**: full `npm test` + typecheck 0 (Agent card SSR three-state cases, registry-controller watch-sync cases, session-gate cascade truth tables, render-smoke freeze-surface guards, configForms attach read/write).
 - **Compatibility**: the primary entry for the switches is the official plugin page settings area (native host settings form rendering, no hidden-meta dependency); the market panel settings tab returns to its three-card layout; assembly semantics identical to 0.12.14; the dshm CLI is untouched. Rollback: revert the implementation commit + version bump.
 
 ### 0.12.14 Feature: session-surface dual switches — controllable injection for dshm_* tools and the prompt section (issue #57, ADR-0035)

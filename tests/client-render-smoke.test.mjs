@@ -681,9 +681,17 @@ describe('issue57 R3：Agent 集成卡（官方插件页 plugins.bundle.config �
     const store = components.__createSessionGateStore()
     store.attach(stubController('ready', { sessionTools: false, sessionPrompt: true }))
     const html = renderToString(h(components.__AgentCard, { store }))
-    assert.ok(html.includes('Session tools are off'), '级联 hint 缺失')
-    assert.equal((html.match(/disabled/g) || []).length >= 1, true, 'prompt 开关应禁用')
+    assert.ok(html.includes('>Session tools are off'), '级联 hint 行缺失（> 前缀区分 hint 行与 title 属性，评审批 3 P6）')
+    assert.equal((html.match(/disabled="/g) || []).length, 1, 'prompt 开关禁用（disabled= 属性形态精确计数）')
     store.dispose?.()
+  })
+
+  it('SSR：字段缺席——缺省开归一化防线（!== false 语义，评审批 3 P6 M3）', () => {
+    const store = components.__createSessionGateStore()
+    store.attach(stubController('ready', {}))
+    const html = renderToString(h(components.__AgentCard, { store }))
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 2, '缺席字段=开，两开关在场')
+    assert.ok(!html.includes('>Session tools are off'), '缺席字段不应触发级联 hint 行')
   })
 
   it('SSR：loading 态——两开关均禁用', () => {
