@@ -683,6 +683,9 @@ describe('issue57 Agent 集成卡：SettingsTab SSR + 冻结面 + 级联源码�
     for (let i = 1; i < idx.length; i++) assert.ok(idx[i - 1] < idx[i], `grid 顺序错位 @${i}`)
     // ④ 冻结面守卫：既有开关形态在场
     assert.ok(html.includes('dshm-switch'), '既有开关形态缺席')
+    // ⑤ 两开关元素计数（评审批 4 I-5：计划 Task 3 ①「两个 switch 元素」的钉死——社区 + 两 session = 3，
+    //    删掉 Agent 卡两行开关时本断言红，堵「①②③全绿但元素被删」的测试强度缺口）
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 3, 'checkbox 元素数应为 3（社区 + 会话工具 + 系统提示词引导）')
     // ③ 级联锁定态走源码锚（SSR 触发不了该态；单行锚防 CRLF 跨行假绿）
     assert.match(settingsTabSrc, /sessionTools === false/, '级联判定缺失')
     assert.match(settingsTabSrc, /sessionPrompt !== false/, 'checked 存储值绑定缺失（Q1=(a)）')
