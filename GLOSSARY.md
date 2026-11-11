@@ -70,15 +70,15 @@ loader fiber 状态在已装页的投影（active / failed / pending / loading /
 _Avoid_: 状态（过载词）、健康度、已停用（无 fiber 只说明未运行，不断言停用原因）
 
 **会话注入开关（Session Injection Switches）**:
-`sessionTools` / `sessionPrompt` 两个配置门控的统称：前者门控 8 个 `dshm_*` 会话工具的装配注册，后者门控 `tool:dshm` 系统提示词段注入；均缺省开，翻转后新装配即时生效（watch 链原地同步，不重启）。与「开关（Enablement Toggle）」是两类概念——那是对已装插件运行状态的切换，这是对会话注入面的门控。主控制入口在官方插件页（插件 → dsh-m）设置区的「AI 会话集成」分组；市场面板设置 tab 不再承载（0.12.15 起，主人裁决降噪）。
-_Avoid_: 会话工具开关（单指 sessionTools 时可用「Agent 工具开关」，统称时禁用——与 Enablement Toggle 混用）、注入开关（裸词）、唯一入口（在 hidden 渲染验证定论前不断言）
+`sessionTools` / `sessionPrompt` 两个配置门控的统称：前者门控 8 个 `dshm_*` 会话工具的装配注册，后者门控 `tool:dshm` 系统提示词段注入；均缺省开。设置页（插件 → dsh-m →「AI 会话集成」卡）以**单个开关**「Agent 工具（dshm_*）与系统提示词注入」呈现，翻转时同时写入两个字段。工具可见性与提示词段都在每次模型调用的装配中求值（watch 链原地同步，不重启），故已打开的对话里工具从下一次回复起消失；已发生的上下文（含此前注入的提示词）不追溯清洗，对外口径以「新会话干净」为准。与「开关（Enablement Toggle）」是两类概念——那是对已装插件运行状态的切换，这是对会话注入面的门控。市场面板设置 tab 不承载该开关。
+_Avoid_: 会话工具开关（单指 sessionTools 时可用「Agent 工具开关」，统称时禁用——与 Enablement Toggle 混用）、注入开关（裸词）、已开对话同样干净（提示词不追溯清洗，以新会话为准）
 
 **注入三态（Injection States）**:
-会话注入开关组合的三个可达态：**全开**（缺省，工具 + 引导段齐注入，引导段为瘦身版）、**仅工具**（只关 `sessionPrompt`，工具在但仅在显式要求时使用）、**全关**（纯 UI 市场）。`sessionTools` 关 ⇒ `sessionPrompt` 恒视为关，故「工具关 + 段开」不是可达态。
+会话注入开关两字段组合的三个可达态：**全开**（缺省，工具 + 引导段齐注入，引导段为瘦身版）、**仅工具**（只关 `sessionPrompt`，工具在但仅在显式要求时使用）、**全关**（纯 UI 市场）。设置页单开关只可达「全开 / 全关」；「仅工具」需手改配置，此时开关显示为关。`sessionTools` 关 ⇒ `sessionPrompt` 恒视为关，故「工具关 + 段开」不是可达态。
 _Avoid_: 四态（不可达态不是态）、半开
 
 **级联钳制（Cascade Clamp）**:
-`sessionTools=false` 时提示词段强制不注入、与 `sessionPrompt` 取值无关的装配期规则；存储保留 `sessionPrompt` 原值（仅落键不覆写），钳制发生在装配期 resolve，重开工具后先前选择自动恢复。
+`sessionTools=false` 时提示词段强制不注入、与 `sessionPrompt` 取值无关的装配期规则；存储保留 `sessionPrompt` 原值（仅落键不覆写），钳制在每次模型调用的装配中求值，重开工具后先前选择自动恢复。单开关翻转同时写两字段，正常操作不会触发钳制；它是手改配置时的安全网。
 _Avoid_: 级联关闭（暗示存储被覆写）、强制同步
 
 **意图停用（Intent Disabled）**:

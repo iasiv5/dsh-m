@@ -8,6 +8,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.16 文档与文案：会话开关说明对齐当前实现（issue #57 续）
+
+- **背景**：0.12.15 把会话注入开关合并为插件页单开关后，README、GLOSSARY、ADR-0035 与设置页字段描述仍按「两个开关」「分组」表述，且未写明已打开的对话里的行为。按宿主装配机制核对：工具可见性每次模型调用重新解析，已打开的对话里工具从下一次回复起消失；系统提示词每次调用重新渲染并更新，但已发生的上下文不追溯清洗，故对外口径仍以「新会话干净」为准。
+- **做法**：①README 会话开关段按单开关重写，并写明新会话与已开对话的区别；`README.en.md` 补上英文会话开关说明（此前缺失）；②GLOSSARY 三条会话词条按单开关口径重写；③ADR-0035 增补「UI 呈现为单开关、存储层两字段与级联不变」，并补注生效口径；④设置页 `sessionTools` 的字段描述补注已开对话的行为，提示词字段的称呼统一为「系统提示词引导」；⑤清理 `locale/*.json` 中早期迭代遗留的三个死键（宿主只读取 `meta`，无行为影响）。
+- **更正**：0.12.15 条目与随包 README 中「两个开关」「分组」的表述已过期（现为单开关卡），以本条与当前 README 为准。
+- **测试**：全量 npm test + typecheck 0；本版无行为改动，文案不入测试锚。
+- **兼容性**：行为零变化——`sessionTools` / `sessionPrompt` 两字段、缺省开、级联钳制、存储结构、工具集与提示词段文本均不变，仅文档与设置页文案；CLI 零改动。回退面：revert 文案提交 + 版本递增。
+
 ### 0.12.15 特性：AI 会话集成分组落位官方插件页——会话注入开关移出市场面板设置页（issue #57 续）
 
 - **背景**：0.12.14 的两开关只挂在宿主自动生成设置卡上，用户反馈找不到入口（主人实测确认）。
@@ -1057,6 +1065,14 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.16 Docs & copy: session-switch descriptions aligned with the current implementation (issue #57 follow-up)
+
+- **Background**: after 0.12.15 merged the session-injection switches into one switch on the plugin page, the README, GLOSSARY, ADR-0035, and the settings-page field descriptions still described "two switches" and a "group", and did not say what happens in conversations that are already open. Checking the host's assembly: tool visibility is re-resolved on every model call, so in an open conversation the tools disappear from the next reply; the system prompt is re-rendered and updated on every call, but context that has already happened is not scrubbed, so the public contract remains "new conversations are clean".
+- **Changes**: ① the README session-switch section is rewritten for the single switch and states the difference between new and already-open conversations, and `README.en.md` gains the English section (it was missing); ② the three GLOSSARY session entries are rewritten for the single switch; ③ ADR-0035 adds a note that the UI presents one switch while the two storage fields and the cascade are unchanged, and records the timing contract; ④ the settings-page description of `sessionTools` now covers open conversations, and the prompt field is consistently called "system prompt guidance"; ⑤ three dead keys left in `locale/*.json` by an earlier iteration are removed (the host only reads `meta`; no behavior impact).
+- **Correction**: the "two switches" and "group" wording in the 0.12.15 entry and the README shipped with it is outdated (it is now a single-switch card); this entry and the current README are authoritative.
+- **Tests**: full `npm test` + typecheck 0; no behavior change in this release, and the wording is not pinned by test anchors.
+- **Compatibility**: zero behavior change — the two fields, the default-on values, the cascade clamp, the storage shape, the tool set, and the prompt-section text are all unchanged; only docs and settings-page wording. The dshm CLI is untouched. Rollback: revert the copy commit + version bump.
 
 ### 0.12.15 Feature: AI session integration group on the official plugin page — session injection switches leave the panel settings tab (issue #57 follow-up)
 

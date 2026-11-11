@@ -95,6 +95,17 @@ dshm restart --yes
 
 The GUI and Agent tools manage the **current host profile** (Web or Desktop). The standalone CLI, by contrast, targets the web profile; the only exception is the read-only `dshm doctor --profile desktop` health check — other commands reject `--profile desktop`, and Desktop plugin management goes through the official plugin page. `--force` may be used with install/upgrade after the user accepts a peer-compatibility risk. If the catalog is unavailable, `registry`, `search`, and `outdated` fail explicitly while `list` still lists installed packages. See the [design document](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md) for full parameters and runtime policy.
 
+### Session switch (dshm_* tools and prompt injection)
+
+On the official **plugin page** (sidebar "Plugins" → dsh-m), the **AI session integration** card has one switch: **Agent tools (dshm_*) and system prompt injection**, on by default. It controls two things together:
+
+- whether the **8 `dshm_*` Agent tools** (search, list installed, install, toggle, uninstall, check for updates, upgrade, restart Web) are available in conversation;
+- the **usage-guidance section in the system prompt**, which routes plugin requests to the dshm tools before web search or the shell.
+
+When off, **new conversations** no longer get these tools or the guidance; the market page and the `dshm` CLI are unaffected. In a conversation that is already open, the AI also stops being able to call these tools from the next reply; content that has already happened (including the prompt injected earlier) is not scrubbed, so start a new conversation if you want it fully clean.
+
+Notes: while the tools are off, asking the AI to install or upgrade plugins in conversation is unavailable — use the market page buttons, or turn the switch back on; on hosts with an unrecognized settings shape, changes apply after the plugin reloads. Underneath, `sessionTools` and `sessionPrompt` remain two independent config fields and the switch writes both; if you hand-edit the config to turn off only `sessionPrompt`, the tools stay available but the switch shows as off.
+
 ## Compatibility & FAQ
 
 | DSH Web generation | Settings path | Verification |
