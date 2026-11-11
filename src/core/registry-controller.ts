@@ -58,8 +58,6 @@ export interface RegistryController {
   apply(rawAddress: string, opts?: { signal?: AbortSignal }): Promise<RegistryControllerSnapshot>
   /** 社区目录开关（0.8.0 设置页）：内存即时生效 + store 持久化；写入失败回滚内存值并抛错 */
   setCommunity(enabled: boolean): Promise<RegistryControllerSnapshot>
-  /** 会话注入开关（0.12.15 设置页 Agent 集成卡）：内存即时生效 + store 持久化；写入失败回滚内存值并抛错 */
-  setSessionFields(patch: { sessionTools?: boolean; sessionPrompt?: boolean }): Promise<RegistryControllerSnapshot>
   dispose(): void
 }
 
@@ -389,36 +387,6 @@ export function createRegistryController(
     })
   }
 
-  function setSessionFields(patch: { sessionTools?: boolean; sessionPrompt?: boolean }): Promise<RegistryControllerSnapshot> {
-    const keys = (['sessionTools', 'sessionPrompt'] as const).filter(
-      (k) => typeof patch[k] === 'boolean',
-    ) as Array<'sessionTools' | 'sessionPrompt'>
-    if (keys.length === 0) {
-      return Promise.reject(
-        new RegistryConfigError('至少提供一个 session 开关字段（boolean）', ['至少提供一个 session 开关字段（boolean）']),
-      )
-    }
-    // 同步先启动 bootstrap（只创建不等待）：setCommunity 同款时序，见其注释（await 顺序防自我死锁）
-    if (!bootstrapPromise) startBootstrap()
-    const prevs = keys.map((k) => [k, config[k]] as const)
-    return enqueue(async (gen) => {
-      await bootstrapPromise
-      // 内存先行（live 生效：装配谓词/段函数立即读新值）；持久化失败回滚内存值（仅回写 provided 字段原值）
-      for (const k of keys) config[k] = patch[k] as boolean
-      if (store) {
-        try {
-          const persistPatch: Record<string, boolean> = {}
-          for (const k of keys) persistPatch[k] = patch[k] as boolean
-          await store.update(persistPatch)
-        } catch (err) {
-          if (disposed || gen !== generation) return snapshotInternal()
-          for (const [k, prev] of prevs) config[k] = prev
-          throw new RegistryConfigError(`写入设置失败：${errorMessage(err)}`, [errorMessage(err)])
-        }
-      }
-      return snapshotInternal()
-    })
-  }
 
   function dispose(): void {
     disposed = true
@@ -435,7 +403,6 @@ export function createRegistryController(
     loadDefault,
     apply,
     setCommunity,
-    setSessionFields,
     dispose,
   }
   return controller

@@ -70,7 +70,7 @@ loader fiber 状态在已装页的投影（active / failed / pending / loading /
 _Avoid_: 状态（过载词）、健康度、已停用（无 fiber 只说明未运行，不断言停用原因）
 
 **会话注入开关（Session Injection Switches）**:
-`sessionTools` / `sessionPrompt` 两个配置门控的统称：前者门控 8 个 `dshm_*` 会话工具的装配注册，后者门控 `tool:dshm` 系统提示词段注入；均缺省开，翻转后新装配即时生效（watch 链原地同步，不重启）。与「开关（Enablement Toggle）」是两类概念——那是对已装插件运行状态的切换，这是对会话注入面的门控。主控制入口在市场面板「设置」tab 的 AI 会话集成卡；DSH 设置表单的 dsh-m 卡片同名键为并行入口（入口是否收敛单入口，以 0.12.15 实机对 hidden meta 的渲染验证为准）。
+`sessionTools` / `sessionPrompt` 两个配置门控的统称：前者门控 8 个 `dshm_*` 会话工具的装配注册，后者门控 `tool:dshm` 系统提示词段注入；均缺省开，翻转后新装配即时生效（watch 链原地同步，不重启）。与「开关（Enablement Toggle）」是两类概念——那是对已装插件运行状态的切换，这是对会话注入面的门控。主控制入口在官方插件页（插件 → dsh-m）设置区的「AI 会话集成」分组；市场面板设置 tab 不再承载（0.12.15 起，主人裁决降噪）。
 _Avoid_: 会话工具开关（单指 sessionTools 时可用「Agent 工具开关」，统称时禁用——与 Enablement Toggle 混用）、注入开关（裸词）、唯一入口（在 hidden 渲染验证定论前不断言）
 
 **注入三态（Injection States）**:

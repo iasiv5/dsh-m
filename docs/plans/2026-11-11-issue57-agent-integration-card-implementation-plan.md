@@ -35,6 +35,7 @@
 - **TDD 红先**：core/host-api 任务先落失败测试（跑前 `npm run build`）；client 渲染锚走 SSR 冒烟文件（`tests/client-render-smoke.test.mjs` 直接引 `src/client/`，跑前也 build）。
 - **源锚形态**：CRLF 单行锚禁含 `\n`；计数用 needle 全文出现次数（`split(n).length - 1`）；过滤管道 `set -o pipefail`。
 - **计划外不夹带**：diff 逐文件可归因；`src/cli.ts`、`scripts/`、`registry.json`、其余三卡 DOM 零改动。
+- **计数纪律**：引用测试/套件计数必附文件组合（如「host-api 71 + tools-search 13 = 84」）——评审批 4 I-3 教训收编。
 - **P1 教训收编**：路由/集成测试必须走真实生产通路——`set-session` 路由测试打真 dispatcher；涉及 unwrapConfig 广播形态的测试用「广播包真实 unwrapConfig」镜像（0.12.14 已有先例用例可直接参照）。
 - **文案钉死**：§文案定稿（C' 版）逐字实现（主人 2026-11-11 确认）；i18n ZH/EN 同步（client-i18n 守卫）
 
@@ -143,7 +144,7 @@
 - 接口契约：
   - Consumes: `recordSettingsOp` 既有调用先例（settings-tab community toggle 处，:140 附近——实现时先读现场镜像其参数形态）
   - Produces: 操作记录卡可见 `session-toggle` 条目（成败皆记）
-- 验证范围：`node --test tests/client-operations.test.mjs tests/client-i18n.test.mjs`
+- 验证范围：operations 两测试文件任一（`client-operations-view` = opRowVm 所在，实际落点；或 `client-operations`）+ `client-i18n`——执行评审⑤-a 收编
 
 - [ ] Step 1: 写失败测试——client-operations 既有用例形态：kind `'session-toggle'` 记录的渲染/归组断言（先读 :56 typedef 与既有 community-toggle 用例再落锚）
 - [ ] Step 2: 跑红——`node --test tests/client-operations.test.mjs`
@@ -217,3 +218,32 @@
 ## 审阅 Checkpoint
 
 实施计划已写好并保存到 `docs/plans/2026-11-11-issue57-agent-integration-card-implementation-plan.md`（GLOSSARY 三词条已按 domain-modeling 纪律先行落盘）。请先确认本计划——特别是 Task 3 的渲染锚落点（先读现场再定锚的纪律已在任务内声明）与 Task 9 的双批准门顺序；没问题即可由普通编码 agent 或人工执行，发版与回帖到时仍单独请批。
+
+## 修订 R1（2026-11-11 主人裁决）：迁移到官方插件页设置区，面板卡回退
+
+主人实机查看后裁决：面板设置 tab 的卡片是噪声，两开关迁往**官方插件页**（插件 → dsh-m 详情页设置区），摆放参考 dsh-context 插件页的分组设置形态（实机截图解码：Config 平铺字段 + 渲染器按字段名前缀归组 + locale 键 settings.group.<前缀>=组标题、settings.<字段>=字段标签——dsh-context client 字典三组样本实锚）。
+
+回退清单（git checkout v0.12.14 恢复 + 手动编辑混合）：
+- 整文件 checkout v0.12.14：settings-tab.jsx / i18n.js / operations.js / operations-view.js / styles.js / client-render-smoke.test.mjs / client-operations-view.test.mjs / host-api.test.mjs / host-api.ts（各文件 v0.12.14 后仅有本役变更，逐文件核实过）
+- registry-controller.ts 手动：移除 setSessionFields（接口声明/实现/return 导出）+ store update 签名回宽；**保留** P1 同步、:35 注释卫生（I-1）、无 WithoutNs 变更
+- host.ts 手动：移除 hide() 与 live(hide()) 包装（字段本身保留——hidden 移除 = 字段回归插件页，D2 反向定稿）
+- registry-controller.test.mjs 手动：删 setSessionFields describe（保留 session watch describe——P1 轮产物）
+- host-api.test.mjs 手动：删 set-session 3 用例（checkout 已含——见下）
+- 保留不动：session-gate.ts、tools.ts 装配谓词、registry.ts 字段、settings-compat.ts、GLOSSARY、装配语义与级联钳制
+
+新增清单：
+- locale/zh.json + en.json：settings.group.session（组标题「AI 会话集成」）、settings.sessionTools / settings.sessionPrompt（字段标签）——渲染器归组/标签约定的实证落点
+- README/GLOSSARY/CHANGELOG 0.12.15 条目：入口描述改「官方插件页设置区」
+
+验收（真机）：插件 → dsh-m 详情页设置区出现「AI 会话集成」组 + 两开关；翻转经宿主设置服务 → watch 链 → 新装配生效（V2/V3 语义不变，0.12.14 已实机验证）；市场面板设置 tab 回归三卡。
+
+## 修订 R2（2026-11-11 主人裁决）：开关入口迁移至官方插件页设置区，面板卡回退
+
+主人实机查看后裁决：面板设置 tab 的卡片是噪声，两开关迁往**官方插件页**（插件 → dsh-m 详情页设置区），摆放参考 dsh-context 插件页的分组设置形态（实机截图解码：dsh-context Config 为**平铺字段**、无嵌套分组对象；渲染器按字段名前缀归组，组标题/字段标签来自插件 locale/client 字典键 `settings.group.<组名>` / `settings.<字段>`——三组样本实锚：entry/view/prompt）。
+
+落地（R1 面板卡整体回退 + 官方插件页分组）：
+- **回退**（git checkout v0.12.14 八文件 + registry-controller.ts/host.ts 行级手术）：settings-tab 卡与 state/handler/switch、i18n 卡键 12 枚、styles nth-child(4) 规则、set-session 路由、setSessionFields（接口/实现/导出）、store update 签名放宽、session-toggle 记录（OpKind typedef ×2 + operations-view isToggle + op.kind 键 ×2）、hidden meta 与 hide() helper、三测试文件的卡片用例——registry-controller.test.mjs 仅删 setSessionFields describe（保留 P1 轮 session watch describe）
+- **保留**：session-gate.ts、tools.ts 装配谓词与级联钳制、registry.ts 字段、settings-compat.ts、unwrapConfig 白名单（P1）、watch 同步（P1）、:35 注释卫生（I-1）、GLOSSARY/README 白话扫除
+- **新增**：locale/zh.json + en.json 三键（settings.group.session=「AI 会话集成」、settings.sessionTools=「会话工具（AI 助手操作插件）」、settings.sessionPrompt=「系统提示词引导」）
+- 记录口径：插件页翻转走 DSH 设置表单（DESIGN §2.6：不留痕）——session-toggle 记录类型随面板卡一并移除
+- 版本仍为 0.12.15（未发布，条目改写自由）

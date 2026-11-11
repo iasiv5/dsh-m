@@ -55,10 +55,9 @@ try {
       'const { DshmVersionChip } = require("./version-chip.jsx");\n' +
       'const { DetailModal } = require("./detail-modal.jsx");\n' +
       'const { InstalledTab } = require("./installed-tab.jsx");\n' +
-      'const { SettingsTab } = require("./settings-tab.jsx");\n' +
       'const { MarketTab } = require("./market-tab.jsx");\n' +
       'const { OperationsCard } = require("./operations-card.jsx");\n' +
-      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard, __SettingsTab: SettingsTab, __TwoStepButton: TwoStepButton };\n',
+      'module.exports = { __SearchBox: SearchBox, __ZoneChips: ZoneChips, __FavoriteZone: FavoriteZone, __DshmVersionChip: DshmVersionChip, __RestartBanner: RestartBanner, __Lightbox: Lightbox, __UseImgChainProbe: UseImgChainProbe, __DetailModal: DetailModal, __InstalledTab: InstalledTab, __MarketTab: MarketTab, __OperationsCard: OperationsCard, __TwoStepButton: TwoStepButton };\n',
   )
   const compOut = join(outDir, 'render-smoke-components.cjs')
   await build({
@@ -655,41 +654,5 @@ describe('评审 P2 源码锚：primaryOverlap → 精选收录徽章接线', ()
       'cardOf 徽章接线漂移：primaryOverlap → badge.inCurated 条件未在 market-tab.jsx 找到',
     )
     assert.ok(i18nSrc.includes('"badge.inCurated": "精选"') && i18nSrc.includes('"badge.inCurated": "Curated"'), 'i18n 双语键缺失')
-  })
-})
-
-describe('issue57 Agent 集成卡：SettingsTab SSR + 冻结面 + 级联源码锚', () => {
-  it('SSR 渲染：标题/两开关/四卡冻结面/grid 顺序 + 级联源码锚（node 环境断言用 EN 字面——#41 纪律）', () => {
-    const html = renderToString(h(components.__SettingsTab, {
-      notify: () => {},
-      opsRecords: [],
-      onRegistryChanged: () => {},
-      onForceMarket: () => {},
-      onForceUpdates: () => {},
-      onOpsClearFinished: () => {},
-      onOpsRemove: () => {},
-    }))
-    // ① 标题字面（EN 字典值：node 环境 browserLang()=en）
-    assert.ok(html.includes('AI session integration'), '卡片标题缺失（settings.agent.title）')
-    // ② grid child 顺序冻结：社区→精选→关于→AI 会话集成→操作记录（评审批 1 B 项）
-    const idx = [
-      html.indexOf('Community catalog (awesome-dsh-plugin)'),
-      html.indexOf('Curated registry (registry.json)'),
-      html.indexOf('>About<'),
-      html.indexOf('AI session integration'),
-      html.indexOf('dshm-ops-card'),
-    ]
-    for (const [i, v] of idx.entries()) assert.ok(v >= 0, `冻结面/新卡字面缺席 @${i}`)
-    for (let i = 1; i < idx.length; i++) assert.ok(idx[i - 1] < idx[i], `grid 顺序错位 @${i}`)
-    // ④ 冻结面守卫：既有开关形态在场
-    assert.ok(html.includes('dshm-switch'), '既有开关形态缺席')
-    // ⑤ 两开关元素计数（评审批 4 I-5：计划 Task 3 ①「两个 switch 元素」的钉死——社区 + 两 session = 3，
-    //    删掉 Agent 卡两行开关时本断言红，堵「①②③全绿但元素被删」的测试强度缺口）
-    assert.equal((html.match(/type="checkbox"/g) || []).length, 3, 'checkbox 元素数应为 3（社区 + 会话工具 + 系统提示词引导）')
-    // ③ 级联锁定态走源码锚（SSR 触发不了该态；单行锚防 CRLF 跨行假绿）
-    assert.match(settingsTabSrc, /sessionTools === false/, '级联判定缺失')
-    assert.match(settingsTabSrc, /sessionPrompt !== false/, 'checked 存储值绑定缺失（Q1=(a)）')
-    assert.match(settingsTabSrc, /const promptLocked/, '级联锁定派生缺失')
-    assert.match(settingsTabSrc, /promptLocked \? " locked"/, '级联 locked 拼接缺失')
   })
 })

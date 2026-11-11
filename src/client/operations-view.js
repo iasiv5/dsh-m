@@ -100,7 +100,7 @@ export function opRowVm(r) {
     Number.isFinite(rec.createdAt) && Number.isFinite(rec.updatedAt)
       ? Math.max(0, rec.updatedAt - rec.createdAt)
       : null
-  const isToggle = rec.kind === 'toggle' || rec.kind === 'community-toggle' || rec.kind === 'session-toggle'
+  const isToggle = rec.kind === 'toggle' || rec.kind === 'community-toggle'
   let version = ''
   if (rec.kind === 'upgrade') {
     const m = opUpgradeMeta({ fromVersion: meta.from, version: meta.to })
