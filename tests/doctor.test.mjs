@@ -619,3 +619,35 @@ describe('dshm doctor --profile desktop', () => {
     assert.ok(h.stdout.includes('[web]'))
   })
 })
+
+// ---------- 0.12.16 retro（issue #57 升级实录）：非 registry 来源 → install-restorability ----------
+describe('checkAccount：非 registry 来源登记（install-restorability）', () => {
+  let home, profile
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'dshm-restorable-'))
+    profile = join(home, 'profiles', 'web')
+    mkdirSync(profile, { recursive: true })
+  })
+  afterEach(() => rmSync(home, { recursive: true, force: true }))
+
+  it('file: 来源 → warning（check=install-restorability，hint 提官方通道就地改装）', async () => {
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'p', dependencies: { 'dsh-m': 'file:/tmp/x/dsh-m-0.12.15.tgz' } }))
+    writeFileSync(join(profile, 'pnpm-lock.yaml'), 'lockfileVersion: \'9.0\'\nimporters:\n  .:\n    dependencies:\n      dsh-m:\n        specifier: file:/tmp/x/dsh-m-0.12.15.tgz\n        version: file:../x/dsh-m-0.12.15.tgz')
+    mkdirSync(join(profile, 'node_modules', 'dsh-m'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', 'dsh-m', 'package.json'), JSON.stringify({ name: 'dsh-m', version: '0.12.15' }))
+    const r = await checkAccount(profile)
+    const f = r.findings.find((x) => x.check === 'install-restorability')
+    assert.ok(f, '应有 install-restorability finding')
+    assert.equal(f.severity, 'warning')
+    assert.ok(f.hint.includes('dsh plugin'), 'hint 应给官方通道就地改装姿势')
+  })
+
+  it('registry 来源 → 零 install-restorability finding（既有语义不变）', async () => {
+    writeFileSync(join(profile, 'package.json'), JSON.stringify({ name: 'p', dependencies: { 'pkg-a': '1.0.0' } }))
+    writeFileSync(join(profile, 'pnpm-lock.yaml'), 'lockfileVersion: \'9.0\'\nimporters:\n  .:\n    dependencies:\n      pkg-a:\n        specifier: 1.0.0\n        version: 1.0.0')
+    mkdirSync(join(profile, 'node_modules', 'pkg-a'), { recursive: true })
+    writeFileSync(join(profile, 'node_modules', 'pkg-a', 'package.json'), JSON.stringify({ name: 'pkg-a', version: '1.0.0' }))
+    const r = await checkAccount(profile)
+    assert.equal(r.findings.filter((x) => x.check === 'install-restorability').length, 0)
+  })
+})

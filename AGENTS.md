@@ -2,6 +2,10 @@
 
 This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.md`](docs/CODING-STANDARDS.md) are the sources of truth. Before changing or reviewing dsh-m code/tests — or writing implementation plans / red-lines for them — read the coding standards; they define test-anchor, evidence, plan-traceability, and exit-code rules (their evidence-discipline section explicitly governs plans and CHANGELOG claims).
 
+## 批量变更先出清单
+
+`git rm`、删除目录、或大范围改写既有文档等**破坏性批量操作**：先在回复中出示完整文件清单并获明确批准，再执行。「清理 / 整理」类请求以任务直接产物为界，不默认扩大范围（issue #57 战役 2026-11-11 实录：清理请求被扩大为删除 docs/ 下 78 个文件并整体 revert）。
+
 ## Owning code and tests
 
 - **Merged materialization / displacement / identity indexes**: `src/core/merged-market.ts`; tests and integration harness: `tests/merged-market.test.mjs`.

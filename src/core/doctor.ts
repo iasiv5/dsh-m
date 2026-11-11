@@ -15,7 +15,7 @@
  * - 修复责任外移：doctor 永不写不删，修复建议以文字形态给出（ADR-0010 决定 5）。
  */
 import { readdir, readFile, lstat, stat, readlink } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
 import { satisfies, validRange } from 'semver'
 import { dshHome } from './env.js'
@@ -26,7 +26,7 @@ import { readProfileDeps, resolvePluginDir, readPkgJson } from './installed.js'
 export type Severity = 'error' | 'warning'
 
 export interface DoctorFinding {
-  check: 'farm-liveness' | 'residue' | 'account-reality' | 'meta'
+  check: 'farm-liveness' | 'residue' | 'account-reality' | 'meta' | 'install-restorability'
   severity: Severity
   /** 发生了什么（含包名/路径等结构化事实） */
   title: string
@@ -483,6 +483,21 @@ export async function checkAccount(profileDir: string): Promise<{ account: Accou
         title: `${name} 账实分裂`,
         detail: `pin=${spec} · 实装=${installed ?? '缺失'} · lock=${lockfile ?? '—'}（know-how 023 §6.2 形态：pnpm 非零退出可拦住 pin 写入，三处记账从此各说各话）`,
         hint: '核验最近一次升级/安装事务的结果，或按 know-how 023 §6.2 处置；体检不代执行',
+      })
+    }
+    // 0.12.16 retro（issue #57 升级实录）：file:/本地路径登记，lock 无 integrity，
+    // 后续 CLI/面板升级会被装后守卫 manual_required 拦截（无法自动回退）。提示级暴露 +
+    // 给出官方通道就地改装姿势（dsh plugin --profile add --registry，2026-11-12 实机验证）。
+    // git / codeload tarball 形态不在此列——它们走 github 阶梯重锁 HEAD，有自己的升级路径。
+    const nonRegistry =
+      spec.startsWith('file:') || spec.startsWith('/') || spec.startsWith('./') || spec.startsWith('../')
+    if (nonRegistry) {
+      findings.push({
+        check: 'install-restorability',
+        severity: 'warning',
+        title: `${name} 非 registry 来源登记`,
+        detail: `pin=${spec}（sourceKind=other）· 升级/自升级将被装后守卫 manual_required 拦截（lock 无 integrity，无法自动回退）`,
+        hint: `官方通道就地改装：dsh plugin --profile ${basename(root)} add ${name}@<已装版本> --registry=https://registry.npmjs.org/（不卸载、无空窗，恢复 registry integrity）`,
       })
     }
   }

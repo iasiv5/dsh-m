@@ -8,7 +8,7 @@
  *   4. 发布物断言（0.10.7 接线 assert-pack）：pack --dry-run 清单齐备、DESIGN/CHANGELOG 不回潜。
  * 用法：bump 版本 → 建 tag → `npm run check-release` → push。任一项不符 exit 1。
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { execSync, spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,6 +62,33 @@ check(
     ? `配对：${zhVersions.slice(0, 3).join(' / ')} …`
     : `第 ${firstBad + 1} 条失配：中文「${zhVersions[firstBad] ?? '（缺）'}」对英文「${enVersions[firstBad] ?? '（缺）'}」`,
 )
+
+// 0.12.16 retro（issue #57 实录 ×2：顶条测试行引用不存在/已删的测试）：双语顶条「测试/Tests」
+// 引用的 tests/*.test.mjs 必须真实存在，且至少引用一条——把证据主张变成可核对的文件引用。
+const entryBlock = (marker) => {
+  const idx = lines.indexOf(marker)
+  if (idx === -1) return null
+  const start = lines.findIndex((l, k) => k > idx && l.startsWith('### '))
+  if (start === -1) return null
+  let end = lines.length
+  for (let k = start + 1; k < lines.length; k++) {
+    if (lines[k].startsWith('### ') || lines[k].startsWith('## ')) { end = k; break }
+  }
+  return lines.slice(start, end)
+}
+const citeCheck = (label, block) => {
+  if (block === null) { check(label, false, '未找到顶条'); return }
+  const text = block.join('\n')
+  const cites = [...new Set([...text.matchAll(/tests\/[A-Za-z0-9._/-]+\.test\.mjs/g)].map((m) => m[0]))]
+  const missing = cites.filter((f) => !existsSync(join(root, f)))
+  check(
+    `${label} 测试引用可核对（引用存在且至少一条）`,
+    cites.length >= 1 && missing.length === 0,
+    cites.length === 0 ? '未引用任何 tests/*.test.mjs（把主张落成可核对的文件引用）' : `引用 ${cites.join(', ')}${missing.length ? `；缺失：${missing.join(', ')}` : ''}`,
+  )
+}
+citeCheck('CHANGELOG 中文顶条', entryBlock('## 中文'))
+citeCheck('CHANGELOG English 顶条', entryBlock('## English'))
 
 let tagHead = ''
 const tagRev = spawnSync('git', ['rev-parse', `v${version}^{commit}`], { cwd: root, encoding: 'utf8' })
