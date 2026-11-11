@@ -32,7 +32,7 @@ export class RegistryConfigError extends Error {
 
 export interface RegistrySettingsStore {
   get(): RegistryConfig
-  /** 部分补丁写入（0.8.0 起支持 communityCatalog 开关键；registryUrl 沿用 apply 路径） */
+  /** 部分补丁写入（0.8.0 起支持 communityCatalog 开关键；0.12.15 起 +session 两字段（会话注入开关）；registryUrl 沿用 apply 路径） */
   update(patch: { registryUrl?: string; communityCatalog?: boolean; sessionTools?: boolean; sessionPrompt?: boolean }): Promise<void>
   watch(callback: (next: RegistryConfig, prev: RegistryConfig) => void): () => void
 }

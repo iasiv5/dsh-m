@@ -174,7 +174,7 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
   const applySession = async (patch) => {
     const field = patch.sessionTools !== undefined ? "sessionTools" : "sessionPrompt";
     const labelKey = field === "sessionTools" ? "settings.agent.tools" : "settings.agent.prompt";
-    const mainLabel = lookup(labelKey);
+    const mainLabel = lookup(labelKey).split(/[（(]/)[0]; // 记录行 target 取主标签、不带括号副标（中英括号兼收，文案定稿钉死规则）
     const prev = sessionOn ? sessionOn[field] : undefined;
     setSessionOn({ ...(sessionOn || {}), ...patch });
     setSessionBusy(true);
