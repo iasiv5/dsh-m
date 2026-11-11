@@ -84,7 +84,7 @@ const ZH = {
   "detail.screenshots": "截图", "installed.check.incomplete": "检查未完成",
   "settings.community": "社区清单（awesome-dsh-plugin）", "settings.community.toggle": "社区目录开关",
   "settings.community.off": "社区目录已关闭：市场仅显示精选清单，重新开启即时生效。",
-  "settings.agent.label": "会话工具（dshm_*）与系统提示词注入", "settings.agent.desc": "开启后，可在对话中让 AI 助手搜索、安装、升级插件，并获得插件使用引导；关闭后新会话不再注入，市场页面与 dshm 命令行不受影响",
+  "settings.agent.label": "Agent 工具（dshm_*）与系统提示词注入", "settings.agent.desc": "开启后，可在对话中让 AI 助手搜索、安装、升级插件并获得使用引导；关闭后新会话不再注入，市场页面与 dshm 命令行不受影响",
   "settings.agent.title": "AI 会话集成",
   "settings.agent.toggle.failed": "设置写入失败：{err}",
   // 会话注入开关（issue #57 / 0.12.15）：官方插件页 Agent 集成卡（plugins.bundle.config 座位）的 lookup 键
@@ -188,7 +188,7 @@ const EN = {
   "settings.registry": "Curated registry (registry.json)", "settings.source": "Source", "settings.updated": "Updated",
   "settings.count": "Listings", "settings.count.v": "{n}", "settings.remotehint": "Remote notice",
   "settings.force": "Force refresh", "settings.about": "About",
-  "settings.agent.label": "Session tools (dshm_*) and system prompt guidance", "settings.agent.desc": "When on, the AI assistant can search, install, and upgrade plugins in conversation, with usage guidance; when off, new conversations carry no injection \u2014 the market page and dshm CLI are unaffected.",
+  "settings.agent.label": "Agent tools (dshm_*) and system prompt injection", "settings.agent.desc": "When on, the AI assistant can search, install, and upgrade plugins in conversation, with usage guidance; when off, new conversations carry no injection \u2014 the market page and dshm CLI are unaffected.",
   "settings.agent.title": "AI session integration",
   "settings.agent.toggle.failed": "Failed to write the setting: {err}",
   // 会话注入开关（issue #57 / 0.12.15）：官方插件页 Agent 集成卡（plugins.bundle.config 座位）的 lookup 键

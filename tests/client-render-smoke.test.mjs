@@ -662,7 +662,7 @@ describe('issue57 R3：Agent 集成卡（官方插件页单开关座位卡）', 
   const stubController = (value) => ({
     getSnapshot: () => ({ status: 'ready', value, writable: true }),
     subscribe: () => () => {},
-    set: (field, v) => Promise.resolve(),
+    set: (_field, _v) => Promise.resolve(),
   })
 
   it('SSR：缺省开——标题/单开关 checked/描述（EN 字面，#41 纪律）', () => {
@@ -670,7 +670,7 @@ describe('issue57 R3：Agent 集成卡（官方插件页单开关座位卡）', 
     store.attach(stubController({ sessionTools: true, sessionPrompt: true }))
     const html = renderToString(h(components.__AgentCard, { store }))
     assert.ok(html.includes('AI session integration'), '卡片标题缺失')
-    assert.ok(html.includes('Session tools (dshm_*) and system prompt guidance'), '合并标签缺失')
+    assert.ok(html.includes('Agent tools (dshm_*) and system prompt injection'), '合并标签缺失')
     assert.equal((html.match(/type="checkbox"/g) || []).length, 1, '单开关形态')
     assert.equal((html.match(/checked/g) || []).length >= 1, true, '缺省开应 checked')
     assert.ok(html.includes('When on, the AI assistant can search, install, and upgrade plugins in conversation'), '描述缺失')
