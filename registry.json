@@ -450,6 +450,18 @@
       "github": "iasiv5/skills",
       "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1.0.0/icon.svg",
       "homepage": "https://github.com/iasiv5/skills"
+    },
+    {
+      "id": "dsh-minimax-radar",
+      "name": "DSH MiniMax 用量雷达",
+      "description": "MiniMax Token Plan 额度仪表盘：侧边栏常驻 5 小时与周窗口余量及重置倒计时，主面板给出本机 token 消耗与费用估算。",
+      "category": "watchlist",
+      "tags": ["配额","quota","计费","usage"],
+      "source": "github",
+      "github": "themachinecorp/dsh-minimax-radar",
+      "icon": "https://raw.githubusercontent.com/themachinecorp/dsh-minimax-radar/main/icon.svg",
+      "homepage": "https://github.com/themachinecorp/dsh-minimax-radar",
+      "verified": ["0.2.1-rc.5"]
     }
   ]
 }
