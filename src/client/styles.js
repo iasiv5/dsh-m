@@ -424,7 +424,7 @@ button.dshm-dshchip:disabled{cursor:default;opacity:.75}
    小目标 + 整卡大目标相邻的误触半径收敛；开关距卡边 12px，-6px 外溢不越出自身卡片 */
 .dshm-switch::before{content:"";position:absolute;inset:-6px;border-radius:14px}
 .dshm-switch input{display:none}
-.dshm-switch.on{background:#22c55e}
+.dshm-switch.on{background:var(--dsw-alias-brand-primary,#0083b0)}
 .dshm-switch.locked{opacity:.45;cursor:not-allowed}
 .dshm-switch-slider{position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
 .dshm-switch.on .dshm-switch-slider{left:17px}
