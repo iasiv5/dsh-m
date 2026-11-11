@@ -491,6 +491,15 @@ button.dshm-dshchip:disabled{cursor:default;opacity:.75}
 @media (max-width:600px){.dshm-overlay{padding:8px}}
 /* 触控目标加大随输入方式而非宽度（0.9.89 迁移，见 720 块内注释） */
 @media (pointer:coarse){.dshm-winctl{height:38px}.dshm-winctl button{height:36px}}
+.dshm-agent-card{display:flex;flex-direction:column;min-width:0}
+.dshm-agent-card-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-strong,#1f2937);line-height:18px;margin-bottom:2px}
+.dshm-agent-row{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:9px 0}
+.dshm-agent-row+.dshm-agent-row{border-top:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.14))}
+.dshm-agent-row-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.dshm-agent-label{font-size:13px;font-weight:500;color:var(--dsw-alias-label-strong,#374151);line-height:18px}
+.dshm-agent-desc{font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#6b7280)}
+.dshm-agent-row .dshm-switch{flex:none;margin-left:16px;align-self:center}
+.dshm-agent-cascade{font-size:12px;line-height:17px;color:var(--dsw-alias-label-caption,#6b7280);border-top:1px solid var(--dsw-alias-border-l2,rgba(127,127,127,.14));padding-top:8px;margin-top:2px}
 `;
 
 /** CSS 内容哈希（djb2）：bundle 更新 → 哈希变 → 旧样式自动替换（GUI 长驻页面热更自愈，0.7.8）。 */
@@ -517,3 +526,4 @@ function ensureCss() {
 }
 
 export { CSS, cssVersionOf, ensureCss };
+// Agent 集成卡（issue #57 / 0.12.15 R3）：官方插件页座位卡——标签/描述两级层次 + 右侧开关

@@ -658,45 +658,55 @@ describe('评审 P2 源码锚：primaryOverlap → 精选收录徽章接线', ()
   })
 })
 
-describe('issue57 R3：Agent 集成卡（官方插件页 plugins.bundle.config 座位卡）', () => {
-  const stubController = (status, value) => ({
-    getSnapshot: () => ({ status, value, writable: status === 'ready' }),
+describe('issue57 R3：Agent 集成卡（官方插件页单开关座位卡）', () => {
+  const stubController = (value) => ({
+    getSnapshot: () => ({ status: 'ready', value, writable: true }),
     subscribe: () => () => {},
-    set: () => Promise.resolve(),
+    set: (field, v) => Promise.resolve(),
   })
 
-  it('SSR：全开态——标题/两开关/描述/无级联 hint（EN 字面，#41 纪律）', () => {
+  it('SSR：缺省开——标题/单开关 checked/描述（EN 字面，#41 纪律）', () => {
     const store = components.__createSessionGateStore()
-    store.attach(stubController('ready', { sessionTools: true, sessionPrompt: true }))
+    store.attach(stubController({ sessionTools: true, sessionPrompt: true }))
     const html = renderToString(h(components.__AgentCard, { store }))
-    assert.ok(html.includes('AI session integration'), '标题缺失')
-    assert.ok(html.includes('Session tools (AI assistant plugin actions)'), '工具标签缺失')
-    assert.ok(html.includes('System prompt guidance'), '提示词标签缺失')
-    assert.equal((html.match(/type="checkbox"/g) || []).length, 2, '卡内应恰 2 个开关')
-    assert.ok(!html.includes('>Session tools are off'), '全开态不应出现级联 hint 行（title tooltip 含同文案属合法）')
-    store.dispose?.()
+    assert.ok(html.includes('AI session integration'), '卡片标题缺失')
+    assert.ok(html.includes('Session tools (dshm_*) and system prompt guidance'), '合并标签缺失')
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 1, '单开关形态')
+    assert.equal((html.match(/checked/g) || []).length >= 1, true, '缺省开应 checked')
+    assert.ok(html.includes('When on, the AI assistant can search, install, and upgrade plugins in conversation'), '描述缺失')
   })
 
-  it('SSR：tools off——级联 hint 在场且 prompt 开关锁定', () => {
+  it('SSR：关——单开关 unchecked', () => {
     const store = components.__createSessionGateStore()
-    store.attach(stubController('ready', { sessionTools: false, sessionPrompt: true }))
+    store.attach(stubController({ sessionTools: false, sessionPrompt: false }))
     const html = renderToString(h(components.__AgentCard, { store }))
-    assert.ok(html.includes('>Session tools are off'), '级联 hint 行缺失（> 前缀区分 hint 行与 title 属性，评审批 3 P6）')
-    assert.equal((html.match(/disabled="/g) || []).length, 1, 'prompt 开关禁用（disabled= 属性形态精确计数）')
-    store.dispose?.()
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 1)
+    assert.equal((html.match(/disabled=/g) || []).length, 0, 'ready 态不应禁用')
+    assert.ok(!html.includes('checked'), '关态不应 checked')
   })
 
-  it('SSR：字段缺席——缺省开归一化防线（!== false 语义，评审批 3 P6 M3）', () => {
+  it('SSR：loading 态——开关禁用', () => {
     const store = components.__createSessionGateStore()
-    store.attach(stubController('ready', {}))
     const html = renderToString(h(components.__AgentCard, { store }))
-    assert.equal((html.match(/type="checkbox"/g) || []).length, 2, '缺席字段=开，两开关在场')
-    assert.ok(!html.includes('>Session tools are off'), '缺席字段不应触发级联 hint 行')
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 1)
+    assert.equal((html.match(/disabled=/g) || []).length, 1, 'loading 态禁用')
   })
 
-  it('SSR：loading 态——两开关均禁用', () => {
+  it('SSR：混合持久态（tools 开/prompt 关）——单开关显示关，翻开写双 true', () => {
     const store = components.__createSessionGateStore()
+    const writes = []
+    const controller = {
+      getSnapshot: () => ({ status: 'ready', value: { sessionTools: true, sessionPrompt: false } }),
+      subscribe: () => () => {},
+      set: (_field, v) => { writes.push(v); return Promise.resolve() },
+    }
+    store.attach(controller)
+    // 混合态（手改 patch 可能出现）：保守显示关
     const html = renderToString(h(components.__AgentCard, { store }))
-    assert.equal((html.match(/disabled="/g) || []).length, 2, 'loading 态两开关禁用（disabled= 属性形态计数）')
+    assert.equal((html.match(/type="checkbox"/g) || []).length, 1)
+    assert.ok(!html.includes('checked'), '混合态保守显示关')
+    // 翻开：双字段同写 true
+    store.setEnabled(true)
+    assert.deepEqual(writes, [true, true], '翻开应双写 true')
   })
 })

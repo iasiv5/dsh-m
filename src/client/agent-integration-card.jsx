@@ -1,5 +1,5 @@
 /**
- * Agent 集成卡（issue #57 / 0.12.15 R3）：官方插件页设置区的会话注入开关。
+ * Agent 集成卡（issue #57 / 0.12.15 R3.1 单开关版）：官方插件页设置区的会话注入总开关。
  *
  * 机制（渲染门解码，子代理报告 2026-11-11）：
  * - 宿主 GUI 插件详情页的配置区 = `plugins.bundle.config` 槽位（座位制：插件自注册、自绘 UI）；
@@ -7,25 +7,23 @@
  * - 槽位契约：`ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register(
  *     { name, key: <npm 包名>, locale: <ns>, inject }, (el) => createElement(Card, el) ))`。
  * - 值/写：`configForms.get(ns)` 控制器（getSnapshot / subscribe / set）——values 为 Config
- *   volatile 投影（settings describe 自动服务运行中条目）；set 直写宿主 settings 服务
- *   （config-editor 落 patch + loader 原地提交），失败重读控制器回滚。
+ *   volatile 投影；set 直写宿主 settings 服务（config-editor 落 patch + loader 原地提交）。
  * - 两个 id 不同是头号坑：座位 key = npm 包名 "dsh-m"；settings ns = entry id "dshm"。
  *
- * 级联语义（GLOSSARY「级联钳制」）：sessionTools=false ⇒ 提示词引导强制关闭，
- * 存储保留原值、仅显示与生效被钳制。
+ * 单开关语义（主人裁决 R3.1）：一个开关同步写 sessionTools/sessionPrompt 两字段；
+ * 混合持久态（手改 patch）保守显示关，翻开即双写归位。级联钳制语义保留在
+ * session-gate（安全网，正常操作不触发）。
  */
 import React from "react";
 import { lookup } from "./i18n.js";
 
 const h = React.createElement;
 
-/** 会话注入开关的响应式 store（宿主 ConfigForm 控制器的附着封装）。 */
+/** 会话注入总开关的响应式 store（宿主 ConfigForm 控制器的附着封装）。 */
 export function createSessionGateStore() {
-  let state = { status: "loading", sessionTools: true, sessionPrompt: true };
+  let state = { status: "loading", enabled: true };
   const subs = new Set();
   const notify = () => { for (const fn of subs) fn() };
-  const same = (o) => Object.keys(o).every((k) => state[k] === o[k]);
-  const apply = (next) => { if (!same(next)) { state = next; notify(); } };
   let controller = null;
   const syncFrom = (ctrl) => {
     let snap;
@@ -33,9 +31,11 @@ export function createSessionGateStore() {
     const vals = (snap && typeof snap === "object" && snap.value && typeof snap.value === "object") ? snap.value : {};
     apply({
       status: snap.status === "ready" || snap.status === "unavailable" ? snap.status : "loading",
-      sessionTools: vals.sessionTools !== false,
-      sessionPrompt: vals.sessionPrompt !== false,
+      enabled: vals.sessionTools !== false && vals.sessionPrompt !== false,
     });
+  };
+  const apply = (next) => {
+    if (state.enabled !== next.enabled || state.status !== next.status) { state = next; notify() }
   };
   return {
     getSnapshot: () => state,
@@ -46,40 +46,35 @@ export function createSessionGateStore() {
       const unsub = typeof ctrl.subscribe === "function" ? ctrl.subscribe(() => syncFrom(ctrl)) : () => {};
       return () => { unsub(); if (controller === ctrl) controller = null };
     },
-    /** 乐观翻转 + 控制器直写；失败重读控制器回滚。 */
-    setField(field, value) {
-      apply({ ...state, [field]: value });
+    /** 总开关翻转：双字段同写；失败重读控制器回滚。 */
+    setEnabled(value) {
+      apply({ ...state, enabled: value });
       const ctrl = controller;
       if (ctrl === void 0 || typeof ctrl.set !== "function") return Promise.resolve();
-      return Promise.resolve(ctrl.set(field, value)).catch(() => { syncFrom(ctrl) });
+      return Promise.allSettled([
+        ctrl.set("sessionTools", value),
+        ctrl.set("sessionPrompt", value),
+      ]).then(() => syncFrom(ctrl));
     },
     dispose() { controller = null },
   };
 }
 
-/** 「AI 会话集成」卡（自绘；props.store = createSessionGateStore 实例）。 */
+/** 「AI 会话集成」卡（自绘单开关；props.store = createSessionGateStore 实例）。 */
 export function AgentCard({ store }) {
   const state = React.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const toolsOn = state.sessionTools !== false;
-  const promptOn = state.sessionPrompt !== false;
-  const toolsLocked = state.status === "loading" || state.status === "unavailable";
-  const promptLocked = state.status === "loading" || state.status === "unavailable" || toolsOn === false;
-  const switchRow = (labelKey, descKey, on, locked, onChange) => [
-    h("div", { className: "dshm-kvline-row" },
-      h("span", { className: "rl" }, lookup(labelKey)),
-      h("label", { className: `dshm-switch${on ? " on" : ""}${locked ? " locked" : ""}` },
-        h("input", { type: "checkbox", checked: on, disabled: locked, onChange: (e) => onChange(e.target.checked) }),
-        h("span", { className: "dshm-switch-slider" })),
-    ),
-    h("div", { className: "dshm-hint" }, lookup(descKey)),
-  ];
+  const locked = state.status === "loading" || state.status === "unavailable";
+  const on = state.enabled !== false;
   return h("div", { className: "dshm-agent-card" },
     h("div", { className: "dshm-agent-card-title" }, lookup("settings.agent.title")),
-    ...switchRow("settings.agent.tools", "settings.agent.tools.desc", toolsOn, toolsLocked,
-      (v) => store.setField("sessionTools", v)),
-    ...switchRow("settings.agent.prompt", "settings.agent.prompt.desc", promptOn, promptLocked,
-      (v) => store.setField("sessionPrompt", v)),
-    toolsOn === false ? h("div", { className: "dshm-hint" }, lookup("settings.agent.prompt.cascade")) : null,
+    h("div", { className: "dshm-agent-row" },
+      h("div", { className: "dshm-agent-row-main" },
+        h("div", { className: "dshm-agent-label" }, lookup("settings.agent.label")),
+        h("div", { className: "dshm-agent-desc" }, lookup("settings.agent.desc"))),
+      h("label", { className: `dshm-switch${on ? " on" : ""}${locked ? " locked" : ""}` },
+        h("input", { type: "checkbox", checked: on, disabled: locked, onChange: (e) => store.setEnabled(e.target.checked) }),
+        h("span", { className: "dshm-switch-slider" })),
+    ),
   );
 }
 
