@@ -462,4 +462,3 @@ describe('registry-controller：session 开关字段 watch 同步（issue #57 / 
     assert.equal(controller.config.sessionPrompt, true)
   })
 })
-
