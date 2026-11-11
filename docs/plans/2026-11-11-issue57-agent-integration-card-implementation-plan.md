@@ -260,3 +260,5 @@ R3 最终形态（替代 R1 面板卡路线）：
 - 文档：README/GLOSSARY 的入口措辞已是插件页形态（R2 落 ✓）；CHANGELOG 0.12.15 条目的「做法/兼容性」行改写为座位卡机制
 
 验收：插件 → dsh-m 详情页出现 `section[data-plugin-config]` 内的「AI 会话集成」卡；翻转 → PATCH `id: dshm` 条目 config 增键 + UI 即时回读；市场设置 tab 三卡不变。
+
+**locale 三键清理（2026-11-11，主人裁决：先落地、顺风车下一版）**：R2 遗留的 `locale/*.json` 三键（`settings.group.session` / `settings.sessionTools` / `settings.sessionPrompt`）为死键——宿主只读取 `meta`（`readPluginMeta` 取 `meta.title`/`meta.description`），client 字典已于执行评审 P2 清理。现已删除，locale 回到仅 `meta` 的 0.12.14 形态。上文 R1/R2 段落保留为历史记录，不再代表现状。

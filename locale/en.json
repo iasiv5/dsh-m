@@ -2,8 +2,5 @@
   "meta": {
     "title": "Plugin Marketplace (dsh-m)",
     "description": "Customizable curated-list marketplace for DSH plugins: collect, install, uninstall, and upgrade in one place, with agent tools and the dshm CLI."
-  },
-  "settings.group.session": "AI session integration",
-  "settings.sessionTools": "Session tools (AI assistant plugin actions)",
-  "settings.sessionPrompt": "System prompt guidance"
+  }
 }
