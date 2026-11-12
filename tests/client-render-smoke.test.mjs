@@ -147,7 +147,7 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
   // 旧字面值留作回落。负向锚为源级 ASCII 字面量缺席（合法形态，CRLF 安全）。
   it('还原态官方对齐：mask-1 + mask-blur 遮罩、面板不透明 layer-2、官方圆角/阴影 token', () => {
     assert.match(stylesSrc, /\.dshm-overlay::before\{content:'';position:absolute;inset:var\(--dsh-windows-titlebar-height,0px\) 0 0;background:var\(--dsw-alias-bg-mask-1,rgba\(0,0,0,\.24\)\);backdrop-filter:var\(--dsw-mask-blur,none\)\}/, '遮罩挪 ::before 且从标题栏下缘起画（官方 .AnXs9G_mask 同构，条带不两截色）')
-    assert.match(stylesSrc, /\.dshm-panel\{[^}]*background:var\(--dsw-alias-bg-layer-2,var\(--dsw-alias-bg-elevated,var\(--dsw-alias-bg-base,#fff\)\)\)/, '面板不透明 layer-2 在（玻璃退役）')
+    assert.match(stylesSrc, /\.dshm-panel\{[^}]*background:var\(--dsw-alias-bg-layer-2,var\(--dsw-alias-bg-base,#fff\)\)/, '面板不透明 layer-2 在（玻璃退役；失效 bg-elevated 中间层已删）')
     assert.doesNotMatch(stylesSrc, /color-mix\(in srgb,var\(--dsw-alias-bg-base,#fff\) 86%,transparent\)/, '86% 玻璃底字面量已从源移除')
     assert.match(stylesSrc, /\.dshm-panel\{[^}]*border-radius:var\(--dsw-radius-panel,14px\);box-shadow:var\(--dsw-elevation-prominent,0 18px 48px rgba\(2,6,23,\.25\)\)/, '官方圆角/阴影 token 在（旧字面值回落）')
   })

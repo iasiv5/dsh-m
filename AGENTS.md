@@ -14,6 +14,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - **cordis.patch.yml 解析三纯函数（行枚举/行覆盖编辑/覆盖行读取）**: `src/core/patch-yaml.ts`。写 patch fixture 前先读它——口径：根非序列/坏 YAML/注释-only 文件 = `readable:false`（不可读），「可读的空 patch」规范形态是 `[]`（2026-11-07 install-guard 壳豁免轮实录：注释-only 夹具多付一轮红）。
 - **Upgrade-target resolution（升级目标解析，ADR-0028）**: `src/core/upgrade-target.ts`; tests: `tests/upgrade-target.test.mjs`. Sole judge of installed-plugin → installable-entry / unsupported; projection and both upgrade ladders consume it.
 - **Market card rendering and badge wiring**: `src/client/market-tab.jsx`; SSR/source-anchor checks: `tests/client-render-smoke.test.mjs`; i18n key coverage: `tests/client-i18n.test.mjs`.
+- **Client styles (all CSS)**: `src/client/styles.js`; every `--dsw-alias-*` must exist in the host theme — check names against [`../01_docs/research/dsw-alias-tokens.md`](../01_docs/research/dsw-alias-tokens.md) (name list + dead-token lesson; `ops_grep` skips `node_modules`, verify via the doc's node one-liner). Guard: `tests/client-token-hygiene.test.mjs`.
 - **Installed-package enumeration and manifest metadata**: `src/core/installed.ts`; tests: `tests/installed.test.mjs`.
 - **dshm_search 输出（含注册表状态行）**: `src/tools.ts`（`renderSearch` / `registryNoteOf`）；tests: `tests/tools-search.test.mjs`.
 - **dshm_* 工具注册与 schema 断言**: `src/tools.ts`（`registerTools` 第四参可注入 profile）；`defineTool` 把 parameters 规范化为 JSON Schema `{type, properties, required}`——测试断言打 `parameters.properties.<字段>`，不是 `parameters.<字段>`（0.12.2 #41 实录：断言落空付一次探针）。
