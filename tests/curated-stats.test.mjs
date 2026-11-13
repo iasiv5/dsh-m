@@ -61,13 +61,15 @@ describe('loadCuratedStats 编排', () => {
       if (String(url).includes('api.github.com/repos/o/b')) return { stargazers_count: 9 }
       throw new Error('unexpected ' + url)
     }
-    const r1 = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], githubKeys: ['o/a', 'o/b'], dir, deps: { fetchJson } })
+    const r1 = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], githubKeys: ['o/a', 'o/b'], entries: [{ npm: 'pkg-a', github: 'o/a' }, { npm: 'pkg-b', github: 'o/b' }], dir, deps: { fetchJson } })
     assert.equal(r1.stats['npm:pkg-a'].downloads, 100)
     assert.equal(r1.stats['npm:pkg-a'].downloadsStart, '2026-10-14')
-    assert.equal(r1.stats['gh:o/a'].stars, 7)
+    assert.equal(r1.stats['npm:pkg-a'].stars, 7, 'gh star 并回同条目 npm stat（配对合并，评审 R6）')
+    assert.equal(r1.stats['gh:o/a'], undefined, '配对后不残留孤儿 gh 键')
     assert.equal(r1.errors.length, 0)
     assert.equal(calls.filter((u) => u.includes('last-month')).length, 1, 'bulk 一枪')
-    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8')).entries).sort(), ['gh:o/a', 'gh:o/b', 'npm:pkg-a', 'npm:pkg-b'])
+    // 配对合并（R6）：gh star 并回 npm stat 后写箱，孤儿 gh 键不落盘
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8')).entries).sort(), ['npm:pkg-a', 'npm:pkg-b'])
     // TTL 内免网络：新调用 fetchJson 计数 0
     const before = calls.length
     const r2 = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: ['o/a'], dir, deps: { fetchJson } })

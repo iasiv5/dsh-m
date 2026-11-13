@@ -667,7 +667,7 @@ export async function listMarket(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ ...gap, entries: community.directGap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
@@ -955,7 +955,7 @@ export async function existingMarketIds(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ ...gap, entries: community.directGap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {

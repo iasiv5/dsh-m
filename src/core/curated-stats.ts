@@ -33,6 +33,9 @@ export interface LoadCuratedStatsInput {
   npmKeys: string[]
   githubKeys: string[]
   dir: string
+  /** npm↔github 同条目配对（ADR-0036 R6）：提供时 gh star 并回同条目 npm stat（删孤儿 gh 键）；
+   *  不传则 gh 结果独立 gh: 键存放（github-only 条目靠它注记）。 */
+  entries?: Array<{ npm?: string; github?: string }>
   ttlMs?: number
   deadlineAt?: number
   signal?: AbortSignal
@@ -74,6 +77,20 @@ export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): 
   return box.entries as Record<string, CuratedStat>
 }
 
+/** 配对合并（R6）：gh star 并回同条目 npm stat 并删孤儿 gh 键；npm 缺席（github-only）保留 gh 键。 */
+function mergePairedStars(stats: Record<string, CuratedStat>, pairs: Array<{ npm?: string; github?: string }>): void {
+  for (const { npm, github } of pairs) {
+    if (typeof npm !== 'string' || npm === '' || typeof github !== 'string' || github === '') continue
+    const gh = stats[`gh:${github}`]
+    const stars = gh?.stars
+    const npmStat = stats[`npm:${npm}`]
+    if (npmStat && typeof stars === 'number') {
+      npmStat.stars = stars
+      delete stats[`gh:${github}`]
+    }
+  }
+}
+
 const nonNeg = (v: unknown): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
 
@@ -109,6 +126,9 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
   const githubKeys = Array.isArray(input.githubKeys) ? input.githubKeys : []
   const keys = [...npmKeys.map((k) => `npm:${k}`), ...githubKeys.map((k) => `gh:${k}`)]
+  const pairs = Array.isArray(input.entries)
+    ? input.entries.filter((e) => !!e && typeof e.npm === 'string' && e.npm !== '' && typeof e.github === 'string' && e.github !== '')
+    : []
   if (keys.length === 0) {
     return { stats, errors }
   }
@@ -119,7 +139,7 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
       if (fresh[k]) stats[k] = fresh[k]
     }
     return { stats, errors }
-  }
+  }    if (pairs.length > 0) mergePairedStars(stats, pairs)
 
   const checkedAt = new Date(now()).toISOString()
   const fetched: Record<string, CuratedStat> = {}
@@ -191,6 +211,8 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   }
 
   // 合并：新值优先，失败键旧值兜底（fail-open，ADR-0036）；GC = 写回仅当前 keys
+  // 配对合并（R6）：gh star 并回同条目 npm stat（孤儿 gh 键删除；github-only 条目保留 gh 键）
+  if (pairs.length > 0) mergePairedStars(fetched, pairs)
   for (const k of keys) {
     if (fetched[k]) stats[k] = fetched[k]
     else if (fallback[k]) stats[k] = fallback[k]
