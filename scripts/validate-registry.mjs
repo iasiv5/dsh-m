@@ -171,12 +171,12 @@ if (OFFLINE) {
       if (Array.isArray(entry.verified) && entry.verified.length > 0) {
         try {
           for (const v of verifiedPollution(entry.verified, await publishedVersions(entry.npm))) {
-            warned = true
-            console.warn(`⚠ ${where} verified 含 ${v}——命中插件自身 npm 已发布版本：verified 只记 DSH 运行时版本，勿填插件版本（know-how 022）`)
+            failed = true // 022 铁律门禁化（2026-11-13 stock-kanban 0.3.0 发版实录）：verified 命中插件自身版本是确定性污染，warn 放行不足以拦住
+            console.error(`✗ ${where} verified 含 ${v}——命中插件自身 npm 已发布版本：verified 只记 DSH 运行时版本，勿填插件版本（know-how 022）`)
           }
         } catch (err) {
           warned = true
-          console.warn(`⚠ ${where} verified 污染检查跳过：${err instanceof Error ? err.message : err}`)
+          console.warn(`⚠ ${where} verified 污染检查跳过（网络/限额，fail-open）：${err instanceof Error ? err.message : err}`)
         }
       }
     }
