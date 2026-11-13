@@ -69,6 +69,8 @@ export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): 
   const t = Date.parse(box.fetchedAt)
   if (!Number.isFinite(t) || now - t > ttlMs) return null
   if (!box.entries || typeof box.entries !== 'object' || Array.isArray(box.entries)) return null
+  // 空箱不算新鲜数据（R5：全失败落盘的空箱会以「新鲜」身份抑制重试 24h——19:45 泄漏空箱实测）
+  if (Object.keys(box.entries as Record<string, unknown>).length === 0) return null
   return box.entries as Record<string, CuratedStat>
 }
 
@@ -192,6 +194,10 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   for (const k of keys) {
     if (fetched[k]) stats[k] = fetched[k]
     else if (fallback[k]) stats[k] = fallback[k]
+  }
+  // 全失败不落盘（R5：空箱会以「新鲜」身份抑制重试 24h）；有部分成功或有缓存兜底才写
+  if (Object.keys(stats).length === 0 && errors.length > 0) {
+    return { stats, errors }
   }
   try {
     await mkdir(input.dir, { recursive: true })

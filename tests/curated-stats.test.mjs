@@ -6,7 +6,7 @@
  */
 import { describe, it, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { curatedGapKeys, parseCuratedStatsBox, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
@@ -43,6 +43,10 @@ describe('parseCuratedStatsBox', () => {
     assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString() }, now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString(), entries: 'no' }, now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox(null, now, CURATED_STATS_TTL_MS), null)
+  })
+  it('空 entries 的新鲜箱 → null（评审 R5：空箱不得当新鲜数据抑制重试）', () => {
+    const emptyBox = { version: 1, fetchedAt: new Date(now).toISOString(), entries: {} }
+    assert.equal(parseCuratedStatsBox(emptyBox, now, CURATED_STATS_TTL_MS), null)
   })
 })
 
@@ -115,9 +119,19 @@ describe('loadCuratedStats 编排', () => {
     assert.deepEqual(Object.keys(box.entries), ['npm:pkg-a'], 'GC prune 不在当前 keys 的键')
   })
 
-  it('全失败降级：stats 空对象 + errors 非空，不抛', async () => {
-    const r = await loadCuratedStats({ npmKeys: ['x'], githubKeys: ['o/x'], dir: join(cacheRoot, 'case5'), deps: { fetchJson: async () => { throw new Error('down') } } })
+  it('全失败降级：stats 空对象 + errors 非空，不抛；且不落盘空箱（防污染抑制重试，评审 R5）', async () => {
+    const dir = join(cacheRoot, 'case5')
+    const r = await loadCuratedStats({ npmKeys: ['x'], githubKeys: ['o/x'], dir, deps: { fetchJson: async () => { throw new Error('down') } } })
     assert.deepEqual(r.stats, {})
     assert.ok(r.errors.length >= 2)
+    assert.equal(existsSync(join(dir, 'stats.json')), false, '全失败不写箱')
+  })
+
+  it('被污染的新鲜空箱 → 视为无缓存并重拉（评审 R5 现场复演：真实目录空箱抑制数字 24h）', async () => {
+    const dir = join(cacheRoot, 'case6')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: {} }))
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: [], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
+    assert.equal(r.stats['npm:pkg-a'].downloads, 100, '空箱不抑制重试')
   })
 })

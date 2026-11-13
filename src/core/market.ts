@@ -59,6 +59,9 @@ import { annotateDirectStats, curatedGapKeys, loadCuratedStats, type LoadCurated
 
 /** 缺口直查生产缺省（ADR-0036）：缓存优先 + 24h TTL；测试夹具必须显式惰性桩（R4⑩）。 */
 const defaultFetchCuratedStats: (input: LoadCuratedStatsInput) => Promise<LoadCuratedStatsResult> = loadCuratedStats
+/** 直查独立竞速预算（R5）：不与共享 deadline 共池——探测段吃光预算会让首访数字永远缺席；
+ *  超时后任务继续在后台完成并落盘缓存，下次浏览命中。 */
+const CURATED_DIRECT_RACE_MS = 2_500
 import { fetchPublishedAt } from './published-at.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import {
@@ -664,8 +667,8 @@ export async function listMarket(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, dir, deadlineAt, signal }),
-            deadlineAt - Date.now(),
+            fetchCurated({ ...gap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
             merged = annotateDirectStats(mergedRaw, raced.stats)
@@ -952,8 +955,8 @@ export async function existingMarketIds(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, dir, deadlineAt, signal }),
-            deadlineAt - Date.now(),
+            fetchCurated({ ...gap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
             mergedForStats = annotateDirectStats(mergedForStats, raced.stats)
