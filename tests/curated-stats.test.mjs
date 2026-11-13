@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { curatedGapKeys, parseCuratedStatsBox, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
+import { curatedGapKeys, parseCuratedStatsBox, parseGhToken, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
 
 const cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-curated-'))
 process.env.DSHM_CACHE_DIR = cacheRoot
@@ -78,6 +78,20 @@ describe('loadCuratedStats 编排', () => {
     assert.deepEqual(r2.errors, [])
   })
 
+  it('bulk 成功但缺键（0 下载/无记录省略）→ 缺键逐包 point 回退补齐（评审 R7）', async () => {
+    const urls = []
+    const fetchJson = async (url) => {
+      urls.push(String(url))
+      if (String(url).includes(',')) return { 'pkg-hot': { downloads: 500, start: 's', end: 'e' } }
+      if (String(url).includes('pkg-zero')) return { downloads: 0, start: 's', end: 'e' }
+      throw new Error('unexpected ' + url)
+    }
+    const r = await loadCuratedStats({ npmKeys: ['pkg-hot', 'pkg-zero'], githubKeys: [], dir: join(cacheRoot, 'case7'), deps: { fetchJson } })
+    assert.equal(r.stats['npm:pkg-hot'].downloads, 500)
+    assert.equal(r.stats['npm:pkg-zero'].downloads, 0, 'point 对 0 下载返回 0（键级补齐）')
+    assert.ok(urls.filter((u) => u.includes('pkg-zero') && !u.includes(',')).length >= 1, '缺键逐包回退发生')
+  })
+
   it('scoped 包名以 %2F 形态请求', async () => {
     const urls = []
     const r = await loadCuratedStats({ npmKeys: ['@iasiv5/x'], githubKeys: [], dir: join(cacheRoot, 'case2'), deps: { fetchJson: async (url) => { urls.push(String(url)); return { '@iasiv5/x': { downloads: 5, start: 's', end: 'e' } } } } })
@@ -135,5 +149,50 @@ describe('loadCuratedStats 编排', () => {
     writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: {} }))
     const r = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: [], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
     assert.equal(r.stats['npm:pkg-a'].downloads, 100, '空箱不抑制重试')
+  })
+})
+
+describe('gh token 通道（R8）：认证请求头与解析', () => {
+  it('parseGhToken：github.com 段 oauth_token 提取；缺失/空 → null', () => {
+    const yaml = ['github.com:', '    oauth_token: ghp_abc123', '    user: iasiv5', ''].join('\n')
+    assert.equal(parseGhToken(yaml), 'ghp_abc123')
+    assert.equal(parseGhToken('gitlab.com:\n    oauth_token: x'), null)
+    assert.equal(parseGhToken(''), null)
+  })
+  it('deps.ghToken 注入 → gh 请求带 Authorization；npm bulk 不带', async () => {
+    const dir = join(cacheRoot, 'case8')
+    const captured = []
+    const fetchJson = async (url, opts) => {
+      captured.push({ url: String(url), headers: opts && opts.headers })
+      if (String(url).includes('downloads/point/last-month/pkg-a')) return { 'pkg-a': { downloads: 9, start: 's', end: 'e' } }
+      if (String(url).includes('api.github.com/repos/o/a')) return { stargazers_count: 3 }
+      throw new Error('no')
+    }
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: ['o/a'], dir, deps: { fetchJson, ghToken: 'tok123' } })
+    assert.equal(r.stats['gh:o/a'].stars, 3)
+    const ghCall = captured.find((c) => c.url.includes('api.github.com'))
+    assert.equal(ghCall.headers.Authorization, 'Bearer tok123', 'gh 请求带认证头')
+  })
+  it('无 token → gh 匿名请求（无 Authorization 头；HOME 隔离防读真实 gh 凭据）', async () => {
+    const { _resetGhTokenCacheForTests } = await import('../lib/core/curated-stats.js')
+    const prevHome = process.env.HOME
+    process.env.HOME = join(cacheRoot, 'empty-home')
+    _resetGhTokenCacheForTests()
+    try {
+      const dir = join(cacheRoot, 'case8b')
+      const captured = []
+      const fetchJson = async (url, opts) => {
+        captured.push({ url: String(url), headers: opts && opts.headers })
+        if (String(url).includes('api.github.com/repos/o/a')) return { stargazers_count: 3 }
+        throw new Error('no')
+      }
+      const r = await loadCuratedStats({ npmKeys: [], githubKeys: ['o/a'], dir, deps: { fetchJson } })
+      assert.equal(r.stats['gh:o/a'].stars, 3)
+      const ghCall = captured.find((c) => c.url.includes('api.github.com'))
+      assert.ok(!ghCall.headers || ghCall.headers.Authorization === undefined, '匿名请求不带认证头')
+    } finally {
+      process.env.HOME = prevHome
+      _resetGhTokenCacheForTests()
+    }
   })
 })

@@ -89,6 +89,11 @@ export function parseGhToken(hostsYaml: string): string | null {
 
 let ghTokenCache: string | null | undefined
 
+/** 测试钩子：清 gh token 解析缓存（_resetMergedMarketForTests 同款先例；测试隔离用）。 */
+export function _resetGhTokenCacheForTests(): void {
+  ghTokenCache = undefined
+}
+
 /** gh token 解析顺序：DSHM_GITHUB_TOKEN / GH_TOKEN env → gh CLI hosts.yml → null（匿名降级）。模块级缓存一次。 */
 function ghTokenOnce(): string | null {
   if (ghTokenCache !== undefined) return ghTokenCache
