@@ -126,6 +126,29 @@ describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
     assert.deepEqual(Object.keys(box.entries), ['npm:pkg-a'], 'GC prune 不在当前 keys 的键')
   })
 
+  it('GC 外键剔除：箱内预置过期 stale 键 → 成功刷新后盘上该键消失（评审 P3：现行实现覆盖钉子）', async () => {
+    const dir = join(cacheRoot, 'case7')
+    const t0 = 1_700_000_000_000
+    // 手工预置「过期」箱——fresh 快路直接按 keys 供数、不重写盘，测不到 GC；fetchedAt 必须落在 TTL 外
+    const staleTime = new Date(t0 - CURATED_STATS_TTL_MS - 1).toISOString()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'stats.json'), JSON.stringify({
+      version: 1,
+      fetchedAt: staleTime,
+      entries: { 'npm:pkg-a': { downloads: 1, checkedAt: staleTime }, 'npm:stale-old': { downloads: 2, checkedAt: staleTime } },
+    }))
+    const r = await loadCuratedStats({
+      npmKeys: ['pkg-a'],
+      dir,
+      ttlMs: CURATED_STATS_TTL_MS,
+      deps: { now: () => t0, fetchJson: async () => ({ 'pkg-a': { downloads: 7, start: 's', end: 'e' } }) },
+    })
+    assert.equal(r.stats['npm:pkg-a'].downloads, 7, '当前键取新值')
+    assert.equal(r.stats['npm:stale-old'], undefined, '外键不进当轮供数（合并循环只遍历当前 keys）')
+    const box = JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8'))
+    assert.deepEqual(Object.keys(box.entries), ['npm:pkg-a'], '盘上箱内外键被 GC 剔除（写回仅当前 keys）')
+  })
+
   it('全失败降级：stats 空对象 + errors 非空，不抛；不落盘空箱（防污染抑制重试，评审 R5）', async () => {
     const dir = join(cacheRoot, 'case5')
     const r = await loadCuratedStats({ npmKeys: ['x'], dir, deps: { fetchJson: async () => { throw new Error('down') } } })
