@@ -1,0 +1,203 @@
+/**
+ * 精选缺口直查（ADR-0036）：directGap 条目的 npm bulk 下载量 + GitHub star 拉取。
+ * - 动态缺口集驱动（curatedGapKeys），24h TTL 落盘缓存（<dir>/stats.json，writeFileAtomic）
+ *   + 刷新周期 GC（写回仅保留当前 keys）；
+ * - npm bulk 一枪（scoped `/`→`%2F`，≤128 包/批由调用方分片）失败 → 逐包 point 回退；
+ *   GitHub 逐 repo，两段并发均 ≤4；
+ * - 失败逐项静默（errors 收集）；TTL 过期拉取失败**保留旧值**（装饰性指标 fail-open）；
+ * - 全部可注入（fetchJson/now），生产缺省 fetchJsonLimited(timeoutMs 8000)。
+ * DOM-free 纯逻辑直测于 tests/curated-stats.test.mjs。
+ */
+import { readFile, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { writeFileAtomic } from './atomic-write.js'
+import { fetchJsonLimited } from './httpx.js'
+import type { DirectGapEntry } from './merged-market.js'
+
+export const CURATED_STATS_TTL_MS = 24 * 60 * 60 * 1000
+
+const NPM_BULK = 'https://api.npmjs.org/downloads/point/last-month/'
+const GH_REPO = 'https://api.github.com/repos/'
+const GH_CONCURRENCY = 4
+const REQUEST_TIMEOUT_MS = 8_000
+
+export interface CuratedStat {
+  downloads?: number
+  downloadsStart?: string
+  downloadsEnd?: string
+  stars?: number
+  checkedAt: string
+}
+
+export interface LoadCuratedStatsInput {
+  npmKeys: string[]
+  githubKeys: string[]
+  dir: string
+  ttlMs?: number
+  deadlineAt?: number
+  signal?: AbortSignal
+  deps?: {
+    fetchJson?: (url: string, opts?: Record<string, unknown>) => Promise<unknown>
+    now?: () => number
+  }
+}
+
+export interface LoadCuratedStatsResult {
+  stats: Record<string, CuratedStat>
+  errors: string[]
+}
+
+type FetchJsonFn = (url: string, opts?: Record<string, unknown>) => Promise<unknown>
+
+/** 缺口键集：npm/github 拆分（双键条目两边都进；无键条目由 mergeRegistries 不产出）。 */
+export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[]; githubKeys: string[] } {
+  const npmKeys: string[] = []
+  const githubKeys: string[] = []
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (!e || typeof e !== 'object') continue
+    if (typeof e.npm === 'string' && e.npm !== '') npmKeys.push(e.npm)
+    if (typeof e.github === 'string' && e.github !== '') githubKeys.push(e.github)
+  }
+  return { npmKeys, githubKeys }
+}
+
+/** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内 + entries 对象 → entries；否则 null。 */
+export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): Record<string, CuratedStat> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const box = raw as { version?: unknown; fetchedAt?: unknown; entries?: unknown }
+  if (box.version !== 1 || typeof box.fetchedAt !== 'string') return null
+  const t = Date.parse(box.fetchedAt)
+  if (!Number.isFinite(t) || now - t > ttlMs) return null
+  if (!box.entries || typeof box.entries !== 'object' || Array.isArray(box.entries)) return null
+  return box.entries as Record<string, CuratedStat>
+}
+
+const nonNeg = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
+
+const scopedName = (pkg: string): string => pkg.replace('/', '%2F')
+
+async function readBoxEntries(dir: string, now: number, ttlMs: number): Promise<{ fresh: Record<string, CuratedStat> | null; fallback: Record<string, CuratedStat> }> {
+  try {
+    const raw = JSON.parse(await readFile(join(dir, 'stats.json'), 'utf8')) as unknown
+    const parsed = parseCuratedStatsBox(raw, now, ttlMs)
+    if (parsed) return { fresh: parsed, fallback: parsed }
+    const entries = (raw as { entries?: unknown }).entries
+    if (entries && typeof entries === 'object' && !Array.isArray(entries)) {
+      return { fresh: null, fallback: entries as Record<string, CuratedStat> }
+    }
+  } catch {
+    /* 无缓存/坏 JSON：零兜底 */
+  }
+  return { fresh: null, fallback: {} }
+}
+
+/**
+ * 缺口直查编排：缓存新鲜（TTL 内）→ 零网络按 keys 供数；
+ * 过期/缺失 → 全量重拉当前 keys（失败键保留旧值 fail-open）→ GC 写回。
+ * deadlineAt/signal 由调用方竞速/透传（本函数不做内部超时）。
+ */
+export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<LoadCuratedStatsResult> {
+  const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : CURATED_STATS_TTL_MS
+  const now = input.deps?.now ?? Date.now
+  const fetchJson: FetchJsonFn = input.deps?.fetchJson
+    ?? (async (url) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal }))
+  const errors: string[] = []
+  const stats: Record<string, CuratedStat> = {}
+  const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
+  const githubKeys = Array.isArray(input.githubKeys) ? input.githubKeys : []
+  const keys = [...npmKeys.map((k) => `npm:${k}`), ...githubKeys.map((k) => `gh:${k}`)]
+  if (keys.length === 0) {
+    return { stats, errors }
+  }
+
+  const { fresh, fallback } = await readBoxEntries(input.dir, now(), ttl)
+  if (fresh) {
+    for (const k of keys) {
+      if (fresh[k]) stats[k] = fresh[k]
+    }
+    return { stats, errors }
+  }
+
+  const checkedAt = new Date(now()).toISOString()
+  const fetched: Record<string, CuratedStat> = {}
+
+  // npm bulk 一枪 → 失败逐包回退（并发 ≤4）
+  if (npmKeys.length > 0) {
+    try {
+      const resp = (await fetchJson(NPM_BULK + npmKeys.map(scopedName).join(','))) as Record<string, { downloads?: unknown; start?: unknown; end?: unknown }> | null
+      for (const pkg of npmKeys) {
+        const hit = resp?.[pkg] ?? resp?.[scopedName(pkg)]
+        const downloads = nonNeg(hit?.downloads)
+        if (downloads !== undefined) {
+          fetched[`npm:${pkg}`] = {
+            downloads,
+            ...(typeof hit?.start === 'string' ? { downloadsStart: hit.start } : {}),
+            ...(typeof hit?.end === 'string' ? { downloadsEnd: hit.end } : {}),
+            checkedAt,
+          }
+        }
+      }
+    } catch (err) {
+      errors.push(`npm bulk 失败，逐包回退：${err instanceof Error ? err.message : String(err)}`)
+      let cursor = 0
+      const workers = Array.from({ length: Math.min(GH_CONCURRENCY, npmKeys.length) }, async () => {
+        for (;;) {
+          const idx = cursor
+          cursor += 1
+          if (idx >= npmKeys.length) return
+          const pkg = npmKeys[idx]
+          try {
+            const resp = (await fetchJson(NPM_BULK + scopedName(pkg))) as { downloads?: unknown; start?: unknown; end?: unknown } | null
+            const downloads = nonNeg(resp?.downloads)
+            if (downloads !== undefined) {
+              fetched[`npm:${pkg}`] = {
+                downloads,
+                ...(typeof resp?.start === 'string' ? { downloadsStart: resp.start } : {}),
+                ...(typeof resp?.end === 'string' ? { downloadsEnd: resp.end } : {}),
+                checkedAt,
+              }
+            }
+          } catch (e) {
+            errors.push(`npm:${pkg} ${e instanceof Error ? e.message : String(e)}`)
+          }
+        }
+      })
+      await Promise.all(workers)
+    }
+  }
+
+  // GitHub star 逐 repo（并发 ≤4）
+  if (githubKeys.length > 0) {
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(GH_CONCURRENCY, githubKeys.length) }, async () => {
+      for (;;) {
+        const idx = cursor
+        cursor += 1
+        if (idx >= githubKeys.length) return
+        const repo = githubKeys[idx]
+        try {
+          const resp = (await fetchJson(GH_REPO + repo)) as { stargazers_count?: unknown } | null
+          const stars = nonNeg(resp?.stargazers_count)
+          if (stars !== undefined) fetched[`gh:${repo}`] = { stars, checkedAt }
+        } catch (e) {
+          errors.push(`gh:${repo} ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+    })
+    await Promise.all(workers)
+  }
+
+  // 合并：新值优先，失败键旧值兜底（fail-open，ADR-0036）；GC = 写回仅当前 keys
+  for (const k of keys) {
+    if (fetched[k]) stats[k] = fetched[k]
+    else if (fallback[k]) stats[k] = fallback[k]
+  }
+  try {
+    await mkdir(input.dir, { recursive: true })
+    await writeFileAtomic(join(input.dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: checkedAt, entries: stats }))
+  } catch (e) {
+    errors.push(`cache write: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  return { stats, errors }
+}
