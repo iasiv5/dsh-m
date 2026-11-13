@@ -138,13 +138,40 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
     for (const k of keys) {
       if (fresh[k]) stats[k] = fresh[k]
     }
+    if (pairs.length > 0) mergePairedStars(stats, pairs)
     return { stats, errors }
-  }    if (pairs.length > 0) mergePairedStars(stats, pairs)
+  }
 
   const checkedAt = new Date(now()).toISOString()
   const fetched: Record<string, CuratedStat> = {}
 
   // npm bulk 一枪 → 失败逐包回退（并发 ≤4）
+  const runPerPkgFallback = async (list: string[]): Promise<void> => {
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(GH_CONCURRENCY, list.length) }, async () => {
+      for (;;) {
+        const idx = cursor
+        cursor += 1
+        if (idx >= list.length) return
+        const pkg = list[idx]
+        try {
+          const resp = (await fetchJson(NPM_BULK + scopedName(pkg))) as { downloads?: unknown; start?: unknown; end?: unknown } | null
+          const downloads = nonNeg(resp?.downloads)
+          if (downloads !== undefined) {
+            fetched[`npm:${pkg}`] = {
+              downloads,
+              ...(typeof resp?.start === 'string' ? { downloadsStart: resp.start } : {}),
+              ...(typeof resp?.end === 'string' ? { downloadsEnd: resp.end } : {}),
+              checkedAt,
+            }
+          }
+        } catch (e) {
+          errors.push(`npm:${pkg} ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+    })
+    await Promise.all(workers)
+  }
   if (npmKeys.length > 0) {
     try {
       const resp = (await fetchJson(NPM_BULK + npmKeys.map(scopedName).join(','))) as Record<string, { downloads?: unknown; start?: unknown; end?: unknown }> | null
@@ -160,6 +187,9 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
           }
         }
       }
+      // R7：bulk 成功但省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐
+      const missing = npmKeys.filter((pkg) => fetched[`npm:${pkg}`] === undefined)
+      if (missing.length > 0) await runPerPkgFallback(missing)
     } catch (err) {
       errors.push(`npm bulk 失败，逐包回退：${err instanceof Error ? err.message : String(err)}`)
       let cursor = 0
