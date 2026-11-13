@@ -21,7 +21,7 @@
 
 ## 决策修订三（2026-11-14，R10：gh star 直查整链退役）
 
-预览复检后三次修订：精选/缺口的 **gh star 直查整链退役**（R6 配对合并、R8 token 通道、gh 拉取段与 githubKeys/entries 契约面一并删除）。动机：GitHub 匿名限额被宿主常规探测与直查共同耗尽（60/时/IP，实测 403），star 拉取在限额窗口内恒失败——时有时无的装饰性字段不值得持续消耗额度与故障面；且 C 方案已裁定精选卡不上 star，star 唯一来源收敛为**上游目录镜像**（免费、随目录每日刷新；github-only 条目等上游收录后经 join 免费获得）。
+预览复检后三次修订：精选/缺口的 **gh star 直查整链退役**（R6 配对合并、R8 token 通道、gh 拉取段与 githubKeys/entries 契约面一并删除）。动机：GitHub 匿名限额被宿主常规探测与直查共同耗尽（60/时/IP，实测 403），star 拉取在限额窗口内恒失败——时有时无的装饰性字段不值得持续消耗额度与故障面；且 C 方案已裁定精选卡不上 star，star 唯一来源是**上游目录镜像**（免费、随目录每日刷新——指社区区条目自身的 star，社区卡 star 来自目录条目，非 join 注记）。github-only 精选条目即使上游收录，join 按 C 方案也只注记 downloads 族：卡面仍无 star；镜像有下载量时经 join 点亮的也只是下载量。
 
 落地：loadCuratedStats 收敛为 npm bulk + 缺键逐包 point 回退（下载量族单源，R7 缺键回退保留）；契约面移除 githubKeys/entries/ghToken；R6 mergePairedStars / R8 parseGhToken 代码退役。
 
