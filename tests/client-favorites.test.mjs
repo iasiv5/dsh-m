@@ -128,7 +128,7 @@ describe('withFavoriteStats（收藏统计新鲜度 2026-11-13）：目录现值
     assert.equal(out.downloads, 44720)
     assert.equal(out.stars, 33)
     const out2 = withFavoriteStats(e({ id: 'other' }), { other: { downloads: null, stars: 5 } })
-    assert.equal(out2.downloads, 29600, 'downloads null → 保留快照')
+    assert.equal(out2.downloads, undefined, 'C 方案：downloads null → 剥除快照残留（overlay 命中即权威）')
     assert.equal(out2.stars, 5, 'stars number → 覆盖')
   })
   it('statsById 缺席/非对象/无该 id/垃圾形态 → 原样快照（旧宿主、API 失败、SSR 容错）', () => {
@@ -140,6 +140,14 @@ describe('withFavoriteStats（收藏统计新鲜度 2026-11-13）：目录现值
     assert.deepEqual(withFavoriteStats(base, { 'o--x': 'garbage' }), { ...base })
     assert.deepEqual(withFavoriteStats(null, { 'o--x': { downloads: 1, stars: 1 } }), {})
     assert.deepEqual(withFavoriteStats(undefined, null), {})
+  })
+  it('overlay null 剥除（C 方案）：目录/直查明确无值 → 剥快照残留（精选收藏旧 star 不再显示）', () => {
+    const out = withFavoriteStats(e({ id: 'x' }), { x: { downloads: 5, stars: null } })
+    assert.equal(out.downloads, 5, 'number 照常覆盖')
+    assert.equal(out.stars, undefined, 'stars null → 剥除快照残留')
+    const out2 = withFavoriteStats(e({ id: 'x' }), { x: { downloads: null, stars: null } })
+    assert.equal(out2.downloads, undefined, 'downloads null → 剥除')
+    assert.equal(out2.stars, undefined, 'stars null → 剥除')
   })
   it('不改动入参（快照不可变）', () => {
     const base = e()

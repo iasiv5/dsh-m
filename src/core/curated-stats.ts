@@ -336,7 +336,7 @@ export function annotateDirectStats<T extends { id: string; npm?: string; github
       ...(hit.downloadsStart !== undefined ? { downloadsStart: hit.downloadsStart } : {}),
       ...(hit.downloadsEnd !== undefined ? { downloadsEnd: hit.downloadsEnd } : {}),
       ...(hit.checkedAt !== undefined ? { downloadsCheckedAt: hit.checkedAt } : {}),
-      ...(hit.stars !== undefined ? { stars: hit.stars } : {}),
+      // C 方案：直查注记不带 stars（即便未来 gh 直查重启，精选卡也不上 star）
       statsVia: 'direct' as const,
     }
   })

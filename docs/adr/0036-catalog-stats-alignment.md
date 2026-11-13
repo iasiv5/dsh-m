@@ -13,6 +13,12 @@
 
 2026-11-13 主人对照两个市场界面：精选卡（标签+实测）与社区卡（by owner+下载↓+star★）信息语法不一致，且提出统计口径之问（总量 vs 30 天）。grill-with-docs 八问决议（Q1–Q8）+ 独立评审 10 项闭环（本计划 `docs/plans/2026-11-13-catalog-stats-alignment-implementation-plan.md`）。事实底座（当日实测）：上游目录 `dsh-plugin-catalog` 每日重建，条目自带 downloads/downloadsStart/End/CheckedAt/stars；37 条精选中镜像命中 25（npm 24 + github 兜底 1）、缺口 12 全带 npm；GitHub-only 1 条（joeseesun/qiaomu-rss-dsh，镜像 stars=28、downloads 全 null → join 注记 star、不入缺口）。上游 dshmarket 插件解剖：运行时零 API 调用、全部数字目录预计算——「上游预计算」是生态共识架构。
 
+## 决策修订（2026-11-14，C 方案）
+
+预览实测后修订：**精选卡只显示 npm 下载量，不显示 star**。动机：①区内统一优先于免费数据——B 案（join star 白拿、砍直查 gh）会让精选区 26 张有 ★/11 张没有，斑驳观感在实测中被主人判读为缺陷；②直查链路收窄为 npm bulk 单源（免认证、无限额、任何用户机器行为一致）——dsh-m 是公开发布插件，通用性权重高于本机完整度；③社区区保留 ★（上游目录保证完整），跨区语法差有可解释边界：社区数字=上游目录保证，精选数字=npm 单源自取。
+
+落地口径：core 数据层执行（非渲染层）——join 只注记 downloads+窗口三要素+statsVia（不注记 stars，镜像仅有 star 无 downloads 的条目不入注记、进缺口）；直查 npmKeys-only（githubKeys/配对不传，gh 调用运行时归零，模块 gh/token 能力保留作未来 github-only 条目扩展）；annotateDirectStats 不注记 stars；客户端零改动（条件渲染自然隐藏）。收藏 overlay 语义修订：overlay 命中即权威——number 覆盖、**null 剥除**（精选收藏旧 star 残留随剥；原「null 保留快照」语义废止）。
+
 ## Considered Options
 
 - **显示口径**：all-time 总量（否——npm 无端点、全历史聚合不可行）/ 30 天窗（采纳）/ 双显（否——成本翻倍、观感更挤）。

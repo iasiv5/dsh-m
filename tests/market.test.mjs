@@ -473,7 +473,7 @@ describe('mergeRegistries 镜像 join（ADR-0036）', () => {
     const j1 = res.items.find((x) => x.id === 'j-1')
     const j2 = res.items.find((x) => x.id === 'j-2')
     assert.equal(j1.downloads, 3218, '镜像 downloads 键级注记')
-    assert.equal(j1.stars, 2, '镜像 stars 注记')
+    assert.equal(j1.stars, undefined, 'C 方案：精选条目不注记 stars（数据层即无，渲染自然隐藏）')
     assert.equal(j1.statsVia, 'catalog', '目录快照来源标记')
     assert.equal(j1.owner, 'o', 'primary owner 自 github 派生（ADR-0036）')
     const mirrorItem = res.items.find((x) => x.id === 'oj--jkeep')
@@ -490,7 +490,7 @@ describe('缺口直查注记（ADR-0036）', () => {
     const primary = [{ id: 'g-1', name: 'G1', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'gap-pkg', github: 'o/gap' }]
     const stub = async (input) => {
       assert.deepEqual(input.npmKeys, ['gap-pkg'])
-      assert.deepEqual(input.githubKeys, ['o/gap'])
+      assert.deepEqual(input.githubKeys, [], 'C 方案：直查 npm-only（githubKeys 不传）')
       return { stats: { 'npm:gap-pkg': { downloads: 2468, downloadsStart: '2026-10-14', downloadsEnd: '2026-11-12', stars: 2, checkedAt: '2026-11-13T00:00:00.000Z' } }, errors: [] }
     }
     const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary), fetchCuratedStats: stub })
@@ -500,6 +500,7 @@ describe('缺口直查注记（ADR-0036）', () => {
     assert.equal(g1.downloads, 2468, '直查统计注记')
     assert.equal(g1.statsVia, 'direct', '直查来源标记')
     assert.equal(g1.downloadsCheckedAt, '2026-11-13T00:00:00.000Z', '查于时点透传')
+    assert.equal(g1.stars, undefined, 'C 方案：直查注记不带 stars（stub 含 stars 也不上卡）')
     const gi = res.items.findIndex((x) => x.id === 'g-1')
     const li = res.items.findIndex((x) => x.id === 'ol--lowk')
     assert.ok(gi !== -1 && li !== -1 && gi < li, '直查数值参与 downloads 降序（2468 先于 100）')

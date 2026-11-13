@@ -131,7 +131,10 @@ export function withFavoriteStats(entry, statsById) {
   const hit = statsById && typeof statsById === 'object' && typeof e.id === 'string' ? statsById[e.id] : null
   if (!hit || typeof hit !== 'object') return { ...e }
   const out = { ...e }
+  // C 方案（ADR-0036 增补）：number 覆盖、null 剥除（overlay 命中即权威——精选收藏旧 star 残留随目录/直查明确无值而剥落）
   if (typeof hit.downloads === 'number') out.downloads = hit.downloads
+  else if (hit.downloads === null) delete out.downloads
   if (typeof hit.stars === 'number') out.stars = hit.stars
+  else if (hit.stars === null) delete out.stars
   return out
 }

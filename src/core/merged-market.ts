@@ -177,16 +177,15 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   for (const p of primary) {
     const mirror = (p.npm !== undefined ? statsByNpm.get(p.npm) : undefined)
       ?? (p.github !== undefined ? statsByGithub.get(p.github) : undefined)
+    // C 方案（ADR-0036 增补）：精选条目只注记下载量族——stars 不注记（数据层即无，渲染自然隐藏；区内统一）
     const downloads = mirror ? nonNeg(mirror.downloads) : undefined
-    const stars = mirror ? nonNeg(mirror.stars) : undefined
-    if (!mirror || (downloads === undefined && stars === undefined)) {
+    if (!mirror || downloads === undefined) {
       annotated.push(p)
       continue
     }
     annotated.push({
       ...p,
       ...(downloads !== undefined ? { downloads } : {}),
-      ...(stars !== undefined ? { stars } : {}),
       ...(mirror.downloadsStart !== undefined ? { downloadsStart: mirror.downloadsStart } : {}),
       ...(mirror.downloadsEnd !== undefined ? { downloadsEnd: mirror.downloadsEnd } : {}),
       ...(mirror.downloadsCheckedAt !== undefined ? { downloadsCheckedAt: mirror.downloadsCheckedAt } : {}),

@@ -663,11 +663,12 @@ export async function listMarket(
     const fetchCurated = d.fetchCuratedStats ?? defaultFetchCuratedStats
     if (community.directGap.length > 0) {
       const gap = curatedGapKeys(community.directGap)
-      if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
+      // C 方案：精选只取下载量——npm-only（githubKeys/配对不传，gh 直查运行时归零；模块 gh 能力留作未来扩展）
+      if (gap.npmKeys.length > 0) {
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, entries: community.directGap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ npmKeys: gap.npmKeys, githubKeys: [], entries: [], dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
@@ -951,11 +952,12 @@ export async function existingMarketIds(
     const fetchCurated = deps?.fetchCuratedStats ?? defaultFetchCuratedStats
     if (community.directGap.length > 0) {
       const gap = curatedGapKeys(community.directGap)
-      if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
+      // C 方案：精选只取下载量——npm-only（githubKeys/配对不传，gh 直查运行时归零；模块 gh 能力留作未来扩展）
+      if (gap.npmKeys.length > 0) {
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ ...gap, entries: community.directGap, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ npmKeys: gap.npmKeys, githubKeys: [], entries: [], dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
