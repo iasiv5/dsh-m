@@ -658,11 +658,8 @@ export async function listMarket(
   let merged = mergedRaw
   {
     const fetchCurated = d.fetchCuratedStats ?? defaultFetchCuratedStats
-    const gapEntries = mergedRaw.filter((e) => !isCommunityEntry(e)
-      && (e as CuratedStatsFields).statsVia === undefined
-      && ((e.npm !== undefined && e.npm !== '') || (e.github !== undefined && e.github !== '')))
-    if (gapEntries.length > 0) {
-      const gap = curatedGapKeys(gapEntries.map((e) => ({ id: e.id, npm: e.npm, github: e.github })))
+    if (community.directGap.length > 0) {
+      const gap = curatedGapKeys(community.directGap)
       if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
@@ -949,11 +946,8 @@ export async function existingMarketIds(
   let mergedForStats = community.merged
   {
     const fetchCurated = deps?.fetchCuratedStats ?? defaultFetchCuratedStats
-    const gapEntries = mergedForStats.filter((e) => !isCommunityEntry(e)
-      && (e as CuratedStatsFields).statsVia === undefined
-      && ((e.npm !== undefined && e.npm !== '') || (e.github !== undefined && e.github !== '')))
-    if (gapEntries.length > 0) {
-      const gap = curatedGapKeys(gapEntries.map((e) => ({ id: e.id, npm: e.npm, github: e.github })))
+    if (community.directGap.length > 0) {
+      const gap = curatedGapKeys(community.directGap)
       if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
@@ -982,7 +976,7 @@ export async function existingMarketIds(
   // 收藏统计新鲜度（2026-11-13）：present 条目的目录现行 downloads/stars 同批透出——merged 条目
   // 既有字段零新 IO，仍在「三不原则」内；两字段全缺（如未发 npm 的 github 条目）不入 map。
   const statsById = new Map<string, { downloads: number | null; stars: number | null }>()
-  for (const entry of community.merged) {
+  for (const entry of mergedForStats) {
     const e2 = entry as { id: string; downloads?: number | null; stars?: number | null }
     const downloads = typeof e2.downloads === 'number' ? e2.downloads : null
     const stars = typeof e2.stars === 'number' ? e2.stars : null

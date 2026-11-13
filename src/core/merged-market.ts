@@ -130,6 +130,19 @@ export interface CuratedStatsFields {
 
 export interface DirectGapEntry { id: string; npm?: string; github?: string }
 
+/** 直查缺口派生（ADR-0036，单一产地）：精选域内 join/直查注记前、带 npm 或 github 的条目。 */
+export function directGapOf(merged: Array<RegistryEntry | CommunityEntry>): DirectGapEntry[] {
+  return merged
+    .filter((e) => !isCommunityEntry(e)
+      && (e as CuratedStatsFields).statsVia === undefined
+      && ((e.npm !== undefined && e.npm !== '') || (e.github !== undefined && e.github !== '')))
+    .map((e) => ({
+      id: e.id,
+      ...(e.npm !== undefined && e.npm !== '' ? { npm: e.npm } : {}),
+      ...(e.github !== undefined && e.github !== '' ? { github: e.github } : {}),
+    }))
+}
+
 export interface MergeRegistriesResult {
   /** 主清单在前（组内原顺序）+ 社区条目在后（downloads 降序、无数据按名称）；primary 条目可携镜像统计注记（ADR-0036） */
   items: Array<(RegistryEntry & CuratedStatsFields) | CommunityEntry>
@@ -152,7 +165,6 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   const primaryIds = new Set(primary.map((e) => e.id))
   // ADR-0036 镜像 join（键级语义：镜像字段 null → 不注记该键；两字段全缺的镜像不产生注记）：
   // npm 名优先、github 兜底；join 后仍无统计的精选条目入 directGap（缺口直查消费，Task 5 接线）。
-  const directGap: DirectGapEntry[] = []
   const statsByNpm = new Map<string, CommunityEntry>()
   const statsByGithub = new Map<string, CommunityEntry>()
   for (const c of community) {
@@ -161,11 +173,6 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   }
   const nonNeg = (v: number | null | undefined): number | undefined =>
     typeof v === 'number' && Number.isFinite(v) ? v : undefined
-  const gapEntry = (p: RegistryEntry): DirectGapEntry => ({
-    id: p.id,
-    ...(p.npm !== undefined ? { npm: p.npm } : {}),
-    ...(p.github !== undefined ? { github: p.github } : {}),
-  })
   const annotated: Array<RegistryEntry & CuratedStatsFields> = []
   for (const p of primary) {
     const mirror = (p.npm !== undefined ? statsByNpm.get(p.npm) : undefined)
@@ -173,7 +180,6 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
     const downloads = mirror ? nonNeg(mirror.downloads) : undefined
     const stars = mirror ? nonNeg(mirror.stars) : undefined
     if (!mirror || (downloads === undefined && stars === undefined)) {
-      if (p.npm !== undefined || p.github !== undefined) directGap.push(gapEntry(p))
       annotated.push(p)
       continue
     }
@@ -225,7 +231,8 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   const warnings: string[] = []
   if (displaced > 0) warnings.push(`${displaced} 条社区条目同时被主清单收录（社区列表中标注）`)
   if (internalDup > 0) warnings.push(`${internalDup} 条社区内部重复条目已去重`)
-  return { items: [...annotated, ...sorted], displaced, warnings, directGap }
+  const items = [...annotated, ...sorted]
+  return { items, displaced, warnings, directGap: directGapOf(items) }
 }
 
 // ---------- 迁入：summary 组装（单一产地；summary 永不入代——每调用现算） ----------
@@ -390,6 +397,8 @@ function lookupInIndex(index: MatchIndex, installed: InstalledPlugin): RegistryE
 /** 代内容：全部随 version 稳定（summary 永不入代）。 */
 interface MergedGeneration {
   merged: Array<RegistryEntry | CommunityEntry>
+  /** 直查缺口（ADR-0036）：随版本稳定的缺口条目（直查注记的键源） */
+  directGap: DirectGapEntry[]
   counts: { acceptedCount: number; upstreamCount: number; displaced: number; skippedDirty: number; skippedSubpathNoNpm: number }
   adaptWarnings: string[]
   categoryLabelsEn: Record<string, string>
@@ -461,6 +470,7 @@ function buildGeneration(primary: RegistryEntry[], catalog: CommunityCatalog): M
   )
   return {
     merged: merge.items,
+    directGap: merge.directGap,
     counts: {
       acceptedCount: adapted.entries.length,
       upstreamCount: catalog.plugins.length,
@@ -538,6 +548,8 @@ export async function communityOutcome(
 // ---------- mergedOutcome：memoized 主入口 ----------
 
 export interface MergedOutcome extends CommunityOutcome {
+  /** 缺口直查条目（ADR-0036）：join 后仍无统计的精选条目（直查接线键源） */
+  directGap: DirectGapEntry[]
   /** O(1) 匹配（merged 域）：三候选取 merged 序最前者胜——等价今日 merged.find(matchInstalledByEntry)。 */
   lookupInstalled(installed: InstalledPlugin): RegistryEntry | CommunityEntry | undefined
   /** O(1) id 查询（全量域 [primary..., adapt 全量...] 含 displaced——id-让位条目今日可装，R2-3）。 */
@@ -548,15 +560,16 @@ export interface MergedOutcome extends CommunityOutcome {
 
 /** 导出（0.9.68 接线配套）：给无 memo 的 communityOutcome 结果挂兜底 lookup（线性扫描，今日语义原样）——供降级路径（registry-deadline / settings 摘要等冷路径）取得与 mergedOutcome 同形的返回值。 */
 export function withFallbackLookups(outcome: CommunityOutcome): MergedOutcome {
-  return outcomeWithLookups(outcome, null, null)
+  return outcomeWithLookups(outcome, null, null, directGapOf(outcome.merged))
 }
 // ↑ 兜底域 = outcome.merged（透传形态下为 primary-only，不含 displaced 让位条目）——只保证读路径
 // lookupInstalled 等价；不得用于安装/升级路径（那里需要 findById/lookupInstalledAll 的全量域语义）。
 // 现状唯一消费点 listInstalledWithMeta 的 registry-deadline 臂在消费 lookups 前即早返回，零行为影响。
 
-function outcomeWithLookups(outcome: CommunityOutcome, mergedIndex: MatchIndex | null, fullIndex: MatchIndex | null): MergedOutcome {
+function outcomeWithLookups(outcome: CommunityOutcome, mergedIndex: MatchIndex | null, fullIndex: MatchIndex | null, directGap: DirectGapEntry[]): MergedOutcome {
   return {
     ...outcome,
+    directGap,
     lookupInstalled: (installed) => (mergedIndex ? lookupInIndex(mergedIndex, installed) : matchInstalledByEntryFallback(outcome.merged, installed)),
     findById: (id) => (fullIndex ? fullIndex.byId.get(id)?.entry : outcome.merged.find((e) => e.id === id)),
     lookupInstalledAll: (installed) => (fullIndex ? lookupInIndex(fullIndex, installed) : matchInstalledByEntryFallback(outcome.merged, installed)),
@@ -586,7 +599,7 @@ export async function mergedOutcome(input: {
   const primary = registry.registry.plugins
   if (!communityTask) {
     // source='primary'：loader 零调用，透传（今日语义）；主清单域小，索引免建
-    return outcomeWithLookups(await communityOutcome(null, deadlineAt, primary), null, null)
+    return outcomeWithLookups(await communityOutcome(null, deadlineAt, primary), null, null, directGapOf(primary))
   }
   let loaded: LoadedCommunity | 'deadline'
   try {
@@ -596,17 +609,18 @@ export async function mergedOutcome(input: {
   }
   // ---- 以下透传形态：不读不写 store ----
   if (loaded === 'deadline') {
-    return outcomeWithLookups({ summary: communityTimeoutSummary(), merged: primary }, null, null)
+    return outcomeWithLookups({ summary: communityTimeoutSummary(), merged: primary }, null, null, directGapOf(primary))
   }
   const state = loaded.state
   if (state.status === 'disabled') {
-    return outcomeWithLookups({ summary: disabledCommunitySummary(), merged: primary }, null, null)
+    return outcomeWithLookups({ summary: disabledCommunitySummary(), merged: primary }, null, null, directGapOf(primary))
   }
   if (state.status === 'unavailable' || !loaded.catalog) {
     return outcomeWithLookups(
       { summary: communitySummary(state, { acceptedCount: 0, upstreamCount: 0, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0 }, []), merged: primary },
       null,
       null,
+      directGapOf(primary),
     )
   }
   // ---- 同步临界区起点：键派生 → 查 store → 建代 → set（禁止 await） ----
@@ -614,11 +628,11 @@ export async function mergedOutcome(input: {
   const hit = generations.get(key)
   if (hit) {
     mergedStats.hits += 1
-    return outcomeWithLookups({ summary: communitySummary(state, hit.counts, hit.adaptWarnings, hit.categoryLabelsEn), merged: hit.merged }, hit.mergedIndex, hit.fullIndex)
+    return outcomeWithLookups({ summary: communitySummary(state, hit.counts, hit.adaptWarnings, hit.categoryLabelsEn), merged: hit.merged }, hit.mergedIndex, hit.fullIndex, hit.directGap)
   }
   const gen = buildGeneration(primary, loaded.catalog)
   mergedStats.builds += 1
   rememberGeneration(key, gen)
-  return outcomeWithLookups({ summary: communitySummary(state, gen.counts, gen.adaptWarnings, gen.categoryLabelsEn), merged: gen.merged }, gen.mergedIndex, gen.fullIndex)
+  return outcomeWithLookups({ summary: communitySummary(state, gen.counts, gen.adaptWarnings, gen.categoryLabelsEn), merged: gen.merged }, gen.mergedIndex, gen.fullIndex, gen.directGap)
   // ---- 同步临界区终点 ----
 }

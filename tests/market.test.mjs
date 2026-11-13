@@ -510,6 +510,17 @@ describe('缺口直查注记（ADR-0036）', () => {
     assert.equal(g1b.statsVia, undefined, '桩抛错 → 静默缺席')
     assert.equal(g1b.downloads, undefined, '桩抛错 → 无下载量')
   })
+  it('⑨b existingMarketIds 同源：直查统计入 stats map（评审 P5）', async () => {
+    const primary = [{ id: 'g-1', name: 'G1', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'gap-pkg', github: 'o/gap' }]
+    const base = fakeDeps({
+      loadRegistry: async () => readyLoaded(primary),
+      fetchCuratedStats: async () => ({ stats: { 'npm:gap-pkg': { downloads: 2468, checkedAt: '2026-11-13T00:00:00.000Z' } }, errors: [] }),
+    })
+    const { deps } = withCommunity(base, communityLoaded([]))
+    const res = await existingMarketIds(['g-1'], cfg, {}, deps)
+    assert.equal(res.stats['g-1'].downloads, 2468, '直查统计入收藏 overlay map（direct 源可达；stats 按条目 id 键控）')
+    assert.equal(res.stats['g-1'].stars, null, '直查无 star → null（stats map 键级缺席语义）')
+  })
 })
 
 describe('listInstalledWithMeta', () => {
