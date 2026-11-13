@@ -14,7 +14,7 @@ import { readFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.js'
 import { fetchJsonLimited } from './httpx.js'
-import type { DirectGapEntry } from './merged-market.js'
+import { isCommunityEntry, type DirectGapEntry } from './merged-market.js'
 
 export const CURATED_STATS_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -196,13 +196,18 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
  * 直查统计注记（ADR-0036）：对 join 后仍无 downloads 的条目按键（npm 优先、gh 兜底）
  * 浅拷贝注记直查结果；无命中/已注记条目原样返回。物化代共享对象禁原地改写，调用方消费副本。
  * C 方案（R10）：注记不带 stars——精选卡只显下载量（ADR-0036 决策修订）。
+ * 社区门（评审 P2）：社区条目（isCommunityEntry，判据 descriptionEn）不参与直查注记——缺口键
+ * 与社区镜像同 npm 时不得把 direct 预写进社区条目（toMarketItem 社区分支 statsVia 硬置 'catalog'）。
  */
 export function annotateDirectStats<T extends { id: string; npm?: string; github?: string; statsVia?: 'catalog' | 'direct' }>(
   items: T[],
   stats: Record<string, CuratedStat>,
 ): T[] {
   return items.map((it) => {
-    if (!it || typeof it !== 'object' || it.statsVia !== undefined) return it
+    if (
+      !it || typeof it !== 'object' || it.statsVia !== undefined
+      || isCommunityEntry(it as unknown as Parameters<typeof isCommunityEntry>[0])
+    ) return it
     const key = typeof it.npm === 'string' && it.npm !== ''
       ? `npm:${it.npm}`
       : typeof it.github === 'string' && it.github !== ''

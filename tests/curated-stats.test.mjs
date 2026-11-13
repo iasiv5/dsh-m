@@ -10,7 +10,8 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { curatedGapKeys, parseCuratedStatsBox, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
+import { curatedGapKeys, parseCuratedStatsBox, loadCuratedStats, annotateDirectStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
+import { isCommunityEntry } from '../lib/core/merged-market.js'
 
 const cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-curated-'))
 process.env.DSHM_CACHE_DIR = cacheRoot
@@ -139,5 +140,19 @@ describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
     writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: {} }))
     const r = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
     assert.equal(r.stats['npm:pkg-a'].downloads, 100, '空箱不抑制重试')
+  })
+})
+
+describe('annotateDirectStats 社区门（评审 P2）', () => {
+  it('社区条目与精选缺口同 npm 直查键 → 不被注记（toMarketItem 社区分支 statsVia 硬置 catalog，不得被 direct 预写失真）', () => {
+    const curated = { id: 'p-1', npm: 'pkg-x' }
+    const comm = { id: 'cz--mirror', npm: 'pkg-x', descriptionEn: 'community mirror of pkg-x', owner: 'cz', stars: null, downloads: null }
+    assert.equal(isCommunityEntry(comm), true, '夹具前置：isCommunityEntry 判据（descriptionEn 在场）')
+    const out = annotateDirectStats([curated, comm], { 'npm:pkg-x': { downloads: 99, checkedAt: '2026-11-14T00:00:00.000Z' } })
+    assert.equal(out[0].downloads, 99, '精选缺口条目照常注记')
+    assert.equal(out[0].statsVia, 'direct', '精选缺口条目来源标记 direct')
+    assert.equal(out[1].statsVia, undefined, '社区条目不被直查注记（镜像与精选同 npm 且 downloads=null 的 latent 边界）')
+    assert.equal(out[1].downloads, null, '社区条目自身字段原样（不覆写）')
+    assert.equal(out[1].downloadsCheckedAt, undefined, '社区条目无直查查于时点')
   })
 })
