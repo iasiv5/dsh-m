@@ -9,6 +9,8 @@
         "tags": [],
         "source": "npm",
         "npm": "gold-npm-a",
+        "downloads": 100,
+        "statsVia": "catalog",
         "installed": true,
         "outdated": false,
         "installedPkg": "gold-npm-a",
@@ -25,7 +27,8 @@
         "installed": true,
         "outdated": false,
         "installedPkg": "y-pkg",
-        "installedVersion": "0.9.0"
+        "installedVersion": "0.9.0",
+        "owner": "own"
       },
       {
         "id": "gold-also",
@@ -71,7 +74,8 @@
         "owner": "goldown",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g3--keepgh",
@@ -91,7 +95,8 @@
         "owner": "g3",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "o1--dup",
@@ -115,7 +120,8 @@
         "outdated": false,
         "installedPkg": "gold-npm-a",
         "installedVersion": "1.0.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g2--keepb",
@@ -138,7 +144,8 @@
         "outdated": false,
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "goldown--keepc",
@@ -160,7 +167,8 @@
         "primaryOverlap": true,
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       }
     ],
     "total": 9,
@@ -256,7 +264,8 @@
         "installed": true,
         "outdated": false,
         "installedPkg": "y-pkg",
-        "installedVersion": "0.9.0"
+        "installedVersion": "0.9.0",
+        "owner": "own"
       },
       {
         "id": "gold-also",
@@ -363,6 +372,8 @@
         "tags": [],
         "source": "npm",
         "npm": "gold-npm-a",
+        "downloads": 100,
+        "statsVia": "catalog",
         "installed": true,
         "outdated": false,
         "installedPkg": "gold-npm-a",
@@ -379,7 +390,8 @@
         "installed": true,
         "outdated": false,
         "installedPkg": "y-pkg",
-        "installedVersion": "0.9.0"
+        "installedVersion": "0.9.0",
+        "owner": "own"
       },
       {
         "id": "gold-also",
@@ -425,7 +437,8 @@
         "owner": "goldown",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g2--keepb",
@@ -448,7 +461,8 @@
         "outdated": false,
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g3--keepgh",
@@ -468,7 +482,8 @@
         "owner": "g3",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       }
     ],
     "total": 7,
@@ -572,7 +587,8 @@
         "owner": "goldown",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g3--keepgh",
@@ -592,7 +608,8 @@
         "owner": "g3",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "o1--dup",
@@ -616,7 +633,8 @@
         "outdated": false,
         "installedPkg": "gold-npm-a",
         "installedVersion": "1.0.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g2--keepb",
@@ -639,7 +657,8 @@
         "outdated": false,
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "goldown--keepc",
@@ -661,7 +680,8 @@
         "primaryOverlap": true,
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       }
     ],
     "total": 5,
@@ -750,6 +770,8 @@
         "tags": [],
         "source": "npm",
         "npm": "gold-npm-a",
+        "downloads": 100,
+        "statsVia": "catalog",
         "installed": true,
         "outdated": true,
         "installedPkg": "gold-npm-a",
@@ -768,6 +790,7 @@
         "outdated": true,
         "installedPkg": "y-pkg",
         "installedVersion": "0.9.0",
+        "owner": "own",
         "latestTag": "v9.9.9",
         "latestSha": "ffffffffffffffffffffffffffffffffffffffff"
       },
@@ -818,6 +841,7 @@
         "installed": false,
         "outdated": false,
         "community": true,
+        "statsVia": "catalog",
         "latestVersion": "9.9.9"
       },
       {
@@ -838,7 +862,8 @@
         "owner": "g3",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "o1--dup",
@@ -863,6 +888,7 @@
         "installedPkg": "gold-npm-a",
         "installedVersion": "1.0.0",
         "community": true,
+        "statsVia": "catalog",
         "latestVersion": "9.9.9"
       },
       {
@@ -887,6 +913,7 @@
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
         "community": true,
+        "statsVia": "catalog",
         "latestVersion": "9.9.9"
       },
       {
@@ -910,6 +937,7 @@
         "installed": false,
         "outdated": false,
         "community": true,
+        "statsVia": "catalog",
         "latestVersion": "9.9.9"
       }
     ],
@@ -1003,6 +1031,8 @@
         "tags": [],
         "source": "npm",
         "npm": "gold-npm-a",
+        "downloads": 100,
+        "statsVia": "catalog",
         "installed": true,
         "outdated": false,
         "installedPkg": "gold-npm-a",
@@ -1019,7 +1049,8 @@
         "installed": true,
         "outdated": false,
         "installedPkg": "y-pkg",
-        "installedVersion": "0.9.0"
+        "installedVersion": "0.9.0",
+        "owner": "own"
       },
       {
         "id": "gold-also",
@@ -1065,7 +1096,8 @@
         "owner": "goldown",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g3--keepgh",
@@ -1085,7 +1117,8 @@
         "owner": "g3",
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "o1--dup",
@@ -1109,7 +1142,8 @@
         "outdated": false,
         "installedPkg": "gold-npm-a",
         "installedVersion": "1.0.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "g2--keepb",
@@ -1132,7 +1166,8 @@
         "outdated": false,
         "installedPkg": "x-pkg",
         "installedVersion": "1.2.0",
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       },
       {
         "id": "goldown--keepc",
@@ -1154,7 +1189,8 @@
         "primaryOverlap": true,
         "installed": false,
         "outdated": false,
-        "community": true
+        "community": true,
+        "statsVia": "catalog"
       }
     ],
     "total": 9,
