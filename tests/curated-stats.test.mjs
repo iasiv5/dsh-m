@@ -4,7 +4,7 @@
  * +过期拉取失败旧值保留+GC prune+全失败降级）。
  * 运行：npm run build && node --test tests/curated-stats.test.mjs
  */
-import { describe, it, beforeEach, after } from 'node:test'
+import { describe, it, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
