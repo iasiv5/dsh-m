@@ -521,11 +521,13 @@ describe('2026-10-13「已实测」徽章退役（B 方案）——卡面徽章�
     assert.equal(src.includes('lookup("badge.verified")'), false, '徽章渲染调用不得残留')
     assert.equal(i18nSrc.includes('"badge.verified"'), false, 'i18n 徽章键不得残留（ZH/EN 均退役，词典面）')
   })
-  it('byline 灰字承接（低显著度，末位=最新复验版本）；Modal「实测版本」行保留为唯一权威呈现', () => {
-    assert.match(cardSrc, /const verifiedByline = \(it\) =>/, 'byline 灰字构造器在（card.jsx）')
-    assert.match(marketTabSrc, /verifiedByline\(it\),/, '市场卡 byline 接线在（market-tab.jsx——ADR-0023 T11）')
-    assert.match(cardSrc, /lookup\("byline\.verified", \{ v: it\.verified\[it\.verified\.length - 1\] \}\), title: it\.verified\.join\("、"\)/, '灰字取末位（时间序最新）+ tooltip 全量清单（card.jsx）')
-    assert.equal(i18nSrc.split('"byline.verified":').length - 1, 2, 'byline.verified ZH/EN 各一次（键定义计口径，带冒号，i18n.js）')
+  it('byline 统计统一（ADR-0036）：直查/目录口径透明 title；Modal「实测版本」行保留为唯一权威呈现', () => {
+    assert.equal(cardSrc.includes('verifiedByline'), false, 'verifiedByline 已退役（card.jsx）')
+    assert.equal(marketTabSrc.includes('verifiedByline'), false, 'verifiedByline 接线已退役（market-tab.jsx）')
+    assert.ok(marketTabSrc.includes('statsTitle(it)'), '口径透明 title 接线在（market-tab.jsx）')
+    assert.ok(cardSrc.includes('statsVia === "direct"'), '直查前缀区分在（card.jsx statsTitle）')
+    assert.equal(i18nSrc.split('"byline.statsTitle":').length - 1, 2, 'byline.statsTitle ZH/EN 各一次（键定义计口径，带冒号，i18n.js）')
+    assert.equal(i18nSrc.includes('"byline.verified":'), false, 'byline.verified ZH/EN 均退役（词典面）')
     assert.match(detailModalSrc, /it\.community !== true && Array\.isArray\(it\.verified\) && it\.verified\.length \? kv\(lookup\("modal\.verified"\)/, 'Modal「实测版本」行条件渲染在（唯一权威呈现；detail-modal.jsx）')
   })
 })

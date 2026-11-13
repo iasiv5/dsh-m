@@ -21,7 +21,7 @@ import { activeKindOp } from "./operations-view.js";
 import { performUpgradeFlow } from "./upgrade-flow.js";
 import { restartBannerDecision } from "./panel-ops.js";
 import { Icon, Spin, SearchBox, LinksRow, compactCount, ProgressLine } from "./chrome.jsx";
-import { Card, snapshotOf, verifiedByline } from "./card.jsx";
+import { Card, snapshotOf, statsTitle } from "./card.jsx";
 import { FavoriteZone } from "./favorite-zone.jsx";
 import { ZoneChips } from "./zone-chips.jsx";
 import { DetailModal, useModalDepth } from "./detail-modal.jsx";
@@ -424,16 +424,12 @@ function MarketTab({ notify, markets, onMutation, ops, favorites, profileKind, o
         searching && it.community !== true ? h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")) : null,
         h("span", { className: "dshm-badge info", key: "s" }, it.source === "npm" ? "npm" : "github"),
       ],
-      byline: it.community === true
-        ? [
-            it.owner ? { text: `by ${it.owner}` } : null,
-            typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: String(it.downloads) } : null,
-            typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
-          ].filter(Boolean)
-        : [
-            ...(it.tags || []).map((t) => ({ text: `#${t}` })),
-            verifiedByline(it),
-          ].filter(Boolean),
+      // ADR-0036 卡面统一：精选/社区同语法（by owner + 下载↓ + star★）；标签/实测行退役（详情弹窗承接）
+      byline: [
+        it.owner ? { text: `by ${it.owner}` } : null,
+        typeof it.downloads === "number" ? { text: `${compactCount(it.downloads)} ↓`, title: statsTitle(it) } : null,
+        typeof it.stars === "number" ? { text: `${compactCount(it.stars)} ★`, title: String(it.stars) } : null,
+      ].filter(Boolean),
       desc: browserLang() === "en" && typeof it.descriptionEn === "string" && it.descriptionEn !== "" ? it.descriptionEn : it.description,
       clampLines: it.community === true ? 5 : 2,
       sub: [

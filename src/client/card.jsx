@@ -1,19 +1,20 @@
 /**
  * ADR-0023 第三刀 T10 组件出仓·批次一（card.jsx）：自 main.jsx verbatim 迁移，
  * 函数体零重写；依赖经 ESM import 显式接线（由抽取脚本按标识符使用自动生成）。
- * 成员：Card, snapshotOf, verifiedByline
+ * 成员：Card, snapshotOf, statsTitle
  */
 import React from "react";
 const h = React.createElement;
 import { lookup } from "./i18n.js";
 
-// B 方案（2026-10-13）：verified 从卡面徽章降级为 byline 灰字——徽章位让给例外信号（弃用/自用/可升级），
-// 兼容信息零丢失（详情弹窗「实测版本」行保留全量清单；tooltip 仍挂完整列表）。
-// 取 verified 末位＝按 008/022 纪律按时间顺序追加的最新复验版本。
-const verifiedByline = (it) =>
-  it.community !== true && Array.isArray(it.verified) && it.verified.length
-    ? { text: lookup("byline.verified", { v: it.verified[it.verified.length - 1] }), title: it.verified.join("、") }
-    : null;
+// 下载量口径透明 title（ADR-0036）：目录快照无前缀、直查带「npm · 」前缀，携带 30 天窗口与查于时点
+//（数据缺失段留空）。原「实测 ≤v」灰字（B 方案 2026-10-13）随卡面统一退役——实测全量清单仍在详情
+// 弹窗「实测版本」行（唯一权威呈现）。
+const statsTitle = (it) => {
+  const win = it.downloadsStart && it.downloadsEnd ? it.downloadsStart + "~" + it.downloadsEnd : "";
+  const via = it.statsVia === "direct" ? "npm · " : "";
+  return via + lookup("byline.statsTitle", { win, at: it.downloadsCheckedAt || "" });
+};
 
 function Card({ icon, name, nameTitle, badges, desc, sub, links, open, onToggle, detail, actions, topRight, byline, clampLines }) {
   return h(
@@ -62,4 +63,4 @@ function snapshotOf(it) {
   return s;
 }
 
-export { Card, snapshotOf, verifiedByline };
+export { Card, snapshotOf, statsTitle };

@@ -94,13 +94,12 @@ function FavoriteZone({ favorites, onOpen, installedIcons }) {
             h("span", { className: "dshm-badge info", key: "s" }, s.source === "npm" ? "npm" : "github"),
             isStale ? h("span", { className: "dshm-badge warn", key: "st" }, lookup("favorites.stalebadge")) : null,
           ],
-          byline: s.owner
-            ? [
-                s.owner ? { text: `by ${s.owner}` } : null,
-                typeof s.downloads === "number" ? { text: `${compactCount(s.downloads)} ↓`, title: String(s.downloads) } : null,
-                typeof s.stars === "number" ? { text: `${compactCount(s.stars)} ★`, title: String(s.stars) } : null,
-              ].filter(Boolean)
-            : null,
+          // ADR-0036 owner 门放宽：有数字就显数字（精选收藏经 join/直查同源覆盖）；空数组 → Card 不渲染
+          byline: [
+            s.owner ? { text: `by ${s.owner}` } : null,
+            typeof s.downloads === "number" ? { text: `${compactCount(s.downloads)} ↓`, title: String(s.downloads) } : null,
+            typeof s.stars === "number" ? { text: `${compactCount(s.stars)} ★`, title: String(s.stars) } : null,
+          ].filter(Boolean),
           desc: s.description,
           clampLines: 5,
           links: h(LinksRow, { npm: s.npm, github: s.github, homepage: s.homepage }),
