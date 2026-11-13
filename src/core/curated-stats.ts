@@ -9,6 +9,8 @@
  * DOM-free 纯逻辑直测于 tests/curated-stats.test.mjs。
  */
 import { readFile, mkdir } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
+import { homedir, } from 'node:os'
 import { join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.js'
 import { fetchJsonLimited } from './httpx.js'
@@ -42,6 +44,7 @@ export interface LoadCuratedStatsInput {
   deps?: {
     fetchJson?: (url: string, opts?: Record<string, unknown>) => Promise<unknown>
     now?: () => number
+    ghToken?: string
   }
 }
 
@@ -62,6 +65,46 @@ export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[]; 
     if (typeof e.github === 'string' && e.github !== '') githubKeys.push(e.github)
   }
   return { npmKeys, githubKeys }
+}
+
+/**
+ * gh CLI hosts.yml 解析（R8）：取 github.com 段的 oauth_token；缺失 → null。
+ * 单文件来源假设（gh CLI 标准布局）；多 host 时只认 github.com 段。
+ */
+export function parseGhToken(hostsYaml: string): string | null {
+  if (typeof hostsYaml !== 'string' || hostsYaml === '') return null
+  let inGithub = false
+  for (const line of hostsYaml.split(/\r?\n/)) {
+    const host = /^(\S+):\s*$/.exec(line)
+    if (host) {
+      inGithub = host[1] === 'github.com'
+      continue
+    }
+    if (!inGithub) continue
+    const tok = /^\s+oauth_token:\s*(\S+)\s*$/.exec(line)
+    if (tok) return tok[1]
+  }
+  return null
+}
+
+let ghTokenCache: string | null | undefined
+
+/** gh token 解析顺序：DSHM_GITHUB_TOKEN / GH_TOKEN env → gh CLI hosts.yml → null（匿名降级）。模块级缓存一次。 */
+function ghTokenOnce(): string | null {
+  if (ghTokenCache !== undefined) return ghTokenCache
+  let t: string | null = null
+  const envTok = process.env.DSHM_GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (typeof envTok === 'string' && envTok !== '') {
+    t = envTok
+  } else {
+    try {
+      t = parseGhToken(readFileSync(join(homedir(), '.config', 'gh', 'hosts.yml'), 'utf8'))
+    } catch {
+      t = null
+    }
+  }
+  ghTokenCache = t
+  return t
 }
 
 /** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内 + entries 对象 → entries；否则 null。 */
@@ -120,7 +163,12 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : CURATED_STATS_TTL_MS
   const now = input.deps?.now ?? Date.now
   const fetchJson: FetchJsonFn = input.deps?.fetchJson
-    ?? (async (url) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal }))
+    ?? (async (url, opts) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal, ...opts }))
+  // R8：gh 请求认证头（token 缺席 → 匿名降级，行为不变）
+  const ghHeaders = (): Record<string, unknown> => {
+    const token = input.deps?.ghToken ?? ghTokenOnce()
+    return token ? { headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'dsh-m' } } : {}
+  }
   const errors: string[] = []
   const stats: Record<string, CuratedStat> = {}
   const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
@@ -229,7 +277,7 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
         if (idx >= githubKeys.length) return
         const repo = githubKeys[idx]
         try {
-          const resp = (await fetchJson(GH_REPO + repo)) as { stargazers_count?: unknown } | null
+          const resp = (await fetchJson(GH_REPO + repo, ghHeaders())) as { stargazers_count?: unknown } | null
           const stars = nonNeg(resp?.stargazers_count)
           if (stars !== undefined) fetched[`gh:${repo}`] = { stars, checkedAt }
         } catch (e) {
