@@ -115,6 +115,8 @@ function fakeDeps(overrides = {}) {
       },
       catalog: null,
     }),
+    // ADR-0036 缺口直查缺省惰性桩（评审 P1：测试夹具禁走真实网络——千包 fixture 经真实兜底曾 3×2001 次出网）
+    fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
   }
   return { deps: { ...deps, ...overrides }, calls, maxInFlight: () => maxInFlight }
 }

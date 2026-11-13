@@ -861,6 +861,18 @@ describe('dshm_search：安装标注单快照契约（Tier B + fail-closed）', 
         listMarket: (c, opts) => listMarket(c, opts, {
           loadRegistry: async () => readyRegistry,
           listInstalledPlugins: () => realInstalled.listInstalledPlugins(badProfile),
+          // 评审 P1/R1-A：端到端缝隙补桩切断出网（直查/社区目录/latest 探测三依赖）——本用例验证面
+          // 是真实枚举 + fail-closed 贯通，三者均未被断言；npmLatest 桩取拒绝形态，镜像 fixture 包
+          // 不在 npm 上的 404→latestError 现行行为
+          fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
+          fetchCommunityCatalog: async () => ({
+            state: {
+              enabled: false, status: 'disabled', version: null, checkedAt: null,
+              fetchedAt: null, route: null, count: 0, errors: [], warnings: [],
+            },
+            catalog: null,
+          }),
+          npmLatest: async () => { throw new Error('npm latest 不可用（fixture 包不在 npm 上）') },
         }),
       })
       const search = registered.find((t) => t.name === 'dshm_search')
@@ -896,6 +908,16 @@ describe('dshm_search：安装标注单快照契约（Tier B + fail-closed）', 
             installedCalls += 1
             return realInstalled.listInstalledPlugins(okProfile)
           },
+          // 评审 P1/R1-A：同上——切断直查/社区目录/latest 探测出网，保留真实枚举 + 真实 matcher 验证面
+          fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
+          fetchCommunityCatalog: async () => ({
+            state: {
+              enabled: false, status: 'disabled', version: null, checkedAt: null,
+              fetchedAt: null, route: null, count: 0, errors: [], warnings: [],
+            },
+            catalog: null,
+          }),
+          npmLatest: async () => { throw new Error('npm latest 不可用（fixture 包不在 npm 上）') },
         }),
       })
       const search = registered.find((t) => t.name === 'dshm_search')

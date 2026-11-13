@@ -237,6 +237,8 @@ describe('L2 物化合并市场（ADR-0016）', () => {
       npmLatest: async () => ({ version: '9.9.9' }),
       githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
       fetchCommunityCatalog: async () => communityTaskValue(COMMUNITY_RAW),
+      // ADR-0036 缺口直查缺省惰性桩（评审 P1：测试夹具禁走真实网络）
+      fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
     })
     const cfg = { timeoutMs: 500 }
     const first = await listMarket(cfg, { withLatest: false }, mkDeps())
@@ -311,6 +313,8 @@ describe('社区浏览镜像 vs 搜索池（设计 2026-10-27 视图语义）', 
     npmLatest: async () => ({ version: '9.9.9' }),
     githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
     fetchCommunityCatalog: async () => communityTaskValue(COMMUNITY_RAW),
+    // ADR-0036 缺口直查缺省惰性桩（评审 P1：测试夹具禁走真实网络；source:'primary' 用例亦经全量 merged 现算缺口）
+    fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
   })
   const cfg = { timeoutMs: 500 }
 

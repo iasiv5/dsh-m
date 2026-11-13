@@ -368,6 +368,8 @@ describe('listMarket 市场条目 icon join（ADR-0025 增补，主人修订）'
       }),
       npmLatest: async (pkg) => ({ version: '9.9.9', integrity: 'sha512-x', tarball: `https://example.com/${pkg}.tgz` }),
       githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
+      // ADR-0036 缺口直查缺省惰性桩（评审 P1：测试夹具禁走真实网络）
+      fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
     }
   }
 
