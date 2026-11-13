@@ -57,6 +57,9 @@ function snapshotOf(it) {
   // 收藏头像修复（2026-10-31）：icon/iconDataUri 入快照——快照此前无图标字段，收藏卡头像
   // 恒退化到 GitHub owner 头像（ADR-0025 候选序末位）；新收藏离线也有图标。存量收藏由
   // favorite-zone 的 market-ids-exist icons 覆盖 + 已装 iconDataUri join 兜底（icon-view.js）。
+  // 来源域标记（评审 R9）：显式布尔入快照——收藏卡徽章判定不再用 owner 代理（ADR-0036 Task 3
+  // 给精选条目派生 owner 后代理失效，精选收藏误标「社区收录」）。undefined（存量旧快照）回退 owner 代理。
+  s.community = it.community === true;
   for (const k of ["descriptionEn", "npm", "github", "homepage", "owner", "downloads", "stars", "added", "deprecated", "verified", "audience", "decoupled", "icon", "iconDataUri"]) {
     if (it[k] !== undefined && it[k] !== null) s[k] = it[k];
   }

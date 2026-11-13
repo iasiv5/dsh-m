@@ -88,9 +88,15 @@ function FavoriteZone({ favorites, onOpen, installedIcons }) {
             // 0.9.45 U12（R7 收窄）：无 owner = 精选条目——补「精选」身份徽标；
             // verified 徽标已移除（2026-10-13 B 方案：卡面只留例外信号，实测信息在详情弹窗「实测版本」行）；
             // 受众/解耦徽标不进收藏区（DESIGN §2.7 裁决⑤「已装视图与收藏页不打标」），快照仅存字段
-            s.owner
+            // 来源徽章（评审 R9）：显式 community 标记优先（新快照恒有布尔）；
+            // undefined（存量旧快照）回退 owner 代理（社区条目必有 owner）。
+            s.community === true
               ? h("span", { className: "dshm-badge info", key: "c" }, lookup("badge.community"))
-              : h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary")),
+              : s.community === false
+                ? h("span", { className: "dshm-badge", key: "cz" }, lookup("zone.primary"))
+                : s.owner
+                  ? h("span", { className: "dshm-badge info", key: "c2" }, lookup("badge.community"))
+                  : h("span", { className: "dshm-badge", key: "cz2" }, lookup("zone.primary")),
             h("span", { className: "dshm-badge info", key: "s" }, s.source === "npm" ? "npm" : "github"),
             isStale ? h("span", { className: "dshm-badge warn", key: "st" }, lookup("favorites.stalebadge")) : null,
           ],

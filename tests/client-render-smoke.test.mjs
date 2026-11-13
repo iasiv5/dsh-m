@@ -257,6 +257,19 @@ describe('client 渲染冒烟（SSR）——自由变量/接线炸弹回归门',
     assert.ok(html.includes('role="button"'), '收藏卡是可点按钮语义')
   })
 
+  it('收藏卡来源徽章（评审 R9）：显式 community 标记优先，存量快照回退 owner 代理', () => {
+    const favs = [
+      { id: 'iasiv5--dsh-m', savedAt: 1, snapshot: { id: 'iasiv5--dsh-m', name: 'dsh-m', description: 'd', category: 'theme', source: 'npm', npm: 'dsh-m', owner: 'iasiv5', community: true, downloads: 44720, stars: 33 } },
+      { id: 'dsh-m', savedAt: 2, snapshot: { id: 'dsh-m', name: 'DSH Marketplace', description: 'd', category: 'theme', source: 'npm', npm: 'dsh-m', owner: 'iasiv5', community: false, downloads: 46045 } },
+      { id: 'legacy--x', savedAt: 3, snapshot: { id: 'legacy--x', name: 'legacy', description: 'd', category: 'theme', source: 'npm', npm: 'lp', owner: 'lo' } },
+    ]
+    const html = renderToString(h(components.__FavoriteZone, { favorites: { list: favs, toggle: () => {}, removeIds: () => {} }, onOpen: () => {} }))
+    // 文案断言双语容忍（node 环境 browserLang()=en，CODING-STANDARDS 既有口径）
+    const communityHits = (html.match(/社区收录|Community/g) || []).length
+    assert.equal(communityHits, 2, '社区条目 + 存量 owner 代理 → 社区收录徽章 ×2（双语计）')
+    assert.ok(/精选|Curated/.test(html), '精选条目显式 false → 精选徽章（双语容忍）')
+  })
+
   // 0.9.1 头部版本角标三态（initialCheck 注入，SSR 不跑 effect 不联网）：
   // 静默口径——无更新/ahead 必须是静态 span，只有 outdated 点亮为 warn 可点按钮
   it('DshmVersionChip 静默态（无缓存/已最新）渲染为静态 span，无升级入口', () => {
