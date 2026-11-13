@@ -118,3 +118,20 @@ export async function partitionStale(favorites, lookup) {
   stale.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
   return { live, stale }
 }
+
+/**
+ * 收藏统计新鲜度（2026-11-13）：收藏卡数字覆盖——快照冻结的是收藏时刻的目录 downloads/stars
+ * （toggle 时 snapshotOf 落盘后永不刷新；实测 dsh-m 收藏卡 29.6k/★9 vs 目录现值 44720/★33）。
+ * market-ids-exist 同批透出的目录现行 stats（present 条目，零新 IO）按键覆盖快照：
+ * 仅 number 字段覆盖（null/缺席保留快照值）；statsById 缺席/非对象/无该 id/垃圾形态
+ * （旧宿主、API 失败、SSR）原样返回快照副本。不改动入参。DOM-free 纯逻辑直测于 client-favorites。
+ */
+export function withFavoriteStats(entry, statsById) {
+  const e = entry || {}
+  const hit = statsById && typeof statsById === 'object' && typeof e.id === 'string' ? statsById[e.id] : null
+  if (!hit || typeof hit !== 'object') return { ...e }
+  const out = { ...e }
+  if (typeof hit.downloads === 'number') out.downloads = hit.downloads
+  if (typeof hit.stars === 'number') out.stars = hit.stars
+  return out
+}

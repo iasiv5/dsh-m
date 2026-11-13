@@ -423,6 +423,30 @@ describe('existingMarketIds（FP2 2026-10-15：收藏 stale 批量化，三不�
     }, '有声明 icon 的 present 条目透出（主清单 + 社区适配透传）；无 icon（缺省）与缺席条目不入 map')
   })
 
+  // 收藏统计新鲜度（2026-11-13）：收藏快照冻结的是收藏时刻的目录 downloads/stars（toggle 时
+  // snapshotOf 落盘），收藏卡数字自此永不刷新（实测：dsh-m 收藏卡 29.6k/★9 vs 目录现值
+  // 44720/★33——目录每日重建，条目带 downloadsStart/End/CheckedAt）。membership 查询已在手的
+  // merged 条目随响应透出目录现行 stats——与 ⑤ icons 同款「既有字段零新 IO」，仍在三不原则内；
+  // 消费端 favorite-zone 用 withFavoriteStats 覆盖快照（仅 number 覆盖，null/缺席保留快照）。
+  it('⑦ stats 同批透出：present 条目的目录现行 downloads/stars 随 membership 返回（全缺不入 map，快路/超时形态恒在）', async () => {
+    const primary = [
+      { id: 'p-st', name: 'P-ST', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-st', downloads: 44720, stars: 33 },
+      { id: 'p-nost', name: 'P-NOST', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-nost' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('keep', 'o8', { downloads: 3218, stars: 2 })]))
+    const res = await existingMarketIds(['p-st', 'p-nost', 'o8--keep', 'gone'], cfg, {}, deps)
+    assert.deepEqual(res.present, ['p-st', 'p-nost', 'o8--keep'])
+    assert.deepEqual(res.stats, {
+      'p-st': { downloads: 44720, stars: 33 },
+      'o8--keep': { downloads: 3218, stars: 2 },
+    }, '带统计的 present 条目透出目录现值；无统计（缺省字段）与缺席条目不入 map')
+    const emptyDeps = fakeDeps()
+    assert.deepEqual((await existingMarketIds([], cfg, {}, emptyDeps.deps)).stats, {}, '空 ids 快路同样带 stats 键')
+    const hang = fakeDeps({ loadRegistry: async () => new Promise(() => {}) })
+    assert.deepEqual((await existingMarketIds(['p-0'], cfg, { deadlineMs: 30 }, hang.deps)).stats, {}, '落代超时 stats 空 map（形态不漂移）')
+  })
+
   it('⑥ icons 形态契约恒在：空 ids 快路与 registry 落代超时均返回空 map（消费端免判缺）', async () => {
     const { deps } = fakeDeps()
     const empty = await existingMarketIds([], cfg, {}, deps)

@@ -320,9 +320,14 @@ describe('C3 接线结构锚（收藏批量 stale + fetchPage 零增量守卫）
   })
   it('收藏头像接线（2026-10-31）：icons 同批消费 + 三层装配单源 withFavoriteIcons', () => {
     assert.ok(favSrc.includes('if (res && res.icons && typeof res.icons === "object") iconsById = res.icons;'), 'icons 判缺容错消费在（旧宿主无键 → null 回退）')
-    assert.ok(favSrc.includes('setCheck({ staleIds: stale.map((f) => f.id), iconsById })'), 'iconsById 随 stale 检查同批入 state（零新增请求）')
+    assert.ok(favSrc.includes('setCheck({ staleIds: stale.map((f) => f.id), iconsById, statsById })'), 'iconsById/statsById 随 stale 检查同批入 state（零新增请求）')
     assert.ok(favSrc.includes('withFavoriteIcons(s, check && check.iconsById, installedIcons)'), 'Icon entry 三层装配单源在（目录覆盖 → 快照 → 已装 join）')
     assert.ok(favSrc.includes('import { withFavoriteIcons } from "./icon-view.js"'), '纯逻辑 import 在（DOM-free 直测于 client-icon-view）')
+  })
+  it('收藏统计接线（2026-11-13）：stats 同批消费 + 快照覆盖单源 withFavoriteStats', () => {
+    assert.ok(favSrc.includes('if (res && res.stats && typeof res.stats === "object") statsById = res.stats;'), 'stats 判缺容错消费在（旧宿主无键 → null 回退）')
+    assert.ok(favSrc.includes('withFavoriteStats(fav.snapshot, check && check.statsById)'), '收藏卡统计覆盖单源在（目录现值覆盖 → 快照保留）')
+    assert.ok(favSrc.includes('import { partitionStale, withFavoriteStats } from "./favorites.js"'), '纯逻辑 import 在（DOM-free 直测于 client-favorites）')
   })
   it('fetchPage 零增量守卫：内容等价不提交，loading 照常收口（ADR-0023 T9：useMarketData 迁 hooks.js，锚随迁）', () => {
     const hooksSrc = readFileSync(new URL('../src/client/hooks.js', import.meta.url), 'utf8')

@@ -8,7 +8,7 @@ const h = React.createElement;
 const { useState, useEffect } = React;
 import { api } from "./hooks.js";
 import { lookup } from "./i18n.js";
-import { partitionStale } from "./favorites.js";
+import { partitionStale, withFavoriteStats } from "./favorites.js";
 import { LinksRow, Icon, compactCount } from "./chrome.jsx";
 import { Card } from "./card.jsx";
 import { withFavoriteIcons } from "./icon-view.js";
@@ -18,7 +18,7 @@ import { withFavoriteIcons } from "./icon-view.js";
 // 用真图标（社区页 iconDataUri join 同款呈现）；缺席（SSR/旧调用面）安全降级既有链。
 function FavoriteZone({ favorites, onOpen, installedIcons }) {
   const list = favorites.list;
-  const [check, setCheck] = useState(null); // { staleIds: string[] } | null
+  const [check, setCheck] = useState(null); // { staleIds: string[], iconsById?: Record<string, unknown> | null, statsById?: Record<string, unknown> | null } | null
   useEffect(() => {
     let live = true;
     setCheck(null);
@@ -32,18 +32,20 @@ function FavoriteZone({ favorites, onOpen, installedIcons }) {
         // 失败/形态异常 → 空 Set = 全部保守 stale（与旧逐条 catch→false 同语义）。
         let present = new Set();
         let iconsById = null;
+        let statsById = null; // 收藏统计新鲜度（2026-11-13）：目录现行 downloads/stars（同批零新增请求）
         try {
           const res = await api("market-ids-exist", { ids: list.map((f) => f.id) });
           if (res && Array.isArray(res.present)) present = new Set(res.present);
           // 收藏头像修复（2026-10-31）：目录声明 icon 随 membership 同批透出（core 既有字段零
           // 新 IO）——快照无 icon 的存量收藏借此拿回目录图标；旧宿主响应无 icons 键 → null 判缺容错。
           if (res && res.icons && typeof res.icons === "object") iconsById = res.icons;
+          if (res && res.stats && typeof res.stats === "object") statsById = res.stats;
         } catch {
           present = new Set();
         }
         const lookupLive = async (fav) => present.has(fav.id);
         const { stale } = await partitionStale(list, lookupLive);
-        if (live) setCheck({ staleIds: stale.map((f) => f.id), iconsById });
+        if (live) setCheck({ staleIds: stale.map((f) => f.id), iconsById, statsById });
       })();
     }, 800);
     return () => {
@@ -72,7 +74,8 @@ function FavoriteZone({ favorites, onOpen, installedIcons }) {
       "div",
       { className: "dshm-cards" },
       ...list.map((fav) => {
-        const s = fav.snapshot;
+        // 收藏统计新鲜度（2026-11-13）：目录现行 downloads/stars 覆盖收藏时刻的冻结快照（icons 同款 overlay）
+        const s = withFavoriteStats(fav.snapshot, check && check.statsById);
         const isStale = staleSet.has(fav.id);
         return Card({
           key: fav.id,

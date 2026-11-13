@@ -854,15 +854,21 @@ export interface ExistingMarketIdsOptions {
  * 不入 map；覆盖面=主清单 + 社区条目——社区适配层 icon 透传随本轮收编，上游目录 live 抽样
  * 358/7924 条声明）——merged 条目既有字段零新 IO，仍在三不原则内；消费端 favorite-zone 用它
  * 覆盖收藏快照的缺失 icon（ADR-0025 候选序首位）。
+ *
+ * 返回 stats（收藏统计新鲜度修复 2026-11-13）：present 条目的目录现行 downloads/stars map
+ * （两字段全缺的条目不入 map；null = 目录侧无此数据）——收藏快照冻结的是收藏时刻的目录值，
+ * 收藏卡数字自此随目录刷新（实测：dsh-m 收藏卡 29.6k/★9 vs 目录现值 44720/★33）；与 icons
+ * 同款「merged 条目既有字段零新 IO」，三不原则不变。消费端 favorite-zone 经 withFavoriteStats
+ * 覆盖收藏快照（仅 number 覆盖，null/缺席保留快照）。
  */
 export async function existingMarketIds(
   ids: string[],
   cfg: RegistryConfig = {},
   opts: ExistingMarketIdsOptions = {},
   deps?: Partial<Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'>>,
-): Promise<{ present: string[]; icons: Record<string, string> }> {
+): Promise<{ present: string[]; icons: Record<string, string>; stats: Record<string, { downloads: number | null; stars: number | null }> }> {
   const list = Array.isArray(ids) ? ids : []
-  if (list.length === 0) return { present: [], icons: {} }
+  if (list.length === 0) return { present: [], icons: {}, stats: {} }
   const d: Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'> = {
     loadRegistry: deps?.loadRegistry ?? defaultLoadRegistry,
     fetchCommunityCatalog: deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog,
@@ -886,7 +892,7 @@ export async function existingMarketIds(
   }
   if (loaded === 'deadline') {
     void communityTask.catch(() => undefined)
-    return { present: [], icons: {} }
+    return { present: [], icons: {}, stats: {} }
   }
   const community = await mergedOutcome({
     namespace,
@@ -905,16 +911,31 @@ export async function existingMarketIds(
       .map((entry) => [entry.id, typeof (entry as RegistryEntry).icon === 'string' ? (entry as RegistryEntry).icon as string : ''] as const)
       .filter(([_, icon]) => icon !== ''),
   )
+  // 收藏统计新鲜度（2026-11-13）：present 条目的目录现行 downloads/stars 同批透出——merged 条目
+  // 既有字段零新 IO，仍在「三不原则」内；两字段全缺（如未发 npm 的 github 条目）不入 map。
+  const statsById = new Map<string, { downloads: number | null; stars: number | null }>()
+  for (const entry of community.merged) {
+    const e2 = entry as { id: string; downloads?: number | null; stars?: number | null }
+    const downloads = typeof e2.downloads === 'number' ? e2.downloads : null
+    const stars = typeof e2.stars === 'number' ? e2.stars : null
+    if (downloads === null && stars === null) continue
+    statsById.set(e2.id, { downloads, stars })
+  }
   const knownIds = new Set(community.merged.map((entry) => entry.id))
   const present = list
     .map((id) => (typeof id === 'string' ? id.trim() : ''))
     .filter((id) => id !== '' && knownIds.has(id))
   const icons: Record<string, string> = {}
+  const stats: Record<string, { downloads: number | null; stars: number | null }> = {}
   for (const id of present) {
     const icon = iconById.get(id)
     if (icon !== undefined) icons[id] = icon
   }
-  return { present, icons }
+  for (const id of present) {
+    const hit = statsById.get(id)
+    if (hit !== undefined) stats[id] = hit
+  }
+  return { present, icons, stats }
 }
 
 // ---------- 已装列表 ----------

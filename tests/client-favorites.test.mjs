@@ -6,7 +6,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createFavoritesStore, partitionStale, FAV_STORAGE_KEY } from '../src/client/favorites.js'
+import { createFavoritesStore, partitionStale, withFavoriteStats, FAV_STORAGE_KEY } from '../src/client/favorites.js'
 
 function memStorage() {
   const m = new Map()
@@ -117,5 +117,34 @@ describe('partitionStale', () => {
     assert.deepEqual(r, { live: [], stale: [] })
     const r2 = await partitionStale(null, async () => true)
     assert.deepEqual(r2, { live: [], stale: [] })
+  })
+})
+
+describe('withFavoriteStats（收藏统计新鲜度 2026-11-13）：目录现值覆盖冻结快照', () => {
+  const e = (over = {}) => ({ id: 'o--x', name: 'x', description: 'd', category: 'c', source: 'npm', npm: 'p', owner: 'o', downloads: 29600, stars: 9, ...over })
+  it('目录现值覆盖快照（仅 number 覆盖；null 字段保留快照）', () => {
+    const statsById = { 'o--x': { downloads: 44720, stars: 33 } }
+    const out = withFavoriteStats(e(), statsById)
+    assert.equal(out.downloads, 44720)
+    assert.equal(out.stars, 33)
+    const out2 = withFavoriteStats(e({ id: 'other' }), { other: { downloads: null, stars: 5 } })
+    assert.equal(out2.downloads, 29600, 'downloads null → 保留快照')
+    assert.equal(out2.stars, 5, 'stars number → 覆盖')
+  })
+  it('statsById 缺席/非对象/无该 id/垃圾形态 → 原样快照（旧宿主、API 失败、SSR 容错）', () => {
+    const base = e()
+    assert.deepEqual(withFavoriteStats(base, null), { ...base })
+    assert.deepEqual(withFavoriteStats(base, 'x'), { ...base })
+    assert.deepEqual(withFavoriteStats(base, {}), { ...base })
+    assert.deepEqual(withFavoriteStats(base, { other: { downloads: 1, stars: 1 } }), { ...base })
+    assert.deepEqual(withFavoriteStats(base, { 'o--x': 'garbage' }), { ...base })
+    assert.deepEqual(withFavoriteStats(null, { 'o--x': { downloads: 1, stars: 1 } }), {})
+    assert.deepEqual(withFavoriteStats(undefined, null), {})
+  })
+  it('不改动入参（快照不可变）', () => {
+    const base = e()
+    withFavoriteStats(base, { 'o--x': { downloads: 44720, stars: 33 } })
+    assert.equal(base.downloads, 29600)
+    assert.equal(base.stars, 9)
   })
 })

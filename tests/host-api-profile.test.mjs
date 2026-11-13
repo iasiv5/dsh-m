@@ -70,7 +70,7 @@ function setupTrust({ trust, profile, overrides = {} } = {}) {
       existingMarketIds: async (ids) => {
         calls.existingIds.push(ids)
         // 收藏头像修复（2026-10-31）：core 返回形态含 icons map（有声明 icon 的 present 条目）
-        return { present: ids.filter((i) => i !== 'gone'), icons: { a: 'https://example.com/a.png' } }
+        return { present: ids.filter((i) => i !== 'gone'), icons: { a: 'https://example.com/a.png' }, stats: { a: { downloads: 44720, stars: 33 } } }
       },
       getCommunitySummary: async () => ({
         enabled: false, status: 'disabled', version: null, checkedAt: null, fetchedAt: null,
@@ -226,6 +226,8 @@ describe('host-api market-ids-exist（0.9.87 FP2：收藏 stale 批量化）', (
     assert.deepEqual(res.body.present, ['a', 'b'])
     // 收藏头像修复（2026-10-31）：icons 随 membership 同批透传（core → host-api → 客户端链路钉）
     assert.deepEqual(res.body.icons, { a: 'https://example.com/a.png' }, 'icons map 透传在')
+    // 收藏统计新鲜度（2026-11-13）：stats 随 membership 同批透传（core → host-api → 客户端链路钉）
+    assert.deepEqual(res.body.stats, { a: { downloads: 44720, stars: 33 } }, 'stats map 透传在')
     assert.deepEqual(calls.existingIds, [['a', 'gone', 'b']], 'trim 后透传，缺席剔除由 core 负责')
   })
 
