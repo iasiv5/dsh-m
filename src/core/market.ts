@@ -46,6 +46,7 @@ import {
   GITHUB_SPEC_RE,
   type CommunityRegistrySummary,
   type MergedOutcome,
+  type CuratedStatsFields,
 } from './merged-market.js'
 // ADR-0024：对 merged-market 的转手 re-export 已删除（communityOutcome / matchInstalledByEntry /
 // CommunityRegistrySummary 等）——消费方直连 merged-market.js；本文件仅在上方 import 中自用。
@@ -103,6 +104,8 @@ export interface MarketItem extends Omit<RegistryEntry, 'category'> {
   /** 以下为社区旁路字段（Q44：能力披露/截图只进详情折叠区，卡片不打标） */
   stars?: number | null
   downloads?: number | null
+  /** 统计来源标记（ADR-0036）：catalog=目录镜像注记（默认口径），direct=npm 直查 */
+  statsVia?: 'catalog' | 'direct'
   capabilities?: string[]
   capabilityRedLines?: string[]
   screenshots?: string[]
@@ -529,8 +532,14 @@ function toMarketItem(entry: RegistryEntry | CommunityEntry, installedIndex: Ins
     item.installedPkg = inst.pkg
     item.installedVersion = inst.version
   }
+  const via = (entry as CuratedStatsFields).statsVia
+  if (via !== undefined) item.statsVia = via
+  if (item.owner === undefined && typeof entry.github === 'string' && entry.github.includes('/')) {
+    item.owner = entry.github.slice(0, entry.github.indexOf('/'))
+  }
   if (isCommunityEntry(entry)) {
     item.community = true
+    item.statsVia = 'catalog'
     item.stars = entry.stars
     item.downloads = entry.downloads
     item.capabilities = entry.capabilities
