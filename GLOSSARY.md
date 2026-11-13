@@ -367,3 +367,15 @@ _Avoid_: 构建错误（不是脚本执行出错，是未获准执行）
 **精确放行（Precise Build Approval）**:
 构建脚本的批准方式：只对本次待批准名单里的包逐条目写放行，许可面收回到实际涉及的包。对照面是已废弃的全量放行（一次性放行一切待决脚本，把本次需要放大成永久许可）。名单读不出时才允许兜底全量放行，且必须如实标注走了兜底。
 _Avoid_: 按策略放行（旧文案措辞，掩盖了精确/兜底之分）
+
+**镜像条目（primary-overlap mirror）**:
+精选条目在上游社区目录中的同插件条目；merge 撞名时带 primaryOverlap 标记保留（社区浏览可见、搜索池排除），其统计字段是精选卡数字的首选来源。
+_Avoid_: 重复条目、displaced 条目（displaced 仅指让位事件与被让位的社区条目）
+
+**目录快照窗口（catalog snapshot window）**:
+上游目录随条目下发的 downloads 统计区间（downloadsStart~downloadsEnd）与采集时点（downloadsCheckedAt），约 30 天、每日重建；市场数字的默认口径。
+_Avoid_: 实时下载量、总下载量
+
+**缺口直查（gap direct fetch）**:
+精选条目无目录镜像时，dsh-m core 对 npm bulk 下载量与 GitHub star 的直接拉取；动态缺口集（当前精选清单 − 目录镜像）驱动，24h TTL 落盘缓存，失败静默。
+_Avoid_: 实时行情、客户端拉取（本实现为宿主端）
