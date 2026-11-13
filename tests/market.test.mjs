@@ -490,7 +490,7 @@ describe('缺口直查注记（ADR-0036）', () => {
     const primary = [{ id: 'g-1', name: 'G1', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'gap-pkg', github: 'o/gap' }]
     const stub = async (input) => {
       assert.deepEqual(input.npmKeys, ['gap-pkg'])
-      assert.deepEqual(input.githubKeys, [], 'C 方案：直查 npm-only（githubKeys 不传）')
+      assert.equal(input.githubKeys, undefined, 'C 方案：直查 npm-only（契约无 githubKeys）')
       return { stats: { 'npm:gap-pkg': { downloads: 2468, downloadsStart: '2026-10-14', downloadsEnd: '2026-11-12', stars: 2, checkedAt: '2026-11-13T00:00:00.000Z' } }, errors: [] }
     }
     const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary), fetchCuratedStats: stub })

@@ -19,6 +19,12 @@
 
 落地口径：core 数据层执行（非渲染层）——join 只注记 downloads+窗口三要素+statsVia（不注记 stars，镜像仅有 star 无 downloads 的条目不入注记、进缺口）；直查 npmKeys-only（githubKeys/配对不传，gh 调用运行时归零，模块 gh/token 能力保留作未来 github-only 条目扩展）；annotateDirectStats 不注记 stars；客户端零改动（条件渲染自然隐藏）。收藏 overlay 语义修订：overlay 命中即权威——number 覆盖、**null 剥除**（精选收藏旧 star 残留随剥；原「null 保留快照」语义废止）。
 
+## 决策修订三（2026-11-14，R10：gh star 直查整链退役）
+
+预览复检后三次修订：精选/缺口的 **gh star 直查整链退役**（R6 配对合并、R8 token 通道、gh 拉取段与 githubKeys/entries 契约面一并删除）。动机：GitHub 匿名限额被宿主常规探测与直查共同耗尽（60/时/IP，实测 403），star 拉取在限额窗口内恒失败——时有时无的装饰性字段不值得持续消耗额度与故障面；且 C 方案已裁定精选卡不上 star，star 唯一来源收敛为**上游目录镜像**（免费、随目录每日刷新；github-only 条目等上游收录后经 join 免费获得）。
+
+落地：loadCuratedStats 收敛为 npm bulk + 缺键逐包 point 回退（下载量族单源，R7 缺键回退保留）；契约面移除 githubKeys/entries/ghToken；R6 mergePairedStars / R8 parseGhToken 代码退役。
+
 ## Considered Options
 
 - **显示口径**：all-time 总量（否——npm 无端点、全历史聚合不可行）/ 30 天窗（采纳）/ 双显（否——成本翻倍、观感更挤）。
