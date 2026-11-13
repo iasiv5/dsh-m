@@ -123,6 +123,8 @@ function goldDeps() {
     npmLatest: async (pkg) => ({ version: '9.9.9', integrity: 'sha512-gold', tarball: `https://example.com/${pkg}.tgz` }),
     githubLatestTag: async () => ({ tag: 'v9.9.9', sha: 'f'.repeat(40) }),
     fetchCommunityCatalog: async () => communityLoadedValue,
+    // ADR-0036 缺口直查缺省惰性桩（评审 R4⑩：golden 捕获禁走真实网络，防活数字烙入基线）
+    fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
   }
 }
 

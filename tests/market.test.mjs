@@ -113,6 +113,8 @@ function fakeDeps(overrides = {}) {
       },
       catalog: null,
     }),
+    // ADR-0036 缺口直查缺省惰性桩（评审 R4⑩：测试夹具禁走真实网络；⑨/⑧ 用自有桩覆盖）
+    fetchCuratedStats: async () => ({ stats: {}, errors: [] }),
   }
   return { deps: { ...deps, ...overrides }, calls, maxInFlight: () => maxInFlight }
 }
@@ -479,6 +481,34 @@ describe('mergeRegistries 镜像 join（ADR-0036）', () => {
     assert.equal(j2.statsVia, undefined, '无镜像条目不注记')
     assert.equal(j2.downloads, undefined, '无镜像条目无下载量')
     assert.equal(res.community.displaced, 1, 'join 不改变让位语义')
+  })
+})
+
+
+describe('缺口直查注记（ADR-0036）', () => {
+  it('⑨ directGap 经 fetchCuratedStats 注记 statsVia=direct 并参与排序；桩抛错静默', async () => {
+    const primary = [{ id: 'g-1', name: 'G1', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'gap-pkg', github: 'o/gap' }]
+    const stub = async (input) => {
+      assert.deepEqual(input.npmKeys, ['gap-pkg'])
+      assert.deepEqual(input.githubKeys, ['o/gap'])
+      return { stats: { 'npm:gap-pkg': { downloads: 2468, downloadsStart: '2026-10-14', downloadsEnd: '2026-11-12', stars: 2, checkedAt: '2026-11-13T00:00:00.000Z' } }, errors: [] }
+    }
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary), fetchCuratedStats: stub })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('lowk', 'oL', { npm: 'low-pkg', downloads: 100 })]))
+    const res = await listMarket(cfg, { sort: { field: 'downloads', dir: 'desc' }, withLatest: false }, deps)
+    const g1 = res.items.find((x) => x.id === 'g-1')
+    assert.equal(g1.downloads, 2468, '直查统计注记')
+    assert.equal(g1.statsVia, 'direct', '直查来源标记')
+    assert.equal(g1.downloadsCheckedAt, '2026-11-13T00:00:00.000Z', '查于时点透传')
+    const gi = res.items.findIndex((x) => x.id === 'g-1')
+    const li = res.items.findIndex((x) => x.id === 'ol--lowk')
+    assert.ok(gi !== -1 && li !== -1 && gi < li, '直查数值参与 downloads 降序（2468 先于 100）')
+    const base2 = fakeDeps({ loadRegistry: async () => readyLoaded(primary), fetchCuratedStats: async () => { throw new Error('boom') } })
+    const { deps: deps2 } = withCommunity(base2, communityLoaded([]))
+    const res2 = await listMarket(cfg, { withLatest: false }, deps2)
+    const g1b = res2.items.find((x) => x.id === 'g-1')
+    assert.equal(g1b.statsVia, undefined, '桩抛错 → 静默缺席')
+    assert.equal(g1b.downloads, undefined, '桩抛错 → 无下载量')
   })
 })
 

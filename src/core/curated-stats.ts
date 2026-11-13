@@ -201,3 +201,32 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   }
   return { stats, errors }
 }
+
+/**
+ * 直查统计注记（ADR-0036）：对 join 后仍无 statsVia 的条目按键（npm 优先、gh 兜底）
+ * 浅拷贝注记直查结果；无命中/已注记条目原样返回。物化代共享对象禁原地改写，调用方消费副本。
+ */
+export function annotateDirectStats<T extends { id: string; npm?: string; github?: string; statsVia?: 'catalog' | 'direct' }>(
+  items: T[],
+  stats: Record<string, CuratedStat>,
+): T[] {
+  return items.map((it) => {
+    if (!it || typeof it !== 'object' || it.statsVia !== undefined) return it
+    const key = typeof it.npm === 'string' && it.npm !== ''
+      ? `npm:${it.npm}`
+      : typeof it.github === 'string' && it.github !== ''
+        ? `gh:${it.github}`
+        : null
+    const hit = key ? stats[key] : undefined
+    if (!hit) return it
+    return {
+      ...it,
+      ...(hit.downloads !== undefined ? { downloads: hit.downloads } : {}),
+      ...(hit.downloadsStart !== undefined ? { downloadsStart: hit.downloadsStart } : {}),
+      ...(hit.downloadsEnd !== undefined ? { downloadsEnd: hit.downloadsEnd } : {}),
+      ...(hit.checkedAt !== undefined ? { downloadsCheckedAt: hit.checkedAt } : {}),
+      ...(hit.stars !== undefined ? { stars: hit.stars } : {}),
+      statsVia: 'direct' as const,
+    }
+  })
+}

@@ -12,7 +12,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { WEB_PROFILE } from './env.js'
+import { WEB_PROFILE, cacheRoot } from './env.js'
 import {
   listInstalledPlugins as defaultListInstalledPlugins,
   type InstalledPlugin,
@@ -55,6 +55,10 @@ import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './searc
 import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
 import { stampUpgradeProjection, type UnsupportedReasonCode } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
+import { annotateDirectStats, curatedGapKeys, loadCuratedStats, type LoadCuratedStatsInput, type LoadCuratedStatsResult } from './curated-stats.js'
+
+/** 缺口直查生产缺省（ADR-0036）：缓存优先 + 24h TTL；测试夹具必须显式惰性桩（R4⑩）。 */
+const defaultFetchCuratedStats: (input: LoadCuratedStatsInput) => Promise<LoadCuratedStatsResult> = loadCuratedStats
 import { fetchPublishedAt } from './published-at.js'
 import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
 import {
@@ -172,6 +176,8 @@ export interface MarketDeps {
   githubLatestTag: typeof defaultGithubLatestTag
   /** 社区清单加载（M1 Task 5；测试注入） */
   fetchCommunityCatalog: typeof defaultFetchCommunityCatalog
+  /** 缺口直查注入（ADR-0036；缺省真实兜底仅生产工厂，测试夹具显式惰性桩——R4⑩） */
+  fetchCuratedStats?: typeof defaultFetchCuratedStats
   /** enablement 合成注入（Task 13）；缺省 = composeEnablement */
   composeEnablement?: typeof composeEnablement
   /** 发布时刻取数注入（ADR-0031；测试 stub 面）；缺省 = fetchPublishedAt（磁盘优先） */
@@ -567,6 +573,7 @@ function marketDeps(): MarketDeps {
     npmLatest: defaultNpmLatest,
     githubLatestTag: defaultGithubLatestTag,
     fetchCommunityCatalog: defaultFetchCommunityCatalog,
+    fetchCuratedStats: defaultFetchCuratedStats,
   }
 }
 
@@ -645,7 +652,33 @@ export async function listMarket(
   // 分区过滤 + 全量统计 + query/category 过滤 + 分页（同步，极轻；0.7.0 Task 2）：
   // categoryCounts = 分区集合（不含 query/category 过滤——chips 需要全区计数）；
   // total = 分区 ∩ query ∩ category。
-  const merged = community.merged
+  // ADR-0036 缺口直查（join 后仍无统计的精选条目）：缓存优先 + 24h TTL 落盘；失败/超时静默缺席。
+  // 注记走浅拷贝（merged 条目为物化代共享对象，禁原地改写）；缺口键集由当轮 merged 现算（动态，精选集增删自愈）。
+  const mergedRaw = community.merged
+  let merged = mergedRaw
+  {
+    const fetchCurated = d.fetchCuratedStats ?? defaultFetchCuratedStats
+    const gapEntries = mergedRaw.filter((e) => !isCommunityEntry(e)
+      && (e as CuratedStatsFields).statsVia === undefined
+      && ((e.npm !== undefined && e.npm !== '') || (e.github !== undefined && e.github !== '')))
+    if (gapEntries.length > 0) {
+      const gap = curatedGapKeys(gapEntries.map((e) => ({ id: e.id, npm: e.npm, github: e.github })))
+      if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
+        try {
+          const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
+          const raced = await deadlineRace(
+            fetchCurated({ ...gap, dir, deadlineAt, signal }),
+            deadlineAt - Date.now(),
+          )
+          if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
+            merged = annotateDirectStats(mergedRaw, raced.stats)
+          }
+        } catch {
+          /* 直查失败静默（ADR-0036）：数字缺席，不阻塞市场 */
+        }
+      }
+    }
+  }
   const zoned =
     source === 'community'
       ? merged.filter(isCommunityEntry)
@@ -874,11 +907,11 @@ export async function existingMarketIds(
   ids: string[],
   cfg: RegistryConfig = {},
   opts: ExistingMarketIdsOptions = {},
-  deps?: Partial<Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'>>,
+  deps?: Partial<Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog' | 'fetchCuratedStats'>>,
 ): Promise<{ present: string[]; icons: Record<string, string>; stats: Record<string, { downloads: number | null; stars: number | null }> }> {
   const list = Array.isArray(ids) ? ids : []
   if (list.length === 0) return { present: [], icons: {}, stats: {} }
-  const d: Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog'> = {
+  const d: Pick<MarketDeps, 'loadRegistry' | 'fetchCommunityCatalog' | 'fetchCuratedStats'> = {
     loadRegistry: deps?.loadRegistry ?? defaultLoadRegistry,
     fetchCommunityCatalog: deps?.fetchCommunityCatalog ?? defaultFetchCommunityCatalog,
   }
@@ -911,12 +944,38 @@ export async function existingMarketIds(
     communityTask,
     deadlineAt,
   })
+  // ADR-0036 缺口直查：与 listMarket 同源（缓存优先 + 24h TTL 落盘；失败/超时静默）——
+  // 收藏卡 stats overlay 借此覆盖精选条目（镜像 join 注记 + 直查注记双源）。
+  let mergedForStats = community.merged
+  {
+    const fetchCurated = deps?.fetchCuratedStats ?? defaultFetchCuratedStats
+    const gapEntries = mergedForStats.filter((e) => !isCommunityEntry(e)
+      && (e as CuratedStatsFields).statsVia === undefined
+      && ((e.npm !== undefined && e.npm !== '') || (e.github !== undefined && e.github !== '')))
+    if (gapEntries.length > 0) {
+      const gap = curatedGapKeys(gapEntries.map((e) => ({ id: e.id, npm: e.npm, github: e.github })))
+      if (gap.npmKeys.length > 0 || gap.githubKeys.length > 0) {
+        try {
+          const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
+          const raced = await deadlineRace(
+            fetchCurated({ ...gap, dir, deadlineAt, signal }),
+            deadlineAt - Date.now(),
+          )
+          if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
+            mergedForStats = annotateDirectStats(mergedForStats, raced.stats)
+          }
+        } catch {
+          /* 直查失败静默（ADR-0036）：数字缺席，不阻塞 stale 检测 */
+        }
+      }
+    }
+  }
   // 收藏头像修复（2026-10-31）：present 条目的目录声明 icon 随 membership 同批透出——收藏快照
   // 无 icon 字段，收藏卡头像此前恒退化到 GitHub owner 头像（ADR-0025 候选序末位）。merged 条目
   // 既有字段零新 IO，仍在「三不原则」内；无声明 icon（社区条目适配层不产出 icon）不入 map，
   // 消费端（favorite-zone）按键覆盖快照后交 iconCandidates 的 https 门兜底校验。
   const iconById = new Map(
-    community.merged
+    mergedForStats
       .map((entry) => [entry.id, typeof (entry as RegistryEntry).icon === 'string' ? (entry as RegistryEntry).icon as string : ''] as const)
       .filter(([_, icon]) => icon !== ''),
   )
@@ -930,7 +989,7 @@ export async function existingMarketIds(
     if (downloads === null && stars === null) continue
     statsById.set(e2.id, { downloads, stars })
   }
-  const knownIds = new Set(community.merged.map((entry) => entry.id))
+  const knownIds = new Set(mergedForStats.map((entry) => entry.id))
   const present = list
     .map((id) => (typeof id === 'string' ? id.trim() : ''))
     .filter((id) => id !== '' && knownIds.has(id))
