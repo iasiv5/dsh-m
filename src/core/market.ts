@@ -668,7 +668,7 @@ export async function listMarket(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ npmKeys: gap.npmKeys, githubKeys: [], entries: [], dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ npmKeys: gap.npmKeys, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {
@@ -957,7 +957,7 @@ export async function existingMarketIds(
         try {
           const dir = join(cacheRoot(opts.profile ?? WEB_PROFILE), namespace, 'curated-stats')
           const raced = await deadlineRace(
-            fetchCurated({ npmKeys: gap.npmKeys, githubKeys: [], entries: [], dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
+            fetchCurated({ npmKeys: gap.npmKeys, dir, deadlineAt: Date.now() + CURATED_DIRECT_RACE_MS }),
             CURATED_DIRECT_RACE_MS,
           )
           if (raced !== 'deadline' && raced.stats && Object.keys(raced.stats).length > 0) {

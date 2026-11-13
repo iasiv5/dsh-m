@@ -1,7 +1,8 @@
 /**
- * 精选缺口直查（ADR-0036）：缺口键集纯函数 / 缓存箱解析（TTL+形态）/ 编排
- * （npm bulk 一枪+scoped %2F+逐包回退+gh 逐 repo 并发≤4+缓存写盘+TTL 内免网络
- * +过期拉取失败旧值保留+GC prune+全失败降级）。
+ * 精选缺口直查（ADR-0036 R10：gh star 直查退役，npm 下载量族单源）：
+ * 缺口键集纯函数 / 缓存箱解析（TTL+形态+空箱防污染）/ 编排（bulk 一枪+scoped %2F
+ * +bulk 省略键缺键逐包回退+bulk 失败逐包回退+缓存写盘+TTL 内免网络
+ * +过期拉取失败旧值保留+GC prune+全失败不落盘+被污染空箱重拉）。
  * 运行：npm run build && node --test tests/curated-stats.test.mjs
  */
 import { describe, it, after } from 'node:test'
@@ -9,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { curatedGapKeys, parseCuratedStatsBox, parseGhToken, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
+import { curatedGapKeys, parseCuratedStatsBox, loadCuratedStats, CURATED_STATS_TTL_MS } from '../lib/core/curated-stats.js'
 
 const cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-curated-'))
 process.env.DSHM_CACHE_DIR = cacheRoot
@@ -37,48 +38,45 @@ describe('parseCuratedStatsBox', () => {
   it('新鲜箱命中 entries', () => {
     assert.deepEqual(parseCuratedStatsBox(box, now, CURATED_STATS_TTL_MS), box.entries)
   })
-  it('TTL 过期 / 畸形形态 / entries 缺失 / 非对象 → null', () => {
+  it('TTL 过期 / 畸形形态 / entries 缺失 / 非对象 / 空箱 → null（R5：空箱不得抑制重试）', () => {
     assert.equal(parseCuratedStatsBox(box, now + CURATED_STATS_TTL_MS + 1, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox('x', now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString() }, now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString(), entries: 'no' }, now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox(null, now, CURATED_STATS_TTL_MS), null)
-  })
-  it('空 entries 的新鲜箱 → null（评审 R5：空箱不得当新鲜数据抑制重试）', () => {
-    const emptyBox = { version: 1, fetchedAt: new Date(now).toISOString(), entries: {} }
-    assert.equal(parseCuratedStatsBox(emptyBox, now, CURATED_STATS_TTL_MS), null)
+    assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString(), entries: {} }, now, CURATED_STATS_TTL_MS), null)
   })
 })
 
-describe('loadCuratedStats 编排', () => {
-  it('npm bulk 一枪 + scoped %2F + gh 逐 repo（并发≤4）+ 缓存写盘；TTL 内免网络', async () => {
+describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
+  it('bulk 一枪 + scoped %2F + 缓存写盘；TTL 内免网络', async () => {
     const dir = join(cacheRoot, 'case1')
     const calls = []
     const fetchJson = async (url) => {
       calls.push(String(url))
       if (String(url).includes('downloads/point/last-month/')) return { 'pkg-a': { downloads: 100, start: '2026-10-14', end: '2026-11-12' }, 'pkg-b': { downloads: 200, start: '2026-10-14', end: '2026-11-12' } }
-      if (String(url).includes('api.github.com/repos/o/a')) return { stargazers_count: 7 }
-      if (String(url).includes('api.github.com/repos/o/b')) return { stargazers_count: 9 }
       throw new Error('unexpected ' + url)
     }
-    const r1 = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], githubKeys: ['o/a', 'o/b'], entries: [{ npm: 'pkg-a', github: 'o/a' }, { npm: 'pkg-b', github: 'o/b' }], dir, deps: { fetchJson } })
+    const r1 = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], dir, deps: { fetchJson } })
     assert.equal(r1.stats['npm:pkg-a'].downloads, 100)
     assert.equal(r1.stats['npm:pkg-a'].downloadsStart, '2026-10-14')
-    assert.equal(r1.stats['npm:pkg-a'].stars, 7, 'gh star 并回同条目 npm stat（配对合并，评审 R6）')
-    assert.equal(r1.stats['gh:o/a'], undefined, '配对后不残留孤儿 gh 键')
     assert.equal(r1.errors.length, 0)
     assert.equal(calls.filter((u) => u.includes('last-month')).length, 1, 'bulk 一枪')
-    // 配对合并（R6）：gh star 并回 npm stat 后写箱，孤儿 gh 键不落盘
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8')).entries).sort(), ['npm:pkg-a', 'npm:pkg-b'])
-    // TTL 内免网络：新调用 fetchJson 计数 0
     const before = calls.length
-    const r2 = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: ['o/a'], dir, deps: { fetchJson } })
+    const r2 = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson } })
     assert.equal(calls.length, before, 'TTL 内零网络')
     assert.equal(r2.stats['npm:pkg-a'].downloads, 100)
-    assert.deepEqual(r2.errors, [])
   })
 
-  it('bulk 成功但缺键（0 下载/无记录省略）→ 缺键逐包 point 回退补齐（评审 R7）', async () => {
+  it('scoped 包名以 %2F 形态请求', async () => {
+    const urls = []
+    const r = await loadCuratedStats({ npmKeys: ['@iasiv5/x'], dir: join(cacheRoot, 'case2'), deps: { fetchJson: async (url) => { urls.push(String(url)); return { '@iasiv5/x': { downloads: 5, start: 's', end: 'e' } } } } })
+    assert.ok(urls[0].includes('%2F'), 'scoped 斜杠编码：' + urls[0])
+    assert.equal(r.stats['npm:@iasiv5/x'].downloads, 5)
+  })
+
+  it('bulk 省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐（R7）', async () => {
     const urls = []
     const fetchJson = async (url) => {
       urls.push(String(url))
@@ -86,17 +84,10 @@ describe('loadCuratedStats 编排', () => {
       if (String(url).includes('pkg-zero')) return { downloads: 0, start: 's', end: 'e' }
       throw new Error('unexpected ' + url)
     }
-    const r = await loadCuratedStats({ npmKeys: ['pkg-hot', 'pkg-zero'], githubKeys: [], dir: join(cacheRoot, 'case7'), deps: { fetchJson } })
+    const r = await loadCuratedStats({ npmKeys: ['pkg-hot', 'pkg-zero'], dir: join(cacheRoot, 'case7'), deps: { fetchJson } })
     assert.equal(r.stats['npm:pkg-hot'].downloads, 500)
     assert.equal(r.stats['npm:pkg-zero'].downloads, 0, 'point 对 0 下载返回 0（键级补齐）')
     assert.ok(urls.filter((u) => u.includes('pkg-zero') && !u.includes(',')).length >= 1, '缺键逐包回退发生')
-  })
-
-  it('scoped 包名以 %2F 形态请求', async () => {
-    const urls = []
-    const r = await loadCuratedStats({ npmKeys: ['@iasiv5/x'], githubKeys: [], dir: join(cacheRoot, 'case2'), deps: { fetchJson: async (url) => { urls.push(String(url)); return { '@iasiv5/x': { downloads: 5, start: 's', end: 'e' } } } } })
-    assert.ok(urls[0].includes('%2F'), 'scoped 斜杠编码：' + urls[0])
-    assert.equal(r.stats['npm:@iasiv5/x'].downloads, 5)
   })
 
   it('bulk 失败 → 逐包回退（并发≤4）', async () => {
@@ -108,7 +99,7 @@ describe('loadCuratedStats 编排', () => {
       if (String(url).includes('pkg-b')) return { downloads: 22, start: 's', end: 'e' }
       throw new Error('unexpected')
     }
-    const r = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], githubKeys: [], dir: join(cacheRoot, 'case3'), deps: { fetchJson } })
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-b'], dir: join(cacheRoot, 'case3'), deps: { fetchJson } })
     assert.equal(r.stats['npm:pkg-a'].downloads, 11)
     assert.equal(r.stats['npm:pkg-b'].downloads, 22)
     assert.ok(urls.filter((u) => u.includes('last-month/')).length >= 3, 'bulk 1 + 逐包 2')
@@ -124,22 +115,21 @@ describe('loadCuratedStats 编排', () => {
       if (calls === 1 && String(url).includes('last-month/')) return { 'pkg-a': { downloads: 1, start: 's', end: 'e' } }
       throw new Error('网络挂了')
     }
-    const r1 = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: ['o/old'], dir, ttlMs: CURATED_STATS_TTL_MS, deps: { fetchJson, now: () => now } })
-    assert.equal(r1.stats['gh:o/old'], undefined, 'gh 失败不入 stats')
-    // 前进到 TTL 过期：pkg-a 网络仍挂 → 旧值保留；o/old 不再请求 → GC
+    const _r1 = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, ttlMs: CURATED_STATS_TTL_MS, deps: { fetchJson, now: () => now } })
     now = t0 + CURATED_STATS_TTL_MS + 1
-    const r2 = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: [], dir, ttlMs: CURATED_STATS_TTL_MS, deps: { fetchJson, now: () => now } })
+    const r2 = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, ttlMs: CURATED_STATS_TTL_MS, deps: { fetchJson, now: () => now } })
+    assert.equal(_r1.stats['npm:pkg-a'].downloads, 1, '首次拉取正常（对照）')
     assert.equal(r2.stats['npm:pkg-a'].downloads, 1, '过期拉取失败 → 旧值保留（fail-open）')
     assert.ok(r2.errors.length > 0, 'errors 非空')
     const box = JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8'))
     assert.deepEqual(Object.keys(box.entries), ['npm:pkg-a'], 'GC prune 不在当前 keys 的键')
   })
 
-  it('全失败降级：stats 空对象 + errors 非空，不抛；且不落盘空箱（防污染抑制重试，评审 R5）', async () => {
+  it('全失败降级：stats 空对象 + errors 非空，不抛；不落盘空箱（防污染抑制重试，评审 R5）', async () => {
     const dir = join(cacheRoot, 'case5')
-    const r = await loadCuratedStats({ npmKeys: ['x'], githubKeys: ['o/x'], dir, deps: { fetchJson: async () => { throw new Error('down') } } })
+    const r = await loadCuratedStats({ npmKeys: ['x'], dir, deps: { fetchJson: async () => { throw new Error('down') } } })
     assert.deepEqual(r.stats, {})
-    assert.ok(r.errors.length >= 2)
+    assert.ok(r.errors.length >= 1)
     assert.equal(existsSync(join(dir, 'stats.json')), false, '全失败不写箱')
   })
 
@@ -147,52 +137,7 @@ describe('loadCuratedStats 编排', () => {
     const dir = join(cacheRoot, 'case6')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: {} }))
-    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: [], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
     assert.equal(r.stats['npm:pkg-a'].downloads, 100, '空箱不抑制重试')
-  })
-})
-
-describe('gh token 通道（R8）：认证请求头与解析', () => {
-  it('parseGhToken：github.com 段 oauth_token 提取；缺失/空 → null', () => {
-    const yaml = ['github.com:', '    oauth_token: ghp_abc123', '    user: iasiv5', ''].join('\n')
-    assert.equal(parseGhToken(yaml), 'ghp_abc123')
-    assert.equal(parseGhToken('gitlab.com:\n    oauth_token: x'), null)
-    assert.equal(parseGhToken(''), null)
-  })
-  it('deps.ghToken 注入 → gh 请求带 Authorization；npm bulk 不带', async () => {
-    const dir = join(cacheRoot, 'case8')
-    const captured = []
-    const fetchJson = async (url, opts) => {
-      captured.push({ url: String(url), headers: opts && opts.headers })
-      if (String(url).includes('downloads/point/last-month/pkg-a')) return { 'pkg-a': { downloads: 9, start: 's', end: 'e' } }
-      if (String(url).includes('api.github.com/repos/o/a')) return { stargazers_count: 3 }
-      throw new Error('no')
-    }
-    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], githubKeys: ['o/a'], dir, deps: { fetchJson, ghToken: 'tok123' } })
-    assert.equal(r.stats['gh:o/a'].stars, 3)
-    const ghCall = captured.find((c) => c.url.includes('api.github.com'))
-    assert.equal(ghCall.headers.Authorization, 'Bearer tok123', 'gh 请求带认证头')
-  })
-  it('无 token → gh 匿名请求（无 Authorization 头；HOME 隔离防读真实 gh 凭据）', async () => {
-    const { _resetGhTokenCacheForTests } = await import('../lib/core/curated-stats.js')
-    const prevHome = process.env.HOME
-    process.env.HOME = join(cacheRoot, 'empty-home')
-    _resetGhTokenCacheForTests()
-    try {
-      const dir = join(cacheRoot, 'case8b')
-      const captured = []
-      const fetchJson = async (url, opts) => {
-        captured.push({ url: String(url), headers: opts && opts.headers })
-        if (String(url).includes('api.github.com/repos/o/a')) return { stargazers_count: 3 }
-        throw new Error('no')
-      }
-      const r = await loadCuratedStats({ npmKeys: [], githubKeys: ['o/a'], dir, deps: { fetchJson } })
-      assert.equal(r.stats['gh:o/a'].stars, 3)
-      const ghCall = captured.find((c) => c.url.includes('api.github.com'))
-      assert.ok(!ghCall.headers || ghCall.headers.Authorization === undefined, '匿名请求不带认证头')
-    } finally {
-      process.env.HOME = prevHome
-      _resetGhTokenCacheForTests()
-    }
   })
 })

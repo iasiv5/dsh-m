@@ -1,16 +1,16 @@
 /**
- * 精选缺口直查（ADR-0036）：directGap 条目的 npm bulk 下载量 + GitHub star 拉取。
- * - 动态缺口集驱动（curatedGapKeys），24h TTL 落盘缓存（<dir>/stats.json，writeFileAtomic）
+ * 精选缺口直查（ADR-0036 R10）：directGap 条目的 npm bulk 下载量拉取（gh star 直查已退役）。
+ * - 动态缺口集驱动（curatedGapKeys 的 npmKeys），24h TTL 落盘缓存（<dir>/stats.json，writeFileAtomic）
  *   + 刷新周期 GC（写回仅保留当前 keys）；
- * - npm bulk 一枪（scoped `/`→`%2F`，≤128 包/批由调用方分片）失败 → 逐包 point 回退；
- *   GitHub 逐 repo，两段并发均 ≤4；
+ * - npm bulk 一枪（scoped `%2F`，≤128 包/批由调用方分片）失败 → 逐包 point 回退；
+ *   bulk 成功但省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐（R7）；
+ *   两段并发均 ≤4；
  * - 失败逐项静默（errors 收集）；TTL 过期拉取失败**保留旧值**（装饰性指标 fail-open）；
+ *   全失败不落盘（R5：空箱会以「新鲜」身份抑制重试）；
  * - 全部可注入（fetchJson/now），生产缺省 fetchJsonLimited(timeoutMs 8000)。
  * DOM-free 纯逻辑直测于 tests/curated-stats.test.mjs。
  */
 import { readFile, mkdir } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
-import { homedir, } from 'node:os'
 import { join } from 'node:path'
 import { writeFileAtomic } from './atomic-write.js'
 import { fetchJsonLimited } from './httpx.js'
@@ -19,7 +19,6 @@ import type { DirectGapEntry } from './merged-market.js'
 export const CURATED_STATS_TTL_MS = 24 * 60 * 60 * 1000
 
 const NPM_BULK = 'https://api.npmjs.org/downloads/point/last-month/'
-const GH_REPO = 'https://api.github.com/repos/'
 const GH_CONCURRENCY = 4
 const REQUEST_TIMEOUT_MS = 8_000
 
@@ -27,24 +26,18 @@ export interface CuratedStat {
   downloads?: number
   downloadsStart?: string
   downloadsEnd?: string
-  stars?: number
   checkedAt: string
 }
 
 export interface LoadCuratedStatsInput {
   npmKeys: string[]
-  githubKeys: string[]
   dir: string
-  /** npm↔github 同条目配对（ADR-0036 R6）：提供时 gh star 并回同条目 npm stat（删孤儿 gh 键）；
-   *  不传则 gh 结果独立 gh: 键存放（github-only 条目靠它注记）。 */
-  entries?: Array<{ npm?: string; github?: string }>
   ttlMs?: number
   deadlineAt?: number
   signal?: AbortSignal
   deps?: {
     fetchJson?: (url: string, opts?: Record<string, unknown>) => Promise<unknown>
     now?: () => number
-    ghToken?: string
   }
 }
 
@@ -67,52 +60,7 @@ export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[]; 
   return { npmKeys, githubKeys }
 }
 
-/**
- * gh CLI hosts.yml 解析（R8）：取 github.com 段的 oauth_token；缺失 → null。
- * 单文件来源假设（gh CLI 标准布局）；多 host 时只认 github.com 段。
- */
-export function parseGhToken(hostsYaml: string): string | null {
-  if (typeof hostsYaml !== 'string' || hostsYaml === '') return null
-  let inGithub = false
-  for (const line of hostsYaml.split(/\r?\n/)) {
-    const host = /^(\S+):\s*$/.exec(line)
-    if (host) {
-      inGithub = host[1] === 'github.com'
-      continue
-    }
-    if (!inGithub) continue
-    const tok = /^\s+oauth_token:\s*(\S+)\s*$/.exec(line)
-    if (tok) return tok[1]
-  }
-  return null
-}
-
-let ghTokenCache: string | null | undefined
-
-/** 测试钩子：清 gh token 解析缓存（_resetMergedMarketForTests 同款先例；测试隔离用）。 */
-export function _resetGhTokenCacheForTests(): void {
-  ghTokenCache = undefined
-}
-
-/** gh token 解析顺序：DSHM_GITHUB_TOKEN / GH_TOKEN env → gh CLI hosts.yml → null（匿名降级）。模块级缓存一次。 */
-function ghTokenOnce(): string | null {
-  if (ghTokenCache !== undefined) return ghTokenCache
-  let t: string | null = null
-  const envTok = process.env.DSHM_GITHUB_TOKEN ?? process.env.GH_TOKEN
-  if (typeof envTok === 'string' && envTok !== '') {
-    t = envTok
-  } else {
-    try {
-      t = parseGhToken(readFileSync(join(homedir(), '.config', 'gh', 'hosts.yml'), 'utf8'))
-    } catch {
-      t = null
-    }
-  }
-  ghTokenCache = t
-  return t
-}
-
-/** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内 + entries 对象 → entries；否则 null。 */
+/** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内 + 非空 entries 对象 → entries；否则 null。 */
 export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): Record<string, CuratedStat> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const box = raw as { version?: unknown; fetchedAt?: unknown; entries?: unknown }
@@ -123,20 +71,6 @@ export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): 
   // 空箱不算新鲜数据（R5：全失败落盘的空箱会以「新鲜」身份抑制重试 24h——19:45 泄漏空箱实测）
   if (Object.keys(box.entries as Record<string, unknown>).length === 0) return null
   return box.entries as Record<string, CuratedStat>
-}
-
-/** 配对合并（R6）：gh star 并回同条目 npm stat 并删孤儿 gh 键；npm 缺席（github-only）保留 gh 键。 */
-function mergePairedStars(stats: Record<string, CuratedStat>, pairs: Array<{ npm?: string; github?: string }>): void {
-  for (const { npm, github } of pairs) {
-    if (typeof npm !== 'string' || npm === '' || typeof github !== 'string' || github === '') continue
-    const gh = stats[`gh:${github}`]
-    const stars = gh?.stars
-    const npmStat = stats[`npm:${npm}`]
-    if (npmStat && typeof stars === 'number') {
-      npmStat.stars = stars
-      delete stats[`gh:${github}`]
-    }
-  }
 }
 
 const nonNeg = (v: unknown): number | undefined =>
@@ -169,19 +103,10 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
   const now = input.deps?.now ?? Date.now
   const fetchJson: FetchJsonFn = input.deps?.fetchJson
     ?? (async (url, opts) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal, ...opts }))
-  // R8：gh 请求认证头（token 缺席 → 匿名降级，行为不变）
-  const ghHeaders = (): Record<string, unknown> => {
-    const token = input.deps?.ghToken ?? ghTokenOnce()
-    return token ? { headers: { Authorization: 'Bearer ' + token, 'User-Agent': 'dsh-m' } } : {}
-  }
   const errors: string[] = []
   const stats: Record<string, CuratedStat> = {}
   const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
-  const githubKeys = Array.isArray(input.githubKeys) ? input.githubKeys : []
-  const keys = [...npmKeys.map((k) => `npm:${k}`), ...githubKeys.map((k) => `gh:${k}`)]
-  const pairs = Array.isArray(input.entries)
-    ? input.entries.filter((e) => !!e && typeof e.npm === 'string' && e.npm !== '' && typeof e.github === 'string' && e.github !== '')
-    : []
+  const keys = npmKeys.map((k) => `npm:${k}`)
   if (keys.length === 0) {
     return { stats, errors }
   }
@@ -191,7 +116,6 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
     for (const k of keys) {
       if (fresh[k]) stats[k] = fresh[k]
     }
-    if (pairs.length > 0) mergePairedStars(stats, pairs)
     return { stats, errors }
   }
 
@@ -225,6 +149,7 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
     })
     await Promise.all(workers)
   }
+
   if (npmKeys.length > 0) {
     try {
       const resp = (await fetchJson(NPM_BULK + npmKeys.map(scopedName).join(','))) as Record<string, { downloads?: unknown; start?: unknown; end?: unknown }> | null
@@ -240,62 +165,16 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
           }
         }
       }
-      // R7：bulk 成功但省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐
-      const missing = npmKeys.filter((pkg) => fetched[`npm:${pkg}`] === undefined)
-      if (missing.length > 0) await runPerPkgFallback(missing)
     } catch (err) {
       errors.push(`npm bulk 失败，逐包回退：${err instanceof Error ? err.message : String(err)}`)
-      let cursor = 0
-      const workers = Array.from({ length: Math.min(GH_CONCURRENCY, npmKeys.length) }, async () => {
-        for (;;) {
-          const idx = cursor
-          cursor += 1
-          if (idx >= npmKeys.length) return
-          const pkg = npmKeys[idx]
-          try {
-            const resp = (await fetchJson(NPM_BULK + scopedName(pkg))) as { downloads?: unknown; start?: unknown; end?: unknown } | null
-            const downloads = nonNeg(resp?.downloads)
-            if (downloads !== undefined) {
-              fetched[`npm:${pkg}`] = {
-                downloads,
-                ...(typeof resp?.start === 'string' ? { downloadsStart: resp.start } : {}),
-                ...(typeof resp?.end === 'string' ? { downloadsEnd: resp.end } : {}),
-                checkedAt,
-              }
-            }
-          } catch (e) {
-            errors.push(`npm:${pkg} ${e instanceof Error ? e.message : String(e)}`)
-          }
-        }
-      })
-      await Promise.all(workers)
+      await runPerPkgFallback(npmKeys)
     }
-  }
-
-  // GitHub star 逐 repo（并发 ≤4）
-  if (githubKeys.length > 0) {
-    let cursor = 0
-    const workers = Array.from({ length: Math.min(GH_CONCURRENCY, githubKeys.length) }, async () => {
-      for (;;) {
-        const idx = cursor
-        cursor += 1
-        if (idx >= githubKeys.length) return
-        const repo = githubKeys[idx]
-        try {
-          const resp = (await fetchJson(GH_REPO + repo, ghHeaders())) as { stargazers_count?: unknown } | null
-          const stars = nonNeg(resp?.stargazers_count)
-          if (stars !== undefined) fetched[`gh:${repo}`] = { stars, checkedAt }
-        } catch (e) {
-          errors.push(`gh:${repo} ${e instanceof Error ? e.message : String(e)}`)
-        }
-      }
-    })
-    await Promise.all(workers)
+    // R7：bulk 成功但省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐
+    const missing = npmKeys.filter((pkg) => fetched[`npm:${pkg}`] === undefined)
+    if (missing.length > 0) await runPerPkgFallback(missing)
   }
 
   // 合并：新值优先，失败键旧值兜底（fail-open，ADR-0036）；GC = 写回仅当前 keys
-  // 配对合并（R6）：gh star 并回同条目 npm stat（孤儿 gh 键删除；github-only 条目保留 gh 键）
-  if (pairs.length > 0) mergePairedStars(fetched, pairs)
   for (const k of keys) {
     if (fetched[k]) stats[k] = fetched[k]
     else if (fallback[k]) stats[k] = fallback[k]
@@ -314,8 +193,9 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
 }
 
 /**
- * 直查统计注记（ADR-0036）：对 join 后仍无 statsVia 的条目按键（npm 优先、gh 兜底）
+ * 直查统计注记（ADR-0036）：对 join 后仍无 downloads 的条目按键（npm 优先、gh 兜底）
  * 浅拷贝注记直查结果；无命中/已注记条目原样返回。物化代共享对象禁原地改写，调用方消费副本。
+ * C 方案（R10）：注记不带 stars——精选卡只显下载量（ADR-0036 决策修订）。
  */
 export function annotateDirectStats<T extends { id: string; npm?: string; github?: string; statsVia?: 'catalog' | 'direct' }>(
   items: T[],
@@ -333,10 +213,9 @@ export function annotateDirectStats<T extends { id: string; npm?: string; github
     return {
       ...it,
       ...(hit.downloads !== undefined ? { downloads: hit.downloads } : {}),
-      ...(hit.downloadsStart !== undefined ? { downloadsStart: hit.downloadsStart } : {}),
-      ...(hit.downloadsEnd !== undefined ? { downloadsEnd: hit.downloadsEnd } : {}),
-      ...(hit.checkedAt !== undefined ? { downloadsCheckedAt: hit.checkedAt } : {}),
-      // C 方案：直查注记不带 stars（即便未来 gh 直查重启，精选卡也不上 star）
+      ...(typeof hit.downloadsStart === 'string' ? { downloadsStart: hit.downloadsStart } : {}),
+      ...(typeof hit.downloadsEnd === 'string' ? { downloadsEnd: hit.downloadsEnd } : {}),
+      ...(typeof hit.checkedAt === 'string' ? { downloadsCheckedAt: hit.checkedAt } : {}),
       statsVia: 'direct' as const,
     }
   })
