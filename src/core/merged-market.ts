@@ -119,9 +119,22 @@ export function matchInstalledByEntry(entry: Pick<RegistryEntry, 'npm' | 'github
 
 // ---------- 迁入：合并去重（Q41/Q45） ----------
 
+export interface CuratedStatsFields {
+  downloads?: number
+  stars?: number
+  downloadsStart?: string
+  downloadsEnd?: string
+  downloadsCheckedAt?: string
+  statsVia?: 'catalog' | 'direct'
+}
+
+export interface DirectGapEntry { id: string; npm?: string; github?: string }
+
 export interface MergeRegistriesResult {
-  /** 主清单在前（组内原顺序）+ 社区条目在后（downloads 降序、无数据按名称） */
-  items: Array<RegistryEntry | CommunityEntry>
+  /** 主清单在前（组内原顺序）+ 社区条目在后（downloads 降序、无数据按名称）；primary 条目可携镜像统计注记（ADR-0036） */
+  items: Array<(RegistryEntry & CuratedStatsFields) | CommunityEntry>
+  /** join 后仍无统计的精选条目（ADR-0036 缺口直查消费）：至少带 npm 或 github 之一 */
+  directGap: DirectGapEntry[]
   /** 与主清单撞名而让位的社区条目数（Q41：去重键序 npm 名 → owner/repo → 合成 id） */
   displaced: number
   /** 合并层 warning（让位计数聚合；社区层 warnings 由 summary 另行合并） */
@@ -137,6 +150,43 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   const primaryNpm = new Set(primary.filter((e) => e.npm).map((e) => e.npm as string))
   const primaryGithub = new Set(primary.filter((e) => e.github).map((e) => e.github as string))
   const primaryIds = new Set(primary.map((e) => e.id))
+  // ADR-0036 镜像 join（键级语义：镜像字段 null → 不注记该键；两字段全缺的镜像不产生注记）：
+  // npm 名优先、github 兜底；join 后仍无统计的精选条目入 directGap（缺口直查消费，Task 5 接线）。
+  const directGap: DirectGapEntry[] = []
+  const statsByNpm = new Map<string, CommunityEntry>()
+  const statsByGithub = new Map<string, CommunityEntry>()
+  for (const c of community) {
+    if (c.npm !== undefined && !statsByNpm.has(c.npm)) statsByNpm.set(c.npm, c)
+    if (c.github !== undefined && !statsByGithub.has(c.github)) statsByGithub.set(c.github, c)
+  }
+  const nonNeg = (v: number | null | undefined): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined
+  const gapEntry = (p: RegistryEntry): DirectGapEntry => ({
+    id: p.id,
+    ...(p.npm !== undefined ? { npm: p.npm } : {}),
+    ...(p.github !== undefined ? { github: p.github } : {}),
+  })
+  const annotated: Array<RegistryEntry & CuratedStatsFields> = []
+  for (const p of primary) {
+    const mirror = (p.npm !== undefined ? statsByNpm.get(p.npm) : undefined)
+      ?? (p.github !== undefined ? statsByGithub.get(p.github) : undefined)
+    const downloads = mirror ? nonNeg(mirror.downloads) : undefined
+    const stars = mirror ? nonNeg(mirror.stars) : undefined
+    if (!mirror || (downloads === undefined && stars === undefined)) {
+      if (p.npm !== undefined || p.github !== undefined) directGap.push(gapEntry(p))
+      annotated.push(p)
+      continue
+    }
+    annotated.push({
+      ...p,
+      ...(downloads !== undefined ? { downloads } : {}),
+      ...(stars !== undefined ? { stars } : {}),
+      ...(mirror.downloadsStart !== undefined ? { downloadsStart: mirror.downloadsStart } : {}),
+      ...(mirror.downloadsEnd !== undefined ? { downloadsEnd: mirror.downloadsEnd } : {}),
+      ...(mirror.downloadsCheckedAt !== undefined ? { downloadsCheckedAt: mirror.downloadsCheckedAt } : {}),
+      statsVia: 'catalog',
+    })
+  }
   // displaced 计数 = 主清单重叠口径（打标条目总数）；内部重复单列 internalDup（设计 2026-10-27）
   let displaced = 0
   let internalDup = 0
@@ -175,7 +225,7 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
   const warnings: string[] = []
   if (displaced > 0) warnings.push(`${displaced} 条社区条目同时被主清单收录（社区列表中标注）`)
   if (internalDup > 0) warnings.push(`${internalDup} 条社区内部重复条目已去重`)
-  return { items: [...primary, ...sorted], displaced, warnings }
+  return { items: [...annotated, ...sorted], displaced, warnings, directGap }
 }
 
 // ---------- 迁入：summary 组装（单一产地；summary 永不入代——每调用现算） ----------

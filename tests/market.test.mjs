@@ -458,6 +458,30 @@ describe('existingMarketIds（FP2 2026-10-15：收藏 stale 批量化，三不�
   })
 })
 
+
+describe('mergeRegistries 镜像 join（ADR-0036）', () => {
+  it('⑧ 镜像统计透传精选条目：downloads/stars/statsVia 注记；无镜像条目不注记；displaced 语义不变', async () => {
+    const primary = [
+      { id: 'j-1', name: 'J1', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'join-pkg', github: 'o/j-repo' },
+      { id: 'j-2', name: 'J2', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'gap-pkg' },
+    ]
+    const base = fakeDeps({ loadRegistry: async () => readyLoaded(primary) })
+    const { deps } = withCommunity(base, communityLoaded([communityRaw('jkeep', 'oJ', { npm: 'join-pkg', downloads: 3218, stars: 2, downloadsCheckedAt: '2026-11-12T00:00:00.000Z' })]))
+    const res = await listMarket(cfg, { withLatest: false }, deps)
+    const j1 = res.items.find((x) => x.id === 'j-1')
+    const j2 = res.items.find((x) => x.id === 'j-2')
+    assert.equal(j1.downloads, 3218, '镜像 downloads 键级注记')
+    assert.equal(j1.stars, 2, '镜像 stars 注记')
+    assert.equal(j1.statsVia, 'catalog', '目录快照来源标记')
+    assert.equal(j1.owner, 'o', 'primary owner 自 github 派生（ADR-0036）')
+    const mirrorItem = res.items.find((x) => x.id === 'oj--jkeep')
+    assert.equal(mirrorItem.owner, 'oJ', '社区条目 owner 不受影响')
+    assert.equal(j2.statsVia, undefined, '无镜像条目不注记')
+    assert.equal(j2.downloads, undefined, '无镜像条目无下载量')
+    assert.equal(res.community.displaced, 1, 'join 不改变让位语义')
+  })
+})
+
 describe('listInstalledWithMeta', () => {
   const installed = {
     items: [{
