@@ -11,6 +11,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { validateRegistry, verifiedPollution } from '../lib/core/registry.js'
+import { fetchTextLimited } from '../lib/core/httpx.js'
+import { fetchAuthorScreenshotPaths } from './sync-registry-screenshots.mjs'
 import { fetchPublishedCategories, unsupportedCategories } from './registry-categories.mjs'
 import { probeNpmInstallability } from './registry-installability.mjs'
 import { reachable } from './registry-url-probe.mjs'
@@ -142,6 +144,24 @@ if (OFFLINE) {
 } else for (const entry of parsed.registry?.plugins || []) {
   const where = `[${entry.id}]`
   try {
+    // screenshots 漂移检查（ADR-0015 决策修订 / 计划 T8；评审 F3 三态 fail-open：
+    // probe-failed 只 warn 网络、missing 静默——作者权威 404/不合规=可核证集为空，手抄条目不产噪音。
+    // 位置=try 首位：T8 实测录像——homepage/icon URL 探测在间歇抖动窗口抛错即触发 per-entry catch，
+    // 漂移段若排其后整窗静默（11 条目零输出）；漂移零耦合（只依赖 screenshots/github），前置最大化可观测。）
+    if (Array.isArray(entry.screenshots) && entry.screenshots.length > 0 && typeof entry.github === 'string' && entry.github.trim() !== '') {
+      const probe = await fetchAuthorScreenshotPaths(entry.github.trim(), fetchTextLimited)
+      if (probe.status === 'ok') {
+        if (JSON.stringify(probe.paths) !== JSON.stringify(entry.screenshots)) {
+          warned = true
+          console.warn(`⚠ ${where} screenshots 与作者 HEAD manifest 漂移——重跑 scripts/sync-registry-screenshots.mjs 同步`)
+        } else {
+          console.log(`✓ ${where} screenshots 与作者 manifest 一致（${probe.paths.length} 条）`)
+        }
+      } else if (probe.status === 'probe-failed') {
+        warned = true
+        console.warn(`⚠ ${where} screenshots 漂移检查跳过（网络，fail-open）：${probe.reason}——检查代理 env 后重跑`)
+      }
+    }
     if (entry.npm) {
       await existsOnNpm(entry.npm)
       console.log(`✓ ${where} npm 包存在：${entry.npm}`)
