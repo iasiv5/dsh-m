@@ -10,6 +10,7 @@ import { constants as fsConstants, mkdirSync } from 'node:fs'
 import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm } from 'node:fs/promises'
 import { WEB_PROFILE, cacheRoot } from './env.js'
 import { decodeUtf8Fatal, fetchJsonLimitedMeta, describeFetchFailure } from './httpx.js'
+import { PRIMARY_SCREENSHOT_LIMIT, screenshotPathError } from './primary-screenshots.js'
 
 export const CATEGORIES = ['essentials', 'cui-picks', 'baoyu', 'guizang', 'self-dev', 'tencent-lighthouse', 'watchlist'] as const
 export type Category = (typeof CATEGORIES)[number]
@@ -48,6 +49,11 @@ export interface RegistryEntry {
   github?: string
   homepage?: string
   icon?: string
+  /** 内嵌截图（ADR-0015 决策修订）：作者仓库相对路径数组（1..PRIMARY_SCREENSHOT_LIMIT，路径
+   *  规则与作者 manifest 同一事实源 screenshotPathError）；策展同步写入的主源截图数据，详情
+   *  弹窗命中即零运行时抓取，缺席走作者 manifest 兜底。需条目携带 github（解析基址）；
+   *  不进 MarketItem（market.ts toMarketItem 剥除，G4）。 */
+  screenshots?: string[]
   /** 实测版本清单（0.4.0 / GLOSSARY.md 术语）：实测声明而非预测声明——只展示与收录
    *  质量提示，不做安装拦截依据。每项必须精确 semver（禁 range/前缀）。 */
   verified?: string[]
@@ -222,7 +228,7 @@ export function parseRegistryAddress(raw: string | undefined): RegistryAddress {
 // ---------- 严格 v1 校验 ----------
 
 const TOP_LEVEL_KEYS = new Set(['version', 'plugins'])
-const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'verified', 'alsoCategories', 'decoupled', 'audience'])
+const ENTRY_KEYS = new Set(['id', 'name', 'description', 'category', 'tags', 'source', 'npm', 'github', 'homepage', 'icon', 'screenshots', 'verified', 'alsoCategories', 'decoupled', 'audience'])
 
 /** 精确 semver 判定（与 versions.ts EXACT_VERSION_RE 同语义；接受 prerelease/build，拒绝 range/前缀）。 */
 const EXACT_SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
@@ -343,6 +349,30 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
     if (source === 'npm' && entryNpm === undefined) errors.push(`${where}.npm: source=npm 必填`)
     if (source === 'github' && entryGithub === undefined) errors.push(`${where}.github: source=github 必填 owner/repo`)
 
+    // screenshots（ADR-0015 决策修订）：内嵌截图主源，路径规则与作者 manifest 单一事实源
+    // （screenshotPathError）；非法值整份清单拒绝（icon 同款纪律）。空数组拒绝——无截图请
+    // 直接省略字段（与 alsoCategories「空=缺省」不同义，策展字段语义）。
+    let entryScreenshots: string[] | undefined
+    if (e.screenshots !== undefined) {
+      if (!Array.isArray(e.screenshots)) {
+        errors.push(`${where}.screenshots: 必须是字符串数组`)
+      } else if (e.screenshots.length < 1) {
+        errors.push(`${where}.screenshots: 至少 1 条（空数组请直接省略字段）`)
+      } else if (e.screenshots.length > PRIMARY_SCREENSHOT_LIMIT) {
+        errors.push(`${where}.screenshots: 超过 ${PRIMARY_SCREENSHOT_LIMIT} 条`)
+      } else if (entryGithub === undefined) {
+        errors.push(`${where}.screenshots: 需要条目携带 github（作者仓库相对路径的解析基址）`)
+      } else {
+        const screenshotList: string[] = []
+        e.screenshots.forEach((p, pi) => {
+          const problem = screenshotPathError(p)
+          if (problem !== null) errors.push(`${where}.screenshots[${pi}]: ${problem}`)
+          else screenshotList.push((p as string).trim())
+        })
+        entryScreenshots = screenshotList
+      }
+    }
+
     let entryHomepage: string | undefined
     let entryIcon: string | undefined
     for (const key of ['homepage', 'icon'] as const) {
@@ -434,6 +464,7 @@ export function validateRegistry(raw: unknown): { ok: boolean; errors: string[];
       ...(entryGithub !== undefined ? { github: entryGithub } : {}),
       ...(entryHomepage !== undefined ? { homepage: entryHomepage } : {}),
       ...(entryIcon !== undefined ? { icon: entryIcon } : {}),
+      ...(entryScreenshots !== undefined ? { screenshots: entryScreenshots } : {}),
       ...(verified !== undefined ? { verified } : {}),
       ...(alsoCategories !== undefined ? { alsoCategories } : {}),
       ...(entryDecoupled === true ? { decoupled: true as true } : {}),

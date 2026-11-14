@@ -1093,3 +1093,54 @@ describe('alsoCategories 次级策展桶（0.9.17）', () => {
     assert.equal('alsoCategories' in empty.registry.plugins[0], false, '空数组不产生键')
   })
 })
+
+// ---------- ADR-0015 决策修订：screenshots 内嵌截图主源 ----------
+
+describe('validateRegistry：screenshots 内嵌截图（ADR-0015 修订）', () => {
+  it('合法：单条路径被接受并回传（红灯主用例：现行「未知字段」整份拒，实装后转绿）', () => {
+    const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: ['docs/a.png'] })] })
+    assert.equal(r.ok, true, `errors=${r.errors.join('; ')}`)
+    assert.deepEqual(r.registry.plugins[0].screenshots, ['docs/a.png'])
+  })
+
+  it('合法：1..8 条、trim 后回传、顺序保持', () => {
+    const paths = ['  docs/shot-0.png  ', ...Array.from({ length: 7 }, (_, i) => `docs/shot-${i + 1}.png`)]
+    const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: paths })] })
+    assert.equal(r.ok, true, `errors=${r.errors.join('; ')}`)
+    assert.deepEqual(r.registry.plugins[0].screenshots, Array.from({ length: 8 }, (_, i) => `docs/shot-${i}.png`))
+  })
+
+  it('无 github 的条目拒绝携带 screenshots', () => {
+    const r = validateRegistry({ version: 1, plugins: [entry({ npm: 'pkg-x', github: undefined, screenshots: ['a.png'] })] })
+    assert.equal(r.ok, false)
+    assert.ok(r.errors.some((e) => e.includes('需要条目携带 github')), `errors=${r.errors.join('; ')}`)
+  })
+
+  it('空数组拒绝（无截图请直接省略字段——与 alsoCategories「空=缺省」不同义，策展字段语义）', () => {
+    const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: [] })] })
+    assert.equal(r.ok, false)
+    assert.ok(r.errors.some((e) => e.includes('至少 1 条')), `errors=${r.errors.join('; ')}`)
+  })
+
+  it('超过 8 条拒绝（PRIMARY_SCREENSHOT_LIMIT）', () => {
+    const paths = Array.from({ length: 9 }, (_, i) => `docs/s-${i}.png`)
+    const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: paths })] })
+    assert.equal(r.ok, false)
+    assert.ok(r.errors.some((e) => e.includes('超过 8 条')), `errors=${r.errors.join('; ')}`)
+  })
+
+  it('非数组拒绝', () => {
+    const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: 'docs/a.png' })] })
+    assert.equal(r.ok, false)
+    assert.ok(r.errors.some((e) => e.includes('必须是字符串数组')), `errors=${r.errors.join('; ')}`)
+  })
+
+  it('路径规则复用 manifest 校验：绝对/越界/query/hash/反斜杠/控制字符/非串/空串逐项拒绝', () => {
+    const badPaths = ['/abs.png', 'a/../b.png', 'a?b.png', 'a#b.png', 'a\\b.png', 'docs/\u0001a.png', 42, '']
+    for (const p of badPaths) {
+      const r = validateRegistry({ version: 1, plugins: [entry({ github: 'iasiv5/dsh-m', screenshots: [p] })] })
+      assert.equal(r.ok, false, `path=${JSON.stringify(p)} 应拒绝`)
+      assert.ok(r.errors.some((e) => e.includes('screenshots[0]')), `path=${JSON.stringify(p)} errors=${r.errors.join('; ')}`)
+    }
+  })
+})
