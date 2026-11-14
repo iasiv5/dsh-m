@@ -8,7 +8,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { ZH, EN } from '../src/client/i18n.js'
 
 // ADR-0023 第一刀：词典出仓 i18n.js——键集直接由模块对象构建（正则抽 main.jsx 退役）
@@ -75,5 +75,44 @@ describe('issue #51：restart 终态通知四键双字典在场（动态 lookup 
       assert.ok(k in ZH, `ZH 缺 ${k}`)
       assert.ok(k in EN, `EN 缺 ${k}`)
     }
+  })
+})
+
+// ---------- round-2 P8：i18n 死键反向守卫（a45373b 声明补落地） ----------
+// 方向与上方正向审计相反：字典键 → 消费方。键无字面引用、且不属任何「有构造证据的
+// 动态前缀族」即红——a45373b commit 声明的反向守卫当时未随 diff 落地（round-2 评审 P8），
+// 本守卫补建并随行清扫死键（含 0.4.0 被 notify.builds 族取代后残留的 allowbuilds/upgradehint）。
+// 动态形态纪律（CODING-STANDARDS「动态键另行在场断言」）：经变量/模板拼接消费的键不在
+// 直接量审计面，以前缀 + 消费调用点证据锚显式化；锚腐化由自检断言拦住，防名单烂尾。
+const DYNAMIC_PREFIX_EVIDENCE = [
+  { prefix: 'cat.', anchor: 'labelKey: `cat.${id}`', where: 'market-state.js（zone-chips.jsx 经 lookup(c.labelKey) 消费）' },
+  { prefix: 'op.kind.', anchor: 'lookup("op.kind." + r.kind)', where: 'operations-card.jsx' },
+  { prefix: 'op.status.', anchor: 'lookup("op.status." + r.status)', where: 'operations-card.jsx' },
+  { prefix: 'op.channel.', anchor: 'op.channel.${', where: 'operations-view.js（返回键串，main.jsx lookup 承接）' },
+  { prefix: 'settings.status.', anchor: 'lookup(`settings.status.${', where: 'settings-tab.jsx' },
+  { prefix: 'installed.upgradeBatch.skipped.', anchor: 'lookup(`installed.upgradeBatch.skipped.${', where: 'installed-updates.js' },
+  { prefix: 'notify.toggled.', anchor: 'textKey: `notify.toggled.${', where: 'toggle-view.js' },
+]
+
+describe('i18n 死键反向守卫（round-2 P8）', () => {
+  const clientDir = new URL('../src/client/', import.meta.url)
+  const files = readdirSync(clientDir).filter((f) => /\.(js|jsx)$/.test(f) && f !== 'i18n.js').sort()
+  const all = files.map((f) => readFileSync(new URL(f, clientDir), 'utf8')).join('\n')
+
+  it('动态前缀证据锚在位（前缀名单不烂尾）', () => {
+    assert.ok(files.length > 30, `src/client 文件枚举非空（实测 ${files.length}）`)
+    for (const { prefix, anchor, where } of DYNAMIC_PREFIX_EVIDENCE) {
+      assert.ok(all.includes(anchor), `证据锚腐化：${where} 应含 ${anchor}——前缀 ${prefix} 的消费点已迁移，须同步更新名单`)
+    }
+  })
+
+  it('字典键均有消费面：字面引用或动态前缀族，死键零容忍', () => {
+    const dead = []
+    for (const key of Object.keys(ZH)) {
+      const literal = all.includes(`"${key}"`) || all.includes(`'${key}'`) || all.includes(`\`${key}\``)
+      const dynamic = DYNAMIC_PREFIX_EVIDENCE.some((d) => key.startsWith(d.prefix))
+      if (!literal && !dynamic) dead.push(key)
+    }
+    assert.deepEqual(dead.sort(), [], `死键（无任何消费面，删除或补消费方）: ${dead.join(', ')}`)
   })
 })
