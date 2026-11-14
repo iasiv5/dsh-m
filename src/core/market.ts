@@ -536,7 +536,10 @@ function lookupInstalledByIndex(index: InstalledIndex, entry: Pick<RegistryEntry
 /** 合并条目 → MarketItem：社区条目带 community 标记与旁路字段。 */
 function toMarketItem(entry: RegistryEntry | CommunityEntry, installedIndex: InstalledIndex): MarketItem {
   const inst = lookupInstalledByIndex(installedIndex, entry)
-  const item: MarketItem = { ...entry, installed: Boolean(inst), outdated: false }
+  // ADR-0015 决策修订（评审 F5 / G4）：registry 内嵌 screenshots（作者仓库相对路径）是 Host
+  // 详情 API（primary-screenshots）专属数据，不进 MarketItem——市场列表响应/快照/收藏零携带。
+  const { screenshots: _embeddedScreenshots, ...entryRest } = entry
+  const item: MarketItem = { ...entryRest, installed: Boolean(inst), outdated: false }
   if (inst) {
     item.installedPkg = inst.pkg
     item.installedVersion = inst.version

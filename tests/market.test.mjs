@@ -2059,3 +2059,36 @@ describe('withPublishedAt 时间探查段（ADR-0031，issue #45）', () => {
     assert.equal(res.publishedAtComplete, false)
   })
 })
+
+// ---------- ADR-0015 决策修订：内嵌 screenshots 剥除（G4 冻结面，评审 F5） ----------
+
+describe('listMarket：内嵌 screenshots 剥除（G4 冻结面）', () => {
+  it('registry 条目的内嵌 screenshots 不进 MarketItem（缺失不产生键）', async () => {
+    const base = fakeDeps({
+      loadRegistry: async () => readyLoaded([
+        { id: 'embed-1', name: 'Embed', description: 'd', category: CATEGORIES[0], tags: [], source: 'npm', npm: 'embed-pkg', github: 'iasiv5/dsh-m', screenshots: ['docs/a.png', 'docs/b.png'] },
+        { id: 'plain-1', name: 'Plain', description: 'd', category: CATEGORIES[0], tags: [], source: 'npm', npm: 'plain-pkg' },
+      ], { configuredAddress: 'reg-embed' }),
+    })
+    const res = await listMarket(cfg, { withLatest: false, source: 'primary', limit: 10 }, base.deps)
+    const embed = res.items.find((it) => it.id === 'embed-1')
+    assert.ok(embed, '夹具条目应在结果中')
+    assert.equal('screenshots' in embed, false, '内嵌 screenshots 不得进 MarketItem（G4 / toMarketItem 剥除）')
+    const plain = res.items.find((it) => it.id === 'plain-1')
+    assert.equal('screenshots' in plain, false)
+  })
+
+  it('社区条目 screenshots（URL 语义）行为不变——仍随条目下发', async () => {
+    const base = fakeDeps({
+      loadRegistry: async () => readyLoaded([{ id: 'mirror-1', name: 'M', description: 'd', category: CATEGORIES[0], tags: [], source: 'npm', npm: 'mirror-pkg' }], { configuredAddress: 'reg-m' }),
+    })
+    const community = communityLoaded([
+      communityRaw('shotcat', 'shotowner', { screenshots: ['https://raw.githubusercontent.com/x/y/HEAD/a.png'] }),
+    ])
+    const { deps } = withCommunity(base, community)
+    const res = await listMarket(cfg, { withLatest: false, source: 'community', limit: 10 }, deps)
+    const item = res.items.find((it) => it.community === true)
+    assert.ok(item, '社区条目应在结果中')
+    assert.deepEqual(item.screenshots, ['https://raw.githubusercontent.com/x/y/HEAD/a.png'])
+  })
+})

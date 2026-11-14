@@ -39,6 +39,7 @@ const primary = [
   { id: 'gold-gh', name: 'Gold Gh', description: '主清单 github 源条目', category: 'ui', tags: [], source: 'github', github: 'own/gold-repo' },
   { id: 'gold-also', name: 'Gold Also', description: '次级策展桶条目', category: 'tools', tags: [], source: 'npm', npm: 'gold-npm-also', alsoCategories: ['search'] },
   { id: 'goldown--keepc', name: 'Gold IdClash', description: 'id 撞社区合成 id 的主清单条目', category: 'market', tags: [], source: 'npm', npm: 'gold-idclash-npm' },
+  { id: 'gold-embed', name: 'Gold Embed', description: '内嵌 screenshots 主源条目（ADR-0015 修订：剥除钉死，评审 F5）', category: 'tools', tags: [], source: 'npm', npm: 'gold-embed-npm', github: 'iasiv5/dsh-m', screenshots: ['docs/gold-1.png', 'docs/gold-2.png'] },
 ]
 
 function communityRaw(name, owner, props = {}) {
