@@ -34,7 +34,10 @@ function publishedDays(iso) {
 
 function DetailModal({ it, labels, busy, onClose, onInstall, onUpgrade, upgradeBusy, upgradeRec, profileKind, installRec, installNote }) {
   useModalDepth(true);
-  const communityScreenshotSource = it.community === true || typeof it.owner === "string";
+  // 截图来源判据=community 显式布尔（发版前主人实测回归钉）：owner 代理在 ADR-0036 Task 3
+  // 给精选条目派生 owner 后失效——精选详情弹窗被误判成社区截图源（it.screenshots 恒缺席），
+  // primary-screenshots API 不再被调用、截图条恒空。R9 收藏徽章同款修法的第二消费点。
+  const communityScreenshotSource = it.community === true;
   const [primaryShotState, setPrimaryShotState] = useState({ id: null, screenshots: [] });
   // ADR-0031（B5）：最后发布 prop 直读优先；npm 条目**首帧占位渲染该行**（loading 显示「…」、
   // 失败显示「—」＝弹窗既有无数据惯例，值原位替换）——避免行插入引发的弹窗高度跳变（主人实测反馈）。

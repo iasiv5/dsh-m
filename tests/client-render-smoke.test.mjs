@@ -504,6 +504,11 @@ describe('0.9.45 两段加载接线（源码断言；ADR-0023 T9：useMarketData
     assert.ok(html.includes('aria-modal="true"'), 'aria-modal')
     assert.match(detailModalSrc, /role: "dialog"/, '容器接线（detail-modal.jsx——ADR-0023 T11）')
     assert.match(detailModalSrc, /closeRef\.current\.focus\(\)/, '初始聚焦关闭钮（detail-modal.jsx）')
+    // 截图来源判定（round-2 发版前主人实测回归钉）：不得用 owner 代理——ADR-0036 Task 3 给
+    // 精选条目派生 owner 后代理失效，精选详情弹窗截图条恒空（primary-screenshots API 不被
+    // 调用）。显式 community 布尔为唯一判据（R9 收藏徽章同款修法的第二消费点）。
+    assert.match(detailModalSrc, /const communityScreenshotSource = it\.community === true;/, '截图来源判据=community 显式布尔（detail-modal.jsx）')
+    assert.doesNotMatch(detailModalSrc, /communityScreenshotSource = it\.community === true \|\|/, 'owner 代理子句已移除（截图条精选回归根因）')
     assert.match(chromeSrc, /role: "button", tabIndex: 0[\s\S]{0,400}onKeyDown: \(e\) => \{\s*if \(\(e\.key === "Enter" \|\| e\.key === " "\)/, 'Shot Enter/Space（含既有 role/tabIndex 锚段；Shot 迁 chrome.jsx）')
     assert.doesNotMatch(src, /focus-trap|focusTrap/, '不做焦点圈闭（Q5 边界）')
   })
