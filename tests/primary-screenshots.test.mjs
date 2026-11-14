@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createPrimaryScreenshotReader, screenshotPathError } from '../lib/core/primary-screenshots.js'
+import { createPrimaryScreenshotReader, resolveEmbeddedScreenshotUrls, screenshotPathError } from '../lib/core/primary-screenshots.js'
 
 const REPO = 'iasiv5/dsh-skins'
 const ROOT_MANIFEST = `https://raw.githubusercontent.com/${REPO}/HEAD/screenshots.json`
@@ -339,5 +339,27 @@ describe('screenshotPathError：manifest 路径规则单一事实源（ADR-0015 
   it('非字符串 → 违规', () => {
     assert.ok(screenshotPathError(42) !== null)
     assert.ok(screenshotPathError(null) !== null)
+  })
+})
+
+describe('resolveEmbeddedScreenshotUrls：内嵌截图主源解析器（ADR-0015 修订）', () => {
+  it('相对路径数组 → raw HEAD URL 数组（声明顺序保持，段编码）', () => {
+    assert.deepEqual(
+      resolveEmbeddedScreenshotUrls('iasiv5/dsh-m', ['docs/a.png', 'shot b.png']),
+      ['https://raw.githubusercontent.com/iasiv5/dsh-m/HEAD/docs/a.png', 'https://raw.githubusercontent.com/iasiv5/dsh-m/HEAD/shot%20b.png'],
+    )
+  })
+  it('github 非 owner/repo → 空数组', () => {
+    assert.deepEqual(resolveEmbeddedScreenshotUrls('not-a-slug', ['a.png']), [])
+    assert.deepEqual(resolveEmbeddedScreenshotUrls('', ['a.png']), [])
+  })
+  it('非法路径被剔除、合法项保留', () => {
+    assert.deepEqual(
+      resolveEmbeddedScreenshotUrls('iasiv5/dsh-m', ['../evil.png', 'ok.png']),
+      ['https://raw.githubusercontent.com/iasiv5/dsh-m/HEAD/ok.png'],
+    )
+  })
+  it('空数组 → 空数组', () => {
+    assert.deepEqual(resolveEmbeddedScreenshotUrls('iasiv5/dsh-m', []), [])
   })
 })

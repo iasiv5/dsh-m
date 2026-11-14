@@ -88,6 +88,23 @@ function screenshotUrl(baseUrl: string, rawPath: unknown): string | null {
   return new URL(segments.map((part) => encodeURIComponent(part)).join('/'), base).toString()
 }
 
+/**
+ * 内嵌截图主源解析器（ADR-0015 决策修订）：registry 内嵌相对路径 → raw HEAD 图片 URL 数组。
+ * Host 详情 API 专属消费（不进 MarketItem，G4 由 market.ts 剥除保证）；github 不合法返回 []，
+ * 非法路径剔除、声明顺序保持。
+ */
+export function resolveEmbeddedScreenshotUrls(github: string, paths: unknown[]): string[] {
+  const slug = repoSlug(github)
+  if (!slug) return []
+  const base = rawManifestUrl(slug)
+  const resolved: string[] = []
+  for (const rawPath of paths) {
+    const url = screenshotUrl(base, rawPath)
+    if (url !== null) resolved.push(url)
+  }
+  return resolved
+}
+
 function parseManifest(text: string, baseUrl: string): string[] {
   let parsed: unknown
   try {
