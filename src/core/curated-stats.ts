@@ -19,7 +19,8 @@ import { isCommunityEntry, type DirectGapEntry } from './merged-market.js'
 export const CURATED_STATS_TTL_MS = 24 * 60 * 60 * 1000
 
 const NPM_BULK = 'https://api.npmjs.org/downloads/point/last-month/'
-const GH_CONCURRENCY = 4
+/** npm point 逐包回退并发上限（round-2 P12② 更名：gh 直查已随 R10 退役，本常量现仅节制 npm 回退腿）。 */
+const NPM_POINT_CONCURRENCY = 4
 const REQUEST_TIMEOUT_MS = 8_000
 
 export interface CuratedStat {
@@ -48,16 +49,18 @@ export interface LoadCuratedStatsResult {
 
 type FetchJsonFn = (url: string, opts?: Record<string, unknown>) => Promise<unknown>
 
-/** 缺口键集：npm/github 拆分（双键条目两边都进；无键条目由 mergeRegistries 不产出）。 */
-export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[]; githubKeys: string[] } {
+/**
+ * 缺口键集：npm 单源（round-2 P12①：githubKeys 死面移除——R10 契约面退役后两处调用方
+ * 均只消费 npmKeys，gh 键产出无任何消费者；模块 gh 能力保留于 annotateDirectStats 键兜底，
+ * 供未来 github-only 条目扩展）。双键条目取 npm；无键条目由 mergeRegistries 不产出。
+ */
+export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[] } {
   const npmKeys: string[] = []
-  const githubKeys: string[] = []
   for (const e of Array.isArray(entries) ? entries : []) {
     if (!e || typeof e !== 'object') continue
     if (typeof e.npm === 'string' && e.npm !== '') npmKeys.push(e.npm)
-    if (typeof e.github === 'string' && e.github !== '') githubKeys.push(e.github)
   }
-  return { npmKeys, githubKeys }
+  return { npmKeys }
 }
 
 /** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内（未来时间戳视为腐箱，round-2 P10/O1）+ 非空 entries 对象 → entries；否则 null。 */
@@ -80,19 +83,22 @@ const nonNeg = (v: unknown): number | undefined =>
 
 const scopedName = (pkg: string): string => pkg.replace('/', '%2F')
 
-async function readBoxEntries(dir: string, now: number, ttlMs: number): Promise<{ fresh: Record<string, CuratedStat> | null; fallback: Record<string, CuratedStat> }> {
+async function readBoxEntries(dir: string, now: number, ttlMs: number): Promise<{ fresh: Record<string, CuratedStat> | null; fallback: Record<string, CuratedStat>; freshFetchedAt: string | null }> {
   try {
     const raw = JSON.parse(await readFile(join(dir, 'stats.json'), 'utf8')) as unknown
     const parsed = parseCuratedStatsBox(raw, now, ttlMs)
-    if (parsed) return { fresh: parsed, fallback: parsed }
+    if (parsed) {
+      const fetchedAt = typeof (raw as { fetchedAt?: unknown }).fetchedAt === 'string' ? (raw as { fetchedAt: string }).fetchedAt : null
+      return { fresh: parsed, fallback: parsed, freshFetchedAt: fetchedAt }
+    }
     const entries = (raw as { entries?: unknown }).entries
     if (entries && typeof entries === 'object' && !Array.isArray(entries)) {
-      return { fresh: null, fallback: entries as Record<string, CuratedStat> }
+      return { fresh: null, fallback: entries as Record<string, CuratedStat>, freshFetchedAt: null }
     }
   } catch {
     /* 无缓存/坏 JSON：零兜底 */
   }
-  return { fresh: null, fallback: {} }
+  return { fresh: null, fallback: {}, freshFetchedAt: null }
 }
 
 /**
@@ -100,34 +106,19 @@ async function readBoxEntries(dir: string, now: number, ttlMs: number): Promise<
  * 过期/缺失 → 全量重拉当前 keys（失败键保留旧值 fail-open）→ GC 写回。
  * deadlineAt/signal 由调用方竞速/透传（本函数不做内部超时）。
  */
-export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<LoadCuratedStatsResult> {
-  const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : CURATED_STATS_TTL_MS
-  const now = input.deps?.now ?? Date.now
-  const fetchJson: FetchJsonFn = input.deps?.fetchJson
-    ?? (async (url, opts) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal, ...opts }))
+/** npm 下载量族取数原语：bulk 一枪 → bulk 失败整体逐包回退（并发 ≤NPM_POINT_CONCURRENCY）
+ * → R7 bulk 省略键逐包 point 回退补齐。P11 抽取为独立原语供全量/增量两路径共用。 */
+async function fetchNpmDownloads(
+  pkgs: string[],
+  fetchJson: FetchJsonFn,
+  checkedAt: string,
+): Promise<{ fetched: Record<string, CuratedStat>; errors: string[] }> {
   const errors: string[] = []
-  const stats: Record<string, CuratedStat> = {}
-  const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
-  const keys = npmKeys.map((k) => `npm:${k}`)
-  if (keys.length === 0) {
-    return { stats, errors }
-  }
-
-  const { fresh, fallback } = await readBoxEntries(input.dir, now(), ttl)
-  if (fresh) {
-    for (const k of keys) {
-      if (fresh[k]) stats[k] = fresh[k]
-    }
-    return { stats, errors }
-  }
-
-  const checkedAt = new Date(now()).toISOString()
   const fetched: Record<string, CuratedStat> = {}
-
   // npm bulk 一枪 → 失败逐包回退（并发 ≤4）
   const runPerPkgFallback = async (list: string[]): Promise<void> => {
     let cursor = 0
-    const workers = Array.from({ length: Math.min(GH_CONCURRENCY, list.length) }, async () => {
+    const workers = Array.from({ length: Math.min(NPM_POINT_CONCURRENCY, list.length) }, async () => {
       for (;;) {
         const idx = cursor
         cursor += 1
@@ -152,10 +143,10 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
     await Promise.all(workers)
   }
 
-  if (npmKeys.length > 0) {
+  if (pkgs.length > 0) {
     try {
-      const resp = (await fetchJson(NPM_BULK + npmKeys.map(scopedName).join(','))) as Record<string, { downloads?: unknown; start?: unknown; end?: unknown }> | null
-      for (const pkg of npmKeys) {
+      const resp = (await fetchJson(NPM_BULK + pkgs.map(scopedName).join(','))) as Record<string, { downloads?: unknown; start?: unknown; end?: unknown }> | null
+      for (const pkg of pkgs) {
         const hit = resp?.[pkg] ?? resp?.[scopedName(pkg)]
         const downloads = nonNeg(hit?.downloads)
         if (downloads !== undefined) {
@@ -169,20 +160,73 @@ export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<Lo
       }
     } catch (err) {
       errors.push(`npm bulk 失败，逐包回退：${err instanceof Error ? err.message : String(err)}`)
-      await runPerPkgFallback(npmKeys)
+      await runPerPkgFallback(pkgs)
     }
     // R7：bulk 成功但省略键（无记录/0 下载包，npm bulk 实测行为）→ 缺键逐包 point 回退补齐
-    const missing = npmKeys.filter((pkg) => fetched[`npm:${pkg}`] === undefined)
+    const missing = pkgs.filter((pkg) => fetched[`npm:${pkg}`] === undefined)
     if (missing.length > 0) await runPerPkgFallback(missing)
   }
+  return { fetched, errors }
+}
+
+export async function loadCuratedStats(input: LoadCuratedStatsInput): Promise<LoadCuratedStatsResult> {
+  const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : CURATED_STATS_TTL_MS
+  const now = input.deps?.now ?? Date.now
+  const fetchJson: FetchJsonFn = input.deps?.fetchJson
+    ?? (async (url, opts) => fetchJsonLimited(url, { timeoutMs: REQUEST_TIMEOUT_MS, signal: input.signal, ...opts }))
+  const errors: string[] = []
+  const stats: Record<string, CuratedStat> = {}
+  const npmKeys = Array.isArray(input.npmKeys) ? input.npmKeys : []
+  const keys = npmKeys.map((k) => `npm:${k}`)
+  if (keys.length === 0) {
+    return { stats, errors }
+  }
+
+  const { fresh, fallback, freshFetchedAt } = await readBoxEntries(input.dir, now(), ttl)
+  if (fresh) {
+    for (const k of keys) {
+      if (fresh[k]) stats[k] = fresh[k]
+    }
+    // round-2 owner 裁定（评审 P11/O2 落地）：fresh 箱缺新 gap 键不再等 TTL——仅对缺失键增量
+    // 补拉（精选集增删自愈即时化）。box 级 TTL 语义对既有键不变：写回保留原 fetchedAt（既有键
+    // 的重拉节奏不延展）、按当前键集 GC（惰性残留键随写回收）；补拉零命中不写盘（无信息增量）。
+    const missingKeys = npmKeys.filter((pkg) => fresh[`npm:${pkg}`] === undefined)
+    if (missingKeys.length === 0) return { stats, errors }
+    const checkedAt = new Date(now()).toISOString()
+    const inc = await fetchNpmDownloads(missingKeys, fetchJson, checkedAt)
+    errors.push(...inc.errors)
+    for (const pkg of missingKeys) {
+      const hit = inc.fetched[`npm:${pkg}`]
+      if (hit) stats[`npm:${pkg}`] = hit
+    }
+    if (Object.keys(inc.fetched).length > 0) {
+      try {
+        await mkdir(input.dir, { recursive: true })
+        const entries: Record<string, CuratedStat> = {}
+        for (const k of keys) {
+          if (stats[k]) entries[k] = stats[k]
+        }
+        await writeFileAtomic(join(input.dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: freshFetchedAt ?? checkedAt, entries }))
+      } catch (e) {
+        errors.push(`cache write: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    return { stats, errors }
+  }
+
+  const checkedAt = new Date(now()).toISOString()
+  const run = await fetchNpmDownloads(npmKeys, fetchJson, checkedAt)
+  const fetched = run.fetched
+  errors.push(...run.errors)
 
   // 合并：新值优先，失败键旧值兜底（fail-open，ADR-0036）；GC = 写回仅当前 keys
   for (const k of keys) {
     if (fetched[k]) stats[k] = fetched[k]
     else if (fallback[k]) stats[k] = fallback[k]
   }
-  // 全失败不落盘（R5：空箱会以「新鲜」身份抑制重试 24h）；有部分成功或有缓存兜底才写
-  if (Object.keys(stats).length === 0 && errors.length > 0) {
+  // 空箱一律不落盘（R5 全失败形态 + round-2 P12④ 补面：全成功零数据同样不写——空箱永不
+  // 判 fresh，写盘徒增每轮重拉与盘上残迹）
+  if (Object.keys(stats).length === 0) {
     return { stats, errors }
   }
   try {

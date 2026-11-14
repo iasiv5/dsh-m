@@ -21,15 +21,15 @@ after(() => {
 })
 
 describe('curatedGapKeys', () => {
-  it('npm/github 拆分：双键条目两边都进；无 npm 只进 ghKeys；无键不入', () => {
+  it('npm 单源：取 npm 键；github 键不再产出（round-2 P12① 死面移除，调用方均只消费 npmKeys）；无键不入', () => {
     const gap = curatedGapKeys([
       { id: 'a', npm: 'pkg-a', github: 'o/a' },
       { id: 'b', github: 'o/b' },
       { id: 'c' },
     ])
-    assert.deepEqual(gap, { npmKeys: ['pkg-a'], githubKeys: ['o/a', 'o/b'] })
-    assert.deepEqual(curatedGapKeys([]), { npmKeys: [], githubKeys: [] })
-    assert.deepEqual(curatedGapKeys(null), { npmKeys: [], githubKeys: [] })
+    assert.deepEqual(gap, { npmKeys: ['pkg-a'] })
+    assert.deepEqual(curatedGapKeys([]), { npmKeys: [] })
+    assert.deepEqual(curatedGapKeys(null), { npmKeys: [] })
   })
 })
 
@@ -178,6 +178,45 @@ describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
     const r = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson: async () => { calls += 1; return { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } } } })
     assert.ok(calls >= 1, '未来箱不得抑制重拉')
     assert.equal(r.stats['npm:pkg-a'].downloads, 100, '重拉值供数')
+  })
+
+  it('fresh 箱缺新 gap 键 → 仅缺失键增量补拉，既有键零网络（round-2 P11/O2：24h 盲区消除）', async () => {
+    const dir = join(cacheRoot, 'case8')
+    mkdirSync(dir, { recursive: true })
+    const boxAt = new Date(Date.now() - 3600_000).toISOString()
+    writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: boxAt, entries: { 'npm:pkg-a': { downloads: 100, checkedAt: 'old' } } }))
+    const urls = []
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-new'], dir, deps: { fetchJson: async (url) => {
+      urls.push(String(url))
+      if (String(url).includes('pkg-new')) return { 'pkg-new': { downloads: 7, start: 's', end: 'e' } }
+      throw new Error('既有键不应被重拉：' + url)
+    } } })
+    assert.equal(r.stats['npm:pkg-a'].downloads, 100, '既有键供箱值（零网络）')
+    assert.equal(r.stats['npm:pkg-new'].downloads, 7, '缺失键增量补拉供数')
+    assert.ok(urls.every((u) => u.includes('pkg-new')), `只应请求缺失键，实际 ${urls.join()}`)
+    const box = JSON.parse(readFileSync(join(dir, 'stats.json'), 'utf8'))
+    assert.deepEqual(Object.keys(box.entries).sort(), ['npm:pkg-a', 'npm:pkg-new'], '写回=当前键集（新键并入+GC）')
+    assert.equal(box.fetchedAt, boxAt, '写回保留原 fetchedAt（既有键 TTL 节奏不延展）')
+  })
+
+  it('fresh 箱缺失键补拉零命中 → 不写盘、既有键照常供数（round-2 P11：无信息增量不落盘）', async () => {
+    const dir = join(cacheRoot, 'case9')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: { 'npm:pkg-a': { downloads: 100, checkedAt: 'x' } } }))
+    const before = readFileSync(join(dir, 'stats.json'), 'utf8')
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a', 'pkg-miss'], dir, deps: { fetchJson: async () => { throw new Error('down') } } })
+    assert.equal(r.stats['npm:pkg-a'].downloads, 100)
+    assert.ok(r.errors.length >= 1, '补拉失败入 errors')
+    assert.equal(readFileSync(join(dir, 'stats.json'), 'utf8'), before, '补拉零命中不写盘（箱字节不变）')
+  })
+
+  it('全成功零数据 → 同样不落盘空箱（round-2 P12④：与 R5 全失败形态统一）', async () => {
+    const dir = join(cacheRoot, 'case10')
+    mkdirSync(dir, { recursive: true })
+    const r = await loadCuratedStats({ npmKeys: ['pkg-x'], dir, deps: { fetchJson: async () => ({}) } })
+    assert.deepEqual(r.stats, {})
+    assert.deepEqual(r.errors, [], 'bulk 空响应无错误形态')
+    assert.equal(existsSync(join(dir, 'stats.json')), false, '零数据不写空箱')
   })
 })
 

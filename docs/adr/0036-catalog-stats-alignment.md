@@ -25,6 +25,11 @@
 
 落地：loadCuratedStats 收敛为 npm bulk + 缺键逐包 point 回退（下载量族单源，R7 缺键回退保留）；契约面移除 githubKeys/entries/ghToken；R6 mergePairedStars / R8 parseGhToken 代码退役。
 
+## 决策修订四（2026-11-14，发版评审 round-2 owner 裁定落地）
+
+- **缺口盲区消除（评审 P11/O2）**：fresh 箱缺新 gap 键时不再等 24h TTL——仅对缺失键**增量补拉**；box 级 TTL 语义对既有键不变（写回保留原 fetchedAt、既有键重拉节奏不延展；写回按当前键集 GC）。「精选集增删自愈」自此即时生效。
+- **契约清理（评审 P12 四项）**：curatedGapKeys 收敛 npm 单源（githubKeys 死面移除——R10 后两处调用方零消费）；GH_CONCURRENCY 更名 NPM_POINT_CONCURRENCY（名实相符，现仅节制 npm point 回退腿）；join 侧 nonNeg 对齐 curated-stats 口径拒负值（防御纵深：目录数据损坏注入负 downloads 不得注记上卡）；全成功零数据同样不落盘空箱（与 R5 全失败形态统一，空箱永不判 fresh）。
+
 ## Considered Options
 
 - **显示口径**：all-time 总量（否——npm 无端点、全历史聚合不可行）/ 30 天窗（采纳）/ 双显（否——成本翻倍、观感更挤）。
