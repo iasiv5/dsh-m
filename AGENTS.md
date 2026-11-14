@@ -35,6 +35,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - **发版动作需当轮明确批准**：`npm run release`（push/tag/publish）与 issue 关闭属不可逆公开动作——「批准开工」不默认涵盖发版与关闭步骤，执行到二者前停下等主人确认。（2026-11-02 #42 战役实录：批准开工后被中途叫停一次、回帖草案另送审一次。）
 - lock 三处一致判定见 `scripts/release-lock.mjs`；`scripts/release.mjs` 发现不一致时自动同步，同步后的 `package-lock.json` 需纳入发版提交。
 - 新增 registry 分类的顺序（先发版 → 宿主升级 → 再推 registry）由 `scripts/validate-registry.mjs` 的分类门禁机械检查（判定逻辑在 `scripts/registry-categories.mjs`）；CHANGELOG 的兼容性说明同步记录。
+- 发版前人工核验的热部署一律 `node scripts/hot-deploy.mjs`（client 面，原子替换断硬链接）；宿主面（`lib/core`、host.js）变更的预览 = 发版后正规升级，或 know-how 050 §3 手工原子替换（明确接受盘上/内存混合态）；**禁 tar/cp 原地覆盖**——profile 文件与 pnpm store 硬链接，原地截断连坐改写 store blob（2026-11-14 发版轮实录：手搓 tar 覆盖后才在 retro 发现本工具）。
 
 ## Repository references
 
