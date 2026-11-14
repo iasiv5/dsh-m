@@ -171,8 +171,10 @@ export function mergeRegistries(primary: RegistryEntry[], community: CommunityEn
     if (c.npm !== undefined && !statsByNpm.has(c.npm)) statsByNpm.set(c.npm, c)
     if (c.github !== undefined && !statsByGithub.has(c.github)) statsByGithub.set(c.github, c)
   }
+  // round-2 P12③：与 curated-stats.ts nonNeg 对齐——负值同按缺失处理（防御纵深：上游目录
+  // 数据损坏注入负 downloads 时不得注记上卡；目录可信域内无实害，仅形态统一）。
   const nonNeg = (v: number | null | undefined): number | undefined =>
-    typeof v === 'number' && Number.isFinite(v) ? v : undefined
+    typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
   const annotated: Array<RegistryEntry & CuratedStatsFields> = []
   for (const p of primary) {
     const mirror = (p.npm !== undefined ? statsByNpm.get(p.npm) : undefined)

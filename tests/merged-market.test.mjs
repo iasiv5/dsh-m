@@ -356,3 +356,22 @@ describe('identityKey 内容指纹（2026-10-27 备案修复）', () => {
     assert.equal(_mergedMarketStatsForTests().builds, 2, '内容指纹不同 → 两次建代（不命中旧代）')
   })
 })
+
+describe('join 注记防御（round-2 P12③）：镜像负值同按缺失处理', () => {
+  it('镜像 downloads 为负 → 不注记上卡（目录数据损坏防御纵深）；正值对照正常注记', () => {
+    const adapted = adaptCommunityCatalog(communityTaskValue([
+      communityRaw('negmirror', 'own', { npm: 'pkg-1', downloads: -5 }),
+    ]).catalog).entries
+    const merge = mergeRegistries(PRIMARY, adapted)
+    const p1 = merge.items.find((e) => e.id === 'p-1')
+    assert.equal(p1.downloads, undefined, '负 downloads 不得注记上卡')
+    assert.equal(p1.statsVia, undefined, '无有效统计即无 statsVia')
+
+    const adaptedOk = adaptCommunityCatalog(communityTaskValue([
+      communityRaw('okmirror', 'own', { npm: 'pkg-1', downloads: 50 }),
+    ]).catalog).entries
+    const mergeOk = mergeRegistries(PRIMARY, adaptedOk)
+    const p1ok = mergeOk.items.find((e) => e.id === 'p-1')
+    assert.equal(p1ok.downloads, 50, '正值对照：正常注记')
+  })
+})
