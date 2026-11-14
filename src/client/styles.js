@@ -374,8 +374,12 @@ button.dshm-badge:hover{filter:brightness(.95)}
 .dshm-links{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px;padding-top:6px;border-top:1px solid var(--dsw-alias-border-l2,#e5e7eb);font-size:11px;color:var(--dsw-alias-label-caption,#6b7280)}
 .dshm-links-k,.dshm-links-sep{color:var(--dsw-alias-label-caption,#9ca3af)}
 .dshm-links a{color:var(--dsw-alias-state-business-primary,#4d6bfe);text-decoration:none;font-weight:500}
-.dshm-links-ver{font-weight:500;color:var(--dsw-alias-label-caption,#6b7280);font-variant-numeric:tabular-nums}
+.dshm-links-ver{font-weight:500;color:var(--dsw-alias-label-secondary,#61666b);font-variant-numeric:tabular-nums}
 .dshm-links a:hover{text-decoration:underline}
+/* 关于卡正文（dshm-about-text）：中文按词断行、专名不被拆行（NBSP + keep-all）；三行左右 balance 让首尾等长；
+   行高 20px 适配 12px 中文；正文用 label-secondary（深色 #cfd3d6、浅色 #61666b，两档对卡底均 ≥4.5:1），
+   caption 在深色仅 #81858c（对卡底约 4.2:1，低于正文线，只留给装饰性分隔符）。 */
+.dshm-about-text{color:var(--dsw-alias-label-secondary,#61666b);line-height:20px;word-break:keep-all;text-wrap:balance}
 .dshm-prog{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2,#e5e7eb);border-radius:8px;font-size:12px;color:var(--dsw-alias-label-secondary,#4b5563)}
 .dshm-prog .bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2,rgba(38,49,72,.08));overflow:hidden;min-width:80px}
 .dshm-prog .bar i{display:block;height:100%;background:var(--dsw-alias-state-business-primary,#4f46e5);transition:width .3s}

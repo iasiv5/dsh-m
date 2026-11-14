@@ -275,7 +275,7 @@ function SettingsTab({ notify, onRegistryChanged, onForceMarket, onForceUpdates,
     //    外向元数据同组更协调）；缺失（ping 失败 → null）时整段不渲染，不留悬空分隔点；
     //    不放升级入口——头部 ⬆ + 市场卡片/CLI 所有权不变。
     Section(lookup("settings.about"),
-      h("div", { className: "dshm-hint" }, lookup("settings.about.text")),
+      h("div", { className: "dshm-hint dshm-about-text" }, lookup("settings.about.text")),
       h("div", { className: "dshm-links" },
         h(ExtLink, { href: "https://github.com/iasiv5/dsh-m" }, "GitHub"),
         h("span", { className: "dshm-links-sep" }, "·"),

@@ -50,7 +50,8 @@ const ZH = {
   "settings.registry": "精选清单（registry.json）", "settings.updated": "更新时间",
   "settings.count": "条目数", "settings.count.v": "{n}", "settings.remotehint": "远端提示",
   "settings.force": "强制刷新", "settings.about": "关于",
-  "settings.about.text": "dsh-m ：「Awesome DSH Plugin」社区 + 「精选策展」的双清单分区插件市场，收录、安装、卸载、升级一站完成。",
+  // 关于卡正文（ZH）：专名内的空格用 NBSP，防止 "Awesome DSH Plugin" 在窄卡里被拆行
+  "settings.about.text": "dsh-m：DSH 插件市场，双清单收录 Awesome\u00a0DSH\u00a0Plugin 社区与精选策展，浏览、安装、卸载、升级一站式完成。",
   "settings.about.issues": "问题反馈", "settings.about.npm": "npm",
   "src.override": "自定义源", "src.jsdelivr": "GitHub 镜像（备用）", "src.raw": "raw.githubusercontent（@main）", "src.cache": "本地缓存", "src.bundled": "包内快照（兜底）",
   "src.default.raw": "GitHub 原始文件（@main）", "src.default.jsdelivr": "GitHub 镜像（备用）", "src.default.cache": "默认清单缓存",
@@ -188,7 +189,7 @@ const EN = {
   "settings.agent.label": "Agent tools (dshm_*) and system prompt injection", "settings.agent.desc": "When on, the AI assistant can search, install, and upgrade plugins in conversation, with usage guidance; when off, new conversations carry no injection \u2014 the market page and dshm CLI are unaffected.",
   "settings.agent.title": "AI session integration",
   // 会话注入开关（issue #57 / 0.12.15）：官方插件页 Agent 集成卡（plugins.bundle.config 座位）的 lookup 键
-  "settings.about.text": "The DeepSeek Harness plugin marketplace — a zoned dual-catalog market of the \"Awesome DSH Plugin\" community plus a curated registry; install, uninstall and upgrade in one place.",
+  "settings.about.text": "dsh-m: DeepSeek Harness plugin marketplace with two catalogs, the Awesome DSH Plugin community and curated picks. Browse, install, uninstall and upgrade in one place.",
   "settings.about.issues": "Issues", "settings.about.npm": "npm",
   "src.override": "Custom source", "src.jsdelivr": "GitHub mirror (backup)", "src.raw": "raw.githubusercontent (@main)", "src.cache": "Local cache", "src.bundled": "Bundled snapshot (fallback)",
   "src.default.raw": "GitHub raw (@main)", "src.default.jsdelivr": "GitHub mirror (backup)", "src.default.cache": "Default registry cache",
