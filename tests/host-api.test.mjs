@@ -333,6 +333,27 @@ describe('host-api：method 响应', () => {
     assert.deepEqual(res.body.screenshots, [])
   })
 
+  it('primary-screenshots：内嵌 screenshots 在场即权威——解析直返且不调用 reader（ADR-0015 修订）', async () => {
+    const seen = []
+    const file = writeRegistry([primaryEntry({ screenshots: ['docs/a.png', 'shot b.png'] })])
+    const s = setup({
+      loadPrimaryScreenshots: async (github) => {
+        seen.push(github)
+        return ['https://attacker.example/should-not-be-used.png']
+      },
+    }, { registryUrl: file })
+
+    const res = await callApi(s.dispatcher, { headers: JSON_HEADERS, body: { method: 'primary-screenshots', id: 'dsh-skins' } })
+
+    assert.equal(res.status, 200)
+    assert.equal(res.body.ok, true)
+    assert.deepEqual(res.body.screenshots, [
+      'https://raw.githubusercontent.com/iasiv5/dsh-skins/HEAD/docs/a.png',
+      'https://raw.githubusercontent.com/iasiv5/dsh-skins/HEAD/shot%20b.png',
+    ])
+    assert.deepEqual(seen, [], '内嵌主源在场时不得调用 manifest reader')
+  })
+
   it('market 转发 query/offset/limit/source/sort，忽略客户端 withLatest，limit clamp 1..96（0.7.0 Task 7）', async () => {
     const { dispatcher, calls } = setup()
     const res = await callApi(dispatcher, {

@@ -26,7 +26,7 @@ import { runProfileTransaction, TransactionError } from './profile-transaction.j
 import { listExternalOperations, clearExternalOperations, removeExternalOperation } from './external-journal.js'
 import { readUpgradeIntent, resolveUpgradeIntent, writeUpgradeIntent } from './upgrade-intent.js'
 import { readInstalledPluginReadme, listInstalledPlugins, type PluginReadme } from './installed.js'
-import { loadPrimaryScreenshots } from './primary-screenshots.js'
+import { loadPrimaryScreenshots, resolveEmbeddedScreenshotUrls } from './primary-screenshots.js'
 import { isNewerVersion, npmLatest, npmTarballUrl, npmPackumentReadme } from './versions.js'
 import { getCommunitySummary } from './community.js'
 import type { RegistryController, RegistryControllerSnapshot } from './registry-controller.js'
@@ -509,6 +509,13 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const entry = snap.loaded.registry.plugins.find((candidate) => candidate.id === id)
           if (!entry || typeof entry.github !== 'string' || entry.github.trim() === '') {
             payload = { screenshots: [] }
+            break
+          }
+          // 内嵌主源（ADR-0015 决策修订）：registry 内嵌 screenshots 在场即权威——零网络直返，
+          // 不调 manifest reader；字段缺席才落下方 loadPrimaryScreenshots 双腿链（评审 F1：分支
+          // 必须在 github 收窄之后）。带 screenshots 但无 github 的条目已在上面的早退得空数组。
+          if (Array.isArray(entry.screenshots) && entry.screenshots.length > 0) {
+            payload = { screenshots: resolveEmbeddedScreenshotUrls(entry.github, entry.screenshots) }
             break
           }
           try {
