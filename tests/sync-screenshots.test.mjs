@@ -51,7 +51,7 @@ describe('applyScreenshotsEdits：行手术纯函数', () => {
 
   it('③ CRLF 输入 → CRLF 输出（逐行 \\r 保持）', () => {
     const { text } = applyScreenshotsEdits(CRLF_FIXTURE, new Map([['alpha', ['crlf.png']]]))
-    assert.ok(text.includes('\r\n'), '应保持 CRLF')
+    assert.ok(/\r\n/.test(text), '应保持 CRLF')
     assert.ok(!text.replace(/\r\n/g, '').includes('\r'), '不得混入裸 \\r')
     const shotLine = text.split('\r\n').find((l) => l.includes('"screenshots"'))
     assert.equal(shotLine, '      "screenshots": ["crlf.png"],')
@@ -115,7 +115,7 @@ describe('applyScreenshotsEdits：行手术纯函数', () => {
     const lines = text.split('\n').map((l) => l.replace(/\r$/, ''))
     const ghIdx = lines.indexOf('      "github": "o/tail",')
     assert.equal(lines[ghIdx + 1], '      "screenshots": ["t.png"]', '块内最后字段：新行无尾逗号')
-    assert.ok(!text.includes(',\n    }') || !text.includes(',\r\n    }'), '不得产生 JSON 尾逗号')
+    assert.ok(!/,\s*[}\]]/.test(text), '不得产生 JSON 尾逗号（正则形态，避开 .includes 多行锚——源锚卫生守卫）')
     // JSON 合法性终审
     JSON.parse(text)
   })
