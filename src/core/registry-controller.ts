@@ -19,6 +19,7 @@ import {
   type RegistryAddress,
   type RegistryConfig,
   type RegistryConfigPhase,
+  type RegistryLoadOptions,
 } from './registry.js'
 
 export class RegistryConfigError extends Error {
@@ -110,12 +111,15 @@ function errorMessage(err: unknown): string {
 
 export function createRegistryController(
   initial: RegistryConfig = {},
-  opts: { profile?: string } = {},
+  opts: { profile?: string; defaultRoutes?: RegistryLoadOptions['defaultRoutes'] } = {},
 ): RegistryController {
   // config 是共享对象：host.ts 把它传给 tools/API，controller 原地更新字段实现 live 生效
   const config: RegistryConfig = { ...initial }
   // profile 缓存段（0.9.0 双 profile）：默认 web=旧路径，行为零漂移；desktop 落 `<root>/desktop` 段
   const profile = opts.profile ?? WEB_PROFILE
+  // default 链线路覆写（测试缝，随 registry.ts RegistryLoadOptions.defaultRoutes 透传）：
+  // hermetic 测试把 default 双线路指向本地环回源；生产缺省 undefined = DEFAULT_URLS 零变化。
+  const defaultRoutes = opts.defaultRoutes
   let activeConfigAddress = trimAddress(initial.registryUrl)
   let loaded: LoadedRegistry = placeholderLoaded(activeConfigAddress)
   let pendingAddress: string | null = null
@@ -177,7 +181,7 @@ export function createRegistryController(
   }
 
   function candidateFor(rawAddress: string, signal?: AbortSignal): Promise<LoadedRegistry> {
-    return loadRegistryCandidate({ ...config, registryUrl: rawAddress }, { namespace: 'host', profile, signal })
+    return loadRegistryCandidate({ ...config, registryUrl: rawAddress }, { namespace: 'host', profile, signal, defaultRoutes })
   }
 
   const bootstrap = async (): Promise<void> => {
@@ -188,7 +192,7 @@ export function createRegistryController(
       // 社区字段初始值（两代 store 同型：legacy/forms 的 get() 都经 unwrapConfig 透传）
       syncCommunityFields(source)
       const raw = trimAddress(source.registryUrl)
-      const attempt = await loadRegistry({ ...config, registryUrl: raw }, { namespace: 'host', profile })
+      const attempt = await loadRegistry({ ...config, registryUrl: raw }, { namespace: 'host', profile, defaultRoutes })
       if (disposed || gen !== generation) return
       if (attempt.status !== 'unavailable') {
         adopt(gen, raw, attempt)
@@ -198,7 +202,7 @@ export function createRegistryController(
       configErrors = [...attempt.errors]
       const accepted = await readAcceptedSourceMetadata(profile)
       const recoverAddress = accepted && accepted.configuredAddress !== raw ? accepted.configuredAddress : ''
-      const recovered = await loadRegistry({ ...config, registryUrl: recoverAddress }, { namespace: 'host', force: true, profile })
+      const recovered = await loadRegistry({ ...config, registryUrl: recoverAddress }, { namespace: 'host', force: true, profile, defaultRoutes })
       if (disposed || gen !== generation) return
       if (recovered.status !== 'unavailable') {
         adopt(gen, recoverAddress, recovered)
@@ -298,7 +302,7 @@ export function createRegistryController(
     await startBootstrap()
     if (opts.force) {
       await enqueue(async (gen) => {
-        const attempt = await loadRegistry(config, { namespace: 'host', force: true, signal: opts.signal, profile })
+        const attempt = await loadRegistry(config, { namespace: 'host', force: true, signal: opts.signal, profile, defaultRoutes })
         if (disposed || gen !== generation) return
         loaded = attempt
         activeConfigAddress = attempt.configuredAddress
@@ -308,7 +312,7 @@ export function createRegistryController(
   }
 
   function loadDefault(opts: { force?: boolean; signal?: AbortSignal } = {}): Promise<LoadedRegistry> {
-    return loadDefaultRegistry(config, { namespace: 'host', force: opts?.force, signal: opts?.signal, profile })
+    return loadDefaultRegistry(config, { namespace: 'host', force: opts?.force, signal: opts?.signal, profile, defaultRoutes })
   }
 
   function apply(rawAddress: string, opts: { signal?: AbortSignal } = {}): Promise<RegistryControllerSnapshot> {

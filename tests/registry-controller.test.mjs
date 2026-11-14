@@ -2,17 +2,33 @@
  * Task 5：registry-controller 配置事务（bootstrap/apply/外部 watch/回滚/generation/dispose）。
  * 运行：npm run build && node --test tests/registry-controller.test.mjs
  */
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { writeFileSync, mkdirSync, readFileSync, rmSync, mkdtempSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 
-import { createRegistryController, readAcceptedSourceMetadata } from '../lib/core/registry-controller.js'
+import { createRegistryController as createRegistryControllerBase, readAcceptedSourceMetadata } from '../lib/core/registry-controller.js'
+import { startLoopbackRegistry } from './loopback-registry.mjs'
 import { unwrapConfig } from '../lib/core/settings-compat.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// round-2 遗留外网清偿 A 类：default 双线路（bootstrap/apply 空地址/loadDefault）经
+// defaultRoutes 测试缝指环回源——零外网且生产 raw→jsdelivr 语义在覆写下同构；
+// 既有 20 处 createRegistryController 调用点零改动（本地包装器注入）。
+let LB = null
+let LB_ROUTES = []
+const createRegistryController = (initial, opts = {}) =>
+  createRegistryControllerBase(initial, { defaultRoutes: LB_ROUTES, ...opts })
+before(async () => {
+  LB = await startLoopbackRegistry()
+  LB_ROUTES = LB.routes
+})
+after(() => {
+  LB?.close()
+})
 
 function entry(i) {
   return {

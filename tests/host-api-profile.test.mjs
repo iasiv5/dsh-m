@@ -2,7 +2,7 @@
  * 0.9.0 Task 7/8：/dshm 宿主信任检查委派（fail-closed）+ profile 能力表路由 + ping.profile。
  * 运行：npm run build && node --test tests/host-api-profile.test.mjs
  */
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { rmSync, mkdtempSync } from 'node:fs'
@@ -11,8 +11,19 @@ import { join } from 'node:path'
 
 import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
+import { startLoopbackRegistry } from './loopback-registry.mjs'
 import { desktopUpgradeFromRegistry } from '../lib/core/profile-ops.js'
 import { readUpgradeIntent } from '../lib/core/upgrade-intent.js'
+
+let LB = null
+let LB_ROUTES = []
+before(async () => {
+  LB = await startLoopbackRegistry()
+  LB_ROUTES = LB.routes
+})
+after(() => {
+  LB?.close()
+})
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -59,7 +70,8 @@ async function callApi(dispatcher, args) {
 
 /** 独立 setup：trust/profile/desktop 行为全可编排；业务 deps 为记录型桩。 */
 function setupTrust({ trust, profile, overrides = {} } = {}) {
-  const controller = createRegistryController({})
+  // round-2 遗留外网清偿 A 类：default 双线路指环回源（controller defaultRoutes 测试缝）
+  const controller = createRegistryController({}, { defaultRoutes: LB_ROUTES })
   const calls = { listInstalled: [], scheduleRestart: [], upgrade: [], uninstall: [], selfUpgrade: [], desktopInstall: [], desktopToggle: [], desktopUpgrade: [], desktopUninstall: [], desktopSelfUpgrade: [], toggle: [], existingIds: [], install: [] }
   const dispatcher = createApiDispatcher({
     controller,

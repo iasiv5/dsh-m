@@ -2,7 +2,7 @@
  * Task 5：/dshm Host API dispatcher（method 响应、4xx 映射、同源/JSON 防护、分页转发）。
  * 运行：npm run build && node --test tests/host-api.test.mjs
  */
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
@@ -11,6 +11,7 @@ import { join } from 'node:path'
 
 import { createApiDispatcher } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
+import { startLoopbackRegistry } from './loopback-registry.mjs'
 import { TransactionError } from '../lib/core/profile-transaction.js'
 import { DesktopOpsError } from '../lib/core/profile-ops.js'
 import { readUpgradeIntent, resolveUpgradeIntent, writeUpgradeIntent } from '../lib/core/upgrade-intent.js'
@@ -81,7 +82,9 @@ async function callApi(dispatcher, args) {
 }
 
 function setup(overrides = {}, controllerInitial = {}, installedResult = null) {
-  const controller = createRegistryController(controllerInitial)
+  // round-2 遗留外网清偿 A 类：default 双线路指环回源（controller defaultRoutes 测试缝），
+  // ensureReady/snapshot/registry-method 的真实 controller 装载零外网；断言面不变。
+  const controller = createRegistryController(controllerInitial, { defaultRoutes: LB_ROUTES })
   const calls = { listMarket: [], listInstalled: [], diagnose: [], npm: [] }
   const dispatcher = createApiDispatcher({
     controller,
@@ -153,6 +156,15 @@ function setup(overrides = {}, controllerInitial = {}, installedResult = null) {
 }
 
 let cacheRoot = ''
+let LB = null
+let LB_ROUTES = []
+before(async () => {
+  LB = await startLoopbackRegistry()
+  LB_ROUTES = LB.routes
+})
+after(() => {
+  LB?.close()
+})
 beforeEach(() => {
   cacheRoot = mkdtempSync(join(tmpdir(), 'dshm-api-'))
   process.env.DSHM_CACHE_DIR = cacheRoot
