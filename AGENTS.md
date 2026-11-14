@@ -25,6 +25,7 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 
 - **测试导入约定**：`src/core/*.ts` 没有可直接 import 的 JS，相关测试从 `lib/core/*.js`（构建产物）引入；单文件跑测试前先 `npm run build`，否则测到的是旧产物。`src/client/*.js` 的测试直接引 `src/client/`。
 - **大 fixture**：`tests/fixtures/search-normalize-corpus.json` 为每行一条用例的 JSON；全文搜索 tests 时排除 `tests/fixtures/**`，需要用例时按行检索。
+- **同机避免并发双全量 `npm test`**：进程树终止类用例对载荷敏感——2026-11-14 双全量并发 F1-R/B 假红实录（评审/执行两方各起全量互扰）；多代理协作时全量错峰，或以单套件定向跑替代（变异工作树时尤其如此：全量在飞禁变异）。
 - **测试锚计数/存在性探针**：node `src.split(needle).length - 1`（或 `grep -F` 裸子串）——`grep -c` 计 0 即 exit 1 且正则转义易错（退出码卫生的使用现场口径，2026-10-31 retro）。
 - **跨面符号普查**（找某符号全部触点）：禁用 `--include=*.ts` 类扩展名过滤——`src/client/` 全是 `.js/.jsx`，会漏整个客户端面（0.12.2 #41 实录：首轮普查漏掉 market-tab.jsx 的 GUI 假成功，恰为 issue 低估的那一半）。
 
