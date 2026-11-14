@@ -256,12 +256,14 @@ describe('makeDshRunner.frozenInstall：生产进程树终止（F1-R/B）', () =
   // （Windows 无进程组、无法执行 shebang 脚本），仅 POSIX 执行。
   const POSIX_ONLY = process.platform === 'win32' ? '假 pnpm 为 shebang 脚本且依赖 POSIX 进程组语义，Windows 不适用' : false
 
-  it('abort 后 pnpm 的后代（同组、忽略 SIGTERM）必须被组 SIGKILL，marker 不写出', { skip: POSIX_ONLY }, async () => {
+  it('abort 后 pnpm 的后代（同组、忽略 SIGTERM）必须被组 SIGKILL，marker 不写出', { skip: POSIX_ONLY }, async (t) => {
     const binDir = mkdtempSync(join(tmpdir(), 'dshm-bin-'))
     const profileDir = mkdtempSync(join(tmpdir(), 'dshm-frozen-'))
     const marker = join(tmpdir(), `dshm-pnpm-tree-${process.pid}-${Date.now()}.marker`)
-    // 假 pnpm：派生忽略 SIGTERM 的后代（输出重定向，不持有 sh 的管道），TERM 时自己退出
-    const grandchild = `process.on('SIGTERM', () => {}); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
+    const ready = join(tmpdir(), `dshm-pnpm-tree-ready-${process.pid}-${Date.now()}.marker`)
+    // 假 pnpm：派生忽略 SIGTERM 的后代（输出重定向，不持有 sh 的管道），TERM 时自己退出；
+    // grandchild 启动即写 ready（round-2 P14 就绪门锚——仿 F1-R/C）
+    const grandchild = `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(ready)}, 'x'); setTimeout(() => { require('fs').writeFileSync(${JSON.stringify(marker)}, 'x') }, 1500)`
     const fakePnpm = join(binDir, 'pnpm')
     writeFileSync(fakePnpm, `#!/bin/sh\n"${process.execPath}" -e ${JSON.stringify(grandchild)} >/dev/null 2>&1 &\ntrap 'exit 0' TERM\nwait\n`)
     chmodSync(fakePnpm, 0o755)
@@ -273,12 +275,20 @@ describe('makeDshRunner.frozenInstall：生产进程树终止（F1-R/B）', () =
       const ac = new AbortController()
       const startedAt = Date.now()
       const pending = makeDshRunner(profileDir).frozenInstall(ac.signal)
-      setTimeout(() => ac.abort(), 150)
+      // round-2 P14 就绪门（评审开题）：原固定 start+150ms abort 隐含「子进程启动快于 150ms」
+      // 前提——载荷下（探针模块图开销/双全量并发实录）grandchild 未及武装即 abort → 组空快
+      // settle → 下界断言假红。改就绪门：ready 出现后 abort（组已武装，下界确定性成立）；
+      // 3s 未就绪（载荷）→ diagnostic 跳过下界，与 F1-R/C 同款两分支。断言面不变。
+      const readyDeadline = Date.now() + 3000
+      while (!existsSync(ready) && Date.now() < readyDeadline) await new Promise((r) => setTimeout(r, 25))
+      const groupArmed = existsSync(ready)
+      if (!groupArmed) t.diagnostic('grandchild 3s 未就绪（载荷）——组空快 settle 属合法，跳过下界断言')
+      ac.abort()
       const out = await pending
       const elapsed = Date.now() - startedAt
       assert.equal(out.class, 'hard-fail', `取消应归为失败结果：${JSON.stringify(out)}`)
       assert.ok(/命令已取消/.test(out.output))
-      assert.ok(elapsed >= 400, `必须等进程组消失（grace 后 SIGKILL）才返回 RunnerOutcome，实际 ${elapsed}ms`)
+      if (groupArmed) assert.ok(elapsed >= 400, `必须等进程组消失（grace 后 SIGKILL）才返回 RunnerOutcome，实际 ${elapsed}ms`)
       await new Promise((r) => setTimeout(r, 2500)) // 越过后代 marker 计划写出时刻
       assert.equal(existsSync(marker), false, 'pnpm 后代不得在 operation 返回后继续写文件')
     } finally {
