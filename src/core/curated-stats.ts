@@ -60,13 +60,15 @@ export function curatedGapKeys(entries: DirectGapEntry[]): { npmKeys: string[]; 
   return { npmKeys, githubKeys }
 }
 
-/** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内 + 非空 entries 对象 → entries；否则 null。 */
+/** 缓存箱解析：version=1 + 可解析 fetchedAt + TTL 内（未来时间戳视为腐箱，round-2 P10/O1）+ 非空 entries 对象 → entries；否则 null。 */
 export function parseCuratedStatsBox(raw: unknown, now: number, ttlMs: number): Record<string, CuratedStat> | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const box = raw as { version?: unknown; fetchedAt?: unknown; entries?: unknown }
   if (box.version !== 1 || typeof box.fetchedAt !== 'string') return null
   const t = Date.parse(box.fetchedAt)
-  if (!Number.isFinite(t) || now - t > ttlMs) return null
+  // t > now（时钟回拨/跨机拷贝缓存）：负年龄恒小于 ttl 会把「未来箱」判新鲜、锁死重拉到
+  // 墙钟追上 fetchedAt+ttl——按腐箱走 stale 重拉（round-2 P10/O1，评审探针 +10d 箱实测）。
+  if (!Number.isFinite(t) || t > now || now - t > ttlMs) return null
   if (!box.entries || typeof box.entries !== 'object' || Array.isArray(box.entries)) return null
   // 空箱不算新鲜数据（R5：全失败落盘的空箱会以「新鲜」身份抑制重试 24h——19:45 泄漏空箱实测）
   if (Object.keys(box.entries as Record<string, unknown>).length === 0) return null

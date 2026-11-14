@@ -47,6 +47,11 @@ describe('parseCuratedStatsBox', () => {
     assert.equal(parseCuratedStatsBox(null, now, CURATED_STATS_TTL_MS), null)
     assert.equal(parseCuratedStatsBox({ version: 1, fetchedAt: new Date(now).toISOString(), entries: {} }, now, CURATED_STATS_TTL_MS), null)
   })
+
+  it('fetchedAt 未来时间戳（时钟回拨/跨机拷贝缓存）→ null（round-2 P10/O1：负年龄不得判新鲜，防未来箱锁死重拉）', () => {
+    const futureBox = { version: 1, fetchedAt: new Date(now + 10 * 24 * 3600 * 1000).toISOString(), entries: { 'npm:p': { downloads: 1, checkedAt: 'x' } } }
+    assert.equal(parseCuratedStatsBox(futureBox, now, CURATED_STATS_TTL_MS), null, '未来箱按腐箱处理（now−t 为负恒小于 ttl 的漏洞形态）')
+  })
 })
 
 describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
@@ -163,6 +168,16 @@ describe('loadCuratedStats 编排（R10：npm 下载量单源）', () => {
     writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date().toISOString(), entries: {} }))
     const r = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson: async (url) => String(url).includes('pkg-a') ? { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } : Promise.reject(new Error('no')) } })
     assert.equal(r.stats['npm:pkg-a'].downloads, 100, '空箱不抑制重试')
+  })
+
+  it('未来 fetchedAt 箱 → 不判新鲜、走重拉（round-2 P10/O1 端到端：评审探针曾复演 +10d 箱 fetchCalls=0 锁死）', async () => {
+    const dir = join(cacheRoot, 'case7')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'stats.json'), JSON.stringify({ version: 1, fetchedAt: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString(), entries: { 'npm:pkg-a': { downloads: 1, checkedAt: 'x' } } }))
+    let calls = 0
+    const r = await loadCuratedStats({ npmKeys: ['pkg-a'], dir, deps: { fetchJson: async () => { calls += 1; return { 'pkg-a': { downloads: 100, start: 's', end: 'e' } } } } })
+    assert.ok(calls >= 1, '未来箱不得抑制重拉')
+    assert.equal(r.stats['npm:pkg-a'].downloads, 100, '重拉值供数')
   })
 })
 
