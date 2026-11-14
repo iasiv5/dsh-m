@@ -116,9 +116,17 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
         registry: { version: 1, plugins: [entry] },
       }),
       npmLatest: async () => ({ version: '1.2.3', integrity: sha512('good') }),
+      precheck: async () => null,
+      // round-2 遗留外网清偿 B 类（栈级取证定源，logs-e/b-heal-stacks.log）：
+      // ① precheck 桩——installEntryLocked → precheckNpmCompat → npmVersion（版本化
+      //   packument ×8 真源），真实网络下 pkg-a 404 → 预检拒绝被上游容忍，
+      //   null 桩=同终态「无兼容问题」；
+      // ② transaction.warmPackument 桩——B3 packument 预热（根 packument ×10 真源），
+      //   副作用预热成败均不被断言，真实网络下 pkg-a 亦 404，no-op 桩同构。验证面均不变。
       transaction: {
         profileDir: profile,
         retryDelaysMs: [0, 0],
+        warmPackument: async () => {},
         runner: () => ({
           add: wrapAdd(async () => { throw new Error(NO_MATCHING) }),
           remove: async () => outcomeOf(new Error('命令失败 (exit 1): 移除 pkg-a 失败（未安装）')),
