@@ -165,6 +165,10 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
       timeoutMs: 200,
       killGraceMs: 400,
     })
+    // round-2 P9：timeout 拒绝可能落在就绪门轮询的「无处理器窗口」内（子进程启动慢于 200ms
+    // 的场合——探针模块图开销/慢机实测），早挂 no-op catch 防进程级 unhandledRejection；
+    // 断言面由下方 assert.rejects(pending) 完整承接，不受影响。
+    pending.catch(() => {})
     // 就绪门同 F1-R/C：ready 在 timeout 时刻（start+200）前出现 ⇒ 组非空，下界成立；
     // 未及就绪（载荷）则组空快 reject 属合法，跳过下界
     const readyDeadline = Date.now() + 3000
@@ -224,6 +228,11 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
       killGraceMs: 400,
       detached: true,
     })
+    // round-2 P9（评审复现的红主现场）：timeout 拒绝落在就绪门轮询的「无处理器窗口」内
+    // （failureType=unhandledRejection 亲取——子进程启动被探针模块图开销推过 200ms 时）。
+    // 早挂 no-op catch 防进程级 unhandledRejection；断言面由下方 assert.rejects(pending)
+    // 完整承接：快路径 groupArmed 下界断言原样生效，慢路径走既有 diagnostic 跳过分支。
+    pending.catch(() => {})
     // 就绪门同 F1-R/A：ready 在 timeout 时刻（start+200）之前出现 ⇒ 组非空，下界成立；
     // 未及就绪（载荷）则组空快 settle 属合法，跳过下界。timeoutMs 维持 200 不动——
     // 调大会把 SIGKILL（start+600）逼近 grandchild marker 时刻（born+1500），塌缩安全边际。
