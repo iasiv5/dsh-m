@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createPrimaryScreenshotReader } from '../lib/core/primary-screenshots.js'
+import { createPrimaryScreenshotReader, screenshotPathError } from '../lib/core/primary-screenshots.js'
 
 const REPO = 'iasiv5/dsh-skins'
 const ROOT_MANIFEST = `https://raw.githubusercontent.com/${REPO}/HEAD/screenshots.json`
@@ -315,5 +315,29 @@ describe('Primary screenshots manifest reader', () => {
     assert.deepEqual(await first, FIVE_PATHS.map(rawUrl))
     assert.deepEqual(await second, FIVE_PATHS.map(rawUrl))
     assert.equal(calls, 1)
+  })
+})
+
+describe('screenshotPathError：manifest 路径规则单一事实源（ADR-0015 修订）', () => {
+  const okPaths = ['docs/a.png', 'a b.png', 'docs/assets/preview with space.webp', '  docs/trim.png  ']
+  for (const p of okPaths) it(`合法 → null：${JSON.stringify(p)}`, () => assert.equal(screenshotPathError(p), null))
+
+  const badPaths = [
+    '',
+    '/abs.png',
+    '..\\x.png',
+    'a\\b.png',
+    '//x.png',
+    'https://x/y.png',
+    'a?b.png',
+    'a#b.png',
+    'a/./b.png',
+    'a/../b.png',
+    'docs/assets/\u0001a.png',
+  ]
+  for (const p of badPaths) it(`违规 → 非空错误串：${JSON.stringify(p)}`, () => assert.ok(screenshotPathError(p) !== null, `期望违规：${JSON.stringify(p)}`))
+  it('非字符串 → 违规', () => {
+    assert.ok(screenshotPathError(42) !== null)
+    assert.ok(screenshotPathError(null) !== null)
   })
 })

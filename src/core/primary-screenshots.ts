@@ -63,15 +63,27 @@ function mirrorManifestUrl(slug: string): string {
   return `https://${MIRROR_HOST}/gh/${slug}@HEAD/${MANIFEST_FILE}`
 }
 
-function screenshotUrl(baseUrl: string, rawPath: unknown): string | null {
-  if (typeof rawPath !== 'string') return null
+/**
+ * Manifest 路径规则单一事实源（ADR-0015 决策修订）：合法返回 null，违规返回中文错误串。
+ * 消费方：screenshotUrl（运行时解析）与 registry 校验（screenshots 内嵌字段，registry.ts）——
+ * 两处共用同一规则面，禁另起一套。
+ */
+export function screenshotPathError(rawPath: unknown): string | null {
+  if (typeof rawPath !== 'string') return '必须是字符串'
   const path = rawPath.trim()
-  if (!path || CONTROL_RE.test(path)) return null
-  if (path.startsWith('/') || path.startsWith('\\') || path.includes('\\')) return null
-  if (/^[a-z][a-z\d+.-]*:/i.test(path) || path.startsWith('//')) return null
-  if (/[?#]/.test(path)) return null
+  if (!path) return '不能为空字符串'
+  if (CONTROL_RE.test(path)) return '含控制字符'
+  if (path.startsWith('/') || path.startsWith('\\') || path.includes('\\')) return '禁绝对/反斜杠路径'
+  if (/^[a-z][a-z\d+.-]*:/i.test(path) || path.startsWith('//')) return '禁协议或协议相对路径'
+  if (/[?#]/.test(path)) return '禁 query/hash'
+  if (path.split('/').some((part) => part === '' || part === '.' || part === '..')) return '禁空段与 ./.. 越界段'
+  return null
+}
+
+function screenshotUrl(baseUrl: string, rawPath: unknown): string | null {
+  if (screenshotPathError(rawPath) !== null) return null
+  const path = (rawPath as string).trim()
   const segments = path.split('/')
-  if (segments.some((part) => part === '' || part === '.' || part === '..')) return null
   const base = new URL('.', baseUrl)
   return new URL(segments.map((part) => encodeURIComponent(part)).join('/'), base).toString()
 }
