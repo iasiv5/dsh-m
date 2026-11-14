@@ -102,7 +102,7 @@ dsh-m 的市场数据来自两处：
    }
    ```
 
-   可选字段（`alsoCategories` / `decoupled` / `audience` / `verified` / `icon`）的语义见 [DESIGN §2.2](./docs/DESIGN.md)。
+   可选字段（`alsoCategories` / `decoupled` / `audience` / `verified` / `icon` / `screenshots`）的语义见 [DESIGN §2.2](./docs/DESIGN.md)。想被展示截图的插件作者，在仓库根维护 `screenshots.json`（顶层字符串数组、仓库相对路径、≤8 条）即可——收录后维护者的同步脚本会自动拾取；自定义清单使用 `screenshots` 字段需 dsh-m ≥ 该字段实装版本（旧版本会因未知字段整份拒载该清单）。
 3. **放出去**：托管在任意 HTTPS 地址（如你仓库的 raw / jsDelivr 地址），或放在本机（绝对路径 / `file://`；HTTP 仅限 loopback 调试）；
 4. **接入**：dsh-m 设置页填入地址 →「校验并应用」。**即时生效，无需重启。**
 
