@@ -102,6 +102,11 @@ function npmDeps(overrides = {}) {
     listInstalledPlugins: async () => ({ items: [{ pkg: '@scope/pkg-a', name: '@scope/pkg-a', version: '1.2.3', source: 'npm', spec: '@scope/pkg-a@1.2.3' }], others: 0, complete: true, profileDir }),
     npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
     precheck: async () => null,
+    // round-2 遗留外网清偿 B/C 类（栈级取证 logs-e/c-journal-stacks.log）：升级生效判定
+    // fetchVersionMeta 缺省真网 npmVersion（scoped packument ×8 真源，且首腿 404 触发
+    // npm 路由 semver/latest 三候选探测 ×3）。fixture 包不在 npm 上，真实网络下 404 →
+    // 判定收敛 'unknown'；tarball null 桩直达同一终态，验证面不变。
+    classifyActivation: { fetchVersionMeta: async () => ({ tarball: null }) },
     fetchCommunityCatalog: communityDisabled,
     transaction: { runner: () => runner, profileDir },
     ...overrides,
@@ -169,6 +174,8 @@ function desktopUpgradeDeps(service, overrides = {}) {
       listInstalled: async () => ({ items: [{ pkg: '@scope/pkg-a', name: '@scope/pkg-a', version: '1.2.3', source: 'npm', spec: '@scope/pkg-a@1.2.3' }], others: 0, complete: true, profileDir }),
       npmLatest: async () => ({ version: '2.0.0', integrity: sha512('good') }),
       precheck: async () => null,
+      // round-2 遗留外网清偿 B/C 类：desktop 升级生效判定同款 fetchVersionMeta 桩（见 npmDeps 注）
+      classifyActivation: { fetchVersionMeta: async () => ({ tarball: null }) },
       packumentTimes: async () => ({}),
       fetchCommunityCatalog: communityDisabled,
       appendExternalOperation: overrides.appendExternalOperation,
