@@ -122,7 +122,7 @@ describe('partitionStale', () => {
 
 describe('withFavoriteStats（收藏统计新鲜度 2026-11-13）：目录现值覆盖冻结快照', () => {
   const e = (over = {}) => ({ id: 'o--x', name: 'x', description: 'd', category: 'c', source: 'npm', npm: 'p', owner: 'o', downloads: 29600, stars: 9, ...over })
-  it('目录现值覆盖快照（仅 number 覆盖；null 字段保留快照）', () => {
+  it('目录现值覆盖快照（仅 number 覆盖；null 剥除快照残留——C 方案 overlay 命中即权威）', () => {
     const statsById = { 'o--x': { downloads: 44720, stars: 33 } }
     const out = withFavoriteStats(e(), statsById)
     assert.equal(out.downloads, 44720)

@@ -123,8 +123,9 @@ export async function partitionStale(favorites, lookup) {
  * 收藏统计新鲜度（2026-11-13）：收藏卡数字覆盖——快照冻结的是收藏时刻的目录 downloads/stars
  * （toggle 时 snapshotOf 落盘后永不刷新；实测 dsh-m 收藏卡 29.6k/★9 vs 目录现值 44720/★33）。
  * market-ids-exist 同批透出的目录现行 stats（present 条目，零新 IO）按键覆盖快照：
- * 仅 number 字段覆盖（null/缺席保留快照值）；statsById 缺席/非对象/无该 id/垃圾形态
- * （旧宿主、API 失败、SSR）原样返回快照副本。不改动入参。DOM-free 纯逻辑直测于 client-favorites。
+ * 仅 number 字段覆盖（null 剥除快照残留——C 方案 overlay 命中即权威；字段缺席保留快照值）；
+ * statsById 缺席/非对象/无该 id/垃圾形态（旧宿主、API 失败、SSR）原样返回快照副本。
+ * 不改动入参。DOM-free 纯逻辑直测于 client-favorites。
  */
 export function withFavoriteStats(entry, statsById) {
   const e = entry || {}
