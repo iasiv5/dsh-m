@@ -77,7 +77,10 @@ function depsFor(service, overrides = {}) {
     githubLatestTag: overrides.githubLatestTag ?? (async () => ({ tag: 'v0.9.0', sha: 'a'.repeat(40) })),
     precheck: overrides.precheck ?? (async () => null),
     ...(overrides.loadRegistry ? { loadRegistry: overrides.loadRegistry } : {}),
-    ...(overrides.packumentTimes ? { packumentTimes: overrides.packumentTimes } : {}),
+    // round-2 遗留外网清偿 B 类：登记 young 探测缺省桩（栈级取证 logs-e/d-profops-stacks.log：
+    // 余量 2 次 = packumentTimes 缺省 cachedPackumentTimes 真网 lenient 取 pkg-a packument；
+    // fixture 包不在 npm 上，真实网络 404 → fail-open null，null 桩同构，验证面不变）
+    packumentTimes: overrides.packumentTimes ?? (async () => null),
     ...(overrides.workspacePolicy ? { workspacePolicy: overrides.workspacePolicy } : {}),
     ...(overrides.governExclude ? { governExclude: overrides.governExclude } : {}),
     ...(overrides.registerExclude ? { registerExclude: overrides.registerExclude } : {}),
@@ -404,6 +407,10 @@ describe('desktopUpgradeFromRegistry：覆盖安装（dsh-market 同策略）', 
       listInstalled: overrides.listInstalled ?? (async () => ({ items: overrides.installed ?? [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0' }] })),
       npmLatest: overrides.npmLatest ?? (async () => ({ version: '1.2.3', integrity: 'sha512-x' })),
       precheck: async () => null,
+      // round-2 遗留外网清偿 B 类：等待期预检桩（栈级取证 logs-e/de-stack.log：desktop 升级
+      // → releaseAgePrecheck → cachedPackumentTimes 真网取 pkg-a；fixture 包不在 npm 上，
+      // 真实 404 → fail-open null，null 桩同构）
+      packumentTimes: async () => null,
       // 0.9.22 生效判定缝：缺省会真实出网 diff tarball——既有用例统一桩 unknown（保持 needsRestart=true 语义）
       classifyActivation: overrides.classifyActivation ?? (async () => 'unknown'),
     }
@@ -492,6 +499,9 @@ describe('desktopUpgradeFromRegistry：already-installed 两步化 + 兜底回�
       listInstalled: async () => ({ items: overrides.installed ?? [{ pkg: 'pkg-a', name: 'Plug A', version: '0.9.0' }] }),
       npmLatest: async () => ({ version: '1.2.3', integrity: 'sha512-x' }),
       precheck: async () => null,
+      // round-2 遗留外网清偿 B 类：等待期预检桩（T-B1/T-B2 带 profileDir → releaseAgePrecheck
+      // 触发；fixture 包不在 npm 上，真实 404 → fail-open null，null 桩同构）
+      packumentTimes: async () => null,
       classifyActivation: async () => 'unknown',
     }
   }
@@ -707,6 +717,9 @@ describe('enable 竞速重试普适化 + 回装失败账实复读（0.10.1，真
       listInstalled: async () => ({ items: [{ pkg: 'pkg-a', name: 'Plug A', version: '0.9.0', spec: '0.9.0' }], others: [], complete: true }),
       npmLatest: async () => ({ version: '1.2.3', integrity: 'sha512-x' }),
       precheck: async () => null,
+      // round-2 遗留外网清偿 B 类：同 :491 twoStepDeps——T-B1/T-B2 带 profileDir 触发
+      // releaseAgePrecheck，null 桩 = 真实 404 fail-open 同构（二分定位 logs-e/bisect.log）
+      packumentTimes: async () => null,
       classifyActivation: async () => 'unknown',
     }
   }

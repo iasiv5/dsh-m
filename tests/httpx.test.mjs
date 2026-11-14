@@ -538,8 +538,11 @@ describe('fetchLimited 经代理转发（L0 ADR-0012）', () => {
   it('网络失败错误附 via=掩码代理 URL（Task 3 ④）', async () => {
     const { fetchLimited } = await import('../lib/core/httpx.js')
     await withL0Env({ https_proxy: 'http://user:secret@127.0.0.1:1' }, async () => {
+      // round-2 遗留外网清偿 D 类：目标 URL 环回化（原 registry.npmmirror.com/semver/latest）——
+      // 验证面是「死代理 connect 拒绝 → 错误附 via=掩码」：代理 127.0.0.1:1 无监听，连接在代理腿
+      // 即拒，目标可达性从不参与；https 语义与 https_proxy 选路保持原样，断言零改动。
       await assert.rejects(
-        fetchLimited('https://registry.npmmirror.com/semver/latest', { timeoutMs: 5000 }),
+        fetchLimited('https://127.0.0.1:9/semver-latest-probe', { timeoutMs: 5000 }),
         (err) => err.via === 'http://***@127.0.0.1:1',
       )
     })
