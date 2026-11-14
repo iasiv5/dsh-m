@@ -12,6 +12,7 @@
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
+      "screenshots": ["docs/images/marketplace.webp","docs/images/official-plugin-install.webp","docs/images/community-catalog.webp","docs/images/curated-registry.webp","docs/images/search-results.webp","docs/images/plugin-detail.webp","docs/images/installed.webp","docs/images/settings.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-m"
     },
@@ -26,6 +27,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
+      "screenshots": ["docs/assets/preview-meirenzhi-1.webp","docs/assets/preview-switcher.webp","docs/assets/preview-openbmc-1.webp","docs/assets/preview-uefi-1.webp","docs/assets/preview-personalization.webp","docs/assets/preview-desktop-1.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-skins"
     },
@@ -136,6 +138,7 @@
       "source": "npm",
       "npm": "dsh-send-later",
       "github": "iasiv5/dsh-send-later",
+      "screenshots": ["docs/images/panel.webp","docs/images/automation-task.webp","docs/images/official-plugin-install.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-send-later@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-send-later"
     },
@@ -162,6 +165,7 @@
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
+      "screenshots": ["docs/assets/preview-settings-dark.webp","docs/assets/preview-settings-light.webp","docs/assets/preview-login-idle.webp","docs/assets/preview-device-code.webp","docs/assets/preview-github-authorize.webp","docs/assets/preview-manage-models.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
     },
@@ -175,6 +179,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-quota-watch",
       "github": "iasiv5/dsh-quota-watch",
+      "screenshots": ["docs/assets/panel-overview.webp","docs/assets/panel-glm-detail.webp","docs/assets/panel-copilot-detail.webp","docs/assets/sidebar-card.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0.1.36/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-quota-watch"
     },
@@ -188,6 +193,7 @@
       "source": "npm",
       "npm": "dsh-stock-kanban",
       "github": "iasiv5/dsh-stock-kanban",
+      "screenshots": ["docs/images/capsule.webp","docs/images/panel.webp","docs/images/detail.webp","docs/images/mobile.webp","docs/images/settings.webp","docs/images/capsule-standalone.webp"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-stock-kanban@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-stock-kanban"
     },
@@ -275,6 +281,7 @@
       "source": "npm",
       "npm": "dsh-server-deck",
       "github": "meyaomiao/dsh-server-deck",
+      "screenshots": ["docs/screenshots/dashboard.png","docs/screenshots/trend.png","docs/screenshots/terminal.png","docs/screenshots/add-host.png"],
       "homepage": "https://github.com/meyaomiao/dsh-server-deck"
     },
     {
@@ -297,6 +304,7 @@
       "source": "npm",
       "npm": "dsh-chat-manager",
       "github": "WSL043/dsh-chat-manager",
+      "screenshots": ["docs/assets/hero.en.png","docs/assets/hero.png","docs/assets/archive-manager.en.png","docs/assets/archive-manager.png","docs/assets/confirm-delete.en.png","docs/assets/confirm-delete.png"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-chat-manager@1.5.18/assets/icon.svg",
       "homepage": "https://github.com/WSL043/dsh-chat-manager"
     },
@@ -332,6 +340,7 @@
       "source": "npm",
       "npm": "dsh-archive-trash",
       "github": "hongdougao111/dsh-archive-trash",
+      "screenshots": ["assets/screenshot-1.png","assets/screenshot-2.png","assets/screenshot-3.png","assets/screenshot-4.png"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-archive-trash@0/icon.svg",
       "homepage": "https://github.com/hongdougao111/dsh-archive-trash"
     },
@@ -367,6 +376,7 @@
       "tags": ["阅读","翻译","订阅","播客"],
       "source": "github",
       "github": "joeseesun/qiaomu-rss-dsh",
+      "screenshots": ["docs/screenshots/reading.png","docs/screenshots/discovery.png","docs/screenshots/ai-companion.jpg","docs/screenshots/link-collection.png"],
       "homepage": "https://github.com/joeseesun/qiaomu-rss-dsh"
     },
     {
@@ -434,6 +444,7 @@
       "source": "npm",
       "npm": "dsh-guizang-design",
       "github": "op7418/dsh-guizang-design",
+      "screenshots": ["screenshots/1-studio.jpg","screenshots/2-works.jpg","screenshots/3-draft.jpg","screenshots/4-skills.jpg"],
       "icon": "https://cdn.jsdelivr.net/npm/dsh-guizang-design@0/icon.png",
       "homepage": "https://github.com/op7418/dsh-guizang-design"
     },
