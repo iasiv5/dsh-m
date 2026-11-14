@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.17 特性：精选卡统计对齐（ADR-0036）与测试封闭化收线
+
+- **特性：精选卡统计对齐（ADR-0036，含 C 方案与 R10 修订）**：①精选市场卡显示 npm 近 30 天下载量，卡面语法与社区卡统一（by owner + 下载↓；标签/实测行移入详情弹窗，零信息损失）；②混合源——目录镜像 join（npm 名优先、github 兜底、键级注记）+ 缺口直查兜底（npm bulk 一枪 + 缺键逐包 point 回退、24h TTL 落盘缓存、失败 fail-open 保留旧值、空箱不抑制重试），fresh 箱缺新缺口键即时增量补拉（不再等 TTL，「精选集增删自愈」即时化），未来 fetchedAt 腐箱按 stale 重拉（时钟回拨防御）；③数字悬浮 title 口径透明：目录快照无前缀、直查带「npm · 」前缀，均携 30 天窗口与查于时点；④joined 数值参与 downloads/stars 排序（无数据垫底语义保留，排序代码零改动）；⑤gh star 直查整链退役（精选卡只显下载量；社区区 star 仍来自上游目录镜像）。
+- **特性：收藏统计刷新与社区徽章**：收藏卡下载量/星标随目录现值刷新（overlay 命中即权威：number 覆盖、null 剥除旧残留）；收藏卡社区来源徽章。
+- **修复**：设置页 Agent 集成卡深色模式不可读（清除主题包不存在的 `--dsw-alias-*` 失效令牌，恒走浅色回退的根因形态）与文案微调；doctor 新增 install-restorability 提示级检查（`file:` 本地路径登记的改装指引）；curated-stats 契约清理（curatedGapKeys npm 单源、并发常量名实相符、join 侧负值防御、空箱零数据不落盘）。
+- **守卫/工程**：令牌卫生守卫（`--dsw-alias-*` 主题包 138 名单逐一对应）；README 中英标题结构配对守卫；CHANGELOG 测试引用可核对门与计数新鲜度纪律（check-release 内建）；i18n 死键反向守卫 + 清扫 16 枚死键；registry verified 污染检测门禁化（know-how 022）与 skip-browser-auth / stock-kanban verified 更新至 0.2.2-rc.2；新增 CONTRIBUTING.md。
+- **测试封闭化收线**：全部测试外网尝试归零——registry 双源装载封闭到环回源（controller `defaultRoutes` 测试缝）、缺口直查/升级生效判定/等待期预检等出网路径显式置桩、代理 via 用例目标环回化；进程树终止用例 unhandledRejection 与载荷敏感稳健化（早挂 catch + 就绪门）。外部网络全程阻断的探针模式下全量测试首次全绿。
+- **测试**：typecheck 0 错；golden 基线随统计形态刻意更新（重生成零漂移）。分项见 `tests/market-golden.test.mjs`、`tests/curated-stats.test.mjs`、`tests/merged-market.test.mjs`、`tests/market.test.mjs`、`tests/client-favorites.test.mjs`、`tests/client-token-hygiene.test.mjs`、`tests/client-i18n.test.mjs`、`tests/readme-pairing.test.mjs`、`tests/doctor.test.mjs`、`tests/host-api.test.mjs`、`tests/rollback-heal.test.mjs`、`tests/external-journal-channels.test.mjs`、`tests/profile-ops.test.mjs`、`tests/run-command-error-digest.test.mjs`、`tests/pnpm-outcome.test.mjs`（无总数主张）。
+- **兼容性**：市场/收藏/设置页行为变更如上；`dshm` CLI 接口零变化；缓存箱 `{version:1}` 形态不变（增量补拉写回保留原 fetchedAt、按当前键集 GC）。回退面：revert 对应特性提交 + 版本递增。
+
 ### 0.12.16 文档与文案：会话开关说明对齐当前实现（issue #57 续）
 
 - **背景**：0.12.15 把会话注入开关合并为插件页单开关后，README、GLOSSARY、ADR-0035 与设置页字段描述仍按「两个开关」「分组」表述，且未写明已打开的对话里的行为。按宿主装配机制核对：工具可见性每次模型调用重新解析，已打开的对话里工具从下一次回复起消失；系统提示词每次调用重新渲染并更新，但已发生的上下文不追溯清洗，故对外口径仍以「新会话干净」为准。
@@ -1065,6 +1075,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.17 Feature: curated-card stats alignment (ADR-0036) and test-hermeticity closeout
+
+- **Feature: curated-card stats alignment (ADR-0036, incl. Plan C and R10 revisions)**: ① curated market cards show npm last-30-day downloads with the same byline grammar as community cards (by owner + downloads↓; tags/tested-version rows move into the detail modal — zero information loss); ② hybrid sources — catalog-mirror join (npm-name first, github fallback, key-level annotation) plus direct-gap fallback (single npm bulk shot + per-package point fallback for omitted keys, 24h TTL on-disk cache, fail-open keeps stale values on failure, empty boxes never suppress retries); a fresh box missing newly added gap keys now backfills those keys immediately instead of waiting for TTL ("gap set self-heals" becomes instant), and a box with a future fetchedAt is treated as stale (clock-skew defense); ③ hover titles disclose the window: catalog snapshots carry no prefix, direct queries carry "npm · ", both with the 30-day window and query time; ④ joined values participate in downloads/stars sorting (no-data-still-sinks semantics preserved; sorting code untouched); ⑤ the gh-star direct-query chain is retired (curated cards show downloads only; community-zone stars still come from the upstream catalog mirror).
+- **Feature: favorites stats refresh & community badge**: favorite-card downloads/stars refresh with current catalog values (overlay hit is authoritative: numbers override, null strips stale remnants); community-source badge on favorite cards.
+- **Fixes**: settings-page Agent-integration card unreadable in dark mode (removed `--dsw-alias-*` tokens absent from the host theme package — the always-light-fallback root cause) plus copy tweaks; doctor gains an install-restorability hint-level check (re-registration guidance for `file:` local-path installs); curated-stats contract cleanup (curatedGapKeys goes npm-only, concurrency constant renamed to match reality, join-side negative-value defense, zero-data empty boxes no longer written).
+- **Guards / engineering**: token-hygiene guard (all 138 `--dsw-alias-*` names matched against the host theme package); README zh/en heading-structure pairing guard; CHANGELOG test-citation checkability gate and count-freshness discipline (built into check-release); i18n dead-key reverse guard + 16 dead keys removed; registry verified-pollution detection promoted to a hard gate (know-how 022) with skip-browser-auth / stock-kanban verified updated to 0.2.2-rc.2; CONTRIBUTING.md added.
+- **Test-hermeticity closeout**: all test external-network attempts eliminated — registry dual-source loads sealed to a loopback source (controller `defaultRoutes` test seam), direct-query / upgrade-activation / release-age-precheck egress paths explicitly stubbed, and the proxy-via case retargeted to loopback; process-tree-kill tests hardened against unhandledRejection and load sensitivity (early catch + readiness gate). The full suite passes with external network fully blocked, for the first time.
+- **Tests**: typecheck clean; golden baseline intentionally updated with the stats shape (regeneration shows zero drift). Per-item coverage in `tests/market-golden.test.mjs`, `tests/curated-stats.test.mjs`, `tests/merged-market.test.mjs`, `tests/market.test.mjs`, `tests/client-favorites.test.mjs`, `tests/client-token-hygiene.test.mjs`, `tests/client-i18n.test.mjs`, `tests/readme-pairing.test.mjs`, `tests/doctor.test.mjs`, `tests/host-api.test.mjs`, `tests/rollback-heal.test.mjs`, `tests/external-journal-channels.test.mjs`, `tests/profile-ops.test.mjs`, `tests/run-command-error-digest.test.mjs`, `tests/pnpm-outcome.test.mjs` (no totals claimed).
+- **Compatibility**: market/favorites/settings behavior changes as above; the `dshm` CLI surface is unchanged; the stats cache box keeps its `{version:1}` shape (incremental backfill preserves the original fetchedAt and GCs to the current key set). Rollback: revert the feature commits + version bump.
 
 ### 0.12.16 Docs & copy: session-switch descriptions aligned with the current implementation (issue #57 follow-up)
 
