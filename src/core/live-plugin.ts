@@ -39,17 +39,33 @@ export function loaderHost(): LoaderHost | undefined {
   return boundHost
 }
 
+/**
+ * 条目归属（issue #72）：名字精确命中，或裸 id（剥 include: 前缀；顶层 id / options.id
+ * 双投影，enablement.ts loaderEntryId 同口径）∈ ownedIds——载体条目的 options.name 是
+ * 相对模块路径（如 ./index.js），只按名字永远认领不到。ownedIds 缺省 = 旧名字口径（零漂移）。
+ */
+export function entryMatchesPkg(entry: LoaderEntry, name: string, ownedIds?: ReadonlySet<string>): boolean {
+  if (entry.options?.name === name) return true
+  if (ownedIds === undefined || ownedIds.size === 0) return false
+  const id = typeof entry.id === 'string' && entry.id !== '' ? entry.id
+    : typeof entry.options?.id === 'string' && entry.options.id !== '' ? entry.options.id : null
+  if (id === null) return false
+  return ownedIds.has(id.split(':').pop() ?? id)
+}
+
 export async function setLivePluginDisabled(
   pkg: string,
   disabled: boolean,
   host: LoaderHost | undefined = boundHost,
+  /** 本包补丁 insert id 集合（issue #72 载体形态的认领凭据） */
+  ownedIds?: ReadonlySet<string>,
 ): Promise<boolean> {
   const name = String(pkg || '').trim()
   const entries = host?.loader?.entries
   if (!name || typeof entries !== 'function') return false
   let found = false
   for (const entry of entries.call(host!.loader)) {
-    if (!entry || entry.options?.name !== name) continue
+    if (!entry || !entryMatchesPkg(entry, name, ownedIds)) continue
     if (typeof entry.update !== 'function') continue
     found = (await flipEntry(entry, disabled)) || found
   }

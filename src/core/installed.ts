@@ -12,7 +12,7 @@
 import { open, readFile } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { webProfileDir } from './env.js'
-import { readBundlePatchRows, type BundlePatchRows } from './patch-yaml.js'
+import { declaredBundlePatchFiles, mergeBundlePatchRows, readBundlePatchRows, type BundlePatchRows } from './patch-yaml.js'
 
 const PKG_NAME_RE = /^(@[A-Za-z0-9-*~][A-Za-z0-9-*._~]*\/)?[A-Za-z0-9-._~]+$/
 
@@ -33,7 +33,7 @@ export interface InstalledPlugin {
   path: string
   /** package.json repository 解析出的 github owner/repo（头像用） */
   githubRepo?: string | null
-  /** 包内 cordis.patch.yml（dsh.bundle.patch 层）的行枚举——开关粒度判定原料；文件缺失 → readable:false */
+  /** 包内补丁层（dsh.bundle.patch 声明路径，未声明回退根级 cordis.patch.yml）行枚举——开关粒度判定原料；文件缺失/不可解析 → readable:false（issue #72） */
   patchRows?: BundlePatchRows
   /** package.json 顶层 icon 原始字符串（未校验，ADR-0025 声明图标链①原料；未声明 → undefined） */
   manifestIcon?: string
@@ -210,7 +210,8 @@ function sanitizePkgJson(raw: PkgJson, fallbackName: string): Omit<InstalledPlug
  * 单依赖分类（并行化重构 2026-10-15）：完整搬运原串行循环体的判定顺序——
  * 目录解析失败 / package.json 读不到/坏 JSON/根非对象 → 'unknown'（无法判断 ≠ 非 DSH）；
  * 合法 manifest 无 dsh 字段 → 'other'；否则（wantPatch 时读补丁层）组装 InstalledPlugin → { item }。
- * 吞错边界：readPkgJsonResult / readBundlePatchRows 全程吞错，readTextLimited 吞 open 失败；
+ * 吞错边界：readPkgJsonResult / readBundlePatchRows 全程吞错，readTextLimited 吞 open 失败
+ * （声明补丁文件任一缺失 → null → 全有全无不可读，issue #72）；
  * 其 fh.read 阶段的异常（如 EIO）不被吞、沿 Promise.all 整体传播——与旧串行版循环体内
  * 同样整体 reject 的语义等价（句柄在 finally 关闭，纯读无副作用）。
  */
@@ -244,10 +245,13 @@ async function classifyDep(root: string, pkg: string, spec: string, wantPatch: b
       },
     }
   }
-  const patchText = await readTextLimited(join(dir, 'cordis.patch.yml'), PATCH_MAX_BYTES)
-  const patchRows = patchText
-    ? readBundlePatchRows(patchText.text)
-    : { inserts: [], configRows: 0, readable: false }
+  // 补丁路径按官方 bundlePatchFiles 口径解析（issue #72）：dsh.bundle.patch（string | string[]）
+  // 相对包目录；未声明/非法 → 回退根级 cordis.patch.yml（历史行为零漂移；官方 loader 对未声明
+  // bundle 整体 skip、不读根级，此回退只服务 dsh-m 自身标注兼容）。多文件全有全无合并。
+  const declaredPatchFiles = declaredBundlePatchFiles(raw.dsh)
+  const patchFiles = declaredPatchFiles ?? [FALLBACK_PATCH_FILENAME]
+  const patchTexts = await Promise.all(patchFiles.map((file) => readTextLimited(join(dir, file), PATCH_MAX_BYTES)))
+  const patchRows = mergeBundlePatchRows(patchTexts.map((text) => (text ? readBundlePatchRows(text.text) : null)))
   return {
     item: {
       pkg,
@@ -303,8 +307,10 @@ export async function listInstalledPlugins(
 
 const README_MAX_BYTES = 64 * 1024
 const README_FILES = ['README.md', 'README.markdown', 'README']
-/** 包内 cordis.patch.yml 读取上限（补丁层是小文件，256KB 远超正常体积）。 */
+/** 包内补丁文件读取上限（补丁层是小文件，256KB 远超正常体积）。 */
 const PATCH_MAX_BYTES = 256 * 1024
+/** 未声明 dsh.bundle.patch 时的回退补丁路径（历史行为；官方 loader 对未声明 bundle 不读根级）。 */
+const FALLBACK_PATCH_FILENAME = 'cordis.patch.yml'
 
 export interface PluginReadme {
   pkg: string

@@ -32,12 +32,13 @@
  *    npm-integrity.ts 的可注入 fs 操作是内部 seam（仅供其自测）。
  */
 import { Buffer } from 'node:buffer'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { webProfileDir, WEB_PROFILE } from './env.js'
 import { isGenerationProjectionPkg } from './generation-projection.js'
 import { isSafePkgName, resolvePluginDir } from './installed.js'
 import { setLivePluginDisabled } from './live-plugin.js'
+import { declaredBundlePatchFiles } from './patch-yaml.js'
 import { warmPackumentFor } from './packument.js'
 import { syncNpmmirrorPackage } from './npm-route.js'
 import { clearAllLatestCache } from './latest-cache.js'
@@ -686,12 +687,37 @@ async function addWithLagRetry(
  * 与 npm dist 一致的 resolution.integrity。firstPass 控制是否记录 range 放行 heal。
  */
 /**
- * bundle 身份观察（Task 10，只警告不回滚）：包内无 cordis.patch.yml 且 profile
+ * bundle 身份观察（Task 10，只警告不回滚；issue #72：声明 dsh.bundle.patch 自定义路径
+ * 同样算有补丁层）：包内无补丁声明/根级 cordis.patch.yml 且 profile
  * bundles 数组不含该包 → 装成「纯依赖」（不进加载树、已装页进 others 折叠）。
  * 存在合法的无补丁层 dsh 包（伴生库/纯资源包），故不判失败。
  */
 async function bundleIdentityWarning(profileDir: string, pkg: string): Promise<'no-patch-layer' | undefined> {
   try {
+    // 声明探测先行（issue #72）：dsh.bundle.patch 在且声明的文件全部在场才算有补丁层——
+    // 官方 loader 对缺声明文件的 bundle 整体 skip（声明是空头支票时该包同样「不进加载树」，
+    // Task 13 marker 包即此形态），此时 warning 恰如其分
+    try {
+      const manifest = JSON.parse(await readFile(join(profileDir, 'node_modules', pkg, 'package.json'), 'utf8')) as {
+        dsh?: unknown
+      }
+      const declared = declaredBundlePatchFiles(manifest?.dsh)
+      if (declared !== null) {
+        const present = await Promise.all(
+          declared.map(async (file) => {
+            try {
+              await stat(join(profileDir, 'node_modules', pkg, file))
+              return true
+            } catch {
+              return false
+            }
+          }),
+        )
+        if (present.every(Boolean)) return undefined
+      }
+    } catch {
+      /* manifest 读不到 → 落到根级文件探测 */
+    }
     await readFile(join(profileDir, 'node_modules', pkg, 'cordis.patch.yml'))
     return undefined
   } catch {

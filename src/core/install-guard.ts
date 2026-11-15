@@ -14,7 +14,7 @@
  */
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
-import { readBundlePatchRows } from './patch-yaml.js'
+import { declaredBundlePatchFiles, readBundlePatchRows } from './patch-yaml.js'
 
 export type GuardViolationCode = 'NO_DSH_MARKER' | 'ENTRY_UNRESOLVABLE' | 'LOADER_ID_CONFLICT'
 
@@ -170,19 +170,30 @@ async function checkEntry(pkg: string, pkgDir: string, pkgJson: Record<string, u
   return null
 }
 
-/** 读取一个包的 insert ids：无 patch 文件 → []；坏 YAML → 'unreadable'。 */
+/**
+ * 读取一个包的 insert ids（issue #72）：补丁路径按 dsh.bundle.patch 声明解析（官方
+ * bundlePatchFiles 口径），未声明回退根级 cordis.patch.yml。声明文件缺失 → []（官方 loader
+ * 对缺文件的 bundle 整体 skip，无 id 贡献）；坏 YAML / 任一声明文件不可解析 → 'unreadable'。
+ */
 async function insertIdsOf(pkgDir: string): Promise<string[] | 'unreadable'> {
-  let text: string
-  try {
-    text = await readFile(join(pkgDir, 'cordis.patch.yml'), 'utf8')
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return []
-    return 'unreadable'
+  const manifest = await readJsonOrNull(join(pkgDir, 'package.json'))
+  const declared = manifest !== null && manifest !== 'unreadable' ? declaredBundlePatchFiles(manifest.dsh) : null
+  const files = declared ?? ['cordis.patch.yml']
+  const ids: string[] = []
+  for (const file of files) {
+    let text: string
+    try {
+      text = await readFile(join(pkgDir, file), 'utf8')
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return []
+      return 'unreadable'
+    }
+    const rows = readBundlePatchRows(text)
+    if (!rows.readable) return 'unreadable'
+    ids.push(...rows.inserts.map((row) => row.id))
   }
-  const rows = readBundlePatchRows(text)
-  if (!rows.readable) return 'unreadable'
-  return rows.inserts.map((row) => row.id)
+  return ids
 }
 
 /** 读 profile 根 cordis.patch.yml 的 insert ids：ENOENT = 空集；坏 YAML/EACCES = 'unreadable'。 */

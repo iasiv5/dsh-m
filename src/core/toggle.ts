@@ -18,13 +18,14 @@
  * 开关不经 Profile 变更事务（grilling Q1）：单文件轻量编辑、幂等可逆。
  */
 import { readFile as fsReadFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { withFileLock, writeFileAtomic } from './atomic-write.js'
 import { listInstalledPlugins, type InstalledPlugin } from './installed.js'
 import { isSingleRowPlugin, planRowOverride } from './patch-yaml.js'
-import { PROTECTED_MODULES } from './enablement.js'
+import { bareEntryId, loaderEntryId, PROTECTED_MODULES } from './enablement.js'
 import { withMutationSession } from './market-mutation.js'
-import { setLivePluginDisabled, loaderHost, type LoaderEntry, type LoaderHost } from './live-plugin.js'
+import { entryMatchesPkg, setLivePluginDisabled, loaderHost, type LoaderEntry, type LoaderHost } from './live-plugin.js'
 import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
 import { webProfileDir, WEB_PROFILE } from './env.js'
 
@@ -161,6 +162,33 @@ async function togglePluginLocked(pkg: string, enabled: boolean, deps: ToggleDep
 
 // ---------- 委派路径 ----------
 
+/** file:// 模块路径解码（issue #72：载体条目 moduleName 是 file:// URL）；非 file: 或解码失败 → null。 */
+function modulePathOf(moduleName: unknown): string | null {
+  if (typeof moduleName !== 'string' || !moduleName.startsWith('file:')) return null
+  try {
+    return fileURLToPath(moduleName)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 插件管理器行归属（issue #72）：moduleName 精确等于包名（名字型条目），或解码后的模块
+ * 路径位于包目录内（file:// 型条目——cc-safety-net 的 moduleName 是
+ * file:///…/node_modules/<pkg>/dist/...，`=== pkg` 永假 → 委派复读恒 restart-required、
+ * 行覆盖清理恒空转）。Windows 大小写折叠（NTFS 语义）；`pkg/` 前缀型 moduleName 由
+ * 「位于包目录内」自然覆盖。嵌套 node_modules 的归属歧义不处理（pnpm 物化不产生
+ * 同目录双包互嵌，官方插件行也不跨包）。
+ */
+function rowOwnedByPkg(row: PluginManagerRow, item: InstalledPlugin): boolean {
+  if (row.moduleName === item.pkg) return true
+  const modulePath = modulePathOf(row.moduleName)
+  if (modulePath === null || item.path === '') return false
+  const fold = (value: string): string => (process.platform === 'win32' ? value.toLowerCase() : value)
+  const rel = relative(fold(item.path), fold(modulePath))
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)
+}
+
 async function toggleViaService(
   service: PluginManagerLike,
   item: InstalledPlugin,
@@ -170,7 +198,7 @@ async function toggleViaService(
   // 启用前清理本插件的历史行覆盖（dsh-m 单开关模型：行覆盖是它自己写下的，
   // 不清则 bundle 重选后旧行仍 disabled，官方页第二层会出现一开一关）
   if (enabled) {
-    const cleared = await clearRowOverrides(service, item.pkg, warnings)
+    const cleared = await clearRowOverrides(service, item, warnings)
     if (cleared > 0) warnings.push(`已清理 ${cleared} 条历史行覆盖`)
   }
   const raw = await service.setBundleEnabled(item.pkg, enabled)
@@ -178,10 +206,10 @@ async function toggleViaService(
   warnings.push(...rich.warnings)
   if (enabled) {
     // selectBundle 后才可见的行覆盖（bundle 退选期 loader 无条目）再扫一遍
-    await clearRowOverrides(service, item.pkg, warnings)
+    await clearRowOverrides(service, item, warnings)
   }
   // applied 复读：bundle on → 该模块行应存在且启用；bundle off → 行消失或全禁用
-  const after = (await service.listPlugins()).filter((r) => r.moduleName === item.pkg)
+  const after = (await service.listPlugins()).filter((r) => rowOwnedByPkg(r, item))
   const running = after.some((r) => r.enabled)
   let applied: ToggleResult['applied']
   if (rich.application === 'restart-required') applied = 'restart-required'
@@ -193,11 +221,11 @@ async function toggleViaService(
 /** 清理本插件可见的 disabled 行覆盖（跳过官方 readOnly 行）；返回清理条数。 */
 async function clearRowOverrides(
   service: PluginManagerLike,
-  pkg: string,
+  item: InstalledPlugin,
   warnings: string[],
 ): Promise<number> {
   const rows = (await service.listPlugins()).filter(
-    (r) => r.moduleName === pkg && !r.readOnlyReason && r.enabled === false,
+    (r) => rowOwnedByPkg(r, item) && !r.readOnlyReason && r.enabled === false,
   )
   let cleared = 0
   for (const row of rows) {
@@ -230,9 +258,15 @@ async function toggleFallback(
 
 /** 行覆盖降级：锁内保注释 YAML 编辑 + loader 活体翻转。 */
 async function toggleRowFallback(item: InstalledPlugin, enabled: boolean, ctx: FallbackCtx): Promise<ToggleResult> {
-  const loaderEntry = findLoaderEntryByName(ctx.loaderHost, item.pkg)
+  const ownedIds = new Set((item.patchRows?.inserts ?? []).map((row) => row.id))
+  const loaderEntry = findLoaderEntryForItem(ctx.loaderHost, item, ownedIds)
   const insert = item.patchRows?.readable ? item.patchRows.inserts[0] : undefined
-  const id = loaderEntry?.id ?? insert?.id
+  // 覆盖行 id 落盘裸形态（issue #72）：id 认领命中时 loaderEntry.id 可能带 include: 前缀
+  // （宿主投影），而 dsh-m 读路径（enablement overrideIndex）按补丁声明的裸 insert id 匹配
+  // 覆盖行——带前缀原样落盘会让自己的覆盖行读不回来。
+  const loaderIdValue = loaderEntry === null ? null : loaderEntryId(loaderEntry)
+  const loaderBareId = loaderIdValue === null ? null : bareEntryId(loaderIdValue)
+  const id = loaderBareId !== null && ownedIds.has(loaderBareId) ? loaderBareId : loaderEntry?.id ?? insert?.id
   const name = loaderEntry?.options?.name ?? insert?.name
   if (id === undefined || id === '') {
     throw new ToggleError('unknown-plugin', `无法定位该插件的合成条目 id（loader 与补丁行均无）: ${item.pkg}`)
@@ -246,7 +280,7 @@ async function toggleRowFallback(item: InstalledPlugin, enabled: boolean, ctx: F
       await writeFileAtomic(patchPath, plan.text, { mode: 0o600 })
     }
   })
-  liveFound = await setLivePluginDisabled(item.pkg, !enabled, ctx.loaderHost)
+  liveFound = await setLivePluginDisabled(item.pkg, !enabled, ctx.loaderHost, ownedIds)
   return {
     pkg: item.pkg,
     enabled,
@@ -256,11 +290,12 @@ async function toggleRowFallback(item: InstalledPlugin, enabled: boolean, ctx: F
   }
 }
 
-function findLoaderEntryByName(host: LoaderHost | undefined, pkg: string): LoaderEntry | null {
+/** 行级降级定位（issue #72）：名字精确或裸 id ∈ ownedIds（live-plugin.entryMatchesPkg 同口径）。 */
+function findLoaderEntryForItem(host: LoaderHost | undefined, item: InstalledPlugin, ownedIds: ReadonlySet<string>): LoaderEntry | null {
   const entries = host?.loader?.entries
   if (typeof entries !== 'function') return null
   for (const entry of entries.call(host!.loader)) {
-    if (entry && entry.options?.name === pkg) return entry
+    if (entry && entryMatchesPkg(entry, item.pkg, ownedIds)) return entry
   }
   return null
 }

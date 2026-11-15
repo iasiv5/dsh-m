@@ -99,15 +99,15 @@ function nameMatchesPackage(name: string | undefined, pkg: string): boolean {
   return name !== undefined && (name === pkg || name.startsWith(`${pkg}/`))
 }
 
-/** loader 条目 id 双投影：顶层 id（dsh-m 行开关读法）或 options.id（官方读法），取先到非空者。 */
-function loaderEntryId(entry: LoaderEntry): string | null {
+/** loader 条目 id 双投影：顶层 id（dsh-m 行开关读法）或 options.id（官方读法），取先到非空者。（toggle 行级降级复用，issue #72） */
+export function loaderEntryId(entry: LoaderEntry): string | null {
   if (typeof entry.id === 'string' && entry.id !== '') return entry.id
   const optionId = entry.options?.id
   return typeof optionId === 'string' && optionId !== '' ? optionId : null
 }
 
-/** loader id 可能带 include 前缀（include:<key>:<id>）；裸 id 才是补丁行声明的形态（官方同注）。 */
-function bareEntryId(id: string): string {
+/** loader id 可能带 include 前缀（include:<key>:<id>）；裸 id 才是补丁行声明的形态（官方同注）。（toggle 行级降级复用，issue #72） */
+export function bareEntryId(id: string): string {
   return id.split(':').pop() ?? id
 }
 
@@ -137,7 +137,8 @@ export function composeEnablement(input: ComposeEnablementInput): Map<string, Pl
   for (const item of items) {
     const pkg = item.pkg
     const rowIds = item.patchRows?.inserts.map((row) => row.id) ?? []
-    // 本包 patch 声明的 insert id 集合 = 载体条目认领凭据（官方 carriedRowLive 同源）
+    // 本包 patch 声明的 insert id 集合 = 载体条目认领凭据（官方 carriedRowLive 同源；
+    // issue #72：ownedIds 的正确性取决于 installed.ts 按 dsh.bundle.patch 声明路径读补丁层）
     const ownedIds = new Set(rowIds)
     const matches = loaderEntries !== null ? findLoaderEntries(loaderEntries, pkg, ownedIds) : []
     const entry = matches[0] ?? null

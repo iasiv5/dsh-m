@@ -8,6 +8,9 @@
  *    跳过含 insert 的行、name 可选限定、已是目标态 changed:false、无匹配 append `{id, disabled}`；
  *    启用写显式 `disabled: false` 以压过更低层）。文件 IO 留给调用方（toggle.ts 持锁后落盘）；
  * 3) readProfileOverrides —— 读 profile 补丁层的覆盖行（id → disabled），enablement 读路径用。
+ * 4) declaredBundlePatchFiles —— dsh.bundle.patch 声明解析（官方 bundlePatchFiles 同口径，
+ *    issue #72）：string | string[] → 相对包目录路径表；未声明/非法 → null（调用方回退根级）。
+ * 5) mergeBundlePatchRows —— 多补丁文件行枚举合并（全有全无：任一文件缺失/不可解析 → 整体不可读）。
  *
  * 解析约定与官方一致：customTags `tag:yaml.org,2002:js` 原样保留（官方补丁可含 `!!js`
  * disabled 表达式）；planRowOverride 对坏 YAML / 根非序列 throw（调用方映射为失败），
@@ -77,6 +80,42 @@ export function readBundlePatchRows(text: string): BundlePatchRows {
     result.configRows += 1
   }
   return result
+}
+
+/** JSON 合法根：非 null、非数组的对象（installed.ts 同判，此处自持一份防跨模块耦合）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * dsh.bundle.patch 声明解析（@deepseek-ai/dsh-app-boot bundlePatchFiles 同口径，issue #72）：
+ * string → 单文件；string[] → 多文件（声明序）；未声明 dsh/bundle/patch 或类型非法 → null
+ * （调用方回退根级 cordis.patch.yml——官方 loader 对未声明 bundle 是整体 skip、不读根级，
+ * dsh-m 保留回退只为自身标注的向后兼容，永不伪造活体状态）。空数组 = 合法声明零补丁文件。
+ */
+export function declaredBundlePatchFiles(dsh: unknown): string[] | null {
+  if (!isRecord(dsh)) return null
+  const bundle = dsh.bundle
+  if (!isRecord(bundle)) return null
+  const patch = bundle.patch
+  if (typeof patch === 'string') return [patch]
+  if (Array.isArray(patch) && patch.every((file) => typeof file === 'string')) return patch as string[]
+  return null
+}
+
+/**
+ * 多补丁文件行枚举合并（全有全无，issue #72）：任一文件缺失（null）或不可解析 →
+ * 整体 { inserts: [], configRows: 0, readable: false }（与单文件缺失契约一致，粒度降 Bundle）；
+ * 全部可读 → inserts 按声明序拼接、configRows 求和；空 parts（声明 []）→ 可读零行。
+ */
+export function mergeBundlePatchRows(parts: Array<BundlePatchRows | null>): BundlePatchRows {
+  const merged: BundlePatchRows = { inserts: [], configRows: 0, readable: true }
+  for (const part of parts) {
+    if (part === null || !part.readable) return { inserts: [], configRows: 0, readable: false }
+    merged.inserts.push(...part.inserts)
+    merged.configRows += part.configRows
+  }
+  return merged
 }
 
 /** 单行插件：可读、恰好一个 insert 条目、零配置补丁行——行开关即整插件开关。 */
