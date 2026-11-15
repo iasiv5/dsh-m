@@ -240,17 +240,6 @@
       "homepage": "https://github.com/iasiv5/dsh-onetree-log"
     },
     {
-      "id": "browser-skill-dsh-plugin",
-      "name": "BrowserSkill",
-      "description": "浏览器自动化：把 BrowserSkill 的 browser_* 工具暴露给模型，让模型在对话中操作浏览器，详见仓库。",
-      "category": "tencent-lighthouse",
-      "tags": ["浏览器","自动化","工具调用"],
-      "source": "npm",
-      "npm": "@wxg-prc-cpg/browser-skill-dsh-plugin",
-      "github": "Tencent/BrowserSkill",
-      "homepage": "https://github.com/Tencent/BrowserSkill/tree/main/packages/dsh-plugin-browserskill#readme"
-    },
-    {
       "id": "dsh-weknora",
       "name": "WeKnora",
       "description": "知识库检索：把 WeKnora 接入模型，提供语义搜索、文档阅读与 RAG 问答等工具，可用自有知识库，详见仓库。",
@@ -386,9 +375,7 @@
       "category": "baoyu",
       "tags": ["幻灯片","演示","宝玉"],
       "source": "npm",
-      "npm": "dsh-claude-slides",
-      "github": "JimLiu/baoyu-design",
-      "homepage": "https://github.com/JimLiu/baoyu-design"
+      "npm": "dsh-claude-slides"
     },
     {
       "id": "dsh-claude-design",
@@ -397,9 +384,7 @@
       "category": "baoyu",
       "tags": ["设计","画布","宝玉"],
       "source": "npm",
-      "npm": "dsh-claude-design",
-      "github": "JimLiu/baoyu-design",
-      "homepage": "https://github.com/JimLiu/baoyu-design"
+      "npm": "dsh-claude-design"
     },
     {
       "id": "dsh-claude-design-system",
@@ -408,9 +393,7 @@
       "category": "baoyu",
       "tags": ["设计系统","设计令牌","宝玉"],
       "source": "npm",
-      "npm": "dsh-claude-design-system",
-      "github": "JimLiu/baoyu-design",
-      "homepage": "https://github.com/JimLiu/baoyu-design"
+      "npm": "dsh-claude-design-system"
     },
     {
       "id": "dsh-claude-dashboard",
@@ -419,9 +402,7 @@
       "category": "baoyu",
       "tags": ["看板","数据可视化","宝玉"],
       "source": "npm",
-      "npm": "dsh-claude-dashboard",
-      "github": "JimLiu/baoyu-design",
-      "homepage": "https://github.com/JimLiu/baoyu-design"
+      "npm": "dsh-claude-dashboard"
     },
     {
       "id": "dsh-claude-motion",
@@ -430,9 +411,7 @@
       "category": "baoyu",
       "tags": ["动画","短片","视频","宝玉"],
       "source": "npm",
-      "npm": "dsh-claude-motion",
-      "github": "JimLiu/baoyu-design",
-      "homepage": "https://github.com/JimLiu/baoyu-design"
+      "npm": "dsh-claude-motion"
     },
     {
       "id": "dsh-guizang-design",
