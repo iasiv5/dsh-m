@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.1%20verified-2563eb)](#兼容与常见问题)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3%20verified-2563eb)](#兼容与常见问题)
 
 [English](./README.en.md) · 中文
 
@@ -17,19 +17,19 @@ dsh-m 把 DeepSeek Harness（DSH）的插件**发现、安装、管理与更新*
 
 ![在 DSH 官方插件管理界面安装 dsh-m](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/official-plugin-install.webp)
 
-无图形界面的 Web 宿主也可执行 `dsh plugin --profile web add dsh-m`。Node.js 需 ≥ 22.19.0；支持的 DSH 代际见[兼容表](#兼容与常见问题)。`npm install -g dsh-m` **仅安装独立 `dshm` CLI**，不会把市场插件注册到 DSH profile。
+无图形界面的 Web 宿主也可执行 `dsh plugin --profile web add dsh-m`（**桌面应用请勿使用**——该命令写死 `web` profile，装进去不会被加载；桌面插件请走上方官方插件管理页）。Node.js 需 ≥ 22.19.0；支持的 DSH 代际见[兼容表](#兼容与常见问题)。`npm install -g dsh-m` **仅安装独立 `dshm` CLI**，不会把市场插件注册到 DSH profile。
 
 > 官方插件管理界面的就地更新能力以宿主版本和界面提示为准；如果明确提示不支持，请按提示卸载旧版后重新安装。卸载不会自动清除插件数据。
 
 ## 浏览、搜索与安装
 
-- **社区 + 精选**：社区目录默认开启，收录 6,000+ 个条目（随上游目录持续增长，实际以面板计数为准）；精选清单按「装机必备 / 崔添翼精选 / iasi自研 / 腾讯轻量云专区 / 观察区」策展。重名条目以精选为准：跨区搜索只呈现精选版本，社区浏览则会保留这类条目并以「精选」徽章标注。
+- **社区 + 精选**：社区目录默认开启，收录 6,000+ 个条目（随上游目录持续增长，实际以面板计数为准）；精选清单按「装机必备 / 崔添翼精选 / 宝玉专区 / 歸藏专区 / iasi自研 / 腾讯轻量云专区 / 观察区」七桶策展。重名条目以精选为准：跨区搜索只呈现精选版本，社区浏览则会保留这类条目并以「精选」徽章标注。
 - **分区浏览、全局搜索**：分类、排序（社区区可按下载量 / Stars / 收录日期）和分页在各区独立保留；输入中文或英文关键词时，同时搜索社区与精选，并分别展示命中数。收藏保存在浏览器本地（localStorage），不进 profile、不上服务端。
-- **安装前先看详情**：卡片显示来源、安装状态与版本，图标优先取目录或包内声明、缺失时回退 GitHub 头像；详情展示说明、兼容信息和可用的安装入口。「作者自用」「版本无关」等徽章是受众与适配提示，不代表安全或质量背书。npm 包锁定**精确版本并校验 integrity**，GitHub 来源锁定 **commit SHA**；peer 不兼容时先提示风险，未经确认不强行安装。
+- **安装前先看详情**：卡片显示来源、安装状态与版本，图标优先取目录或包内声明、缺失时回退 GitHub 头像或首字母占位；详情展示说明、兼容信息和可用的安装入口。「作者自用」「版本无关」等徽章是受众与适配提示，不代表安全或质量背书。npm 包锁定**精确版本并校验 integrity**，GitHub 来源锁定 **commit SHA**；peer 不兼容时先提示风险，未经确认不强行安装。
 
 | 社区分类 | 精选策展 |
 |---|---|
-| ![社区目录与开放分类筛选](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/community-catalog.webp) | ![精选清单的五类策展分区](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/curated-registry.webp) |
+| ![社区目录与开放分类筛选](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/community-catalog.webp) | ![精选清单的七桶策展分区](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/curated-registry.webp) |
 
 ![跨区搜索「皮肤」：精选命中置顶，社区命中分组呈现](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/search-results.webp)
 
@@ -119,8 +119,9 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 | `0.2.1-rc.4` | 同 0.2.0 通路 | 0.11.x 线 dogfood 宿主（本机 web 档 dsh-m 0.11.0 常驻运行）；0.11.1 发版（全量测试 1841/1841 + 发版门禁全绿）；官方契约核对取自 rc.3/rc.4 双版（ADR-0027） |
 | `0.2.1-rc.5` | 同 0.2.0 通路 | 契约面等价重发布（宿主 web-app patch 相对 rc.4 零 diff）；rc.4 的核验结论按等价口径承接；0.11.x 线 dogfood 宿主已随宿主升级运行于 rc.5 |
 | `0.2.2-rc.1` | 同 0.2.0 通路 | 新 minor 线首轮（宿主 web-app patch 含 UI bundle 行增删，非等价重发布）；0.12.x 线 dogfood 宿主已随宿主升级运行于 rc.1（2026-11-04 实机验收：市场面板、设置通路与全量客户端产物下发均正常） |
+| `0.2.2-rc.2 / rc.3` | 同 0.2.0 通路 | 0.12.x 线 dogfood 宿主已随宿主升级常驻运行于 rc.3（dsh-m 0.12.17 实机常驻；2026-11-14 发版轮实机核验 + 全量门禁全绿） |
 
-> 表中各代核验对应其时点的 dsh-m 版本：0.10.x 线的完整实测仅覆盖 DSH 0.2.1-rc.2 / rc.3，0.11.x 线覆盖 0.2.1-rc.4（rc.5 为契约面等价重发布，核验结论按等价口径外推），0.12.x 线覆盖 0.2.2-rc.1（2026-11-04 起）；更老代际未经当前版本复测，不代表当前 dsh-m 可在其上运行。
+> 表中各代核验对应其时点的 dsh-m 版本：0.10.x 线的完整实测仅覆盖 DSH 0.2.1-rc.2 / rc.3，0.11.x 线覆盖 0.2.1-rc.4（rc.5 为契约面等价重发布，核验结论按等价口径外推），0.12.x 线覆盖 0.2.2-rc.1（2026-11-04 起）与 rc.2/rc.3（随宿主升级，2026-11-14 实机核验）；更老代际未经当前版本复测，不代表当前 dsh-m 可在其上运行。
 
 **Desktop 与 Web 完全一样吗？** 不是。Desktop 的浏览、安装新包和开关作用于 desktop profile；升级/卸载等操作需宿主官方 `pluginManager` 提供相应能力，缺失时返回结构化拒绝和指引。Desktop 不提供 Web 的一键重启；变更需按应用提示退出并重新打开。两边的收藏、操作记录和已装状态互不串联。
 
@@ -130,7 +131,7 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 
 **自定义清单不可用怎么办？** 优先使用该源上次成功的缓存；没有缓存时会提示清单不可用，已装管理仍能工作。修正地址或在设置页恢复默认即可。
 
-完整沿革见 [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md)，设计与开发细节见 [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)、[ADR](https://github.com/iasiv5/dsh-m/tree/main/docs/adr)；编码与测试纪律（评审必读）见 [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md)；贡献与收录政策见 [CONTRIBUTING](./CONTRIBUTING.md)。截图取自 Web 实例；面板版本、条目数与安装状态会随时间和 profile 变化。在源码仓库运行 `npm install && npm run capture:readme` 可复现截图（需 Web 实例已装 dsh-m；此开发脚本不随 npm 插件包分发）。
+完整沿革见 [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md)，设计与开发细节见 [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)、[ADR](https://github.com/iasiv5/dsh-m/tree/main/docs/adr)；编码与测试纪律（评审必读）见 [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md)；贡献与收录政策见 [CONTRIBUTING](./CONTRIBUTING.md)；收录面维护（条目降级与下架台账）见 [registry-maintenance](./docs/registry-maintenance.md)。截图取自 Web 实例；面板版本、条目数与安装状态会随时间和 profile 变化。在源码仓库运行 `npm install && npm run capture:readme` 可复现截图（需 Web 实例已装 dsh-m；此开发脚本不随 npm 插件包分发）。
 
 ## License
 

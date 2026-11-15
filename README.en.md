@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.1%20verified-2563eb)](#compatibility--faq)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3%20verified-2563eb)](#compatibility--faq)
 
 English · [中文](./README.md)
 
@@ -17,19 +17,19 @@ In DSH's official **Plugin Manager → Add plugin**, enter `dsh-m`, select an in
 
 ![Installing dsh-m with DSH's official plugin manager](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/official-plugin-install.webp)
 
-On a headless Web host, you can also run `dsh plugin --profile web add dsh-m`. Requires Node.js ≥ 22.19.0; see the [compatibility table](#compatibility--faq). `npm install -g dsh-m` installs **only the standalone `dshm` CLI**, not the marketplace plugin in a DSH profile.
+On a headless Web host, you can also run `dsh plugin --profile web add dsh-m` (**do not use this on Desktop** — the command hardcodes the `web` profile and anything installed there is never loaded; Desktop installs go through the official plugin page above). Requires Node.js ≥ 22.19.0; see the [compatibility table](#compatibility--faq). `npm install -g dsh-m` installs **only the standalone `dshm` CLI**, not the marketplace plugin in a DSH profile.
 
 > In-place update support in the official plugin manager depends on the host version. If it explicitly says updates are unsupported, follow its guidance to uninstall the old version and install the new one. Uninstall does not silently erase plugin data.
 
 ## Browse, search, install
 
-- **Community + Curated**: the community directory is on by default, with 6,000+ listings (grows with the upstream catalog; the panel shows the live count). Curated picks are organized into Essentials / Cui Picks / iasi Self-dev / Tencent Lighthouse / Watchlist. Curated wins for same-name entries: cross-catalog search shows only the curated version, while Community browsing keeps such entries marked with a "Curated" badge.
+- **Community + Curated**: the community directory is on by default, with 6,000+ listings (grows with the upstream catalog; the panel shows the live count). Curated picks are organized into seven buckets: Essentials / Cui Picks / Baoyu Picks / Guizang Picks / iasi Self-dev / Tencent Lighthouse / Watchlist. Curated wins for same-name entries: cross-catalog search shows only the curated version, while Community browsing keeps such entries marked with a "Curated" badge.
 - **Zoned browsing, global search**: each zone remembers its own category, sort (the Community zone sorts by downloads / stars / date added), and pagination. A Chinese or English query searches both catalogs and shows their separate hit counts. Favorites live in browser localStorage — they are not part of the profile or the server.
-- **Inspect before installing**: cards show origin, installation status, and version; icons prefer the declared catalog/package icon and fall back to the GitHub avatar. Details show the description, compatibility information, and installation entry point. Badges like "Author's own" and "Version-independent" are audience/adaptation hints, not security or quality endorsements. npm installs pin an **exact version with integrity verification**; GitHub installs pin a **commit SHA**. Peer-incompatible installs require explicit risk acknowledgment.
+- **Inspect before installing**: cards show origin, installation status, and version; icons prefer the declared catalog/package icon and fall back to the GitHub avatar or a first-letter tile. Details show the description, compatibility information, and installation entry point. Badges like "Author's own" and "Version-independent" are audience/adaptation hints, not security or quality endorsements. npm installs pin an **exact version with integrity verification**; GitHub installs pin a **commit SHA**. Peer-incompatible installs require explicit risk acknowledgment.
 
 | Community categories | Curated buckets |
 |---|---|
-| ![Community directory and open category filters](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/community-catalog.webp) | ![The five curated marketplace buckets](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/curated-registry.webp) |
+| ![Community directory and open category filters](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/community-catalog.webp) | ![The seven curated marketplace buckets](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/curated-registry.webp) |
 
 ![Cross-catalog search for skins: curated matches first, community matches grouped below](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/search-results.webp)
 
@@ -119,8 +119,9 @@ Notes: while the tools are off, asking the AI to install or upgrade plugins in c
 | `0.2.1-rc.4` | Same as 0.2.0 | Dogfood host of the 0.11.x line (dsh-m 0.11.0 resident on the local web profile); 0.11.1 shipped with 1841/1841 tests green + release gates all green; official contract verified against both rc.3/rc.4 (ADR-0027) |
 | `0.2.1-rc.5` | Same as 0.2.0 | Contract-surface equivalent re-release (host web-app patch zero-diff against rc.4); rc.4 verification carries over by equivalence; the 0.11.x dogfood web profile now runs rc.5 with the host upgrade |
 | `0.2.2-rc.1` | Same as 0.2.0 | First release of a new minor line (host web-app patch carries UI bundle row changes — not an equivalent re-release); the 0.12.x dogfood web profile now runs rc.1 with the host upgrade (2026-11-04 live acceptance: marketplace panel, settings path, and full client-bundle delivery all healthy) |
+| `0.2.2-rc.2 / rc.3` | Same as 0.2.0 | The 0.12.x dogfood host now runs rc.3 after upgrading with the host (dsh-m 0.12.17 resident; live-verified in the 2026-11-14 release round with all gates green) |
 
-> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3, the 0.11.x line against 0.2.1-rc.4 (rc.5 is a contract-surface equivalent re-release; conclusions carry over by equivalence), and the 0.12.x line against 0.2.2-rc.1 (since 2026-11-04). Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
+> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3, the 0.11.x line against 0.2.1-rc.4 (rc.5 is a contract-surface equivalent re-release; conclusions carry over by equivalence), and the 0.12.x line against 0.2.2-rc.1 (since 2026-11-04) plus rc.2/rc.3 (with the host upgrade, live-verified 2026-11-14). Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
 
 **Is Desktop identical to Web?** No. Desktop browsing, new-package installation, and toggles act on the desktop profile. Upgrades and uninstalls require capabilities from the official host `pluginManager`; if absent, dsh-m returns a structured refusal and guidance. Desktop uses the official app lifecycle rather than Web's one-click restart; quit and reopen as instructed. Favorites, operations, and installed states are separate between profiles.
 
@@ -130,7 +131,7 @@ Notes: while the tools are off, asking the AI to install or upgrade plugins in c
 
 **What if my custom registry goes down?** Its last successful cache is used first. Without any cache, the registry is reported unavailable while installed plugins remain manageable. Fix the address or restore the default in Settings.
 
-Full history: [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md). Architecture and development details: [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md), [ADRs](https://github.com/iasiv5/dsh-m/tree/main/docs/adr). Coding and test discipline (required reading for reviews): [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md). Contribution and listing policy: [CONTRIBUTING](./CONTRIBUTING.md). Screenshots were taken from a Web instance; panel version, catalog counts, and installation states vary over time and by profile. To reproduce from the source checkout, run `npm install && npm run capture:readme` with dsh-m installed on the Web host. The development-only capture script is not distributed in the npm plugin package.
+Full history: [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md). Architecture and development details: [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md), [ADRs](https://github.com/iasiv5/dsh-m/tree/main/docs/adr). Coding and test discipline (required reading for reviews): [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md). Contribution and listing policy: [CONTRIBUTING](./CONTRIBUTING.md). Listing maintenance (demotion and delisting ledger): [registry-maintenance](./docs/registry-maintenance.md). Screenshots were taken from a Web instance; panel version, catalog counts, and installation states vary over time and by profile. To reproduce from the source checkout, run `npm install && npm run capture:readme` with dsh-m installed on the Web host. The development-only capture script is not distributed in the npm plugin package.
 
 ## License
 
