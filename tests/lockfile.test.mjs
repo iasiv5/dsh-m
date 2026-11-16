@@ -20,6 +20,8 @@ import {
   caseNoVersionLine,
   caseNoPackages,
   caseUnquotedVersion,
+  caseImportersVersions,
+  caseBadYaml,
 } from './fixtures/lockfile-cases.mjs'
 
 describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
@@ -121,5 +123,79 @@ describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
     const v = parseLockfile(caseNoPackages)
     assert.equal(v.observationOf('pkg-a'), null)
     assert.deepEqual(v.anomalies.duplicateKeys, [])
+  })
+})
+
+// T2：overrides 面——期望值与 tests/rollback-heal.test.mjs describe readPnpmLockOverrides 现值逐字对齐（B9 冻结语义）
+describe('锁档观测 · overrides 面（ADR-0037 T2）', () => {
+  it('引号 scoped 键与无引号键混排（rollback-heal :373 现值）', () => {
+    const v = parseLockfile(`lockfileVersion: '9.0'
+
+overrides:
+  '@deepseek-ai/dsh-credentials-local': 0.1.1-rc.2
+  isarray: 2.0.0
+  'nested@1>child': 3.0.0
+
+importers:
+`)
+    assert.deepEqual(v.overrides, {
+      '@deepseek-ai/dsh-credentials-local': '0.1.1-rc.2',
+      isarray: '2.0.0',
+      'nested@1>child': '3.0.0',
+    })
+  })
+
+  it('双引号键（三引号形态齐备）', () => {
+    const v = parseLockfile(`lockfileVersion: '9.0'
+
+overrides:
+  "quoted-double@1": 2.0.0
+`)
+    assert.deepEqual(v.overrides, { 'quoted-double@1': '2.0.0' })
+  })
+
+  it('首条解析失败即停：保留此前已解析条目（宁可少配，不可错配）', () => {
+    const v = parseLockfile(`lockfileVersion: '9.0'
+
+overrides:
+  good-one: 1.0.0
+  malformed line without colon
+  good-two: 2.0.0
+`)
+    assert.deepEqual(v.overrides, { 'good-one': '1.0.0' })
+  })
+
+  it('无 overrides 区块 → {}；空区块 → {}（rollback-heal :389/:390 现值）', () => {
+    assert.deepEqual(parseLockfile("lockfileVersion: '9.0'\npackages:\n").overrides, {})
+    assert.deepEqual(parseLockfile("lockfileVersion: '9.0'\noverrides:\nimporters:\n").overrides, {})
+  })
+})
+
+// T3：importers 面——doctor readLockImporters 的 yaml 解析语义（门除外，门留 doctor T7）
+describe('锁档观测 · importers 面（ADR-0037 T3）', () => {
+  it('9.0 形状解析：importers.\'.\'.dependencies 版本观测（caseNoPackages 复用）', () => {
+    const map = parseLockfile(caseNoPackages).importersRootDependencies()
+    assert.ok(map instanceof Map)
+    assert.deepEqual(map, new Map([['pkg-a', '1.2.3']]))
+  })
+
+  it('version 归一：多组 peer 后缀剥净；link: 依赖无 version 落空', () => {
+    const map = parseLockfile(caseImportersVersions).importersRootDependencies()
+    assert.deepEqual(map, new Map([['@deepseek-ai/dsh-client-ui', '0.9.28']]))
+  })
+
+  it('yaml 硬错误（重复映射键）→ null（fail-open-null，不猜）', () => {
+    assert.equal(parseLockfile(caseBadYaml).importersRootDependencies(), null)
+  })
+
+  it('无 importers → 空 Map（非 null）', () => {
+    const map = parseLockfile(caseRegistryKey).importersRootDependencies()
+    assert.ok(map instanceof Map)
+    assert.equal(map.size, 0)
+  })
+
+  it('惰性 memoized：同一 view 二次调用返回同引用', () => {
+    const v = parseLockfile(caseNoPackages)
+    assert.equal(v.importersRootDependencies(), v.importersRootDependencies())
   })
 })

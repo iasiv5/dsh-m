@@ -184,6 +184,11 @@ export function parseLockfile(lockText: string): LockfileView {
     if (importersCache !== undefined) return importersCache
     try {
       const doc = parseDocument(lockText)
+      // yaml 硬错误（如重复映射键）→ null（fail-open-null 不猜；与 workspacePatchedKeys 判废语义同源）
+      if (doc.errors.length > 0) {
+        importersCache = null
+        return importersCache
+      }
       const js = doc.toJS() as {
         importers?: Record<string, { dependencies?: Record<string, { version?: unknown }> }>
       }

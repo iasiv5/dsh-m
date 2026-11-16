@@ -133,3 +133,29 @@ packages:
   'pkg-a@1.2.3':
     resolution: {integrity: sha512-aaa}
 `
+
+// importers 面（T3）：peer 后缀剥净（全组）+ link: 依赖无 version 自然落空（v9 真实对象形态）
+export const caseImportersVersions = `${V9}packages:
+
+importers:
+
+  .:
+    dependencies:
+      '@deepseek-ai/dsh-client-ui':
+        specifier: ^0.9.28
+        version: 0.9.28(@deepseek-ai/schemastery@3.18.4)
+      linked-pkg:
+        specifier: link:../local
+        link: true
+`
+
+// importers 面（T3）：yaml 硬错误（重复映射键）→ importersRootDependencies null
+export const caseBadYaml = `${V9}packages:
+
+importers:
+
+  .:
+    dependencies:
+      dup-key: 1.0.0
+      dup-key: 2.0.0
+`
