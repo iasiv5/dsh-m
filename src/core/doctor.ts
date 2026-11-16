@@ -19,6 +19,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
 import { satisfies, validRange } from 'semver'
 import { dshHome } from './env.js'
+import { parseLockfile } from './lockfile.js'
 import { readProfileDeps, resolvePluginDir, readPkgJson } from './installed.js'
 
 // ---------- 报告类型（Task 1 契约；schema 版本化，后续检查项扩展 finding 枚举不破坏消费方） ----------
@@ -386,10 +387,10 @@ interface LockImporters {
 }
 
 /**
- * 自建最小 lockfile 解析（评审 R1.8：仓内无可复用的 importers 解析导出——
- * npm-integrity.ts 仅 integrity/overrides，profile-transaction 的 lock 解析为模块私有）。
- * 仅认 lockfileVersion 9.0 实测形状 `importers.'.'.dependencies.{specifier,version}`；
- * 其他版本 supported:false（全 null，unknown≠broken 不猜）。
+ * lockfile importers 账实观测（ADR-0037 T7：yaml 解析收敛到锁档观测 view，评审 R1.8 的
+ * 「仓内无可复用解析导出」自此消解）。仅认 lockfileVersion 9.x 实测形状
+ * `importers.'.'.dependencies.{specifier,version}`；其他版本 supported:false（全 null，
+ * unknown≠broken 不猜）。yaml 硬错误 → view 返回 null → supported:false（fail-closed 同判）。
  */
 async function readLockImporters(lockPath: string): Promise<LockImporters> {
   let text: string
@@ -398,29 +399,13 @@ async function readLockImporters(lockPath: string): Promise<LockImporters> {
   } catch {
     return { map: new Map(), supported: false } // 无 lockfile → 全 null（unknown≠broken）
   }
-  try {
-    const doc = parseDocument(text)
-    const lv = doc.getIn(['lockfileVersion'], true)
-    const lvStr = lv === undefined || lv === null ? '' : String(lv)
-    if (!lvStr.startsWith('9.')) return { map: new Map(), supported: false }
-    const js = doc.toJS() as {
-      importers?: Record<string, { dependencies?: Record<string, { version?: unknown }> }>
-    }
-    const depsObj = js?.importers?.['.']?.dependencies ?? {}
-    const map = new Map<string, string>()
-    for (const [name, value] of Object.entries(depsObj)) {
-      // link: 依赖在 lock 里是 { specifier, link: true } 无 version → 自然落空（按契约置 null）
-      if (value && typeof value === 'object' && typeof value.version === 'string' && value.version) {
-        // pnpm lock v9 的 version 可带 peer 后缀：`0.9.28(@deepseek-ai/schemastery@3.18.4)`
-        // ——剥去**全部**括号后缀再入账（2026-10-04 单层后缀曾误报 4 条；issue #44 缺陷 A：
-        // 多 peer 依赖带多组后缀 `1.2.3(@a@1)(@b@2)`，单层正则剥后残留同样误报，2026-11-04 修）
-        map.set(name, value.version.replace(/(\([^)]*\))+$/, ''))
-      }
-    }
-    return { map, supported: true }
-  } catch {
+  const view = parseLockfile(text)
+  if (view.lockfileVersion === null || !view.lockfileVersion.startsWith('9.')) {
     return { map: new Map(), supported: false }
   }
+  const map = view.importersRootDependencies()
+  if (map === null) return { map: new Map(), supported: false }
+  return { map, supported: true }
 }
 
 /** semver.satisfies 安全包装：任一侧非法（dist-tag / workspace 协议等）→ null（不可判定，不猜）。 */
