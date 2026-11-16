@@ -154,7 +154,7 @@ function readLockfileVersion(lines: string[]): string | null {
   return versionLine.split(':').slice(1).join(':').trim().replace(/^['"]|['"]$/g, '')
 }
 
-/** overrides 区块行扫描（npm-integrity readPnpmLockOverrides 语义逐字迁移：恰好 2 空格续行、三引号形态、首条失败即停）。 */
+/** overrides 区块行扫描（npm-integrity 旧 overrides 读取语义逐字迁移：恰好 2 空格续行、三引号形态、首条失败即停）。 */
 function readOverrides(lines: string[]): Record<string, string> {
   const start = lines.findIndex((l) => l.trim() === 'overrides:')
   const result: Record<string, string> = {}

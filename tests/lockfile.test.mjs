@@ -126,7 +126,7 @@ describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
   })
 })
 
-// T2：overrides 面——期望值与 tests/rollback-heal.test.mjs describe readPnpmLockOverrides 现值逐字对齐（B9 冻结语义）
+// T2：overrides 面——期望值与 tests/rollback-heal.test.mjs overrides describe 现值逐字对齐（B9 冻结语义）
 describe('锁档观测 · overrides 面（ADR-0037 T2）', () => {
   it('引号 scoped 键与无引号键混排（rollback-heal :373 现值）', () => {
     const v = parseLockfile(`lockfileVersion: '9.0'

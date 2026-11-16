@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { installFromRegistry } from '../lib/core/market-mutation.js'
-import { readPnpmLockOverrides } from '../lib/core/npm-integrity.js'
+import { parseLockfile } from '../lib/core/lockfile.js'
 import { classifyPnpmError } from '../lib/core/dsh-cli.js'
 import { TransactionError } from '../lib/core/profile-transaction.js'
 import { _resetMergedMarketForTests } from '../lib/core/merged-market.js'
@@ -367,7 +367,7 @@ describe('rollback-heal：升级失败回滚与 frozen 自愈', () => {
   })
 })
 
-describe('readPnpmLockOverrides：lockfile overrides 区块解析', () => {
+describe('view.overrides：lockfile overrides 区块解析', () => {
   it('引号 scoped 键与无引号键混排', () => {
     const text = `lockfileVersion: '9.0'
 
@@ -378,7 +378,7 @@ overrides:
 
 importers:
 `
-    assert.deepEqual(readPnpmLockOverrides(text), {
+    assert.deepEqual(parseLockfile(text).overrides, {
       '@deepseek-ai/dsh-credentials-local': '0.1.1-rc.2',
       isarray: '2.0.0',
       'nested@1>child': '3.0.0',
@@ -386,7 +386,7 @@ importers:
   })
 
   it('无 overrides 区块返回空对象；空区块返回空对象', () => {
-    assert.deepEqual(readPnpmLockOverrides("lockfileVersion: '9.0'\npackages:\n"), {})
-    assert.deepEqual(readPnpmLockOverrides("lockfileVersion: '9.0'\noverrides:\nimporters:\n"), {})
+    assert.deepEqual(parseLockfile("lockfileVersion: '9.0'\npackages:\n").overrides, {})
+    assert.deepEqual(parseLockfile("lockfileVersion: '9.0'\noverrides:\nimporters:\n").overrides, {})
   })
 })

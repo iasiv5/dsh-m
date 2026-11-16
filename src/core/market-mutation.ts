@@ -291,7 +291,7 @@ function lockResolutionOf(lockText: string, pkg: string): { version?: string; in
   if (body === null) return null
   const text = body.join('\n')
   const version = /version:\s*'?([^'\n]+)/.exec(text)?.[1]?.trim()
-  // 0.5.1：integrity 捕获排除 flow 结尾（`,`/`}`/引号）——与 npm-integrity.ts parsePackagesSection
+  // 0.5.1：integrity 捕获排除 flow 结尾（`,`/`}`/引号）——与 npm-integrity 的 integrity 捕获口径一致
   // 同口径；旧 `(\S+)` 会把 `{integrity: sha512-...}` 的收尾 `}` 一起带进 prior 证据。
   const integrity = /integrity:\s*([^,}\s'"]+)/.exec(text)?.[1]?.trim()
   // issue #44 同根因类（2026-11-04）：commit identity 三级观测——体内 `commit:` 字段 →

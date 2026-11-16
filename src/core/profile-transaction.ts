@@ -47,12 +47,12 @@ import {
   assertNpmIntegrity,
   atomicWriteFile,
   readPnpmLockIntegrity,
-  readPnpmLockOverrides,
   restoreSnapshots,
   snapshotFiles,
   verifySnapshots,
   type ProfileFileSnapshot,
 } from './npm-integrity.js'
+import { parseLockfile } from './lockfile.js'
 import {
   isSafePluginTarget,
   makeDshRunner,
@@ -366,7 +366,7 @@ async function restoreOverridesFromLock(profileDir: string): Promise<string | nu
   } catch {
     return null
   }
-  const lockOverrides = readPnpmLockOverrides(lockText)
+  const lockOverrides = parseLockfile(lockText).overrides
   const doc = await readManifestDoc(profileDir)
   if (!doc) return null
   const pnpm = doc.pnpm !== null && typeof doc.pnpm === 'object' && !Array.isArray(doc.pnpm)
