@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { dshHome, webProfileDir, WEB_PROFILE } from './env.js'
+import { parseLockfile } from './lockfile.js'
 import {
   runProfileTransaction,
   makeNpmWarmPackument,
@@ -260,52 +261,6 @@ export interface PreMutationSnapshot {
   mapping: { workspace: Array<{ key: string; patchPath: string }>; manifest: Array<{ key: string; patchPath: string }> }
 }
 
-/** lockfile packages 段的目标包 resolution 提取（行扫描：键行 `pkg@ver:` → 收集至下一键行；引号/嵌套键兼容）。 */
-function lockResolutionOf(lockText: string, pkg: string): { version?: string; integrity?: string; commit?: string } | null {
-  // 只扫顶层 packages: 段（importer 段的同名键不参与；packages: 后条目缩进两空格）
-  const pkgsAt = lockText.split('\n').findIndex((l) => l.trim() === 'packages:')
-  if (pkgsAt < 0) return null
-  const lines = lockText.split('\n').slice(pkgsAt + 1)
-  let body: string[] | null = null
-  let matchedKey: string | null = null
-  for (const line of lines) {
-    if (body !== null && /^\S/.test(line)) break // 顶层新段 → 收集结束
-    // 0.5.1 修复：收尾引号必须可选消耗——pnpm lockfile 对 scoped 包键恒带引号
-    //（`'@scope/name@1.2.3':`），旧正则匹配不到任何带引号键，导致 scoped 已装插件
-    // 的 lockResolution 恒为 null → derivePrior 误判 restorable:false → 升级被守卫硬拒。
-    // issue #44 同根因类（2026-11-04）：键捕获组 `[^\s':]+` 排除冒号——github tarball
-    // 安装的键是完整 URL（`pkg@https://codeload…/tar.gz/<sha>`），首个冒号处截断即失配。
-    // 改非贪婪 `(.+?)`（键尾 `'?:\s*$` 锚不变），引号/无引号/URL 键三形态统一可解析。
-    const keyMatch = /^  '?(?:[^'\n]*node_modules\/)?(.+?)'?:\s*$/.exec(line)
-    if (keyMatch) {
-      if (body) break
-      const key = keyMatch[1] ?? ''
-      if (key === pkg || key.startsWith(`${pkg}@`)) {
-        body = []
-        matchedKey = key
-      }
-      continue
-    }
-    if (body) body.push(line)
-  }
-  if (body === null) return null
-  const text = body.join('\n')
-  const version = /version:\s*'?([^'\n]+)/.exec(text)?.[1]?.trim()
-  // 0.5.1：integrity 捕获排除 flow 结尾（`,`/`}`/引号）——与 npm-integrity 的 integrity 捕获口径一致
-  // 同口径；旧 `(\S+)` 会把 `{integrity: sha512-...}` 的收尾 `}` 一起带进 prior 证据。
-  const integrity = /integrity:\s*([^,}\s'"]+)/.exec(text)?.[1]?.trim()
-  // issue #44 同根因类（2026-11-04）：commit identity 三级观测——体内 `commit:` 字段 →
-  // 键内 40 位 hex → 体 tarball URL 内 40 位 hex。gitHosted tarball 形态（pnpm 对 github:
-  // spec 的实际产出）无 `commit:` 字段，SHA 只在键名/tarball URL 内；与
-  // profile-transaction.ts lockCommitOf 同一口径。
-  const tarball = /tarball:\s*([^,}\s'"]+)/.exec(text)?.[1]?.trim()
-  const commit = /commit:\s*'?([0-9a-f]{40})/.exec(text)?.[1]?.trim()
-    ?? (matchedKey ? /([0-9a-f]{40})/.exec(matchedKey)?.[1] : undefined)
-    ?? (tarball ? /([0-9a-f]{40})/.exec(tarball)?.[1] : undefined)
-  if (!version && !integrity && !commit) return null
-  return { ...(version ? { version } : {}), ...(integrity ? { integrity } : {}), ...(commit ? { commit } : {}) }
-}
-
 /** 变更前全量快照（v6）：deps / lock resolutions / 双落点 mapping。读取失败 → unavailable（fail-closed 拒绝安装）。 */
 export async function capturePreMutationState(profileDir: string): Promise<{ kind: 'unavailable'; reason: string } | { kind: 'snapshot'; snapshot: PreMutationSnapshot }> {
   try {
@@ -339,9 +294,18 @@ export async function capturePreMutationState(profileDir: string): Promise<{ kin
       lockText = ''
     }
     const lockResolutions: PreMutationSnapshot['lockResolutions'] = {}
+    // 锁档观测（ADR-0037）：parse-once——依赖循环不再逐包全文重扫；observationOf 无证据字段 → null
+    const lockView = lockText === '' ? null : parseLockfile(lockText)
     for (const name of Object.keys(deps)) {
-      const res = lockResolutionOf(lockText, name)
-      if (res) lockResolutions[name] = res
+      const obs = lockView?.observationOf(name)
+      if (obs) {
+        const { version, integrity, commit } = obs
+        lockResolutions[name] = {
+          ...(version !== undefined ? { version } : {}),
+          ...(integrity !== undefined ? { integrity } : {}),
+          ...(commit !== undefined ? { commit } : {}),
+        }
+      }
     }
     const workspaceMapping: Array<{ key: string; patchPath: string }> = []
     try {
@@ -792,7 +756,8 @@ async function installEntryLocked(
       // lock commit identity 从实际 pnpm-lock.yaml 独立观测（InstallResult.sha 是请求时期望值，
       // 非独立观测）；观测不到 → null（补偿复验见 null 即拒绝，不回显请求期望值）——issue #44 同根因类，2026-11-04
       const lockText = await readFile(join(profileDir, 'pnpm-lock.yaml'), 'utf8')
-      const lockCommit = lockResolutionOf(lockText, realKey)?.commit ?? null
+      // 锁档观测（ADR-0037）：commit 三级观测走 view（体内 commit: → 键内 hex → tarball URL 内 hex）
+      const lockCommit = parseLockfile(lockText).observationOf(realKey)?.commit ?? null
       await throwCompensated({
         pkg: realKey,
         guard,

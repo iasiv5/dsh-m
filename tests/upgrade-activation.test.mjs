@@ -135,7 +135,7 @@ describe('upgradePlugin × 生效判定（T3）', () => {
     const newSha = 'a'.repeat(40)
     const profileDir = txProfile({
       'package.json': JSON.stringify({ name: 'p', private: true, dependencies: { 'owner-repo': `github:owner/repo#${oldSha}` } }, null, 2) + '\n',
-      // 2026-11-04 issue #44 同根因类修复后 lockResolutionOf 的 URL 键已可解析；本夹具保留
+      // 2026-11-04 issue #44 同根因类修复后 URL 键已可解析（今锁档观测 observationOf 同语义）；本夹具保留
       // 无冒号形态（合成键 `owner-repo@<sha>` + 体内 commit: 字段），断言不受键形态影响
       'pnpm-lock.yaml': `lockfileVersion: '9.0'\n\npackages:\n  'owner-repo@${oldSha}':\n    commit: ${oldSha}\n    resolution: {tarball: owner/repo/${oldSha}}\n`,
       'pnpm-workspace.yaml': 'packages:\n  - .\n',
