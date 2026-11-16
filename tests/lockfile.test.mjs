@@ -53,7 +53,7 @@ describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
     assert.deepEqual(v.anomalies.duplicateKeys, [])
   })
 
-  it('等价性：规范锁上 A 形无约束捕获 ≡ C 形前缀约束捕获（决议 5；A 探针快照自 market-mutation.ts:296）', () => {
+  it('等价性：规范锁上 A 形无约束捕获 ≡ C 形前缀约束捕获（决议 5；A 探针快照自 market-mutation 旧 integrity 正则形态，见夹具注）', () => {
     const aForm = /integrity:\s*([^,}\s'"]+)/.exec(caseEquivalence.body)?.[1]
     const cForm = parseLockfile(caseEquivalence.lock).observationOf('pkg-x')?.integrity
     assert.equal(cForm, aForm)

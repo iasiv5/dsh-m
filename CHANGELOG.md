@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 未发布 特性：锁档观测单源（ADR-0037）——pnpm-lock.yaml 观测解析五产地收敛
+
+- **特性：锁档观测单源（ADR-0037，GLOSSARY「锁档观测」）**：pnpm-lock.yaml 的观测解析收敛为全仓唯一产地 `src/core/lockfile.ts`（parse-once 视图：包观测 `observationOf`/`candidatesOf` + 顶层 overrides + importers 根依赖惰性观测）。退休五份各自维护的产地：`lockResolutionOf`（market-mutation）、`lockVersionOf`/`lockCommitOf`（profile-transaction）、`parsePackagesSection`/`readPnpmLockOverrides`（npm-integrity）、doctor 自建 importers yaml 解析——此前靠注释互指「同一口径」维持对齐（issue #44 同一正则缺陷曾于 2026-11-04 在两份产地同日各修一遍）。`npm-integrity.readPnpmLockIntegrity` 重写为 view 上的薄政策层（v9 硬门/重复键拒绝/多候选歧义 fail-closed，三条异常文案与门序逐字节冻结），签名不变；四个消费端（市场变更编排先在证据、事务复验与补偿、npm 完整性断言与冻结自愈、体检账实）同源消费；capture 依赖循环改 parse-once（不再逐包全文重扫）。
+- **行为变化包络（对 pnpm 自产规范锁零行为；以下仅限此前观测不到/判不了的形态，issue #72 先例声明）**：① 双引号键此前 market-mutation/profile-transaction 两产地观测不到、现在可观测；② 旧 market-mutation 捕获的「任意冒号行早截断」退役为缩进感知块扫描（截断点之后的字段此前丢失、现在可观测）；③ 体检对非引号 `lockfileVersion: 9.0` 从 unsupported → supported；④ view importers 面对带 yaml 硬错误的文本返回 null（体检同判 supported:false）。既有测试期望值零改动（npm-integrity/rollback-heal/doctor 等套件原断言原值过绿）。
+- **测试**：typecheck 0 错；新增 `tests/lockfile.test.mjs`（25 例：packages 面观测 16 + overrides 面 4 + importers 面 5，共享夹具 `tests/fixtures/lockfile-cases.mjs`）与真实规范锁只读 smoke（anomalies 空哨兵）；退休符号普查归零（5 个旧符号）；npm-integrity 套件零改动过绿 = 文案保真证据；market-mutation 44 例、profile-transaction 86 例、doctor、rollback-heal 套件分项全绿（无总数主张）。
+- **兼容性**：`dshm` CLI 接口零变化；对外信封（错误文案、事务失败态码）零变化。回退面：revert 对应重构提交序列（T4-T7）+ 版本递增。
+
 ### 0.12.19 修复：包内补丁按 dsh.bundle.patch 声明路径解析 + 插件行归属认 file:// 模块路径（issue #72）
 
 - **背景**：第三方插件 `cc-safety-net` 2.7.13 按 DSH 官方 bundle 约定把补丁层声明在包内自定义路径（`package.json` 的 `dsh.bundle.patch = "./dist/deepseek-harness/cordis.patch.yml"`；官方 `@deepseek-ai/dsh-app-boot` 的 `bundlePatchFiles()` 口径 = string | string[]，相对包目录解析——app.asar 实读定谳）。dsh-m 三处只认根级 `cordis.patch.yml` / 精确名字匹配的旧假设在该形态下连环失效：已启用插件被市场显示为未启用、开关委派复读恒 `restart-required`、行覆盖清理恒空转、安装守卫壳豁免误拦且跨包 insert id 冲突漏检、安装提示误报「无补丁层」。issue 报告者的三条指控与实测复现全部核实属实（0.12.17 / 0.12.18 同代码）。
@@ -1090,6 +1097,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### Unreleased Feature: lockfile observation single source (ADR-0037) — five pnpm-lock.yaml parsing origins consolidated
+
+- **Feature: lockfile observation single source (ADR-0037, GLOSSARY "锁档观测")**: pnpm-lock.yaml observation parsing consolidated into the repo-wide sole origin `src/core/lockfile.ts` (parse-once view: per-package `observationOf`/`candidatesOf` + top-level overrides + lazy importers root-dependency observation). Five independently maintained origins retired: `lockResolutionOf` (market-mutation), `lockVersionOf`/`lockCommitOf` (profile-transaction), `parsePackagesSection`/`readPnpmLockOverrides` (npm-integrity), and doctor's self-built importers yaml parsing — previously kept aligned via cross-referencing "same-semantics" comments (the same regex defect of issue #44 was fixed twice on the same day, 2026-11-04, in two origins). `npm-integrity.readPnpmLockIntegrity` is rewritten as a thin policy layer over the view (v9 hard gate / duplicate-key rejection / multi-candidate ambiguity fail-closed; three exception messages and gate order frozen byte-for-byte), signature unchanged; four consumers (market mutation prior evidence, transaction re-verify & compensation, npm integrity assertion & frozen self-heal, doctor account audit) now share the source; capture dependency loops are parse-once (no more full-text rescan per package).
+- **Behavior envelope (zero behavior change for well-formed pnpm-produced locks; limited to forms previously unobservable/undecidable, declared per the issue #72 precedent)**: ① double-quoted keys were unobservable by the market-mutation/profile-transaction origins, now observable; ② the legacy "truncate at any colon line" body capture is retired in favor of indent-aware block scanning (fields after a truncation point, previously lost, are now observable); ③ doctor treats unquoted `lockfileVersion: 9.0` as supported (previously unsupported); ④ the view's importers face returns null on texts with hard yaml errors (doctor maps to supported:false). Existing test expectations unchanged (npm-integrity/rollback-heal/doctor suites pass with original assertions and values).
+- **Tests**: typecheck 0 errors; new `tests/lockfile.test.mjs` (25 cases: 16 packages face + 4 overrides face + 5 importers face, shared fixtures in `tests/fixtures/lockfile-cases.mjs`) and a read-only real-lock smoke (empty-anomalies sentinel); retired-symbol census at zero (5 old symbols); npm-integrity suite passes unchanged = message-fidelity evidence; market-mutation 44, profile-transaction 86, doctor and rollback-heal suites green per-suite (no full-suite totals claimed).
+- **Compatibility**: `dshm` CLI interface unchanged; outbound envelopes (error messages, transaction failure codes) unchanged. Rollback: revert the refactor commit series (T4-T7) + version bump.
 
 ### 0.12.19 Fix: resolve in-package patch files via declared dsh.bundle.patch paths + own plugin-manager rows by resolved module path (issue #72)
 
