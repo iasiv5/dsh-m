@@ -110,7 +110,7 @@
 - 涉及文件：`src/core/lockfile.ts`、`tests/lockfile.test.mjs`
 - 接口契约
   - Consumes: Task 1 的 `parseLockfile`；`yaml` 包 `parseDocument`（doctor.ts 现 import 迁入 lockfile.ts）
-  - Produces: `LockfileView.importersRootDependencies(): Map<string, string> | null`——惰性 memoized；解析 `importers.'.'.dependencies`，仅收 `version` 为非空字符串者，version 剥全部尾部括号组（与 packages 面同一归一正则）；`link:` 依赖无 version 自然落空；yaml 抛错 → null。**不做 9.x 门**（门留 doctor，Task 7）。
+  - Produces: `LockfileView.importersRootDependencies(): Map<string, string> | null`——惰性 memoized；解析 `importers.'.'.dependencies`，仅收 `version` 为非空字符串者，version 剥全部尾部括号组（与 packages 面同一归一正则）；`link:` 依赖无 version 自然落空；yaml 硬错误（`doc.errors > 0`）或解析异常 → null（产出评审 I-2 措辞对齐）。**不做 9.x 门**（门留 doctor，Task 7）。
 - 验证范围：新 describe 绿；doctor 套件仍绿（未动）。
 
 - [ ] Step 1: 写失败测试（9.0 形状解析 / link: 落空 / 多组 peer 后缀剥净 `1.2.3(@a@1)(@b@2)` / 坏 yaml → null / 无 importers → 空 Map / 惰性：同一 view 二次调用返回同引用）

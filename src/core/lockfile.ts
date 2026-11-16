@@ -35,7 +35,7 @@ export interface LockfileView {
   overrides: Record<string, string>
   /** 观测异常透出：归一后重复键（每多一份重复记一条）。不抛错——抛错政策归消费端。 */
   anomalies: { duplicateKeys: string[] }
-  /** importers.'.'.dependencies 版本观测（惰性 memoized；yaml 抛错 → null；版本已归一剥尾部括号组）。不做 9.x 门——门归消费端。 */
+  /** importers.'.'.dependencies 版本观测（惰性 memoized；yaml 硬错误（doc.errors > 0）或解析异常 → null；版本已归一剥尾部括号组）。不做 9.x 门——门归消费端。 */
   importersRootDependencies(): Map<string, string> | null
 }
 

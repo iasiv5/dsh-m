@@ -22,7 +22,11 @@ import {
   caseUnquotedVersion,
   caseImportersVersions,
   caseBadYaml,
+  caseVersionGateLock,
+  caseMultiCandidate,
+  caseOrphanKey,
 } from './fixtures/lockfile-cases.mjs'
+import { readPnpmLockIntegrity } from '../lib/core/npm-integrity.js'
 
 describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
   it('registry 引号键：integrity 观测', () => {
@@ -123,6 +127,44 @@ describe('锁档观测 · packages 面（ADR-0037 T1）', () => {
     const v = parseLockfile(caseNoPackages)
     assert.equal(v.observationOf('pkg-a'), null)
     assert.deepEqual(v.anomalies.duplicateKeys, [])
+  })
+
+  it('孤儿键：packages: 后首行缩进 >2 的键不入观测（indent !== 2 检查实防线；产出评审 I-4）', () => {
+    const v = parseLockfile(caseOrphanKey)
+    assert.equal(v.observationOf('orphan'), null)
+    assert.deepEqual(v.anomalies.duplicateKeys, [])
+  })
+})
+
+// 产出评审 I-3 强化：文案保真哨兵从关键词级升字节级——三条异常文案完整断言（npm-integrity 套件的
+// B9 冻结面不可加强，本 describe 在非冻结的 view 套件承载字节级钉；改文案必先改此处并知会评审纪律）
+describe('文案保真哨兵 · 字节级（产出评审 I-3）', () => {
+  it('版本门文案逐字节（含「实际 8.0」实值插值）', () => {
+    assert.throws(
+      () => readPnpmLockIntegrity(caseVersionGateLock, 'pkg-a', '1.2.3'),
+      (err) => err.message === 'pnpm lockfile 版本不是 9.0（实际 8.0），拒绝解析',
+    )
+  })
+
+  it('版本门文案·缺失形态逐字节（无 lockfileVersion 行 → 实际 缺失）', () => {
+    assert.throws(
+      () => readPnpmLockIntegrity(caseNoVersionLine, 'pkg-a', '1.2.3'),
+      (err) => err.message === 'pnpm lockfile 版本不是 9.0（实际 缺失），拒绝解析',
+    )
+  })
+
+  it('重复键文案逐字节（归一后首键入文案）', () => {
+    assert.throws(
+      () => readPnpmLockIntegrity(caseDupKeys, 'pkg-dup', '1.0.0'),
+      (err) => err.message === 'pnpm lockfile packages 键重复: pkg-dup@1.0.0',
+    )
+  })
+
+  it('多候选歧义文案逐字节（候选计数插值）', () => {
+    assert.throws(
+      () => readPnpmLockIntegrity(caseMultiCandidate, 'pkg-multi', '1.0.0'),
+      (err) => err.message === '无法唯一定位 pkg-multi@1.0.0 的 integrity（2 个候选解析结果不一致），fail closed',
+    )
   })
 })
 

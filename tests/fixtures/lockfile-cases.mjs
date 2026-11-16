@@ -159,3 +159,25 @@ importers:
       dup-key: 1.0.0
       dup-key: 2.0.0
 `
+
+// 文案保真哨兵（产出评审 I-3 强化）·版本门：非 9.0 锁
+export const caseVersionGateLock = `lockfileVersion: '8.0'
+
+packages:
+  'pkg-a@1.2.3':
+    resolution: {integrity: sha512-aaa}
+`
+
+// 文案保真哨兵（产出评审 I-3 强化）·多候选歧义：同 pkg@version 两个候选、integrity 不一致
+export const caseMultiCandidate = `${V9}packages:
+  'pkg-multi@1.0.0':
+    resolution: {integrity: sha512-m1}
+  'pkg-multi@1.0.0(@p@1)':
+    resolution: {integrity: sha512-m2}
+`
+
+// 孤儿键（产出评审 I-4 强化）：packages: 后首行缩进 >2 的键不入观测——`indent !== 2` 检查的实防线
+export const caseOrphanKey = `${V9}packages:
+    orphan@1.0.0:
+      resolution: {integrity: sha512-ooo}
+`
