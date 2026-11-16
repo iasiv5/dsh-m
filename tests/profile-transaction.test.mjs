@@ -1909,7 +1909,7 @@ describe('M2 Task 3：compensate-install 补偿事务', () => {
       },
       { runner: () => tx.runner, profileDir: dir },
     )
-    assert.equal(res.ok, true, `HEAD 上 lockVersionOf 返回带后缀原始串 → integrity 查无 → rejected：${JSON.stringify(res)}`)
+    assert.equal(res.ok, true, `HEAD 上观测返回带后缀原始串 → integrity 查无 → rejected：${JSON.stringify(res)}`)
     assert.deepEqual(tx.calls.remove, ['pkg-a'])
   })
 
