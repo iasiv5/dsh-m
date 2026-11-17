@@ -8,6 +8,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.21 安全修复：本地热部署撞名保护 + 升级白名单（ADR-0038）
+
+- **安全修复（issue #76）**：`file:`/`link:` 本地部署的插件与市场同名条目撞名时，此前会误报「可升级」红点，且点升级会**静默装成别人发布的同名 npm 包**。现在：未列入白名单的本地部署一律不参与线上升级与更新探测（红点消失、批量升级跳过、点升级给出结构化指引）——v0.11.0（#30）承诺的「本地开发安装不从线上更新」首次在全部场景成立。
+- **新功能：本地热部署升级白名单（写死在源码）**：名单位于 `src/core/local-allow.ts`（`LOCAL_UPGRADE_ALLOWLIST`），当前 12 项为维护者自研插件（均为 npm 上 iasiv5 所有的包）。名单内包名的 `file:`/`link:` 本地部署保留覆盖升级通路——npm 发布新版后点升级即以线上版本覆盖本地副本。CLI 可用环境变量 `DSHM_LOCAL_UPGRADE_ALLOW` 临时追加。
+- **行为变化须知**：白名单随包发布。若你本地部署了与名单同名的插件（例如自己 fork 的同名包），会出现可升级红点，点升级会被覆盖为维护者的线上版本。
+- 名单内插件的详情弹窗新增「本地热部署」提示行（升级将以线上同名版本覆盖本地副本）。
+- **测试**：新增 `tests/local-allow.test.mjs`（4 例）、`tests/upgrade-target.test.mjs`（+8 例）、`tests/market.test.mjs`（+3 例）；全量 `npm test` 通过（无总数主张）。
+- **兼容性**：npm / github 源的升级与探测行为零变化；`dshm` CLI 接口零变化（新增可选环境变量）。回退面：revert 修复提交（3545b1d）+ 版本递增。
+
 ### 0.12.20 特性：锁档观测单源（ADR-0037）——pnpm-lock.yaml 观测解析五产地收敛
 
 - **特性：锁档观测单源（ADR-0037，GLOSSARY「锁档观测」）**：pnpm-lock.yaml 的观测解析收敛为全仓唯一产地 `src/core/lockfile.ts`（parse-once 视图：包观测 `observationOf`/`candidatesOf` + 顶层 overrides + importers 根依赖惰性观测）。退休五份各自维护的产地：`lockResolutionOf`（market-mutation）、`lockVersionOf`/`lockCommitOf`（profile-transaction）、`parsePackagesSection`/`readPnpmLockOverrides`（npm-integrity）、doctor 自建 importers yaml 解析——此前靠注释互指「同一口径」维持对齐（issue #44 同一正则缺陷曾于 2026-11-04 在两份产地同日各修一遍）。`npm-integrity.readPnpmLockIntegrity` 重写为 view 上的薄政策层（v9 硬门/重复键拒绝/多候选歧义 fail-closed，三条异常文案与门序逐字节冻结），签名不变；四个消费端（市场变更编排先在证据、事务复验与补偿、npm 完整性断言与冻结自愈、体检账实）同源消费；capture 依赖循环改 parse-once（不再逐包全文重扫）。
@@ -1097,6 +1106,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.21 Security fix: local-deploy collision guard + upgrade allowlist (ADR-0038)
+
+- **Security fix (issue #76)**: when a locally deployed (`file:`/`link:`) plugin shared its npm name with a market entry, dsh-m falsely flagged it as upgradable, and clicking upgrade silently installed someone else's same-named npm package. Now local deploys not on the allowlist never upgrade online nor get probed (no red dot, skipped in batch upgrade, structured guidance on demand) — the v0.11.0 (#30) promise "local dev installs do not update from online" now holds in every scenario.
+- **New: local upgrade allowlist (hardcoded in source)**: the list lives in `src/core/local-allow.ts` (`LOCAL_UPGRADE_ALLOWLIST`); its 12 current entries are the maintainer's own plugins (all npm packages owned by iasiv5). Allowlisted `file:`/`link:` local deploys keep the overwrite-upgrade path — after publishing a new version to npm, one click upgrades the local copy to the online version. CLI temporary append: `DSHM_LOCAL_UPGRADE_ALLOW`.
+- **Behavior change to note**: the allowlist ships with the package. If you locally deploy a plugin whose name matches an entry (for example a fork under the same name), it may show an upgrade red dot, and upgrading overwrites it with the maintainer's online version.
+- The detail modal of an allowlisted plugin shows a "Local deploy" row (upgrading overwrites the local copy with the online version).
+- **Tests**: new `tests/local-allow.test.mjs` (4 cases); `tests/upgrade-target.test.mjs` (+8 cases); `tests/market.test.mjs` (+3 cases); full `npm test` green (no total-count claim).
+- **Compatibility**: upgrade and probe behavior for npm / github sources is unchanged; `dshm` CLI interface unchanged (one optional environment variable added). Rollback: revert the fix commit (3545b1d) plus version bump.
 
 ### 0.12.20 Feature: lockfile observation single source (ADR-0037) — five pnpm-lock.yaml parsing origins consolidated
 
