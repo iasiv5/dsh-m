@@ -6,6 +6,7 @@
  * （merged-market，ADR-0026 修订段口径）。
  */
 import { GITHUB_SPEC_RE, isLocalSpec, matchInstalledByEntry, mergedOutcome } from './merged-market.js'
+import { localUpgradeAllowSet } from './local-allow.js'
 import type { UpgradePath } from './market.js'
 import type { InstalledPlugin } from './installed.js'
 import type { InstallableEntry } from './market-mutation.js'
@@ -36,27 +37,46 @@ export function unsupportedReasonFor(target: { spec?: string; source?: string })
   return { code: 'source-unresolvable', detail: `来源 ${target.source} 不可线上解析，不做自动升级` }
 }
 
+/** issue #76/ADR-0038 白名单判定原子：local spec（file:/link:）× 包名在名单（npm 名精确匹配）。allow 缺席/空 = 无放行。 */
+export function localOverwriteAllowed(target: { pkg?: string; spec?: string }, allow?: ReadonlySet<string>): boolean {
+  if (!allow || allow.size === 0) return false
+  if (!isLocalSpec(typeof target.spec === 'string' ? target.spec : '')) return false
+  return typeof target.pkg === 'string' && allow.has(target.pkg)
+}
+
 /**
- * 升级通路投影（ADR-0026，B6）：registryId 命中 → catalog；其余经 unsupportedReasonFor
- * 判定——本地 spec（file:/link:，merged-market isLocalSpec）、source ∉ {npm,github}、
- * github 源 spec 解析不出 owner/repo（GITHUB_SPEC_RE，与 synthesizeInstallableEntry 同规）
- * → unsupported；可解析 → synthesized。ADR-0028：判定原子与合成共用单源，
- * 「与 synthesizeInstallableEntry 的分支口径逐点一致」由构造保证（c9faf21 漂移不再可能）。
+ * 升级通路投影（ADR-0026，B6）。issue #76/ADR-0038：本地部署（local-spec）未入白名单 → unsupported，
+ * 先于 registryId 短路（本地 spec 与市场同名条目撞名时 catalog 短路曾让 #30 的「本地开发安装不从线上
+ * 更新」承诺失效：读侧红点误报、写侧静默装错包）；白名单内本地部署走 registryId → catalog，否则 synthesized。
+ * 非本地 unsupported 维持既有序（registryId 先于 reason，与 resolveUpgradeTarget 判定序逐点一致）。
+ * ADR-0028：判定原子与合成共用单源。
  */
-export function upgradePathFor(item: { registryId?: string; spec?: string; source?: string }): UpgradePath {
+export function upgradePathFor(item: { registryId?: string; pkg?: string; spec?: string; source?: string }, allow?: ReadonlySet<string>): UpgradePath {
+  const reason = unsupportedReasonFor(item)
+  const allowed = localOverwriteAllowed(item, allow)
+  if (reason?.code === 'local-spec' && !allowed) return 'unsupported'
   if (item.registryId) return 'catalog'
-  return unsupportedReasonFor(item) ? 'unsupported' : 'synthesized'
+  return reason && !allowed ? 'unsupported' : 'synthesized'
 }
 
 /**
  * InstalledItem 升级通路单点装配（#35）：upgradePath 三态 + unsupported 项的成因码
  * upgradePathReason（条件赋值——catalog/synthesized 项字段缺席，金样零 diff 前提）。
- * market.ts 两装配点（早退臂/健康臂）共用；判定经 unsupportedReasonFor 单源驱动。
+ * issue #76：白名单内本地部署加标 localUpgradeAllowed=true（条件赋值，其余项字段缺席），
+ * 供客户端详情弹窗提示「升级将覆盖本地副本」。market.ts 两装配点（早退臂/健康臂）共用；
+ * 判定经 unsupportedReasonFor 单源驱动。
  */
-export function stampUpgradeProjection(item: { registryId?: string; spec?: string; source?: string; upgradePath?: UpgradePath; upgradePathReason?: UnsupportedReasonCode }): void {
-  item.upgradePath = upgradePathFor(item)
+export function stampUpgradeProjection(
+  item: { registryId?: string; pkg?: string; spec?: string; source?: string; upgradePath?: UpgradePath; upgradePathReason?: UnsupportedReasonCode; localUpgradeAllowed?: true },
+  allow?: ReadonlySet<string>,
+): void {
+  const allowed = localOverwriteAllowed(item, allow)
+  if (allowed) item.localUpgradeAllowed = true
+  else delete item.localUpgradeAllowed
+  item.upgradePath = upgradePathFor(item, allow)
   const reason = unsupportedReasonFor(item)
-  if (reason) item.upgradePathReason = reason.code
+  if (reason && !allowed) item.upgradePathReason = reason.code
+  else delete item.upgradePathReason
 }
 
 /** unsupported 成因短标签（#35，CLI/tools 渲染消费；client 走 i18n 键系不经此）。default 臂防投影字段缺席或 null。 */
@@ -93,13 +113,15 @@ export class UpgradePathUnsupportedError extends Error {
  * 本地 spec、github spec 解析不出 owner/repo、PluginSource 其余值（link/file/unknown——
  * installed.ts 五值域；穿透会命中 installEntryLocked 尾行普通 Error「缺少可安装来源」，
  * 违反 B5 结构化指引，故在此拦死）。ADR-0028：自 market-mutation.ts 迁入，
- * 判定经 unsupportedReasonFor 单源驱动。
+ * 判定经 unsupportedReasonFor 单源驱动。issue #76/ADR-0038：白名单内本地部署例外——
+ * 按 npm 同名包收编（adopt-online，合成条目与 npm 源同形）。
  */
-export function synthesizeInstallableEntry(target: InstalledPlugin): InstallableEntry {
+export function synthesizeInstallableEntry(target: InstalledPlugin, allow?: ReadonlySet<string>): InstallableEntry {
   const spec = typeof target.spec === 'string' ? target.spec : ''
   const reason = unsupportedReasonFor(target)
-  if (reason) throw new UpgradePathUnsupportedError(target.pkg, reason)
-  if (target.source === 'npm') {
+  if (reason && !localOverwriteAllowed(target, allow)) throw new UpgradePathUnsupportedError(target.pkg, reason)
+  // issue #76 adopt-online：白名单内本地部署按 npm 同名包收编（升级管线安全网全套继承）
+  if (target.source === 'npm' || localOverwriteAllowed(target, allow)) {
     return { id: `installed:${target.pkg}`, source: 'npm', npm: target.pkg }
   }
   const m = GITHUB_SPEC_RE.exec(spec)
@@ -136,6 +158,8 @@ export interface UpgradeTargetDeps {
  * profile 透传逐点复刻现行两梯（mergedOutcome 的 profile 必传且无内部缺省，错传将使
  * 社区物化代缓存段错位）：mergedOutcome 传 `opts.profile ?? WEB_PROFILE`；
  * communityTask / loadRegistry 传 raw `opts.profile`（二者内部自缺省）。
+ * issue #76/ADR-0038：unsupported 判定提前到 registry 加载之前——名单外本地 spec 不触网、
+ * 不发起任何请求，直接结构化拒绝（message 模板与尾臂逐字同形）；名单内继续既有编排序。
  * 只读不副作用：不做 journal、不进 mutation session、不抛业务错误——unsupported 以
  * 判别联合返回，信封映射（web 重抛 UpgradePathUnsupportedError / desktop 翻译
  * DesktopOpsError('upgrade-unsupported')）留在各 backend 边缘。
@@ -146,6 +170,13 @@ export async function resolveUpgradeTarget(
   opts: { namespace?: RegistryCacheNamespace; profile?: string; signal?: AbortSignal } = {},
   deps: UpgradeTargetDeps = {},
 ): Promise<UpgradeTargetResolution> {
+  const allow = localUpgradeAllowSet(cfg)
+  // issue #76/ADR-0038：本地部署（local-spec）未入白名单 → 先于 registry 加载与同名条目匹配即拒绝（撞名短路的根因）。
+  // 非本地 unsupported 维持既有序（匹配先于判定，尾臂拒绝）。
+  const early = unsupportedReasonFor(target)
+  if (early?.code === 'local-spec' && !localOverwriteAllowed(target, allow)) {
+    return { kind: 'unsupported', reason: { code: early.code, detail: early.detail, message: `「${target.pkg}」无法自动升级：${early.detail}` } }
+  }
   const loaded = deps.loaded ?? await (deps.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
   if (loaded.status !== 'unavailable') {
     const primary = loaded.registry.plugins.find((e) => matchInstalledByEntry(e, [target]))
@@ -167,8 +198,8 @@ export async function resolveUpgradeTarget(
     }
   }
   const reason = unsupportedReasonFor(target)
-  if (reason) {
+  if (reason && !localOverwriteAllowed(target, allow)) {
     return { kind: 'unsupported', reason: { code: reason.code, detail: reason.detail, message: `「${target.pkg}」无法自动升级：${reason.detail}` } }
   }
-  return { kind: 'resolved', entry: synthesizeInstallableEntry(target), matchPath: 'synthesized' }
+  return { kind: 'resolved', entry: synthesizeInstallableEntry(target, allow), matchPath: 'synthesized' }
 }

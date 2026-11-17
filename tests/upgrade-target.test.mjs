@@ -273,3 +273,63 @@ describe('stampUpgradeProjection（#35 投影）', () => {
     }
   })
 })
+
+// ---------- issue #76 / ADR-0038：本地热部署升级白名单（默认挡兑现 #30 + opt-in 放行） ----------
+// 背景：file:/link: 本地部署与市场同名条目撞名时，registryId 短路让 #30 的 local-spec 保护失效——
+// 读侧红点误报（probe 查别人家版本号）、写侧静默装成别人的包。白名单键 = npm 包名精确匹配；
+// 名单内恢复「覆盖升级」通路（维护者热部署工作流），名单外默认挡。
+describe('localUpgradeAllow 白名单（issue #76）', () => {
+  const mkLocal = (over = {}) => ({ pkg: 'p', name: 'P', version: '1.0.0', description: '', homepage: '', spec: 'file:../p', source: 'file', dsh: true, path: '/x', ...over })
+  beforeEach(() => _resetMergedMarketForTests())
+
+  it('R1 投影：撞名形态（registryId × file: spec）无名单 → unsupported（今日 catalog 误报，红）', () => {
+    assert.equal(upgradePathFor({ registryId: 'p-1', pkg: 'b', spec: 'file:../b', source: 'file' }), 'unsupported')
+  })
+
+  it('R1b 投影：同形在名单 → catalog + localUpgradeAllowed 标记 + 成因码不落', () => {
+    const item = { registryId: 'p-1', pkg: 'b', spec: 'file:../b', source: 'file' }
+    stampUpgradeProjection(item, new Set(['b']))
+    assert.equal(item.upgradePath, 'catalog')
+    assert.ok(!('upgradePathReason' in item), '名单内 catalog 项不携带成因码')
+    assert.equal(item.localUpgradeAllowed, true)
+  })
+
+  it('R1c 投影：非本地部署项（npm 安装）即使包名在名单也不写 localUpgradeAllowed', () => {
+    const item = { registryId: 'p-b', pkg: 'b', spec: '^1.0.0', source: 'npm' }
+    stampUpgradeProjection(item, new Set(['b']))
+    assert.ok(!('localUpgradeAllowed' in item), 'npm 安装项与白名单无关')
+    assert.equal(item.upgradePath, 'catalog')
+  })
+
+  it('R2 解析：primary 同名命中 × file: spec 无名单 → unsupported（今日 resolved/primary 静默装错包，红）', async () => {
+    const entry = { id: 'p-1', name: 'Foo', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'foo' }
+    const r = await resolveUpgradeTarget(mkLocal({ pkg: 'foo', name: 'foo' }), {}, {}, { loaded: readyLoaded([entry]), fetchCommunityCatalog: communityMustNotBeCalled })
+    assert.equal(r.kind, 'unsupported')
+    assert.equal(r.reason.code, 'local-spec')
+  })
+
+  it('R2b 解析：primary 命中 × file: spec 在名单 → resolved/primary（覆盖升级通路保住）', async () => {
+    const entry = { id: 'p-1', name: 'Foo', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'foo' }
+    const r = await resolveUpgradeTarget(mkLocal({ pkg: 'foo', name: 'foo' }), { localUpgradeAllow: ['foo'] }, {}, { loaded: readyLoaded([entry]), fetchCommunityCatalog: communityMustNotBeCalled })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'primary')
+  })
+
+  it('R2c 解析：双 miss × file: spec 在名单 → resolved/synthesized adopt npm 同名（adopt-online）', async () => {
+    const r = await resolveUpgradeTarget(mkLocal({ pkg: 'foo', name: 'foo' }), { localUpgradeAllow: ['foo'] }, {}, { loaded: readyLoaded([]), fetchCommunityCatalog: communityDisabled })
+    assert.equal(r.kind, 'resolved')
+    assert.equal(r.matchPath, 'synthesized')
+    assert.deepEqual(r.entry, { id: 'installed:foo', source: 'npm', npm: 'foo' })
+  })
+
+  it('R2d 解析：双 miss × file: spec 无名单 → unsupported（既有④语义，名单机制不放宽默认）', async () => {
+    const r = await resolveUpgradeTarget(mkLocal({ pkg: 'foo', name: 'foo' }), {}, {}, { loaded: readyLoaded([]), fetchCommunityCatalog: communityDisabled })
+    assert.equal(r.kind, 'unsupported')
+  })
+
+  it('R3 合成：file: spec 在名单 → npm 合成条目；无名单 → 抛 UpgradePathUnsupportedError（既有③语义）', () => {
+    const e = synthesizeInstallableEntry(mkLocal({ pkg: 'foo' }), new Set(['foo']))
+    assert.deepEqual(e, { id: 'installed:foo', source: 'npm', npm: 'foo' })
+    assert.throws(() => synthesizeInstallableEntry(mkLocal({ pkg: 'foo' })), (err) => err instanceof UpgradePathUnsupportedError)
+  })
+})

@@ -92,6 +92,8 @@ function cliConfig(): RegistryConfig {
     // DSHM_COMMUNITY_CATALOG=0 → 退出社区清单（合并市场退回纯主清单）
     communityCatalog: process.env.DSHM_COMMUNITY_CATALOG === '0' ? false : undefined,
     communityCatalogPin: process.env.DSHM_COMMUNITY_CATALOG_PIN || undefined,
+    // issue #76/ADR-0038：CLI 白名单（逗号/空白分隔）；热部署脚本可经环境变量放行本地部署的线上覆盖升级
+    localUpgradeAllow: (process.env.DSHM_LOCAL_UPGRADE_ALLOW || '').split(/[\s,]+/).filter(Boolean),
   }
 }
 

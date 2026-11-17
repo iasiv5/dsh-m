@@ -53,7 +53,8 @@ import {
 import type { CommunityEntry } from './community-adapter.js'
 import { normalizeSearchText, relevanceScore, tokenizeSearchText } from './search-relevance.js'
 import { GithubBudgetExhaustedError, createGithubRequestBudget, type GithubBudget } from './versions.js'
-import { stampUpgradeProjection, type UnsupportedReasonCode } from './upgrade-target.js'
+import { localUpgradeAllowSet } from './local-allow.js'
+import { localOverwriteAllowed, stampUpgradeProjection, unsupportedReasonFor, type UnsupportedReasonCode } from './upgrade-target.js'
 import { HttpError } from './httpx.js'
 import { annotateDirectStats, curatedGapKeys, loadCuratedStats, type LoadCuratedStatsInput, type LoadCuratedStatsResult } from './curated-stats.js'
 
@@ -257,6 +258,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestErrorCode?: LatestErrorCode
   /** 命中社区收录条目（主清单未收录；M1 Task 5） */
   community?: true
+  /** 本地部署升级白名单放行标记（issue #76/ADR-0038；stampUpgradeProjection 条件赋值，其余项字段缺席） */
+  localUpgradeAllowed?: true
   /** 本机声明图标 data URI（ADR-0025：官方 iconOf 语义自读；仅详情路径 icon:true 时产出） */
   iconDataUri?: string | null
   /** 升级通路投影（ADR-0026）：catalog=收录命中；synthesized=合成条目可升级；unsupported=本地/非线上来源 */
@@ -1068,6 +1071,8 @@ export async function listInstalledWithMeta(
         deadlineAt,
       })
 
+  // issue #76/ADR-0038 v1.3：本地热部署升级白名单（写死名单 + 脚本面 env，两臂共用单次派生）
+  const allow = localUpgradeAllowSet(cfg)
   if (loaded === 'deadline' || loaded.status === 'unavailable') {
     // registry 不可用：不做 matching/探测（原行为），但社区 summary 照常携带（CLI outdated 双源判定）
     const registryState = loaded === 'deadline' ? timeoutRegistryState(cfg) : stateOf(loaded)
@@ -1075,7 +1080,7 @@ export async function listInstalledWithMeta(
     // 此臂有意丢弃（安装/升级语义零变化——设计 2026-10-27「关键边界 3」）
     void community.merged
     // ADR-0026 投影落点①：早退臂不经 matchInstalled，registryId 必空——逐项按 spec/source 判定
-    for (const it of items) stampUpgradeProjection(it)
+    for (const it of items) stampUpgradeProjection(it, allow)
     return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
   }
 
@@ -1083,7 +1088,7 @@ export async function listInstalledWithMeta(
 
   matchInstalled(items, community.merged, community.lookupInstalled)
   // ADR-0026 投影落点②：健康臂在 registryId 写入后装配（catalog 判定可达）
-  for (const it of items) stampUpgradeProjection(it)
+  for (const it of items) stampUpgradeProjection(it, allow)
   // 两段加载（ADR-0008）：probeMode 控制探测段——缺省 'full' 行为不变；'none' 面板快列表跳过探测；
   // 'only' 面板第二段 TTL 30min（ADR-0008 修订：原 ttlMin=0 先删共享条目再重探，误伤浏览页/工具
   // TTL 缓存 + 每次挂载全量重探耗时显著（issue #59）；30min 对齐 dshmarket UPDATES_TTL_MS；
@@ -1091,7 +1096,7 @@ export async function listInstalledWithMeta(
   if ((opts.probeMode ?? 'full') !== 'none') {
     // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
     await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-    await probeLatest(items, { merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? INSTALLED_UPDATES_TTL_MIN : Math.max(0, cfg.cacheTtlMin ?? 60), force: opts.probeMode === 'only' ? opts.force === true : false }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+    await probeLatest(items, { allow, merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? INSTALLED_UPDATES_TTL_MIN : Math.max(0, cfg.cacheTtlMin ?? 60), force: opts.probeMode === 'only' ? opts.force === true : false }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
   }
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
@@ -1118,17 +1123,21 @@ function matchInstalled(
 /** 已装页 latest 探测（Q46 已装页豁免，但 GitHub 计入 request 预算 + 宿主滚动窗口）。 */
 async function probeLatest(
   items: InstalledItem[],
-  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number; force?: boolean; lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined },
+  ctx: { merged: Array<RegistryEntry | CommunityEntry>; registryAddress: string | null; ttlMin: number; force?: boolean; allow?: ReadonlySet<string>; lookup?: (item: InstalledItem) => RegistryEntry | CommunityEntry | undefined },
   d: MarketDeps,
   rt: { namespace: RegistryCacheNamespace; signal?: AbortSignal; githubBudget: GithubBudget; remaining: () => number; timeoutMs: number },
 ): Promise<void> {
   await mapWithConcurrency(items, LATEST_WORKERS, async (item) => {
+    // issue #76：本地部署（file:/link:）白名单外不探线上——不查同名市场条目的线上版本号（红点不亮）
+    const allowLocal = localOverwriteAllowed(item, ctx.allow)
+    if (unsupportedReasonFor(item)?.code === 'local-spec' && !allowLocal) return
     const entry = ctx.lookup ? ctx.lookup(item) : ctx.merged.find((e) => matchInstalledByEntry(e, [item]))
     // latest 探测沿用 listMarket 的 TTL cache；npm-only 条目（不在收录清单的已装包）也走
-    // latestCacheKey 归一格式（0.9.14：否则首段非 host/cli 会被落盘层静默跳过）
+    // latestCacheKey 归一格式（0.9.14：否则首段非 host/cli 会被落盘层静默跳过）；
+    // issue #76：白名单内本地部署双 miss 时同走 npm-only 归一键（adopt-online 红点信号）
     const cacheKey = entry
       ? latestCacheKey(rt.namespace, ctx.registryAddress ?? '', entry)
-      : item.source === 'npm'
+      : item.source === 'npm' || allowLocal
         ? latestCacheKey(rt.namespace, 'npm-only', { source: 'npm', id: item.pkg, npm: item.pkg })
         : null
     if (cacheKey) {
@@ -1142,7 +1151,7 @@ async function probeLatest(
         const budget = rt.remaining()
         try {
           let value: LatestValue | null = null
-          if (!entry && item.source === 'npm') {
+          if (!entry && (item.source === 'npm' || allowLocal)) {
             const latest = await d.npmLatest(item.pkg, Math.min(rt.timeoutMs, budget), rt.signal)
             value = { version: latest.version }
           } else if (entry?.source === 'npm' && entry.npm) {

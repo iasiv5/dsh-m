@@ -2092,3 +2092,51 @@ describe('listMarket：内嵌 screenshots 剥除（G4 冻结面）', () => {
     assert.deepEqual(item.screenshots, ['https://raw.githubusercontent.com/x/y/HEAD/a.png'])
   })
 })
+
+// ---------- issue #76：本地部署探测边界（白名单外不探线上；白名单内照常 + adopt-online npm-only 探测） ----------
+describe('issue #76 本地部署探测边界', () => {
+  const mkItem = (over = {}) => ({ pkg: 'x', name: 'X', version: '1.0.0', description: '', homepage: '', spec: '^1.0.0', source: 'npm', dsh: true, path: '/tmp/x', ...over })
+  const mkInstalled = (items) => ({ items, others: 0, complete: true, profileDir: '/tmp/profile' })
+  const collEntry = [{ id: 'p-coll', name: 'Coll', description: 'd', category: 'tools', tags: [], source: 'npm', npm: 'pkg-coll' }]
+
+  it('R4 撞名形态：file: 已装 × 同名收录条目版本更高，白名单外 → 不探测、不写 latest/outdated、通路 unsupported', async () => {
+    const { deps, calls } = fakeDeps({
+      loadRegistry: async () => readyLoaded(collEntry),
+      listInstalledPlugins: async () => mkInstalled([mkItem({ pkg: 'pkg-coll', name: 'Coll-local', spec: 'file:../coll', source: 'file', version: '0.1.0' })]),
+    })
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    const it0 = res.items[0]
+    assert.equal(it0.registryId, 'p-coll', '身份匹配照旧写 registryId（方案甲不改身份层）')
+    assert.equal(it0.latestVersion, undefined, '白名单外本地部署不写 latestVersion（不查别人家版本号）')
+    assert.equal(it0.outdated, false, '白名单外本地部署不亮红点（outdated 保持装配层 false 基线，不参与 outdatedCount）')
+    assert.equal(it0.upgradePath, 'unsupported', '撞名误报通路收口为 unsupported')
+    assert.equal(it0.upgradePathReason, 'local-spec')
+    assert.deepEqual(calls.npm.filter((n) => n === 'pkg-coll'), [], '不发起同名 npm latest 探测')
+  })
+
+  it('R5 同形在名单内 → 探测照常（红点 + latestVersion + catalog 通路 + localUpgradeAllowed）', async () => {
+    const { deps } = fakeDeps({
+      loadRegistry: async () => readyLoaded(collEntry),
+      listInstalledPlugins: async () => mkInstalled([mkItem({ pkg: 'pkg-coll', name: 'Coll-local', spec: 'file:../coll', source: 'file', version: '0.1.0' })]),
+    })
+    const res = await listInstalledWithMeta({ ...cfg, localUpgradeAllow: ['pkg-coll'] }, {}, deps)
+    const it0 = res.items[0]
+    assert.equal(it0.latestVersion, '2.0.0')
+    assert.equal(it0.outdated, true)
+    assert.equal(it0.upgradePath, 'catalog')
+    assert.equal(it0.localUpgradeAllowed, true)
+  })
+
+  it('R6 名单内未收录（双 miss 形态）→ npm-only 探测照常（adopt-online 的红点信号）', async () => {
+    const { deps, calls } = fakeDeps({
+      loadRegistry: async () => readyLoaded([]),
+      listInstalledPlugins: async () => mkInstalled([mkItem({ pkg: 'pkg-orphan', name: 'Orphan', spec: 'file:../orphan', source: 'file', version: '0.1.0' })]),
+    })
+    const res = await listInstalledWithMeta({ ...cfg, localUpgradeAllow: ['pkg-orphan'] }, {}, deps)
+    const it0 = res.items[0]
+    assert.equal(it0.latestVersion, '2.0.0', '名单内未收录本地部署按 npm-only 探测')
+    assert.equal(it0.outdated, true)
+    assert.equal(it0.upgradePath, 'synthesized', '双 miss + 名单 → synthesized（adopt-online 通路）')
+    assert.deepEqual(calls.npm.filter((n) => n === 'pkg-orphan'), ['pkg-orphan'], 'npm-only 探测发起')
+  })
+})

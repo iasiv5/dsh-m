@@ -234,6 +234,7 @@ function InstalledTab({ notify, installed, updates, onMutation, ops }) {
                 [lookup("detail.spec"), it.spec],
                 [lookup("detail.latest"), vm.latestLabelDetail],
                 [lookup("detail.listed"), it.registryId || lookup("detail.listed.no")],
+                it.localUpgradeAllowed ? [lookup("detail.localOverwrite.title"), lookup("detail.localOverwrite.text")] : null,
                 [lookup("detail.path"), it.path],
                 vm.latestIssue ? [lookup("installed.check.incomplete"), vm.latestIssue.note] : null,
                 vm.guard.warnKey ? [lookup("detail.note"), lookup(vm.guard.warnKey, vm.guard.warnParams)] : null,

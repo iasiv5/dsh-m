@@ -138,6 +138,8 @@ export interface RegistryConfig {
   sessionTools?: boolean
   /** 提示词段开关（issue #57 / ADR-0035；undefined = 开，tools off 时级联不生效） */
   sessionPrompt?: boolean
+  /** 本地热部署升级白名单注入（issue #76/ADR-0038 v1.3）：CLI env DSHM_LOCAL_UPGRADE_ALLOW 临时追加；写死名单见 local-allow.ts */
+  localUpgradeAllow?: string[]
 }
 
 export function registrySummary(state: RegistryState): RegistrySummary {

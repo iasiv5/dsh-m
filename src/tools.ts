@@ -298,6 +298,7 @@ export function registerTools(
           version: it.version,
           source: it.source,
           registryId: it.registryId ?? null,
+          localUpgradeAllowed: it.localUpgradeAllowed === true,
           upgradePath: it.upgradePath ?? null,
           upgradePathReason: it.upgradePathReason ?? null,
           latestVersion: it.latestVersion ?? null,
@@ -476,6 +477,7 @@ export function registerTools(
         name: it.name,
         version: it.version,
         source: it.source,
+        localUpgradeAllowed: it.localUpgradeAllowed === true,
         upgradePath: it.upgradePath ?? null,
         upgradePathReason: it.upgradePathReason ?? null,
         latestVersion: it.latestVersion ?? null,
@@ -610,7 +612,7 @@ interface SearchOut {
   publishedAtComplete?: boolean
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
+  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; localUpgradeAllowed?: boolean; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
   incompleteCount?: number
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }
