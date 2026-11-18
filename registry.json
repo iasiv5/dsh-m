@@ -414,6 +414,18 @@
       "npm": "dsh-claude-motion"
     },
     {
+      "id": "dsh-open-artifact",
+      "name": "Open Artifact",
+      "description": "Agent 把幻灯片、设计、设计系统、白板写成本地文件夹，在页面中打开、批注，可用 /open-artifact 新建。需 Node.js ≥22.18。",
+      "category": "baoyu",
+      "tags": ["产物","幻灯片","设计","宝玉"],
+      "source": "npm",
+      "npm": "dsh-open-artifact",
+      "github": "JimLiu/open-artifact",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-open-artifact@0/icon.svg",
+      "homepage": "https://github.com/JimLiu/open-artifact"
+    },
+    {
       "id": "dsh-guizang-design",
       "name": "DSH 歸藏设计",
       "description": "歸藏设计：网页 PPT、图文卡片与网页排版共用设计系统，另有去 AI 味与语气档案，可一键做同风格的下一份。",
