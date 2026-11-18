@@ -5,7 +5,9 @@
  *   1. 版本三处一致：package.json ≡ lock 根两字段；
  *   2. CHANGELOG 双语顶条均含该版本号（顶条版本号此前是人工核对项，现门禁化）；
  *   3. 本地 tag v<version> 存在且指向 HEAD（0.9.94 实录教训：tag 未建先 push 报 refspec 错）；
- *   4. 发布物断言（0.10.7 接线 assert-pack）：pack --dry-run 清单齐备、DESIGN/CHANGELOG 不回潜。
+ *   4. 发布物断言（0.10.7 接线 assert-pack）：pack --dry-run 清单齐备、DESIGN/CHANGELOG 不回潜；
+ *   5. 顶条 × tag 区间覆盖（2026-11-18 retro）：行为承载提交（feat/fix/refactor/perf/registry）
+ *      须在顶条留痕——#N/ADR-NN/DN 引用号或主体标识符任一命中（release-range-coverage.mjs）。
  * 用法：bump 版本 → 建 tag → `npm run check-release` → push。任一项不符 exit 1。
  */
 import { existsSync, readFileSync } from 'node:fs'
@@ -15,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { packIssues, extractPackFiles } from './assert-pack.mjs'
 import { unapprovedEmails } from './commit-identity.mjs'
+import { rangeCoverage, previousVersionTag, BEARING_COMMIT_RE } from './release-range-coverage.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -89,6 +92,33 @@ const citeCheck = (label, block) => {
 }
 citeCheck('CHANGELOG 中文顶条', entryBlock('## 中文'))
 citeCheck('CHANGELOG English 顶条', entryBlock('## English'))
+
+// 2026-11-18 retro（0.12.22 首发条目漏区间半场战役，主人审计问出、0f50c92 补正）：顶条对 tag
+// 区间的覆盖门禁化——行为承载提交须留痕；纯中文无标识符仅警告（不可机械判定，人工复核）。
+try {
+  const tags = execSync('git tag --list "v*"', { cwd: root, encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)
+  const prev = previousVersionTag(tags, version)
+  if (prev === null) {
+    check('CHANGELOG 区间覆盖（无更早版本 tag）', true, '跳过')
+  } else {
+    const log = execSync(`git log --oneline ${prev}..HEAD`, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const subjects = log.split(/\r?\n/).filter(Boolean)
+    const entry = [entryBlock('## 中文'), entryBlock('## English')]
+      .filter((b) => b !== null)
+      .map((b) => b.join('\n'))
+      .join('\n')
+    const { missing, unverifiable } = rangeCoverage(subjects, entry)
+    for (const s of unverifiable) console.log(`⚠ 区间提交无法机械核对（纯中文无标识符，人工复核）：${s}`)
+    const bearing = subjects.filter((s) => BEARING_COMMIT_RE.test(s.replace(/^[0-9a-f]{7,40} /, ''))).length
+    check(
+      `CHANGELOG 区间覆盖（${prev}..v${version}，行为提交 ${bearing} 笔）`,
+      missing.length === 0,
+      missing.length === 0 ? '全部留痕' : `顶条未覆盖：${missing.join('；')}`,
+    )
+  }
+} catch (err) {
+  check('CHANGELOG 区间覆盖', false, String(err?.message ?? err))
+}
 
 let tagHead = ''
 const tagRev = spawnSync('git', ['rev-parse', `v${version}^{commit}`], { cwd: root, encoding: 'utf8' })
