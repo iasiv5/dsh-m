@@ -690,6 +690,25 @@ describe('listInstalledWithMeta probeMode', () => {
     assert.equal(calls.npm.length, 2, 'again 走缓存零新增探测')
   })
 
+  it("probeMode 'full' + force：全量重探，失败保留旧缓存条目（镜像 'only' 用例，spec D14）", async () => {
+    const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
+    await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(calls.npm.length, 1)
+    const failDeps = {
+      ...deps,
+      npmLatest: async (pkg) => {
+        calls.npm.push(pkg)
+        throw new Error('registry unreachable')
+      },
+    }
+    const res = await listInstalledWithMeta(cfg, { force: true }, failDeps)
+    assert.equal(calls.npm.length, 2, "'full' + force 应全量重探")
+    assert.ok(res.items[0].latestError, 'force 重探失败应标 latestError')
+    const again = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(calls.npm.length, 2, 'again 走缓存零新增探测')
+    assert.equal(again.items[0].latestVersion, '2.0.0', '失败后旧缓存保留，TTL 命中拿到旧值')
+  })
+
   it("缺省 'full'：TTL 内二次调用走缓存", async () => {
     const { deps, calls } = fakeDeps({ listInstalledPlugins: async () => installed })
     await listInstalledWithMeta(cfg, {}, deps)

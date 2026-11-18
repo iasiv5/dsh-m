@@ -1098,7 +1098,7 @@ export async function listInstalledWithMeta(
   if ((opts.probeMode ?? 'full') !== 'none') {
     // 0.9.20：latest 缓存纯内存（ADR-0006）——探测段前仅一次性清扫 0.9.14 遗留磁盘信封
     await ensureLatestCacheSwept({ namespace, profile: opts.profile })
-    await probeLatest(items, { allow, merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? INSTALLED_UPDATES_TTL_MIN : Math.max(0, cfg.cacheTtlMin ?? 60), force: opts.probeMode === 'only' ? opts.force === true : false }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
+    await probeLatest(items, { allow, merged: community.merged, lookup: community.lookupInstalled, registryAddress: loaded.configuredAddress, ttlMin: opts.probeMode === 'only' ? INSTALLED_UPDATES_TTL_MIN : Math.max(0, cfg.cacheTtlMin ?? 60), force: opts.probeMode === 'none' ? false : opts.force === true }, d, { namespace, signal, githubBudget, remaining, timeoutMs: cfg.timeoutMs ?? 20_000 })
   }
 
   return { items, others: installed.others, profileDir: installed.profileDir, registryState, community: community.summary }
