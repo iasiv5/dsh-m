@@ -8,12 +8,18 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
-### 0.12.22 修复：win32 回滚阶梯 ENOENT + npmmirror 缺失依赖同步空转（issue #77/#78）
+### 0.12.22 修复：win32 回滚阶梯与 npmmirror 缺失依赖（issue #77/#78）+ agent 工具合并与探测透明度（ADR-0039/0040）
 
 - **修复（issue #77）**：Windows 上安装/升级失败后的回滚收敛阶梯（`frozenInstall`/`rebuildInstall`）裸 spawn `pnpm` 必 ENOENT——npm 全局装的 pnpm 是 `.cmd` shim，Node `spawn` 在 `shell:false` 下不走 PATHEXT 解析——回滚恒败、profile 被误报「可能需要人工修复」（实际字节还原成功、账实一致）。现在：新增 spawn 计划纯函数 `pnpmInstallSpawnPlan`（win32 `viaShell` + `--dir` 双引号包裹；与 launch 路径 path-fallback 同判据），POSIX 全字段零漂移；`makeDshRunner` 增 `deps.runCommand` 注入缝（测试可注入，缺省语义不变）。
 - **修复（issue #78）**：npmmirror 自愈（B3）此前恒同步用户请求的主包——主包镜像已同步而 pin 子依赖缺失时，重试预算（5s/15s 两次）全空转必失败。现在：从 pnpm 报错原文提取缺失包名（`No matching version found for <pkg>@<ver>` 窄正则 + 包名白名单，贪婪至最后一个 `@` 兼容 scoped 名，分类先于 800 字截断），优先同步**实际缺失的那个包**，未受理再主包兜底；提取失败或缺失包即主包时行为与旧版同形；heal 记录注明缺失依赖包名。
+- **工具面（ADR-0039）**：agent 工具 `dshm_outdated` 并入 `dshm_list`——两工具共用同一探测、items 几乎重叠，模型同时调用会产生两份结果与两张卡片。现在 `dshm_list` 是 agent 面唯一的已装插件与更新状态工具（不保留别名）；文字与卡片区分「未检查」与「已最新」，市场归属增加「未知」一态；CLI 的 `dshm list` / `dshm outdated` 命令保持不变。
+- **探测透明度（spec D13/D14）**：已装探测逐项 `probedAt` 盖戳（缓存命中继承写入时刻）；`dshm_list` 新增 `refresh` 参数透传 core force（`probeMode full` 支持 force，ADR-0013 peek 纪律同源）；`renderList` 增「检查结果截至」段并透传 items `probedAt`。
+- **性能/稳健（ADR-0040，spec D15）**：`npmLatest` in-flight 合并（single-flight：键 = 显式 registry|pkg，waiter-scoped 超时/signal 四臂竞速 + 30s flight 硬上限；缓存过期窗口重叠时不再把全部 npm 包各请求一遍）；`probedAt` 与缓存写入同钟取值（消除跨毫秒断言脆弱性）。
+- **收录**：registry 收录 dsh-open-artifact 至宝玉专区（npm + github 双源）。
+- **守卫/文档**：session-gate 工具枚举与注册清单一致性守卫（DESIGN §5）；ADR-0040 spec 决议与缺口同步、CODING-STANDARDS retro 四条收紧。
 - **测试**：新增 13 例——`tests/pnpm-outcome.test.mjs`（spawn 计划 3 例 + 接线缝 1 例 + win32 真实 shell 级绿钉 1 例（真 pnpm 经 cmd shim 实跑，PATH 无 pnpm 环境整体 skip）+ 缺失包提取 5 例）、`tests/profile-transaction.test.mjs`（缺失依赖优先同步 3 例）；既有 B3 / kill-switch / rollback-heal 套件零回归。本机全量 4 项环境既有失败经 `scripts/test-baseline.mjs` 结构化判别与基线逐名一致（非回归）。
-- **兼容性**：`RunnerOutcome` 新增可选字段 `missingPackage`（仅 NO_MATCHING_VERSION 条件携带，旧消费端零影响）；`dshm` CLI 接口零变化；POSIX 行为零漂移。已知不修（见 issue 回复）：失败信封残缺文本（报告者自标低优先）与「可能需要人工修复」措辞降级（根因修复后该路径仅剩真实收敛失败场景）。回退面：revert 修复提交（3281039）+ 版本递增。
+- **兼容性**：`RunnerOutcome` 新增可选字段 `missingPackage`（仅 NO_MATCHING_VERSION 条件携带，旧消费端零影响）；agent 提示词面 `dshm_outdated` 工具消失，更新检查改用 `dshm_list`（`refresh` 参数可强制刷新）；`dshm` CLI 接口零变化；POSIX 行为零漂移。已知不修（见 issue 回复）：失败信封残缺文本（报告者自标低优先）与「可能需要人工修复」措辞降级（根因修复后该路径仅剩真实收敛失败场景）。回退面：revert 修复提交（3281039）+ 版本递增。
+- **补正注记（2026-11-18）**：本条目在 0.12.22 发布后按 tag 区间（v0.12.21..v0.12.22）审计补齐 ADR-0039/0040、D13–D15、收录与守卫条目；npm 包内 CHANGELOG 快照为首发版，以仓库本条为准。
 
 ### 0.12.21 安全修复：本地热部署撞名保护 + 升级白名单（ADR-0038）
 
@@ -1114,12 +1120,18 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## English
 
-### 0.12.22 Fixes: win32 rollback ladder ENOENT + npmmirror missing-dependency sync spin (issue #77/#78)
+### 0.12.22 Fixes: win32 rollback ladder & npmmirror missing-dependency spin (issue #77/#78) + agent tool merge & probe transparency (ADR-0039/0040)
 
 - **Fix (issue #77)**: On Windows the post-failure rollback convergence ladder (`frozenInstall`/`rebuildInstall`) spawned `pnpm` bare and always hit ENOENT — a npm-installed `pnpm` is a `.cmd` shim that Node `spawn` cannot resolve without `shell:true` — so rollback always failed and the profile was falsely reported as "may need manual repair" (byte restore had actually succeeded). Now a spawn-plan pure function `pnpmInstallSpawnPlan` covers win32 (`viaShell` + quoted `--dir`, same predicate as the launch path-fallback) with zero POSIX drift; `makeDshRunner` gains a `deps.runCommand` injection seam.
 - **Fix (issue #78)**: The npmmirror self-heal (B3) always synced the requested main package — when the mirror already had the main package but a pinned sub-dependency was missing, both retry attempts spun idle and failed. The missing package name is now extracted from the pnpm error text (`No matching version found for <pkg>@<ver>`, narrow regex + name whitelist, scoped-name aware, classified before the 800-char truncation) and synced first, with the main package as fallback; extraction failure keeps the old behavior. The heal record names the missing dependency.
+- **Tool surface (ADR-0039)**: the `dshm_outdated` agent tool is merged into `dshm_list` — both drove the same probe with near-identical items, and models calling both got two results and two cards. `dshm_list` is now the single installed-plugins-and-updates tool for agents (no alias kept); text and cards distinguish "not checked" from "up to date", and market attribution gains an "unknown" state; the CLI commands `dshm list` / `dshm outdated` are unchanged.
+- **Probe transparency (spec D13/D14)**: per-item `probedAt` stamping on installed probing (cache hits inherit the write time); `dshm_list` gains a `refresh` parameter passed through to core force (`probeMode full` supports force, same peek discipline as ADR-0013); `renderList` gains a "results as of" section and passes items' `probedAt` through.
+- **Performance/robustness (ADR-0040, spec D15)**: `npmLatest` single-flight in-flight merging (key = explicit registry|pkg, waiter-scoped timeout/signal four-arm race + 30s flight hard cap; overlapping cache-expiry windows no longer re-request every npm package); `probedAt` now shares the same clock reading as the cache write (removes cross-millisecond assertion flakiness).
+- **Registry**: added dsh-open-artifact to the baoyu zone (npm + github dual source).
+- **Guards/docs**: session-gate tool-enum vs registration-list consistency guard (DESIGN §5); ADR-0040 spec decisions and CODING-STANDARDS retro tightening.
 - **Tests**: 13 new cases across `tests/pnpm-outcome.test.mjs` (spawn plan ×3, wiring seam ×1, a real-shell win32 green nail ×1 (real pnpm via cmd shim; skipped wholesale where pnpm is absent from PATH), extraction matrix ×5) and `tests/profile-transaction.test.mjs` (sub-dependency-first sync ×3); existing B3 / kill-switch / rollback-heal suites unchanged and green. The 4 local full-suite failures were discriminated against the pre-change baseline by `scripts/test-baseline.mjs` — environment-known, not regressions.
-- **Compatibility**: optional `RunnerOutcome.missingPackage` field (conditionally present only for NO_MATCHING_VERSION); CLI unchanged; zero POSIX drift. Known-not-fixed (per issue replies): the truncated envelope text (reporter-flagged low priority) and the "may need manual repair" wording demotion (after the root-cause fix that path only remains for genuine convergence failures). Rollback: revert 3281039 + version bump.
+- **Compatibility**: optional `RunnerOutcome.missingPackage` field (conditionally present only for NO_MATCHING_VERSION); the `dshm_outdated` tool disappears from agent prompts — use `dshm_list` (its `refresh` parameter forces a fresh probe); CLI unchanged; zero POSIX drift. Known-not-fixed (per issue replies): the truncated envelope text (reporter-flagged low priority) and the "may need manual repair" wording demotion (after the root-cause fix that path only remains for genuine convergence failures). Rollback: revert 3281039 + version bump.
+- **Correction note (2026-11-18)**: this entry was completed after the 0.12.22 release, following a tag-range audit (v0.12.21..v0.12.22) that added the ADR-0039/0040, D13–D15, registry and guard items; the CHANGELOG snapshot inside the published npm tarball is the initial version — this repo entry is authoritative.
 
 ### 0.12.21 Security fix: local-deploy collision guard + upgrade allowlist (ADR-0038)
 
