@@ -11,7 +11,7 @@ const { useState, useEffect, useLayoutEffect, useCallback, useRef } = React;
 const { backdropCloseHandlers } = require("./backdrop.js");
 const { dragSlop, grabOffset, titlebarTopInset, clampPoint, loadPanelPos, savePanelPos, isDragTarget } = require("./window-drag.js");
 const { clampSize, loadPanelSize, savePanelSize } = require("./window-resize.js");
-const { pickPayload, parseToolArgs } = require("./tool-view.js");
+const { pickPayload, parseToolArgs, listRowsOf } = require("./tool-view.js");
 const { refreshAfterMutation } = require("./view-refresh.js");
 const { applyInstalledUpdates, installedUpdateStats } = require("./installed-updates.js");
 // 收藏头像修复（2026-10-31）：已装条目 → 图标别名索引（registryId/npm/github → iconDataUri），
@@ -1095,21 +1095,21 @@ function SearchToolView(props) {
 
 function ListToolView(props) {
   useEffect(() => ensureCss(), []);
-  const payload = pickPayload(props);
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  if (!items.length) return null;
+  const rows = listRowsOf(props);
+  if (!rows.length) return null;
   return h(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" } },
-    items.map((it) =>
+    rows.map((r) =>
       h(
         "div",
-        { key: it.pkg, className: "dshm-row" },
-        h("span", { style: { fontWeight: 600 } }, it.name),
-        h("span", { className: "dshm-hint" }, `(${it.pkg})`),
-        h("span", { className: "dshm-hint" }, `v${it.version || "?"}`),
-        it.registryId ? h("span", { className: "dshm-badge" }, "市场") : h("span", { className: "dshm-badge info" }, "非市场"),
-        it.outdated ? h("span", { className: "dshm-badge warn" }, `可升级${it.latestVersion ? ` → v${it.latestVersion}` : ""}`) : null,
+        { key: r.key, className: "dshm-row" },
+        h("span", { style: { fontWeight: 600 } }, r.name),
+        h("span", { className: "dshm-hint" }, `(${r.pkg})`),
+        h("span", { className: "dshm-hint" }, `v${r.version}`),
+        h("span", { className: r.marketClass }, r.marketLabel),
+        r.updateLabel ? h("span", { className: r.updateClass }, r.updateLabel) : null,
+        r.userDisabled ? h("span", { className: "dshm-badge info" }, "意图停用") : null,
       ),
     ),
   );
@@ -1157,8 +1157,5 @@ function apply(ctx) { // eslint-disable-line no-unused-vars -- loader 契约
   );
   slots.inject("tool.call.toolview", () =>
     registerSlot(slots, { name: "tool.call.toolview", key: "dshm_list" }, ListToolView),
-  );
-  slots.inject("tool.call.toolview", () =>
-    registerSlot(slots, { name: "tool.call.toolview", key: "dshm_outdated" }, ListToolView),
   );
 }

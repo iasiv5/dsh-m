@@ -743,15 +743,14 @@ describe('dshm_* Agent tools：host namespace 与 metadata-only search', () => {
     assert.ok(out.registry && out.registry.isDefault === true)
   })
 
-  it('dshm_list / dshm_outdated 使用 host namespace 并携带 registry summary', async () => {
+  it('dshm_list 使用 host namespace 并携带 registry summary（dshm_outdated 已并入，ADR-0039）', async () => {
     const { registered, installedCalls } = await loadTools()
     const list = registered.find((t) => t.name === 'dshm_list')
     const out = await list.execute({})
     assert.equal(installedCalls.at(-1)?.namespace, 'host')
     assert.ok(out.registry && typeof out.registry.status === 'string')
-    const outdated = registered.find((t) => t.name === 'dshm_outdated')
-    const out2 = await outdated.execute({})
-    assert.ok(out2.registry && typeof out2.registry.stale === 'boolean')
+    assert.ok(out.registry && typeof out.registry.stale === 'boolean')
+    assert.equal(registered.find((t) => t.name === 'dshm_outdated'), undefined)
   })
 })
 
@@ -1047,6 +1046,27 @@ describe('dshm CLI：cli namespace 与 unavailable 退出码', () => {
     assert.equal(code, 0)
     assert.ok(lines.join('\n').includes('不可用'))
     assert.ok(lines.join('\n').includes('P1'))
+  })
+
+  it('list（ADR-0039）：注册表不可用时市场标签为「未知」，不标「非市场」', async () => {
+    const outs = []
+    const code = await run(
+      ['list'],
+      {
+        listInstalledWithMeta: async () => ({
+          items: [{ pkg: 'p-npm', name: 'PNpm', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false, dsh: true, path: '/tmp/p-npm' }],
+          others: 0,
+          profileDir: '/tmp/profile',
+          registryState: unavailableLoaded(),
+        }),
+      },
+      { out: (l) => outs.push(l), err: () => {} },
+    )
+    assert.equal(code, 0)
+    const rows = outs.filter((l) => l.startsWith('• '))
+    assert.equal(rows.length, 1, outs.join('\n'))
+    assert.ok(rows[0].includes('未知'), rows[0])
+    assert.ok(!rows[0].includes('非市场'), rows[0])
   })
 
   it('outdated：registry unavailable → exit 1', async () => {
@@ -1472,14 +1492,13 @@ describe('M1 Task 7：agent 工具契约', () => {
     assert.equal(calls.search.length, 1, '非法参数不下发 core')
   })
 
-  it('⑦ deadline 对齐：search 44s、list/outdated 60s，且透传 exec.signal', async () => {
+  it('⑦ deadline 对齐：search 44s、list 65s 工具超时与 60s core deadline，且透传 exec.signal（dshm_outdated 已并入，ADR-0039）', async () => {
     const { registered, calls } = await loadToolsWith()
     const search = registered.find((t) => t.name === 'dshm_search')
     const list = registered.find((t) => t.name === 'dshm_list')
-    const outdated = registered.find((t) => t.name === 'dshm_outdated')
     assert.equal(search.timeoutMs, 45_000)
     assert.equal(list.timeoutMs, 65_000)
-    assert.equal(outdated.timeoutMs, 65_000)
+    assert.equal(registered.find((t) => t.name === 'dshm_outdated'), undefined)
     const ac = new AbortController()
     await search.execute({}, toolContext(ac.signal))
     assert.equal(calls.search[0].deadlineMs, 44_000)
@@ -1487,11 +1506,6 @@ describe('M1 Task 7：agent 工具契约', () => {
     await list.execute({}, toolContext(ac.signal))
     assert.equal(calls.list[0].deadlineMs, 60_000)
     assert.equal(calls.list[0].signal, ac.signal)
-    await outdated.execute({}, toolContext(ac.signal))
-    assert.equal(calls.outdated.length + calls.list.length >= 2, true)
-    const outdatedCall = calls.outdated[0] ?? calls.list[1]
-    assert.equal(outdatedCall.deadlineMs, 60_000)
-    assert.equal(outdatedCall.signal, ac.signal)
   })
 
   it('⑦-2 慢 core + exec.signal abort → 工具 execute 随 signal 中止（不悬挂到 65s）', async () => {
@@ -1510,7 +1524,7 @@ describe('M1 Task 7：agent 工具契约', () => {
     assert.ok(Date.now() - t0 < 5000, 'signal 贯通：abort 即中止而不是等 65s 工具超时')
   })
 
-  it('② dshm_search/list/outdated 投影 community summary 四键', async () => {
+  it('② dshm_search/list 投影 community summary 四键（dshm_outdated 已并入，ADR-0039）', async () => {
     const community = {
       enabled: true, status: 'ready', version: '2026.928.1', checkedAt: 't', fetchedAt: 't',
       route: 'jsdelivr', acceptedCount: 4189, upstreamCount: 4377, displaced: 3,
@@ -1520,14 +1534,14 @@ describe('M1 Task 7：agent 工具契约', () => {
       marketResult: { items: [], total: 0, offset: 0, limit: 80, categoryCounts: {}, registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 }, installedComplete: true, latestComplete: true, latestTimedOut: false, community },
       installedResult: { items: [], others: 0, profileDir: '/tmp/p', registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 0 }, community },
     })
-    for (const name of ['dshm_search', 'dshm_list', 'dshm_outdated']) {
+    for (const name of ['dshm_search', 'dshm_list']) {
       const tool = registered.find((t) => t.name === name)
       const out = await tool.execute({})
       assert.deepEqual(out.community, { acceptedCount: 4189, route: 'jsdelivr', status: 'ready', version: '2026.928.1' })
     }
   })
 
-  it('⑨ dshm_outdated：有未完成时标题不写「全部最新」，投影含 code 与未完成数', async () => {
+  it('⑨ dshm_list：有未完成时标题不写「全部最新」，投影含 code 与未完成数（ADR-0039 并入）', async () => {
     const installedItem = (i, extra = {}) => ({
       pkg: `p-${i}`, name: `P${i}`, version: '1.0.0', source: 'npm', spec: '1.0.0',
       outdated: false, ...extra,
@@ -1543,19 +1557,22 @@ describe('M1 Task 7：agent 工具契约', () => {
       registryState: { configuredAddress: '', activeAddress: null, source: 'bundled', status: 'ready', isDefault: true, stale: false, fetchedAt: null, errors: [], count: 3 },
       community: { enabled: true, status: 'ready', version: 'v', checkedAt: 't', fetchedAt: 't', route: 'r', acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
     }
-    const { registered } = await loadToolsWith({ installedResult, tool: 'outdated' })
-    const outdated = registered.find((t) => t.name === 'dshm_outdated')
-    const out = await outdated.execute({})
-    assert.equal(out.incompleteCount, 1)
+    const { registered } = await loadToolsWith({ installedResult, tool: 'list' })
+    const list = registered.find((t) => t.name === 'dshm_list')
+    const out = await list.execute({})
+    assert.equal(out.incompleteCount, undefined)
     assert.equal(out.items[1].latestErrorCode, 'budget-exhausted')
-    const rendered = outdated.output.render({}, out)
-    assert.ok(rendered[0].text.includes('1 项检查未完成'))
-    assert.ok(rendered[0].text.includes('因 GitHub 预算未完成'))
-    const title = outdated.presentResult({}, { isError: false, meta: out }).title
-    assert.ok(title.includes('检查未完成'), `标题不得写「全部最新」：${title}`)
+    assert.equal(out.items[1].update, 'incomplete')
+    const rendered = list.output.render({}, out)
+    assert.ok(rendered[0].text.includes('检查未完成（1）'), rendered[0].text)
+    assert.ok(rendered[0].text.includes('因 GitHub 预算未完成'), rendered[0].text)
+    assert.ok(!rendered[0].text.includes('全部'), rendered[0].text)
+    const title = list.presentResult({}, { isError: false, meta: out }).title
+    assert.ok(title.includes('未完成 1'), `标题应含未完成数：${title}`)
+    assert.ok(!title.includes('全部最新'), `标题不得写「全部最新」：${title}`)
   })
 
-  it('ADR-0026：dshm_list/dshm_outdated items 携带 upgradePath，unsupported 项双渲染标注本地链接', async () => {
+  it('ADR-0026：dshm_list 携带 upgradePath，unsupported 项标注本地链接；可升级的不可自动升级项附「——不参与自动升级」（dshm_outdated 已并入，ADR-0039）', async () => {
     const installedResult = {
       items: [
         { pkg: 'p-1', name: 'P1', version: '1.0.0', source: 'npm', spec: '1.0.0', outdated: false, upgradePath: 'catalog' },
@@ -1575,14 +1592,11 @@ describe('M1 Task 7：agent 工具契约', () => {
     assert.equal(out.items[1].upgradePathReason, 'local-spec', 'dshm_list 应透传 upgradePathReason')
     const listText = list.output.render({}, out)[0].text
     assert.ok(listText.includes('本地链接安装'), `renderList 应标注 unsupported 项：${listText}`)
-    const outdated = registered.find((t) => t.name === 'dshm_outdated')
-    const out2 = await outdated.execute({})
-    assert.equal(out2.items[1].upgradePath, 'unsupported')
-    const outdatedText = outdated.output.render({}, out2)[0].text
-    assert.ok(outdatedText.includes('本地链接安装——不参与自动升级'), `renderOutdated 应标注：${outdatedText}`)
+    const upLine = listText.split('\n').find((l) => l.startsWith('· ') && l.includes('(p-local)'))
+    assert.ok(upLine && upLine.includes('本地链接安装——不参与自动升级'), `可升级区应标注不参与自动升级：${listText}`)
   })
 
-  it('ADR-0026/#35：unsupported 成因按码标注——github-spec 场景不再误标本地链接（行级断言）', async () => {
+  it('ADR-0026/#35：unsupported 成因按码标注——github-spec 场景不再误标本地链接（行级断言，ADR-0039 并入）', async () => {
     const installedResult = {
       items: [
         { pkg: 'p-gh', name: 'PGh', version: '1.0.0', source: 'github', spec: 'not-a-github-spec', outdated: true, latestVersion: '9.9.9', upgradePath: 'unsupported', upgradePathReason: 'github-spec-unparseable' },
@@ -1593,18 +1607,15 @@ describe('M1 Task 7：agent 工具契约', () => {
       community: { enabled: true, status: 'ready', version: 'v', checkedAt: 't', fetchedAt: 't', route: 'r', acceptedCount: 1, upstreamCount: 1, displaced: 0, skippedDirty: 0, skippedSubpathNoNpm: 0, errors: [], warnings: [] },
     }
     const { registered } = await loadToolsWith({ installedResult })
-    const outdated = registered.find((t) => t.name === 'dshm_outdated')
-    const out = await outdated.execute({})
-    const outdatedText = outdated.output.render({}, out)[0].text
-    const ghLine = outdatedText.split('\n').find((l) => l.includes('p-gh'))
-    assert.ok(ghLine, `renderOutdated 应含 p-gh 行：${outdatedText}`)
-    assert.ok(ghLine.includes('github spec 无法解析——不参与自动升级'), `github 项行级成因标注：${ghLine}`)
-    assert.ok(!ghLine.includes('本地链接安装'), `github 项不得误标本地链接：${ghLine}`)
     const list = registered.find((t) => t.name === 'dshm_list')
-    const outL = await list.execute({})
-    const listText = list.output.render({}, outL)[0].text
-    const ghLineL = listText.split('\n').find((l) => l.includes('p-gh'))
-    assert.ok(ghLineL && ghLineL.includes('github spec 无法解析') && !ghLineL.includes('本地链接安装'), `renderList 行级成因标注：${ghLineL}`)
+    const out = await list.execute({})
+    const text = list.output.render({}, out)[0].text
+    const upLine = text.split('\n').find((l) => l.startsWith('· ') && l.includes('(p-gh)'))
+    assert.ok(upLine, `可升级区应含 p-gh 行：${text}`)
+    assert.ok(upLine.includes('github spec 无法解析——不参与自动升级'), `github 项行级成因标注：${upLine}`)
+    assert.ok(!upLine.includes('本地链接安装'), `github 项不得误标本地链接：${upLine}`)
+    const rowLine = text.split('\n').find((l) => /^\d+\. /.test(l) && l.includes('(p-gh)'))
+    assert.ok(rowLine && rowLine.includes('github spec 无法解析') && !rowLine.includes('本地链接安装'), `清单行级成因标注：${rowLine}`)
   })
 
   it('ADR-0026/#35：源结构锚——成因标签单源 upgrade-target，tools/cli 按码消费（出现次数语义）', async () => {
@@ -1613,7 +1624,7 @@ describe('M1 Task 7：agent 工具契约', () => {
     const toolsSrc = read('../src/tools.ts')
     const cliSrc = read('../src/cli.ts')
     assert.ok(targetSrc.split('本地链接安装').length - 1 >= 1, `三码标签字面应迁往 upgrade-target 单源，实得 ${targetSrc.split('本地链接安装').length - 1}`)
-    assert.ok(toolsSrc.split('unsupportedCauseLabel').length - 1 >= 2, `tools.ts 消费 ≥2（renderList + renderOutdated），实得 ${toolsSrc.split('unsupportedCauseLabel').length - 1}`)
+    assert.ok(toolsSrc.split('unsupportedCauseLabel').length - 1 >= 2, `tools.ts 消费 ≥2（renderList 的可升级区与清单行），实得 ${toolsSrc.split('unsupportedCauseLabel').length - 1}`)
     assert.ok(cliSrc.split('unsupportedCauseLabel').length - 1 >= 1, `cli.ts 消费 ≥1，实得 ${cliSrc.split('unsupportedCauseLabel').length - 1}`)
   })
 

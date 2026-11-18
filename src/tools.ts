@@ -9,7 +9,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
  * dsh-tools 0.2.2-rc.1 运行时 register 支持 (definition, options)（lib/index.js :433，options.when
  * 步时激活 + 装配期可见性过滤 :533/:551），类型声明滞后为单参（types/index.d.ts:636）——
  * issue #57 / ADR-0035 会话开关经 when 谓词门控，此处按运行时契约窄化类型。
- * 8 个 dshm_* 工具全部经此注册（自验：grep -c '^  registerGated(ctx, defineTool' 恰 8——行首锚定后定义行与注释行天然不匹配）。
+ * 7 个 dshm_* 工具全部经此注册（自验：grep -c '^  registerGated(ctx, defineTool' 恰 7——行首锚定后定义行与注释行天然不匹配；ADR-0039 合并后 dshm_outdated 已删）。
  */
 function registerGated(ctx: Context, definition: ReturnType<typeof defineTool>, when: () => boolean): void {
   ;(ctx.tools.register as unknown as (d: ReturnType<typeof defineTool>, o: { when: () => boolean }) => void).call(ctx.tools, definition, { when })
@@ -265,7 +265,7 @@ export function registerTools(
   registerGated(ctx, defineTool({
     name: 'dshm_list',
     description:
-      'List plugins installed in the current DSH profile (web or desktop), annotated with 市场安装/非市场安装, sources, and outdated flags. Use when the user asks what plugins are installed or wants to manage local plugins.',
+      'List installed DSH plugins (current profile) with market membership (市场 / 非市场 / 未知) and update status: 可升级 (upgradable, with the target version), 已最新 (checked and up to date), 未检查 (NOT checked; this is not the same as up to date), 检查未完成 (a check was attempted and failed). Use for any question about installed plugins, plugin status, or available updates. Read-only; changes nothing. To upgrade, pass the pkg from this result to dshm_upgrade.',
     parameters: {},
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -275,7 +275,7 @@ export function registerTools(
     presentCall: () => ({ card: 'generic', title: '已装插件', kind: 'search', content: [] }),
     presentResult: (_args, { isError, meta }) => ({
       card: 'generic',
-      title: isError ? '列出失败' : `已装 · ${(meta as ListOut | undefined)?.items?.length ?? 0} 个`,
+      title: isError ? '列出失败' : listTitleOf((meta as ListOut | undefined)?.items ?? []),
       content: [],
     }),
     timeoutMs: INSTALLED_TOOL_TIMEOUT_MS,
@@ -287,25 +287,35 @@ export function registerTools(
         profileDir: profile.dir,
         profile: profile.name,
       })
-      return cloneJson({
-        registry: summaryOf(result.registryState),
-        community: communityToolSummary(result.community),
-        profileDir: result.profileDir,
-        others: result.others,
-        items: result.items.map((it) => ({
+      const unavailable = result.registryState.status === 'unavailable'
+      const items = result.items.map((it) => {
+        const status = listStatusOf(it, unavailable)
+        return {
           pkg: it.pkg,
           name: it.name,
           version: it.version,
           source: it.source,
           registryId: it.registryId ?? null,
+          market: status.market,
           localUpgradeAllowed: it.localUpgradeAllowed === true,
           upgradePath: it.upgradePath ?? null,
           upgradePathReason: it.upgradePathReason ?? null,
           latestVersion: it.latestVersion ?? null,
+          latestTag: it.latestTag ?? null,
           outdated: it.outdated,
+          update: status.update,
+          uncheckedReason: status.uncheckedReason,
           latestError: it.latestError ?? null,
           latestErrorCode: it.latestErrorCode ?? null,
-        })),
+          userDisabled: (it as { userDisabled?: boolean }).userDisabled === true,
+        }
+      })
+      return cloneJson({
+        registry: summaryOf(result.registryState),
+        community: communityToolSummary(result.community),
+        profileDir: result.profileDir,
+        others: result.others,
+        items,
       })
     },
   }), () => sessionToolsEnabled(cfg))
@@ -439,70 +449,11 @@ export function registerTools(
   }), () => sessionToolsEnabled(cfg))
 
   registerGated(ctx, defineTool({
-    name: 'dshm_outdated',
-    description:
-      'Check installed DSH plugins for newer versions (npm latest / GitHub HEAD). Use when the user asks about updates or 升级. Read-only.',
-    parameters: {},
-    output: {
-      schema: { type: 'object', additionalProperties: true },
-      render: (_args, value) => [{ type: 'text', text: renderOutdated(value as ListOut) }],
-      presentationMeta: (_args, value) => ({ kind: 'dshm-outdated', ...(value as object) }),
-    },
-    presentCall: () => ({ card: 'generic', title: '检查更新', kind: 'search', content: [] }),
-    presentResult: (_args, { isError, meta }) => {
-      const out = meta as ListOut | undefined
-      const n = out?.items?.filter((it) => it.outdated).length ?? 0
-      const incomplete = out?.incompleteCount ?? 0
-      // 禁止「未完成检查」冒充「全部最新」（Task 7 ⑨）
-      const title = isError
-        ? '检查失败'
-        : incomplete > 0
-          ? `${n} 个可升级（${incomplete} 项检查未完成）`
-          : n
-            ? `${n} 个可升级`
-            : '全部最新'
-      return { card: 'generic', title, content: [] }
-    },
-    timeoutMs: INSTALLED_TOOL_TIMEOUT_MS,
-    async execute(_args, exec) {
-      const result: InstalledResult = await m.listInstalledWithMeta(cfg, {
-        namespace: 'host',
-        deadlineMs: INSTALLED_CORE_DEADLINE_MS,
-        signal: exec?.signal,
-        profileDir: profile.dir,
-        profile: profile.name,
-      })
-      const items = result.items.map((it) => ({
-        pkg: it.pkg,
-        name: it.name,
-        version: it.version,
-        source: it.source,
-        localUpgradeAllowed: it.localUpgradeAllowed === true,
-        upgradePath: it.upgradePath ?? null,
-        upgradePathReason: it.upgradePathReason ?? null,
-        latestVersion: it.latestVersion ?? null,
-        latestTag: it.latestTag ?? null,
-        outdated: it.outdated,
-        latestError: it.latestError ?? null,
-        latestErrorCode: it.latestErrorCode ?? null,
-      }))
-      const incompleteCount = items.filter((it) => it.latestErrorCode !== null).length
-      return cloneJson({
-        registry: summaryOf(result.registryState),
-        community: communityToolSummary(result.community),
-        items,
-        outdatedCount: items.filter((it) => it.outdated).length,
-        incompleteCount,
-      })
-    },
-  }), () => sessionToolsEnabled(cfg))
-
-  registerGated(ctx, defineTool({
     name: 'dshm_upgrade',
     description:
-      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list 或 dshm_outdated。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade succeeded.',
+      'Upgrade an installed DSH plugin to the latest version (npm 拉最新精确版 / github 重新锁 HEAD)。pkg 来自 dshm_list。用户确认升级哪一个之后再调用。After success follow the result\'s activation field: \'client-only\' → tell the user a page refresh suffices and do NOT offer dshm_restart; \'unknown\' or \'restart-required\' (or the field being absent) → tell the user it needs a restart and offer dshm_restart. A needsBuildApproval result is an abort, not success: after the user confirms, retry dshm_upgrade with approvedBuilds echoing the returned pendingBuilds verbatim; never claim the upgrade succeeded.',
     parameters: {
-      pkg: { type: 'string', required: true, description: '包名 from dshm_list / dshm_outdated' },
+      pkg: { type: 'string', required: true, description: '包名 from dshm_list' },
       force: { type: 'boolean', description: 'peer 兼容预检不通过且用户已确认风险后置 true（等价 forceIncompatible，跳过 @deepseek-ai/dsh(-*) peer 拦截）；守卫拦截（guard）无 force 通道，不受此参数影响。' },
       approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' },
     },
@@ -612,8 +563,26 @@ interface SearchOut {
   publishedAtComplete?: boolean
 }
 interface ListOut {
-  items?: Array<{ pkg: string; name: string; version: string; source: string; latestVersion?: string | null; latestTag?: string | null; outdated?: boolean; registryId?: string | null; localUpgradeAllowed?: boolean; upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null; upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null; latestError?: string | null; latestErrorCode?: string | null }>
-  incompleteCount?: number
+  registry?: { status?: string; isDefault?: boolean; stale?: boolean }
+  items?: Array<{
+    pkg: string
+    name: string
+    version: string
+    source: string
+    registryId?: string | null
+    market?: 'market' | 'non-market' | 'unknown'
+    localUpgradeAllowed?: boolean
+    upgradePath?: 'catalog' | 'synthesized' | 'unsupported' | null
+    upgradePathReason?: 'local-spec' | 'github-spec-unparseable' | 'source-unresolvable' | null
+    latestVersion?: string | null
+    latestTag?: string | null
+    outdated?: boolean
+    update?: 'upgradable' | 'latest' | 'unchecked' | 'incomplete'
+    uncheckedReason?: 'registry-unavailable' | 'local-install' | 'not-probed' | null
+    latestError?: string | null
+    latestErrorCode?: string | null
+    userDisabled?: boolean
+  }>
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
 }
 interface InstallOut {
@@ -690,21 +659,112 @@ function renderSearch(out: SearchOut): string {
   ].filter((x): x is string => x !== null).join('\n')
 }
 
+/** ADR-0039：市场归属与更新状态的派生（先命中先返回）。注册表不可用 → 市场未知、更新未检查。 */
+type ListItemIn = {
+  source?: string
+  registryId?: string | null
+  outdated?: boolean
+  latestVersion?: string | null
+  latestTag?: string | null
+  latestSha?: string | null
+  latestErrorCode?: string | null
+  upgradePath?: string | null
+  upgradePathReason?: string | null
+  localUpgradeAllowed?: boolean
+}
+type ListStatus = {
+  market: 'market' | 'non-market' | 'unknown'
+  update: 'upgradable' | 'latest' | 'unchecked' | 'incomplete'
+  uncheckedReason: 'registry-unavailable' | 'local-install' | 'not-probed' | null
+}
+
+function listStatusOf(it: ListItemIn, unavailable: boolean): ListStatus {
+  if (unavailable) return { market: 'unknown', update: 'unchecked', uncheckedReason: 'registry-unavailable' }
+  const market = it.registryId ? 'market' : 'non-market'
+  if (it.latestErrorCode) return { market, update: 'incomplete', uncheckedReason: null }
+  if (it.outdated === true) return { market, update: 'upgradable', uncheckedReason: null }
+  if (it.latestVersion !== undefined || it.latestTag !== undefined || it.latestSha !== undefined) {
+    return { market, update: 'latest', uncheckedReason: null }
+  }
+  if (it.upgradePath === 'unsupported' && it.upgradePathReason === 'local-spec' && it.localUpgradeAllowed !== true) {
+    return { market, update: 'unchecked', uncheckedReason: 'local-install' }
+  }
+  return { market, update: 'unchecked', uncheckedReason: 'not-probed' }
+}
+
+function listTitleOf(items: Array<{ update?: string }>): string {
+  const n = (u: string) => items.filter((it) => it.update === u).length
+  const extras = [
+    n('upgradable') ? `可升级 ${n('upgradable')}` : null,
+    n('unchecked') ? `未检查 ${n('unchecked')}` : null,
+    n('incomplete') ? `未完成 ${n('incomplete')}` : null,
+  ].filter((x): x is string => x !== null)
+  return [`已装 · ${items.length} 个`, ...extras].join(' · ')
+}
+
+function targetOf(it: { latestTag?: string | null; latestVersion?: string | null }): string {
+  if (it.latestTag) return it.latestTag
+  if (it.latestVersion) return `v${it.latestVersion}`
+  return '最新'
+}
+
+function uncheckedTextOf(it: { source?: string; uncheckedReason?: string | null }): string {
+  if (it.uncheckedReason === 'registry-unavailable') return '收录清单不可用'
+  if (it.uncheckedReason === 'local-install') return '本地安装，不做线上检查'
+  if (it.uncheckedReason === 'not-probed') return it.source === 'github' ? '未探测（非收录的 GitHub 安装）' : '未探测'
+  return '未检查'
+}
+
+/** 文字契约（ADR-0039 / spec §4）：计数头 → 更新摘要（或收录清单不可用声明）→ 可升级 → 未检查 → 检查未完成 → 清单 → 指引。 */
 function renderList(out: ListOut): string {
-  if (!out.items?.length) return 'web profile 还没有安装任何 dsh 插件。对用户一句短话即可。'
-  const lines = out.items.map((it, i) => {
-    const marks = [
-      it.registryId ? '市场' : '非市场',
-      it.upgradePath === 'unsupported' ? unsupportedCauseLabel(it.upgradePathReason) : null,
-      it.outdated && it.latestVersion ? `可升级 → v${it.latestVersion}` : null,
-    ].filter(Boolean).join('，')
-    return `${i + 1}. ${it.name} (${it.pkg}) v${it.version || '?'} · ${it.source}${marks ? ` · ${marks}` : ''}`
+  const items = out.items ?? []
+  if (!items.length) return 'web profile 还没有安装任何 dsh 插件。对用户一句短话即可。'
+  const unavailable = out.registry?.status === 'unavailable'
+  const of = (u: string) => items.filter((it) => it.update === u)
+  const upgradable = of('upgradable')
+  const latest = of('latest')
+  const unchecked = of('unchecked')
+  const incomplete = of('incomplete')
+  const byMarket = (m: string) => items.filter((it) => it.market === m).length
+  const head: string[] = [
+    `已装 ${items.length} 个插件 · 市场 ${byMarket('market')} · 非市场 ${byMarket('non-market')} · 未知 ${byMarket('unknown')}`,
+  ]
+  if (unavailable) {
+    head.push('收录清单不可用：市场归属未知，更新均未检查，无法判断是否有更新。')
+  } else if (!upgradable.length && !unchecked.length && !incomplete.length) {
+    head.push(`全部 ${items.length} 个插件已检查，均已是最新版本。`)
+  } else {
+    head.push(`更新：可升级 ${upgradable.length} · 已最新 ${latest.length} · 未检查 ${unchecked.length} · 检查未完成 ${incomplete.length}`)
+  }
+  const sections: string[] = []
+  if (upgradable.length) {
+    sections.push(`可升级（${upgradable.length}）：`)
+    for (const it of upgradable) {
+      const disabled = it.userDisabled ? ' · 意图停用' : ''
+      const cause = it.upgradePath === 'unsupported' ? ` · ${unsupportedCauseLabel(it.upgradePathReason)}——不参与自动升级` : ''
+      sections.push(`· ${it.name} (${it.pkg}) v${it.version || '?'} → ${targetOf(it)}${disabled}${cause}`)
+    }
+  }
+  if (!unavailable && unchecked.length) {
+    sections.push(`未检查（${unchecked.length}）——不代表已是最新：`)
+    for (const it of unchecked) sections.push(`· ${it.name} (${it.pkg})——${uncheckedTextOf(it)}`)
+  }
+  if (incomplete.length) {
+    sections.push(`检查未完成（${incomplete.length}）：`)
+    for (const it of incomplete) sections.push(`· ${it.name} (${it.pkg})——${latestErrorCodeReason(it.latestErrorCode)}`)
+  }
+  const rows = items.map((it, i) => {
+    const marketLabel = it.market === 'market' ? '市场' : it.market === 'non-market' ? '非市场' : '未知'
+    const updateLabel = it.update === 'upgradable' ? `可升级 → ${targetOf(it)}`
+      : it.update === 'latest' ? '已最新'
+      : it.update === 'incomplete' ? '检查未完成'
+      : '未检查'
+    const tail = [it.userDisabled ? '意图停用' : null, it.upgradePath === 'unsupported' ? unsupportedCauseLabel(it.upgradePathReason) : null]
+      .filter((x): x is string => Boolean(x))
+    return `${i + 1}. ${it.name} (${it.pkg}) v${it.version || '?'} · ${it.source} · ${marketLabel} · ${updateLabel}${tail.map((t) => ` · ${t}`).join('')}`
   })
-  return [
-    `已安装 ${out.items.length} 个插件（内部序号，禁止复述给用户）：`,
-    lines.join('\n'),
-    '对用户最多回一句短话。管理动作：dshm_upgrade / dshm_uninstall（先与用户确认）。',
-  ].join('\n')
+  const guidance = '对用户：状态类问题用 3 行以内概括（可升级的名单与版本、未检查与未完成的数量与原因，其余已最新），不逐条复述清单。升级或卸载前先与用户确认，再调 dshm_upgrade / dshm_uninstall（pkg）。'
+  return [...head, ...sections, '清单（内部序号，禁止复述给用户）：', ...rows, guidance].join('\n')
 }
 
 function renderInstall(out: InstallOut): string {
@@ -754,30 +814,6 @@ function renderUninstall(out: UninstallOut): string {
   if (out.leftovers?.length) parts.push(`疑似残留数据（未删除，仅供知晓）：${out.leftovers.join('、')}`)
   parts.push('需要重启生效——询问是否 dshm_restart。')
   return parts.join(' ')
-}
-
-function renderOutdated(out: ListOut): string {
-  const outdated = (out.items || []).filter((it) => it.outdated)
-  const incomplete = (out.items || []).filter((it) => it.latestErrorCode)
-  if (!out.items?.length) return 'web profile 没有已装插件。'
-  const head: string[] = []
-  if (outdated.length) {
-    head.push(
-      `${outdated.length}/${out.items.length} 个插件可升级：`,
-      outdated.map((it) => `${it.name} (${it.pkg})：v${it.version} → ${it.latestTag || (it.latestVersion ? `v${it.latestVersion}` : '最新')}${it.upgradePath === 'unsupported' ? ` · ${unsupportedCauseLabel(it.upgradePathReason)}——不参与自动升级` : ''}`).join('\n'),
-    )
-  } else {
-    head.push(`全部 ${out.items.length} 个插件均已是最新版本。`)
-  }
-  // 禁止「未完成检查」冒充「全部最新」（Task 7 ⑨）：按 code 安全化原因列出
-  if (incomplete.length) {
-    head.push(
-      `${incomplete.length} 项检查未完成：`,
-      incomplete.map((it) => `· ${it.name} (${it.pkg})——${latestErrorCodeReason(it.latestErrorCode)}`).join('\n'),
-    )
-  }
-  head.push('询问用户要升级哪个，确认后调 dshm_upgrade（pkg）。')
-  return head.join('\n')
 }
 
 export function renderUpgrade(out: InstallOut & { fromVersion?: string }): string {

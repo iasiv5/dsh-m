@@ -180,10 +180,10 @@ describe('ADR-0030（issue #39）：agent 工具 web 写分支接线（四工具
   })
 })
 
-describe('ADR-0030 源结构锚：tools 四工具 web 写分支接线计数（计划 T7.3 终值 11）', () => {
-  it("src/tools.ts 中 'profileDir: profile.dir' 出现次数 = 11（出现次数语义，非行数）", () => {
+describe('ADR-0030 源结构锚：tools 四工具 web 写分支接线计数（计划 T7.3 终值 11；ADR-0039 删除 dshm_outdated 读分支后为 10）', () => {
+  it("src/tools.ts 中 'profileDir: profile.dir' 出现次数 = 10（出现次数语义，非行数；ADR-0039 删除 dshm_outdated 读分支 -1）", () => {
     const src = readFileSync(new URL('../src/tools.ts', import.meta.url), 'utf8')
-    assert.equal(src.split('profileDir: profile.dir').length - 1, 11, 'desktop 4 + 读分支 3 + web 写分支 4（基线 7 + 4）')
+    assert.equal(src.split('profileDir: profile.dir').length - 1, 10, 'desktop 4 + 读分支 2（dshm_search/dshm_list）+ web 写分支 4（基线 7 + 4；ADR-0039 删除 dshm_outdated 读分支）')
   })
 })
 

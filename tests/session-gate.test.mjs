@@ -59,7 +59,7 @@ describe('session-gate：SLIM 文本锚与常量', () => {
 })
 
 describe('tools.ts 接线（issue #57 Task 4）', () => {
-  it('T5：8 个工具均带 when 谓词，随 cfg 两态翻转', async () => {
+  it('T5：7 个工具均带 when 谓词，随 cfg 两态翻转（ADR-0039：dshm_outdated 已并入 dshm_list）', async () => {
     const { registerTools } = await import('../lib/tools.js')
     const registeredOff = []
     registerTools(
@@ -67,7 +67,7 @@ describe('tools.ts 接线（issue #57 Task 4）', () => {
       { sessionTools: false },
       {},
     )
-    assert.equal(registeredOff.length, 8)
+    assert.equal(registeredOff.length, 7)
     for (const [t, o] of registeredOff) {
       assert.equal(typeof o?.when, 'function', `${t.name} 缺 when`)
       assert.equal(o.when(), false, `${t.name} 关态应为 false`)
@@ -78,7 +78,7 @@ describe('tools.ts 接线（issue #57 Task 4）', () => {
       {},
       {},
     )
-    assert.equal(registeredOn.length, 8)
+    assert.equal(registeredOn.length, 7)
     for (const [t, o] of registeredOn) {
       assert.equal(o.when(), true, `${t.name} 缺省应可入装配`)
     }

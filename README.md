@@ -7,7 +7,7 @@
 
 [English](./README.en.md) · 中文
 
-dsh-m 把 DeepSeek Harness（DSH）的插件**发现、安装、管理与更新**放进同一个界面。社区目录与人工精选同时可搜；侧栏面板、8 个 Agent 工具和 `dshm` CLI 共用一套市场数据。无需额外的市场服务器或账号，插件操作仍由本机 DSH 宿主管理。
+dsh-m 把 DeepSeek Harness（DSH）的插件**发现、安装、管理与更新**放进同一个界面。社区目录与人工精选同时可搜；侧栏面板、7 个 Agent 工具和 `dshm` CLI 共用一套市场数据。无需额外的市场服务器或账号，插件操作仍由本机 DSH 宿主管理。
 
 ![侧栏插件市场：精选分区、分类与插件卡片](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp)
 
@@ -76,7 +76,7 @@ dsh-m 把 DeepSeek Harness（DSH）的插件**发现、安装、管理与更新*
 | Agent 工具 | 能做什么 |
 |---|---|
 | `dshm_search` | 同时搜索社区与精选，在对话内展示插件卡片 |
-| `dshm_list` · `dshm_outdated` | 列当前 profile 实装与可更新插件 |
+| `dshm_list` | 列当前 profile 已装插件，含市场归属与更新状态 |
 | `dshm_install` · `dshm_upgrade` · `dshm_uninstall` | 安装、升级、确认后卸载；兼容风险先行提示 |
 | `dshm_toggle` · `dshm_restart` | 切换运行状态；经用户同意后重启 Web |
 
@@ -99,7 +99,7 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 
 官方**插件页**（侧栏「插件」→ dsh-m）设置区的**「AI 会话集成」卡**里有一个开关：**Agent 工具（dshm_*）与系统提示词注入**，缺省开启。它同时控制两项：
 
-- **8 个 `dshm_*` Agent 工具**（搜索、列出已装、安装、切换运行状态、卸载、查可更新、升级、重启 Web）能否在对话中使用；
+- **7 个 `dshm_*` Agent 工具**（搜索、列出已装与更新状态、安装、切换运行状态、卸载、升级、重启 Web）能否在对话中使用；
 - **系统提示词里的用法引导段**：让插件类请求优先走 dshm 工具，而不是网页搜索或命令行。
 
 关闭后，**新开的对话**不再提供这些工具，也不再携带引导段；市场页面与 `dshm` 命令行不受影响。已打开的对话里，AI 从下一次回复起也不能再调用这些工具；已经发生的对话内容（包括之前注入的提示词）不会被清洗，想要完全干净请开新对话。

@@ -334,7 +334,7 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
       }
       for (const it of result.items) {
         const marks = [
-          it.registryId ? '市场' : '非市场',
+          (result.registryState.status === 'unavailable' ? '未知' : it.registryId ? '市场' : '非市场'),
           it.outdated && it.latestVersion ? `可升级 → v${it.latestVersion}` : null,
         ].filter(Boolean).join('，')
         out(`• ${it.name} (${it.pkg}) v${it.version || '?'} · ${sourceLabel(it.source)}${marks ? ` · ${marks}` : ''}`)

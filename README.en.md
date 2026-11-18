@@ -7,7 +7,7 @@
 
 English · [中文](./README.md)
 
-dsh-m brings **plugin discovery, installation, management, and updates** into one DeepSeek Harness (DSH) panel. Search the community directory and hand-curated picks together. The sidebar panel, eight Agent tools, and the `dshm` CLI share marketplace data. No additional marketplace server or account is needed; the local DSH host performs plugin operations.
+dsh-m brings **plugin discovery, installation, management, and updates** into one DeepSeek Harness (DSH) panel. Search the community directory and hand-curated picks together. The sidebar panel, seven Agent tools, and the `dshm` CLI share marketplace data. No additional marketplace server or account is needed; the local DSH host performs plugin operations.
 
 ![Plugin Marketplace: curated zone, categories, and plugin cards](https://raw.githubusercontent.com/iasiv5/dsh-m/main/docs/images/marketplace.webp)
 
@@ -76,7 +76,7 @@ The entry itself rides the host row scale (content starts at 20px, aligned with 
 | Agent tools | Purpose |
 |---|---|
 | `dshm_search` | Search community and curated catalogs; render cards in the conversation |
-| `dshm_list` · `dshm_outdated` | List installed and outdated plugins in the current profile |
+| `dshm_list` | List installed plugins in the current profile, with market membership and update status |
 | `dshm_install` · `dshm_upgrade` · `dshm_uninstall` | Install, upgrade, and uninstall after confirmation; surface compatibility risks first |
 | `dshm_toggle` · `dshm_restart` | Toggle runtime state; restart Web with the user's consent |
 
@@ -99,7 +99,7 @@ The GUI and Agent tools manage the **current host profile** (Web or Desktop). Th
 
 On the official **plugin page** (sidebar "Plugins" → dsh-m), the **AI session integration** card has one switch: **Agent tools (dshm_*) and system prompt injection**, on by default. It controls two things together:
 
-- whether the **8 `dshm_*` Agent tools** (search, list installed, install, toggle, uninstall, check for updates, upgrade, restart Web) are available in conversation;
+- whether the **7 `dshm_*` Agent tools** (search, list installed with update status, install, toggle, uninstall, upgrade, restart Web) are available in conversation;
 - the **usage-guidance section in the system prompt**, which routes plugin requests to the dshm tools before web search or the shell.
 
 When off, **new conversations** no longer get these tools or the guidance; the market page and the `dshm` CLI are unaffected. In a conversation that is already open, the AI also stops being able to call these tools from the next reply; content that has already happened (including the prompt injected earlier) is not scrubbed, so start a new conversation if you want it fully clean.
