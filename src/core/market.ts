@@ -1169,8 +1169,7 @@ async function probeLatest(
           }
           if (value) {
             applyProbe(item, value)
-            writeLatestCache(cacheKey, value)
-            item.probedAt = Date.now()
+            item.probedAt = writeLatestCache(cacheKey, value)
           }
         } catch (err) {
           item.latestError = err instanceof Error ? err.message : String(err)

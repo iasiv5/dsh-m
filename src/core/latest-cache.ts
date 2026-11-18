@@ -76,13 +76,15 @@ export function peekLatestCache(key: string): LatestValue | null {
   return latestCache.get(key)?.value ?? null
 }
 
-/** 内存 set（超上限淘汰最旧）；纯内存，无任何落盘。 */
-export function writeLatestCache(key: string, value: LatestValue): void {
+/** 内存 set（超上限淘汰最旧）；纯内存，无任何落盘。返回条目写入时刻（entry.at），供探测盖戳与缓存写入同钟（impl-review Q1 选 b：消除跨毫秒断言脆弱性）。 */
+export function writeLatestCache(key: string, value: LatestValue): number {
+  const at = Date.now()
   if (latestCache.size >= LATEST_CACHE_MAX) {
     const oldest = latestCache.keys().next().value
     if (oldest !== undefined) latestCache.delete(oldest)
   }
-  latestCache.set(key, { at: Date.now(), value })
+  latestCache.set(key, { at, value })
+  return at
 }
 
 /**
