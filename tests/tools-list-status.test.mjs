@@ -23,11 +23,15 @@ function localItem(pkg, extra = {}) {
 async function loadTools({ items, registryState = readyState }) {
   const { registerTools } = await import('../lib/tools.js')
   const registered = []
+  const capturedOpts = []
   const ctx = { tools: { register: (t) => registered.push(t) }, inject: () => {} }
   registerTools(ctx, cfg, {
-    listInstalledWithMeta: async () => ({ items, others: 0, profileDir: profile.dir, registryState, community }),
+    listInstalledWithMeta: async (_c, opts) => {
+      capturedOpts.push(opts)
+      return { items, others: 0, profileDir: profile.dir, registryState, community }
+    },
   }, profile)
-  return { registered, tool: (name) => registered.find((t) => t.name === name) }
+  return { registered, tool: (name) => registered.find((t) => t.name === name), capturedOpts }
 }
 
 async function listOf({ items, registryState }) {
@@ -246,5 +250,30 @@ describe('ADR-0039 spec D13：检查时刻透出', () => {
     const { out } = await listOf({ items: [item('a', { latestVersion: '1.0.0', probedAt: 1_700_000_000_000 }), item('b', { latestVersion: '1.0.0' })] })
     assert.equal(out.items[0].probedAt, 1_700_000_000_000)
     assert.equal(out.items[1].probedAt, null)
+  })
+})
+
+describe('ADR-0039 spec D14：dshm_list refresh 参数', () => {
+  it('refresh 参数存在且非必填', async () => {
+    const { tool } = await loadTools({ items: [] })
+    const list = tool('dshm_list')
+    assert.equal(list.parameters.properties.refresh?.type, 'boolean')
+    assert.ok(!(list.parameters.required ?? []).includes('refresh'))
+  })
+
+  it('refresh 透传 core force：refresh:true → force true；缺省 → force false', async () => {
+    const { tool, capturedOpts } = await loadTools({ items: [item('a', { latestVersion: '1.0.0' })] })
+    const list = tool('dshm_list')
+    await list.execute({ refresh: true })
+    assert.equal(capturedOpts.at(-1).force, true, 'refresh:true 应透传 force:true')
+    await list.execute({})
+    assert.equal(capturedOpts.at(-1).force, false, '缺省应透传 force:false')
+  })
+
+  it('描述含 refresh 使用提示（缓存穿透语义）', async () => {
+    const { tool } = await loadTools({ items: [] })
+    const list = tool('dshm_list')
+    assert.ok(list.description.includes('refresh:true'), list.description)
+    assert.ok(list.description.includes('TTL cache'), list.description)
   })
 })

@@ -265,8 +265,10 @@ export function registerTools(
   registerGated(ctx, defineTool({
     name: 'dshm_list',
     description:
-      'List installed DSH plugins (current profile) with market membership (市场 / 非市场 / 未知) and update status: 可升级 (upgradable, with the target version), 已最新 (checked and up to date), 未检查 (NOT checked; this is not the same as up to date), 检查未完成 (a check was attempted and failed). Use for any question about installed plugins, plugin status, or available updates. Read-only; changes nothing. To upgrade, pass the pkg from this result to dshm_upgrade.',
-    parameters: {},
+      'List installed DSH plugins (current profile) with market membership (市场 / 非市场 / 未知) and update status: 可升级 (upgradable, with the target version), 已最新 (checked and up to date), 未检查 (NOT checked; this is not the same as up to date), 检查未完成 (a check was attempted and failed). Use for any question about installed plugins, plugin status, or available updates. Read-only; changes nothing. To upgrade, pass the pkg from this result to dshm_upgrade. Pass refresh:true only when the user asks to re-check (bypasses the TTL cache).',
+    parameters: {
+      refresh: { type: 'boolean', description: '绕过 TTL 缓存全量重探（npm / GitHub）。重探失败保留旧值并如实标注检查未完成；GitHub 源消耗被动预算（25/req、50/h 滚动）。用户要求「重新检查」时使用。' },
+    },
     output: {
       schema: { type: 'object', additionalProperties: true },
       render: (_args, value) => [{ type: 'text', text: renderList(value as ListOut) }],
@@ -279,13 +281,14 @@ export function registerTools(
       content: [],
     }),
     timeoutMs: INSTALLED_TOOL_TIMEOUT_MS,
-    async execute(_args, exec) {
+    async execute(args, exec) {
       const result: InstalledResult = await m.listInstalledWithMeta(cfg, {
         namespace: 'host',
         deadlineMs: INSTALLED_CORE_DEADLINE_MS,
         signal: exec?.signal,
         profileDir: profile.dir,
         profile: profile.name,
+        force: args.refresh === true,
       })
       const unavailable = result.registryState.status === 'unavailable'
       const items = result.items.map((it) => {
