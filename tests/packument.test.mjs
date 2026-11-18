@@ -304,3 +304,136 @@ describe('npmTarballUrl（0.10.0 Task 2：D3 自升级通道取精确版本 tarb
     )
   })
 })
+
+// ---------- ADR-0040：npmLatest in-flight 合并（红驱动 ①⑥⑦ / 负向边界锚 ②③④⑤⑧） ----------
+
+// 评审 P3 防挂死：⑦ 红相会挂死，需真实定时器哨兵——在 mock.timers 接管前捕获原版
+const REAL_SET_TIMEOUT = setTimeout
+
+describe('npmLatest in-flight 合并（ADR-0040）', () => {
+  /** fn(url, opts) 形态 stub（stubWire 的 route fn 只收 url，:52）。
+   *  逐调用 gate：release() 手动放行全部在途 wire（①④⑤）；opts.signal abort 时仅该调用结算
+   *  （镜像生产 wire 尊重自身 signal；绿相下 wire 信号 = flight ctrl.signal，只在全离开/cap 时到达）。 */
+  function deferredWire() {
+    const calls = { npmjs: 0, mirror: 0, other: 0 }
+    const state = { aborted: false }
+    const resolvers = new Set()
+    const fn = async (url, opts) => {
+      const host = url.startsWith(NPMJS) ? 'npmjs' : url.startsWith(MIRROR) ? 'mirror' : 'other'
+      calls[host] += 1
+      const settled = new Promise((resolveGate) => { resolvers.add(resolveGate) })
+      const abortLane = opts?.signal
+        ? new Promise((_, reject) => {
+            if (opts.signal.aborted) {
+              state.aborted = true
+              reject(new Error('aborted'))
+              return
+            }
+            opts.signal.addEventListener('abort', () => {
+              state.aborted = true
+              reject(new Error('aborted'))
+            }, { once: true })
+          })
+        : null
+      return Promise.race([settled.then(() => ({ version: '9.9.9' })), ...(abortLane ? [abortLane] : [])])
+    }
+    return { fn, calls, state, release: () => { for (const r of [...resolvers]) r() } }
+  }
+
+  it('flight-merge：并发同 pkg 两调用合并为一根 wire（红驱动，ADR-0040）', { timeout: 8_000 }, async () => {
+    const wire = deferredWire()
+    const p1 = npmLatest('p-flight-merge', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn })
+    const p2 = npmLatest('p-flight-merge', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn })
+    wire.release()
+    const [r1, r2] = await Promise.all([p1, p2])
+    assert.equal(r1.version, '9.9.9')
+    assert.equal(r2.version, '9.9.9')
+    assert.equal(wire.calls.npmjs, 1, '同 pkg 并发应合并为一根 wire')
+  })
+
+  it('flight-边界：不同 pkg 不合并（负向锚，现状即绿）', { timeout: 8_000 }, async () => {
+    const wire = stubWire({ npmjs: { version: '9.9.9' } })
+    const [r1, r2] = await Promise.all([
+      npmLatest('p-flight-a', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn }),
+      npmLatest('p-flight-b', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn }),
+    ])
+    assert.equal(r1.version, '9.9.9')
+    assert.equal(r2.version, '9.9.9')
+    assert.equal(wire.calls.npmjs, 2)
+  })
+
+  it('flight-边界：显式不同 registry 不合并（负向锚，现状即绿）', { timeout: 8_000 }, async () => {
+    const wire = stubWire({ npmjs: { version: '9.9.9' }, mirror: { version: '8.8.8' } })
+    await Promise.all([
+      npmLatest('p-flight-reg', 20_000, undefined, NPMJS, { fetchJsonLimited: wire.fn }),
+      npmLatest('p-flight-reg', 20_000, undefined, MIRROR, { fetchJsonLimited: wire.fn }),
+    ])
+    assert.equal(wire.calls.npmjs, 1)
+    assert.equal(wire.calls.mirror, 1)
+  })
+
+  it('flight-边界：leader abort 不连坐，waiter 仍成功（负向锚，现状即绿）', { timeout: 8_000 }, async () => {
+    const wire = deferredWire()
+    const ac1 = new AbortController()
+    const ac2 = new AbortController()
+    const p1 = npmLatest('p-flight-lead-abort', 20_000, ac1.signal, undefined, { fetchJsonLimited: wire.fn })
+    const p2 = npmLatest('p-flight-lead-abort', 20_000, ac2.signal, undefined, { fetchJsonLimited: wire.fn })
+    ac1.abort()
+    await assert.rejects(p1)
+    wire.release()
+    const r2 = await p2
+    assert.equal(r2.version, '9.9.9', 'leader 自身中止不得殃及 waiter')
+  })
+
+  it('flight-边界：waiter abort 不连坐，leader 仍成功（负向锚，现状即绿）', { timeout: 8_000 }, async () => {
+    const wire = deferredWire()
+    const ac1 = new AbortController()
+    const ac2 = new AbortController()
+    const p1 = npmLatest('p-flight-wait-abort', 20_000, ac1.signal, undefined, { fetchJsonLimited: wire.fn })
+    const p2 = npmLatest('p-flight-wait-abort', 20_000, ac2.signal, undefined, { fetchJsonLimited: wire.fn })
+    ac2.abort()
+    await assert.rejects(p2)
+    wire.release()
+    const r1 = await p1
+    assert.equal(r1.version, '9.9.9', 'waiter 自身中止不得殃及 leader')
+  })
+
+  it('flight-全离开：refs 归零中止共享 wire（红驱动）', { timeout: 8_000 }, async () => {
+    const wire = deferredWire()
+    const ac1 = new AbortController()
+    const ac2 = new AbortController()
+    const p1 = npmLatest('p-flight-allleft', 20_000, ac1.signal, undefined, { fetchJsonLimited: wire.fn })
+    const p2 = npmLatest('p-flight-allleft', 20_000, ac2.signal, undefined, { fetchJsonLimited: wire.fn })
+    ac1.abort()
+    ac2.abort()
+    await Promise.allSettled([p1, p2])
+    assert.equal(wire.calls.npmjs, 1, '共享 wire 只应有一根')
+    assert.equal(wire.state.aborted, true, '全部等待方离开后共享 wire 应被中止')
+  })
+
+  it('flight-cap：30s 硬上限拒绝，不借 wire 生效（红驱动，评审 P3）', { timeout: 8_000 }, async () => {
+    const wire = stubWire({ npmjs: () => new Promise(() => {}) })  // 永挂且不感知 signal（故意隔离 cap 通道）
+    mock.timers.enable({ apis: ['setTimeout'] })
+    try {
+      const p = npmLatest('p-flight-cap', 60_000, undefined, undefined, { fetchJsonLimited: wire.fn })
+      mock.timers.tick(31_000)
+      const verdict = await Promise.race([
+        p.then(() => 'resolved', (e) => String(e?.message ?? e)),
+        new Promise((resolve) => REAL_SET_TIMEOUT(resolve, 5_000, 'HANG')),
+      ])
+      assert.notEqual(verdict, 'HANG', 'cap 快进后未拒绝（挂死防线）')
+      assert.match(String(verdict), /30s 硬上限/)
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  it('flight-边界：settle 清键后同 pkg 重探新 wire（负向锚，现状即绿）', { timeout: 8_000 }, async () => {
+    const wire = stubWire({ npmjs: { version: '2.0.0' } })
+    await npmLatest('p-flight-resettle', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn })
+    await new Promise((resolve) => setImmediate(resolve))
+    const before = wire.calls.npmjs
+    await npmLatest('p-flight-resettle', 20_000, undefined, undefined, { fetchJsonLimited: wire.fn })
+    assert.equal(wire.calls.npmjs, before + 1, 'flight settle 清键后应重新发起 wire')
+  })
+})

@@ -378,12 +378,72 @@ export interface NpmLatestDeps {
   fetchJsonLimited?: typeof fetchJsonLimited
 }
 
+// ---------- in-flight 合并（ADR-0040：waiter-scoped 超时/signal + flight 30s 硬上限） ----------
+
+interface NpmFlight {
+  promise: Promise<NpmLatest>
+  refs: number
+  ctrl: AbortController
+  timer: ReturnType<typeof setTimeout>
+}
+
+const npmFlights = new Map<string, NpmFlight>()
+const NPM_FLIGHT_CAP_MS = 30_000
+
+/** waiter 全部离开时中止并清键（flight settle 清理是另一条通道，二者幂等互容）。 */
+function flightRelease(key: string, flight: NpmFlight): void {
+  flight.refs -= 1
+  if (flight.refs === 0 && npmFlights.get(key) === flight) {
+    npmFlights.delete(key)
+    flight.ctrl.abort(new Error('npmLatest flight：全部等待方已离开'))
+    clearTimeout(flight.timer)
+  }
+}
+
+/** waiter/leader 共用等待裁剪：自身超时、自身 signal、flight ctrl 三臂；ctrl 臂 reason 承载 canonical message（评审 P3：cap 不借 wire 生效）。 */
+function raceWaiter(p: Promise<NpmLatest>, timeoutMs: number, signal: AbortSignal | undefined, ctrlSignal?: AbortSignal): Promise<NpmLatest> {
+  return new Promise<NpmLatest>((resolve, reject) => {
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const settle = (fn: () => void) => {
+      if (done) return
+      done = true
+      if (timer) clearTimeout(timer)
+      signal?.removeEventListener('abort', onSelfAbort)
+      ctrlSignal?.removeEventListener('abort', onCtrlAbort)
+      fn()
+    }
+    const onSelfAbort = () => settle(() => reject(signal?.reason ?? new Error('npmLatest 被中止')))
+    const onCtrlAbort = () => settle(() => reject(ctrlSignal?.reason ?? new Error('npmLatest flight 被中止')))
+    if (signal) {
+      if (signal.aborted) {
+        onSelfAbort()
+        return
+      }
+      signal.addEventListener('abort', onSelfAbort, { once: true })
+    }
+    if (ctrlSignal) {
+      if (ctrlSignal.aborted) {
+        onCtrlAbort()
+        return
+      }
+      ctrlSignal.addEventListener('abort', onCtrlAbort, { once: true })
+    }
+    timer = setTimeout(() => settle(() => reject(new Error('npmLatest 超时'))), timeoutMs)
+    p.then(
+      (value) => settle(() => resolve(value)),
+      (err) => settle(() => reject(err)),
+    )
+  })
+}
+
 /**
- * 升级探测（检测读）。L3 权威链（ADR-0012）：新鲜度敏感——npmjs 权威源优先
+ * 升级探测（检测读）内部实现（原 npmLatest 主体逐字节搬入，ADR-0040 包装层见下）。
+ * L3 权威链（ADR-0012）：新鲜度敏感——npmjs 权威源优先
  * （首腿超时收紧 `Math.min(timeoutMs, 5_000)`），失败降级生效源（≠npmjs 时）；
  * 不设 sync 腿。显式 registry 参数优先。
  */
-export async function npmLatest(
+async function npmLatestInner(
   pkg: string,
   timeoutMs = 20_000,
   signal?: AbortSignal,
@@ -414,6 +474,52 @@ export async function npmLatest(
     const alt = await activeNpmRegistry()
     if (alt === DEFAULT_NPM_REGISTRY) throw firstErr
     return leg(alt, timeoutMs)
+  }
+}
+
+/**
+ * 升级探测（检测读）公开入口（ADR-0040）：同 (registry, pkg) 的并发调用合并为一根 wire；
+ * 单调用语义与错误形态与 npmLatestInner 一致。键：显式 registry 原样 `| pkg`，隐式以
+ * `implicit` 字面入键（生效腿由 inner 两腿阶梯决策，避免 waiter join 前先做异步解析）。
+ * flight 30s 硬上限与「全部等待方已离开」经 ctrl.abort 承载 canonical message，waiter
+ * 经 raceWaiter 的 ctrl 臂如实收到（cap 不借 wire 生效）。
+ */
+export async function npmLatest(
+  pkg: string,
+  timeoutMs = 20_000,
+  signal?: AbortSignal,
+  registry?: string,
+  deps?: NpmLatestDeps,
+): Promise<NpmLatest> {
+  const key = `${registry?.trim() || 'implicit'}|${pkg}`
+  const existing = npmFlights.get(key)
+  if (existing) {
+    existing.refs += 1
+    try {
+      return await raceWaiter(existing.promise, timeoutMs, signal, existing.ctrl.signal)
+    } finally {
+      flightRelease(key, existing)
+    }
+  }
+  const ctrl = new AbortController()
+  const flight: NpmFlight = {
+    promise: null as unknown as Promise<NpmLatest>,
+    refs: 1,
+    ctrl,
+    timer: null as unknown as ReturnType<typeof setTimeout>,
+  }
+  flight.timer = setTimeout(() => ctrl.abort(new Error('npmLatest flight 30s 硬上限')), NPM_FLIGHT_CAP_MS)
+  flight.promise = npmLatestInner(pkg, timeoutMs, ctrl.signal, registry, deps).finally(() => {
+    if (npmFlights.get(key) === flight) {
+      npmFlights.delete(key)
+      clearTimeout(flight.timer)
+    }
+  })
+  npmFlights.set(key, flight)
+  try {
+    return await raceWaiter(flight.promise, timeoutMs, signal, flight.ctrl.signal)
+  } finally {
+    flightRelease(key, flight)
   }
 }
 
