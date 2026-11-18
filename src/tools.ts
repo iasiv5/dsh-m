@@ -307,6 +307,7 @@ export function registerTools(
           uncheckedReason: status.uncheckedReason,
           latestError: it.latestError ?? null,
           latestErrorCode: it.latestErrorCode ?? null,
+          probedAt: it.probedAt ?? null,
           userDisabled: (it as { userDisabled?: boolean }).userDisabled === true,
         }
       })
@@ -581,6 +582,7 @@ interface ListOut {
     uncheckedReason?: 'registry-unavailable' | 'local-install' | 'not-probed' | null
     latestError?: string | null
     latestErrorCode?: string | null
+    probedAt?: number | null
     userDisabled?: boolean
   }>
   community?: { acceptedCount: number | null; route: string | null; status: string; version: string | null }
@@ -715,6 +717,21 @@ function uncheckedTextOf(it: { source?: string; uncheckedReason?: string | null 
   return '未检查'
 }
 
+/** D13：items 中最旧检查时刻（ms epoch），无任何已检查项为 null。 */
+function listCheckedAtOf(items: Array<{ probedAt?: number | null }>): number | null {
+  let oldest: number | null = null
+  for (const it of items) {
+    if (typeof it.probedAt === 'number' && (oldest === null || it.probedAt < oldest)) oldest = it.probedAt
+  }
+  return oldest
+}
+
+/** D13：检查时刻的本地 HH:MM。 */
+function formatProbeHHMM(ms: number): string {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
 /** 文字契约（ADR-0039 / spec §4）：计数头 → 更新摘要（或收录清单不可用声明）→ 可升级 → 未检查 → 检查未完成 → 清单 → 指引。 */
 function renderList(out: ListOut): string {
   const items = out.items ?? []
@@ -726,15 +743,18 @@ function renderList(out: ListOut): string {
   const unchecked = of('unchecked')
   const incomplete = of('incomplete')
   const byMarket = (m: string) => items.filter((it) => it.market === m).length
+  const oldest = listCheckedAtOf(items)
+  const stampSeg = oldest !== null ? ` · 检查结果截至 ${formatProbeHHMM(oldest)}` : ''
+  const parenSeg = oldest !== null ? `（截至 ${formatProbeHHMM(oldest)}）` : ''
   const head: string[] = [
     `已装 ${items.length} 个插件 · 市场 ${byMarket('market')} · 非市场 ${byMarket('non-market')} · 未知 ${byMarket('unknown')}`,
   ]
   if (unavailable) {
     head.push('收录清单不可用：市场归属未知，更新均未检查，无法判断是否有更新。')
   } else if (!upgradable.length && !unchecked.length && !incomplete.length) {
-    head.push(`全部 ${items.length} 个插件已检查，均已是最新版本。`)
+    head.push(`全部 ${items.length} 个插件已检查${parenSeg}，均已是最新版本。`)
   } else {
-    head.push(`更新：可升级 ${upgradable.length} · 已最新 ${latest.length} · 未检查 ${unchecked.length} · 检查未完成 ${incomplete.length}`)
+    head.push(`更新：可升级 ${upgradable.length} · 已最新 ${latest.length} · 未检查 ${unchecked.length} · 检查未完成 ${incomplete.length}${stampSeg}`)
   }
   const sections: string[] = []
   if (upgradable.length) {

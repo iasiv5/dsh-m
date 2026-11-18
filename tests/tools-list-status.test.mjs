@@ -208,3 +208,43 @@ describe('ADR-0039：标题投影', () => {
     assert.ok(!title.includes('全部最新'), title)
   })
 })
+
+describe('ADR-0039 spec D13：检查时刻透出', () => {
+  const STAMPS = [1_700_000_000_000, 1_700_000_000_500]
+  const expectHHMM = (ms) => {
+    const d = new Date(ms)
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  it('截至段：更新摘要行含「 · 检查结果截至 HH:MM」（最旧时刻）', async () => {
+    const { text } = await listOf({
+      items: [item('up', { outdated: true, latestVersion: '2.0.0', probedAt: STAMPS[1] }), item('lt', { latestVersion: '1.0.0', probedAt: STAMPS[0] })],
+    })
+    const line = text.split('\n').find((l) => l.startsWith('更新：'))
+    assert.ok(line, text)
+    assert.ok(line.includes(` · 检查结果截至 ${expectHHMM(STAMPS[0])}`), line)
+  })
+
+  it('截至段：全部最新句带「（截至 HH:MM）」', async () => {
+    const { text } = await listOf({
+      items: [item('a', { latestVersion: '1.0.0', probedAt: STAMPS[0] }), item('b', { latestVersion: '1.0.0', probedAt: STAMPS[1] })],
+    })
+    assert.ok(text.includes(`全部 2 个插件已检查（截至 ${expectHHMM(STAMPS[0])}），均已是最新版本。`), text)
+  })
+
+  it('截至段：无任何 probedAt 时两处均不出现（负向锚，现状即绿）', async () => {
+    const { text } = await listOf({ items: [item('a', { latestVersion: '1.0.0' }), item('b', { latestVersion: '1.0.0' })] })
+    assert.ok(!text.includes('截至'), text)
+  })
+
+  it('截至段：注册表不可用不出现（负向锚，现状即绿）', async () => {
+    const { text } = await listOf({ items: [item('p-npm', { probedAt: STAMPS[0] }), localItem('p-link', { probedAt: STAMPS[1] })], registryState: unavailableState })
+    assert.ok(!text.includes('截至'), text)
+  })
+
+  it('execute 透传 probedAt：有值透传、无值为 null', async () => {
+    const { out } = await listOf({ items: [item('a', { latestVersion: '1.0.0', probedAt: 1_700_000_000_000 }), item('b', { latestVersion: '1.0.0' })] })
+    assert.equal(out.items[0].probedAt, 1_700_000_000_000)
+    assert.equal(out.items[1].probedAt, null)
+  })
+})
