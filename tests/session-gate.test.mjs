@@ -4,6 +4,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   SESSION_PROMPT_SECTION_NAME,
@@ -106,5 +107,29 @@ describe('tools.ts 接线（issue #57 Task 4）', () => {
     assert.equal(s.text(), '') // 级联
     cfg.sessionTools = true
     assert.equal(s.text(), SLIM_PROMPT_SECTION) // 翻回全开
+  })
+})
+
+describe('DESIGN §5 工具清单一致性（retro 2026-11-18 候选 1：防文档枚举与注册清单漂移）', () => {
+  it('DESIGN §5 枚举的 dshm_* 工具与 registerTools 注册清单逐名一致', async () => {
+    const { registerTools } = await import('../lib/tools.js')
+    const registered = []
+    registerTools({ tools: { register: (t) => registered.push(t) }, inject: () => {} }, {}, {})
+    const doc = readFileSync(new URL('../docs/DESIGN.md', import.meta.url), 'utf8')
+    const line = doc.split('\n').find((l) => l.startsWith('- 工具前缀 `dshm_`，共'))
+    assert.ok(line, 'DESIGN §5 工具枚举行缺失（行首锚「- 工具前缀 `dshm_`，共」）')
+    // 只取枚举段（「：」到首个「。」），行尾注记（如「合并自原 dshm_outdated」）不参与清单
+    const enumPart = line.slice(line.indexOf('：') + 1, line.indexOf('。'))
+    assert.ok(enumPart.includes('`dshm_'), `枚举段解析失败：${line}`)
+    const documented = [...enumPart.matchAll(/`dshm_[a-z_]+`/g)].map((m) => m[0].slice(1, -1))
+    assert.ok(documented.length > 0, `枚举段未解析出工具名：${enumPart}`)
+    const countMatch = /共 (\d+) 个/.exec(line)
+    assert.ok(countMatch, `枚举行缺「共 N 个」计数：${line}`)
+    assert.equal(Number(countMatch[1]), documented.length, '「共 N 个」计数应与枚举名数一致')
+    assert.deepEqual(
+      [...documented].sort(),
+      registered.map((t) => t.name).sort(),
+      'DESIGN §5 枚举应与注册清单逐名一致',
+    )
   })
 })
