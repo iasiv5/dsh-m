@@ -129,11 +129,13 @@ GitHub 可升级项的目标写 tag（`latestTag`），npm 写 `v` + `latestVers
 - `dshm list`：注册表不可用时，市场标签输出「未知」，不再输出「非市场」。其它不变。
 - `dshm outdated`：完全不变（命令、退出码、输出）。
 
-## 7. 已知缺口（本次不解决，如实记录）
+## 7. 已知缺口与残留风险（本次不解决，如实记录）
 
 - 没有收录条目的 GitHub 安装不探测（[market.ts:1138-1142](../../src/core/market.ts#L1138-L1142)）。本次以「未检查」呈现。扩大探测需要单独决定 GitHub 被动预算的消耗（ADR-0008、ADR-0026）。
-- 并行调用时 npm `/latest` 没有 single-flight（[packument.ts:386-418](../../src/core/packument.ts#L386-L418)），两个工具并行时会重复请求。合并后同轮只调一个工具，只能缓解，不能根治。GitHub 侧有同仓库合并（[versions.ts:125](../../src/core/versions.ts#L125)）。
-- 外部途径（CLI、官方 Settings）完成的升级不触发 dsh-m 的缓存失效，最长 60 分钟内仍显示可升级（缺省 TTL [market.ts:1099](../../src/core/market.ts#L1099)）。卡片标注检查时间是可选项，本次不做。
+- **并发探测会重复请求 npm（效率问题，结果不受影响）。** `npmLatest` 直接请求每个包的 `/latest`，没有 in-flight 合并（[packument.ts:386-418](../../src/core/packument.ts#L386-L418)）；GitHub 侧有同仓库合并（[versions.ts:125](../../src/core/versions.ts#L125)）。合并后 agent 侧只剩一个状态工具，但仍可能重叠：agent 的 `dshm_list`（TTL 60 分钟，[market.ts:1099](../../src/core/market.ts#L1099)）与 GUI 已装页的第二段探测（TTL 30 分钟，[market.ts:289](../../src/core/market.ts#L289)）在缓存过期时同时进行，或同一工具被并行调用两次。两路探测在缓存写入前都读到未命中，于是各自把全部 npm 包请求一遍（当前 profile 为 18 个）；失败条目不写缓存，第二次调用还会重新等待超时。修复方向：为 npm `/latest` 增加按 (registry, pkg) 的 single-flight，waiter 的取消与 deadline 与共享请求分离（参照 [community.ts:496](../../src/core/community.ts#L496) 的 waiter-scoped signal）。
+- **缓存的是线上最新版本快照，不是已装版本。** 缓存只在进程内存中，默认 TTL 60 分钟（[market.ts:1099](../../src/core/market.ts#L1099)），重启即清空。已装版本每次都从 profile 实时读取，`outdated` 按实时版本与缓存的最新版本比较（[market.ts:1181](../../src/core/market.ts#L1181)）。因此外部升级（CLI、官方 Settings）之后，「可升级」不会因为缓存而残留；本段此前「最长 60 分钟仍显示可升级」的说法有误，已更正。真正的滞后在「最新版本」一侧：TTL 窗口内发布的新版本看不到，「已最新」与「可升级 → vX」可能滞后最多 60 分钟。
+- **「已检查」措辞会高估新鲜度。** 缓存条目写入时带有时间（[latest-cache.ts:69](../../src/core/latest-cache.ts#L69)），但文字与卡片都没有透出。修复方向：标注检查时间（例如「检查于 HH:MM，缓存 60 分钟」），或把措辞收窄为「截至 HH:MM 的检查结果」。
+- **agent 无法强制刷新。** `dshm_list` 没有参数绕过缓存；`force` 只在已装页的 `probeMode: 'only'` 路径生效（[market.ts:1099](../../src/core/market.ts#L1099)）。用户说「重新检查一下」时，agent 只能等 TTL 过期或重启宿主。修复方向：为 `dshm_list` 增加 `refresh` 参数，映射到现有 `force` 语义（失败时保留旧值，符合 ADR-0006 的 peek 约束）。
 - CLI list 没有显示 GitHub 源的目标版本（[cli.ts:338](../../src/cli.ts#L338)），与 agent 文字层的缺口同源，本次只修未知态标签。
 
 ## 8. 测试计划（先红后绿）
