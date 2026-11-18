@@ -264,6 +264,8 @@ export interface RunnerOutcome {
   readonly code?: string
   /** NO_MATCHING_VERSION 时的 registry 源识别——在完整文本上判定、先于截断（ADR-0012 L2；上层零 regex） */
   readonly registry?: PnpmRegistrySource
+  /** 仅 NO_MATCHING_VERSION：报错原文指向的缺失包名（主包或 pin 子依赖；issue #78）。提取失败缺席。 */
+  readonly missingPackage?: string
   /** ≤800 字符（runner 边界统一截断） */
   readonly output: string
   /** 仅 add·ok：精确放行的包名（未走放行 = []；ADR-0002） */
@@ -276,6 +278,20 @@ export interface RunnerOutcome {
 export interface BuildApprovalDecision {
   approvals: string[]
   fallbackAll: boolean
+}
+
+/** npm 包名白名单（与 packument.ts PKG_RE 同形；本地副本——packument 未导出该常量且 dsh-cli 不依赖其模块图，防 import 图扩大）。 */
+const MISSING_PKG_RE = /^@?[A-Za-z0-9-._~]+(\/[A-Za-z0-9-._~]+)?$/
+
+/**
+ * 从 pnpm「缺包」报错原文提取缺失包名（issue #78）：`No matching version found for <pkg>@<ver>`
+ * ——捕获组贪婪到最后一个 @，兼容 scoped 名（@scope/pkg@1.2.3 → @scope/pkg）；
+ * 提取结果过包名白名单，防把周边文本当包名。提取不到返回 undefined。
+ */
+function missingPackageOf(raw: string): string | undefined {
+  const m = /No matching version found for (\S+)@/.exec(raw)
+  const candidate = m?.[1]
+  return candidate !== undefined && MISSING_PKG_RE.test(candidate) ? candidate : undefined
 }
 
 /**
@@ -292,7 +308,13 @@ export function classifyPnpmError(text: string): { class: PnpmOutcomeClass; code
       ? 'npmjs'
       : null
   if (raw.includes(PNPM_OUTCOME_CODES.NO_MATCHING_VERSION)) {
-    return { class: 'retryable-lag', code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION, registry }
+    const missing = missingPackageOf(raw)
+    return {
+      class: 'retryable-lag',
+      code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION,
+      registry,
+      ...(missing !== undefined ? { missingPackage: missing } : {}),
+    }
   }
   if (raw.includes(PNPM_OUTCOME_CODES.CONFIG_MISMATCH)) {
     return { class: 'config-drift', code: PNPM_OUTCOME_CODES.CONFIG_MISMATCH, registry }
@@ -400,6 +422,25 @@ export function resolveDshLaunch(input: {
     }
   }
   return { file: 'dsh', args: [], cwd: undefined, viaShell: platform === 'win32', source: 'path-fallback', entry }
+}
+
+/**
+ * 回滚/重建 install 的 spawn 计划（issue #77）：win32 的 pnpm 是 npm 生成的 .cmd shim，
+ * 裸 spawn（shell:false）不走 PATHEXT 解析 → 必然 ENOENT。viaShell 兜底与 launch 路径
+ * path-fallback（resolveDshLaunch 的 `viaShell: platform === 'win32'`）同判据；经 shell 时
+ * Node 不转义参数，--dir 路径含空格会被 cmd 分词——双引号包裹（Windows 文件名禁止双引号，
+ * 路径不含引号；`%VAR%` 展开风险与 runDshPlugin 的 isCmdSafeProfileName 门同理，路径面
+ * 暂无先例门，此处注释记录）。POSIX 全字段零漂移（不引号、viaShell false、detached true）。
+ */
+export function pnpmInstallSpawnPlan(
+  profileDir: string,
+  mode: 'frozen' | 'rebuild',
+  platform: NodeJS.Platform = process.platform,
+): { file: string; args: string[]; viaShell: boolean; detached: boolean } {
+  const win32 = platform === 'win32'
+  const dirArg = win32 ? `"${profileDir}"` : profileDir
+  const flag = mode === 'frozen' ? '--frozen-lockfile' : '--no-frozen-lockfile'
+  return { file: 'pnpm', args: ['--dir', dirArg, 'install', flag], viaShell: win32, detached: !win32 }
 }
 
 /** 宿主进程内时重入自身 entry（skillhub 同款）；否则退回 PATH 上的 dsh。 */
@@ -890,7 +931,7 @@ function rawOutcome(text: string): RunnerOutcome {
 export function makeDshRunner(
   profileDir: string,
   profileName: string = WEB_PROFILE,
-  deps: { runDshPlugin?: PluginRunner } = {},
+  deps: { runDshPlugin?: PluginRunner; runCommand?: typeof runCommand } = {},
 ): PnpmRunner {
   const runPlugin = deps.runDshPlugin ?? runDshPlugin
   const ladder = makeAddViaLadder({ runDshPlugin: runPlugin, profile: profileName })
@@ -908,11 +949,14 @@ export function makeDshRunner(
     },
     async frozenInstall(signal?: AbortSignal): Promise<RunnerOutcome> {
       try {
+        const plan = pnpmInstallSpawnPlan(profileDir, 'frozen')
         // F1-R：detached 使 pnpm（及其后代）进入独立进程组，abort/超时可整组终止
-        const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--frozen-lockfile'], {
+        //（win32 经 shell，无进程组语义，取消走 child.kill——与主链 win32 形态一致）
+        const output = await (deps.runCommand ?? runCommand)(plan.file, plan.args, {
           timeoutMs: installTimeoutMs(),
           signal,
-          detached: process.platform !== 'win32',
+          viaShell: plan.viaShell,
+          detached: plan.detached,
         })
         return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
       } catch (err) {
@@ -921,10 +965,12 @@ export function makeDshRunner(
     },
     async rebuildInstall(signal?: AbortSignal): Promise<RunnerOutcome> {
       try {
-        const output = await runCommand('pnpm', ['--dir', profileDir, 'install', '--no-frozen-lockfile'], {
+        const plan = pnpmInstallSpawnPlan(profileDir, 'rebuild')
+        const output = await (deps.runCommand ?? runCommand)(plan.file, plan.args, {
           timeoutMs: installTimeoutMs(),
           signal,
-          detached: process.platform !== 'win32',
+          viaShell: plan.viaShell,
+          detached: plan.detached,
         })
         return { class: 'ok', output: output.length <= 800 ? output : output.slice(-800) }
       } catch (err) {

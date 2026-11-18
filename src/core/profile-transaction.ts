@@ -657,13 +657,28 @@ async function addWithLagRetry(
   for (;;) {
     const out = await d.runner.add(spec, req.signal)
     if (out.class !== 'retryable-lag') return out
-    // L2②（ADR-0012）：NO_MATCHING_VERSION 且 registry 字段指名 npmmirror → 按需同步镜像后重试；
-    // sync 失败静默（false = 回到既有退避语义）；kill switch（DSHM_MIRROR_SYNC=0）在缺省实现内。
     if (out.code === PNPM_OUTCOME_CODES.NO_MATCHING_VERSION && out.registry === 'npmmirror') {
-      const synced = await d.syncNpmmirror(req.pkg)
+      // L2②（ADR-0012）+ issue #78：pnpm 报错指向的缺失包优先——主包镜像已同步（=latest）而
+      // pin 子依赖缺失时，同步主包是空操作，重试预算两次全空转（issue #78 实录）。
+      // 提取失败（旧文本形态）或缺失包 == 主包 → 主包同步（既有语义零漂移）；
+      // 子依赖同步未受理（false = kill switch / 网络失败）→ 主包兜底一次。
+      // sync 失败静默（false = 回到既有退避语义）；kill switch（DSHM_MIRROR_SYNC=0）在缺省实现内。
+      const missing = out.missingPackage
+      const subTarget = missing !== undefined && missing !== req.pkg ? missing : undefined
+      let synced = false
+      let syncedTarget: string | undefined
+      if (subTarget !== undefined) {
+        synced = await d.syncNpmmirror(subTarget)
+        if (synced) syncedTarget = subTarget
+      }
+      if (!synced) {
+        synced = await d.syncNpmmirror(req.pkg)
+      }
       if (synced) {
         d.clearLatestCache()
-        heal.push({ code: 'B3_NPMMIRROR_SYNC', note: 'NO_MATCHING_VERSION 来自 npmmirror，已按需同步镜像后重试（+npmmirror sync）' })
+        heal.push({ code: 'B3_NPMMIRROR_SYNC', note: syncedTarget !== undefined
+          ? `NO_MATCHING_VERSION 来自 npmmirror，缺失依赖 ${syncedTarget} 已按需同步镜像后重试（+npmmirror sync）`
+          : 'NO_MATCHING_VERSION 来自 npmmirror，已按需同步镜像后重试（+npmmirror sync）' })
       }
     }
     if (attempt >= d.retryDelaysMs.length) return out

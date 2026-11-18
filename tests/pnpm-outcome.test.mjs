@@ -14,6 +14,7 @@ import {
   makeAddViaLadder,
   makeDshRunner,
   PNPM_OUTCOME_CODES,
+  pnpmInstallSpawnPlan,
 } from '../lib/core/dsh-cli.js'
 import {
   CONFIG_MISMATCH_TEXT,
@@ -49,6 +50,7 @@ describe('classifyPnpmError：六类分类表', () => {
       class: 'retryable-lag',
       code: PNPM_OUTCOME_CODES.NO_MATCHING_VERSION,
       registry: 'npmjs',
+      missingPackage: '@iasiv5/dsh-skins',
     })
     assert.deepEqual(classifyPnpmError(UNUSED_PATCH_TEXT), {
       class: 'unused-patch',
@@ -319,5 +321,105 @@ describe('classifyPnpmError registry 源识别（L2，ADR-0012）', () => {
     const c = classifyPnpmError(text)
     assert.equal(c.class, 'retryable-lag')
     assert.equal(c.registry, 'npmmirror')
+  })
+})
+
+// ---------- 回滚/重建 install 的 spawn 计划（issue #77）：win32 裸 spawn pnpm 必 ENOENT ----------
+
+describe('pnpmInstallSpawnPlan（issue #77）', () => {
+  it('win32：viaShell=true + detached=false + --dir 双引号包裹（cmd 分词防护）', () => {
+    const p = pnpmInstallSpawnPlan('C:\\Users\\J O\\.dsh\\profiles\\aqua', 'frozen', 'win32')
+    assert.equal(p.file, 'pnpm')
+    assert.equal(p.viaShell, true)
+    assert.equal(p.detached, false)
+    assert.deepEqual(p.args, ['--dir', '"C:\\Users\\J O\\.dsh\\profiles\\aqua"', 'install', '--frozen-lockfile'])
+  })
+
+  it('win32 rebuild：--no-frozen-lockfile 同款 shell 形态', () => {
+    const p = pnpmInstallSpawnPlan('C:\\p', 'rebuild', 'win32')
+    assert.deepEqual(p.args, ['--dir', '"C:\\p"', 'install', '--no-frozen-lockfile'])
+    assert.equal(p.viaShell, true)
+    assert.equal(p.detached, false)
+  })
+
+  it('POSIX：viaShell=false + detached=true + 路径不加引号（既有行为零漂移）', () => {
+    const p = pnpmInstallSpawnPlan('/tmp/profile-x', 'frozen', 'linux')
+    assert.equal(p.viaShell, false)
+    assert.equal(p.detached, true)
+    assert.deepEqual(p.args, ['--dir', '/tmp/profile-x', 'install', '--frozen-lockfile'])
+  })
+})
+
+describe('makeDshRunner frozen/rebuild 接线（issue #77）：spawn 计划透传 runCommand', () => {
+  it('frozenInstall/rebuildInstall 把计划交给 deps.runCommand（viaShell/detached 随平台）', async () => {
+    const seen = []
+    const fakeRunCommand = async (file, args, options) => {
+      seen.push({ file, args, options })
+      return 'installed'
+    }
+    const runner = makeDshRunner('C:\\Users\\J O\\.dsh\\profiles\\aqua', 'aqua', { runCommand: fakeRunCommand })
+    const outF = await runner.frozenInstall()
+    const outR = await runner.rebuildInstall()
+    assert.equal(outF.class, 'ok')
+    assert.equal(outR.class, 'ok')
+    assert.equal(seen.length, 2)
+    assert.equal(seen[0].file, 'pnpm')
+    assert.equal(seen[0].options.viaShell, process.platform === 'win32')
+    assert.equal(seen[0].options.detached, process.platform !== 'win32')
+    assert.ok(seen[0].args.includes('--frozen-lockfile'))
+    assert.ok(seen[1].args.includes('--no-frozen-lockfile'))
+    assert.equal(seen[1].options.viaShell, process.platform === 'win32')
+    if (process.platform === 'win32') {
+      assert.ok(seen[0].args.some((a) => a.startsWith('"') && a.includes('profiles\\aqua')), JSON.stringify(seen[0].args))
+    }
+  })
+})
+
+// ---------- win32 真实 shell 级防线（issue #77 增强用例，评审终审建议 1） ----------
+// 绿钉性质：runCommand 的 viaShell 形参 HEAD 已实现（:549–568），本用例钉「真实 pnpm
+// cmd shim 经 shell 可解析 + 引号交互不炸」的环境契约不被未来回归；红驱动由上方 seen
+// 接线断言承担。PATH 无 pnpm 的环境整体 t.skip（探测经 shell:true spawnSync，不假红）。
+
+describe('win32 真实 shell 级防线（issue #77）', () => {
+  it('runCommand 经 viaShell spawn 真实 pnpm → 非 ENOENT、输出版本号（win32 验证 cmd shim 解析；POSIX 验证直启不回归）', async (t) => {
+    const { spawnSync } = await import('node:child_process')
+    const probe = spawnSync('pnpm', ['--version'], { shell: true, encoding: 'utf8' })
+    if (probe.status !== 0) return t.skip(`PATH 上无 pnpm（shell 探测 status=${probe.status}），本环境不适用`)
+    const { runCommand } = await import('../lib/core/dsh-cli.js')
+    const out = await runCommand('pnpm', ['--version'], { timeoutMs: 30_000, viaShell: process.platform === 'win32' })
+    assert.match(out, /^\d+\.\d+/)
+  })
+})
+
+// ---------- classifyPnpmError 缺失包提取（issue #78） ----------
+
+describe('classifyPnpmError 缺失包提取（issue #78）', () => {
+  it('主包名形态：found for <pkg>@<ver> → missingPackage 携出', () => {
+    const c = classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION No matching version found for dsh-mnemon@0.5.48 while fetching it from https://registry.npmmirror.com/')
+    assert.equal(c.missingPackage, 'dsh-mnemon')
+  })
+
+  it('pin 子依赖（issue #78 事故同形）与 scoped 名（贪婪到最后一个 @）', () => {
+    const sub = classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION No matching version found for dsh-mnemon-source-memory-spaces@0.5.30 while fetching it from https://registry.npmmirror.com/')
+    assert.equal(sub.missingPackage, 'dsh-mnemon-source-memory-spaces')
+    assert.equal(classifyPnpmError(NO_MATCHING_TEXT).missingPackage, '@iasiv5/dsh-skins')
+  })
+
+  it('特征串位于 800 字截断线之外仍提取（分类先于截断，与 registry 识别同款）', () => {
+    const pad = 'x'.repeat(900)
+    const text = `ERR_PNPM_NO_MATCHING_VERSION No matching version found for pkg-dep@0.1.0\n${pad}\nfrom https://registry.npmmirror.com/`
+    assert.ok(text.length > 800)
+    assert.equal(classifyPnpmError(text).missingPackage, 'pkg-dep')
+  })
+
+  it('无「found for」句式 / 非 NO_MATCHING 类 → 字段缺席（负向锚：现状即绿——HEAD 本就不携带该字段）', () => {
+    const bare = classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION while fetching it from https://registry.npmmirror.com/')
+    assert.ok(!('missingPackage' in bare))
+    assert.ok(!('missingPackage' in classifyPnpmError(OUTDATED_LOCKFILE_TEXT)))
+  })
+
+  it('「found for」后非合法包名（多段路径）→ 不携带（负向锚：现状即绿，同上机制）', () => {
+    const junk = classifyPnpmError('ERR_PNPM_NO_MATCHING_VERSION No matching version found for ../../etc/passwd@1.0.0 while fetching it from https://registry.npmmirror.com/')
+    assert.ok(!('missingPackage' in junk))
   })
 })

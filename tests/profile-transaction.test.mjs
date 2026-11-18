@@ -2114,6 +2114,88 @@ describe('B3 registry-aware npmmirror sync（L2，ADR-0012）', () => {
   })
 })
 
+// ---------- B3 缺失依赖优先同步（issue #78）：报错指向子依赖缺时同步主包是空转 ----------
+
+describe('B3 缺失依赖优先同步（issue #78）', () => {
+  let dir = ''
+  afterEach(() => dir && rmSync(dir, { recursive: true, force: true }))
+
+  // issue #78 事故同形逐字文本：主包镜像已同步（=latest），pin 子依赖缺失
+  const SUB_DEP_MISSING = '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION No matching version found for dsh-mnemon-source-memory-spaces@0.5.30 while fetching it from https://registry.npmmirror.com/'
+
+  // 第二次 add 的成功落盘（镜像 :2050-2054 夹具形态，包名换 dsh-mnemon）
+  function succeedSecondAdd() {
+    writeFileSync(join(dir, 'package.json'), manifest({ dependencies: { existing: '^1.0.0', 'dsh-mnemon': '0.5.48' } }))
+    writeFileSync(join(dir, 'pnpm-lock.yaml'), lockFile({ pkg: 'dsh-mnemon', version: '0.5.48', integrity: sha512('good'), withOverrides: false }))
+    return { class: 'ok', output: 'added' }
+  }
+
+  it('报错指向子依赖 → 只同步子依赖（1 次），heal 注明包名，主包不动', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const syncs = []
+    const { runner } = mockRunner({ add: [failWith(SUB_DEP_MISSING), succeedSecondAdd] })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'dsh-mnemon', version: '0.5.48', integrity: sha512('good') },
+      baseTx(dir, runner, {
+        retryDelaysMs: [0],
+        syncNpmmirror: async (pkg) => { syncs.push(pkg); return true },
+        clearLatestCache: () => {},
+      }),
+    )
+    assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
+    assert.deepEqual(syncs, ['dsh-mnemon-source-memory-spaces'])
+    const note = r.healActions.find((h) => h.code === 'B3_NPMMIRROR_SYNC')?.note ?? ''
+    assert.ok(note.includes('dsh-mnemon-source-memory-spaces'), note)
+    assert.ok(note.includes('+npmmirror sync'), note)
+  })
+
+  it('子依赖同步未受理 → 主包兜底（2 次），heal 仍记 B3_NPMMIRROR_SYNC', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const syncs = []
+    const { runner } = mockRunner({ add: [failWith(SUB_DEP_MISSING), succeedSecondAdd] })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'dsh-mnemon', version: '0.5.48', integrity: sha512('good') },
+      baseTx(dir, runner, {
+        retryDelaysMs: [0],
+        syncNpmmirror: async (pkg) => { syncs.push(pkg); return pkg !== 'dsh-mnemon-source-memory-spaces' },
+        clearLatestCache: () => {},
+      }),
+    )
+    assert.equal(r.status, 'committed', `heals=${JSON.stringify(r.healActions)}`)
+    assert.deepEqual(syncs, ['dsh-mnemon-source-memory-spaces', 'dsh-mnemon'])
+    assert.ok(healCodes(r).includes('B3_NPMMIRROR_SYNC'))
+  })
+
+  it('报错无可提取包名 → 退回主包同步（既有语义；负向锚：现状即绿——HEAD 恒同步 req.pkg，新逻辑提取失败同形）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const BARE = '命令失败 (exit 1): ERR_PNPM_NO_MATCHING_VERSION while fetching it from https://registry.npmmirror.com/'
+    const syncs = []
+    const { runner } = mockRunner({ add: [failWith(BARE), succeedSecondAdd] })
+    const r = await runProfileTransaction(
+      { kind: 'install-npm', pkg: 'dsh-mnemon', version: '0.5.48', integrity: sha512('good') },
+      baseTx(dir, runner, {
+        retryDelaysMs: [0],
+        syncNpmmirror: async (pkg) => { syncs.push(pkg); return true },
+        clearLatestCache: () => {},
+      }),
+    )
+    assert.equal(r.status, 'committed')
+    assert.deepEqual(syncs, ['dsh-mnemon'])
+  })
+})
+
 // ---------- B3 kill switch 集成（缺省 sync 实现 + DSHM_MIRROR_SYNC=0，评审 R1-6，ADR-0012） ----------
 
 describe('B3 kill switch 集成（评审 R1-6，ADR-0012）', () => {
