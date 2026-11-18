@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.22 修复：win32 回滚阶梯 ENOENT + npmmirror 缺失依赖同步空转（issue #77/#78）
+
+- **修复（issue #77）**：Windows 上安装/升级失败后的回滚收敛阶梯（`frozenInstall`/`rebuildInstall`）裸 spawn `pnpm` 必 ENOENT——npm 全局装的 pnpm 是 `.cmd` shim，Node `spawn` 在 `shell:false` 下不走 PATHEXT 解析——回滚恒败、profile 被误报「可能需要人工修复」（实际字节还原成功、账实一致）。现在：新增 spawn 计划纯函数 `pnpmInstallSpawnPlan`（win32 `viaShell` + `--dir` 双引号包裹；与 launch 路径 path-fallback 同判据），POSIX 全字段零漂移；`makeDshRunner` 增 `deps.runCommand` 注入缝（测试可注入，缺省语义不变）。
+- **修复（issue #78）**：npmmirror 自愈（B3）此前恒同步用户请求的主包——主包镜像已同步而 pin 子依赖缺失时，重试预算（5s/15s 两次）全空转必失败。现在：从 pnpm 报错原文提取缺失包名（`No matching version found for <pkg>@<ver>` 窄正则 + 包名白名单，贪婪至最后一个 `@` 兼容 scoped 名，分类先于 800 字截断），优先同步**实际缺失的那个包**，未受理再主包兜底；提取失败或缺失包即主包时行为与旧版同形；heal 记录注明缺失依赖包名。
+- **测试**：新增 13 例——`tests/pnpm-outcome.test.mjs`（spawn 计划 3 例 + 接线缝 1 例 + win32 真实 shell 级绿钉 1 例（真 pnpm 经 cmd shim 实跑，PATH 无 pnpm 环境整体 skip）+ 缺失包提取 5 例）、`tests/profile-transaction.test.mjs`（缺失依赖优先同步 3 例）；既有 B3 / kill-switch / rollback-heal 套件零回归。本机全量 4 项环境既有失败经 `scripts/test-baseline.mjs` 结构化判别与基线逐名一致（非回归）。
+- **兼容性**：`RunnerOutcome` 新增可选字段 `missingPackage`（仅 NO_MATCHING_VERSION 条件携带，旧消费端零影响）；`dshm` CLI 接口零变化；POSIX 行为零漂移。已知不修（见 issue 回复）：失败信封残缺文本（报告者自标低优先）与「可能需要人工修复」措辞降级（根因修复后该路径仅剩真实收敛失败场景）。回退面：revert 修复提交（3281039）+ 版本递增。
+
 ### 0.12.21 安全修复：本地热部署撞名保护 + 升级白名单（ADR-0038）
 
 - **安全修复（issue #76）**：`file:`/`link:` 本地部署的插件与市场同名条目撞名时，此前会误报「可升级」红点，且点升级会**静默装成别人发布的同名 npm 包**。现在：未列入白名单的本地部署一律不参与线上升级与更新探测（红点消失、批量升级跳过、点升级给出结构化指引）——v0.11.0（#30）承诺的「本地开发安装不从线上更新」首次在全部场景成立。
@@ -1106,6 +1113,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.22 Fixes: win32 rollback ladder ENOENT + npmmirror missing-dependency sync spin (issue #77/#78)
+
+- **Fix (issue #77)**: On Windows the post-failure rollback convergence ladder (`frozenInstall`/`rebuildInstall`) spawned `pnpm` bare and always hit ENOENT — a npm-installed `pnpm` is a `.cmd` shim that Node `spawn` cannot resolve without `shell:true` — so rollback always failed and the profile was falsely reported as "may need manual repair" (byte restore had actually succeeded). Now a spawn-plan pure function `pnpmInstallSpawnPlan` covers win32 (`viaShell` + quoted `--dir`, same predicate as the launch path-fallback) with zero POSIX drift; `makeDshRunner` gains a `deps.runCommand` injection seam.
+- **Fix (issue #78)**: The npmmirror self-heal (B3) always synced the requested main package — when the mirror already had the main package but a pinned sub-dependency was missing, both retry attempts spun idle and failed. The missing package name is now extracted from the pnpm error text (`No matching version found for <pkg>@<ver>`, narrow regex + name whitelist, scoped-name aware, classified before the 800-char truncation) and synced first, with the main package as fallback; extraction failure keeps the old behavior. The heal record names the missing dependency.
+- **Tests**: 13 new cases across `tests/pnpm-outcome.test.mjs` (spawn plan ×3, wiring seam ×1, a real-shell win32 green nail ×1 (real pnpm via cmd shim; skipped wholesale where pnpm is absent from PATH), extraction matrix ×5) and `tests/profile-transaction.test.mjs` (sub-dependency-first sync ×3); existing B3 / kill-switch / rollback-heal suites unchanged and green. The 4 local full-suite failures were discriminated against the pre-change baseline by `scripts/test-baseline.mjs` — environment-known, not regressions.
+- **Compatibility**: optional `RunnerOutcome.missingPackage` field (conditionally present only for NO_MATCHING_VERSION); CLI unchanged; zero POSIX drift. Known-not-fixed (per issue replies): the truncated envelope text (reporter-flagged low priority) and the "may need manual repair" wording demotion (after the root-cause fix that path only remains for genuine convergence failures). Rollback: revert 3281039 + version bump.
 
 ### 0.12.21 Security fix: local-deploy collision guard + upgrade allowlist (ADR-0038)
 
