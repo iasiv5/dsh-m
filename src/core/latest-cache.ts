@@ -51,6 +51,22 @@ export function readLatestCache(key: string, ttlMin: number): LatestValue | null
   return entry.value
 }
 
+export interface LatestCacheHit {
+  value: LatestValue
+  at: number
+}
+
+/** 带写入时刻的读取（spec D13）：命中返回 { value, at }；过期删除语义与 readLatestCache 逐行一致。 */
+export function readLatestCacheStamped(key: string, ttlMin: number): LatestCacheHit | null {
+  const entry = latestCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.at >= ttlMin * 60_000) {
+    latestCache.delete(key)
+    return null
+  }
+  return { value: entry.value, at: entry.at }
+}
+
 /**
  * peek 读取（0.9.45，ADR-0013）：不判 TTL、不删除——供 force 全页重探时旧值兜底展示。
  * 落实 ADR-0006 在案约束：「force 穿透须用 peek 不删除语义，而非 ttlMin=0 先删后探（失败时旧值丢失）」；

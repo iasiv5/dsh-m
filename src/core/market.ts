@@ -64,7 +64,7 @@ const defaultFetchCuratedStats: (input: LoadCuratedStatsInput) => Promise<LoadCu
  *  超时后任务继续在后台完成并落盘缓存，下次浏览命中。 */
 const CURATED_DIRECT_RACE_MS = 2_500
 import { fetchPublishedAt } from './published-at.js'
-import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, writeLatestCache, type LatestValue } from './latest-cache.js'
+import { ensureLatestCacheSwept, invalidateLatestCache, latestCacheKey, latestItemId, peekLatestCache, readLatestCache, readLatestCacheStamped, writeLatestCache, type LatestValue } from './latest-cache.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
   isNewerVersion,
@@ -256,6 +256,8 @@ export interface InstalledItem extends InstalledPlugin {
   latestError?: string
   /** 结构化 code（Task 7 ⑨）：非空 = 该条检查未完成（三端按 code 呈现，不冒充「全部最新」） */
   latestErrorCode?: LatestErrorCode
+  /** 探测时刻（ms epoch，spec D13）：缓存命中=缓存写入时刻，新探=完成时刻；未探测/失败/跳过项缺席 */
+  probedAt?: number
   /** 命中社区收录条目（主清单未收录；M1 Task 5） */
   community?: true
   /** 本地部署升级白名单放行标记（issue #76/ADR-0038；stampUpgradeProjection 条件赋值，其余项字段缺席） */
@@ -1143,9 +1145,10 @@ async function probeLatest(
     if (cacheKey) {
       // force：跳过缓存捷径全量重探（ADR-0008 修订）；失败臂只标 latestError 不动缓存——
       // 旧值保留（readLatestCache 过期删除语义不经过，peek 纪律同源），无空徽标窗口
-      const cached = ctx.force === true ? null : readLatestCache(cacheKey, ctx.ttlMin)
-      if (cached) {
-        applyProbe(item, cached)
+      const hit = ctx.force === true ? null : readLatestCacheStamped(cacheKey, ctx.ttlMin)
+      if (hit) {
+        applyProbe(item, hit.value)
+        item.probedAt = hit.at
       } else if (rt.remaining() > 0) {
         // 绝对剩余预算贯穿整个 probe（多跳 githubLatestTag 不逐子请求重置——v9 ②）
         const budget = rt.remaining()
@@ -1167,6 +1170,7 @@ async function probeLatest(
           if (value) {
             applyProbe(item, value)
             writeLatestCache(cacheKey, value)
+            item.probedAt = Date.now()
           }
         } catch (err) {
           item.latestError = err instanceof Error ? err.message : String(err)

@@ -696,6 +696,42 @@ describe('listInstalledWithMeta probeMode', () => {
     await listInstalledWithMeta(cfg, {}, deps)
     assert.equal(calls.npm.length, 1, '缺省模式 TTL 内不得重复探测')
   })
+
+  it('probedAt 盖戳：新探完成时刻（spec D13）', async () => {
+    const { deps } = fakeDeps({ listInstalledPlugins: async () => installed })
+    const t0 = Date.now()
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(typeof res.items[0].probedAt, 'number', 'npm 新探项应盖 probedAt')
+    assert.ok(res.items[0].probedAt >= t0, `probedAt 应 ≥ 调用前时刻：${res.items[0].probedAt} < ${t0}`)
+  })
+
+  it('probedAt 盖戳：TTL 内缓存命中继承缓存写入时刻（spec D13）', async () => {
+    const { deps } = fakeDeps({ listInstalledPlugins: async () => installed })
+    const first = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(typeof first.items[0].probedAt, 'number', '前置：首探已盖戳')
+    const second = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(second.items[0].probedAt, first.items[0].probedAt, '缓存命中项 probedAt 应等于缓存写入时刻')
+  })
+
+  it('probedAt 盖戳：未探测项无戳——link 项与 registry unavailable 早退臂（spec D13 负向锚）', async () => {
+    const linkInstalled = {
+      items: [{ pkg: 'pkg-link', name: 'PLink', version: '1.0.0', description: '', homepage: '', spec: 'link:../pkg-link', source: 'link', dsh: true, path: '/tmp/pkg-link' }],
+      others: 0,
+      complete: true,
+      profileDir: '/tmp/profile',
+    }
+    const { deps } = fakeDeps({ listInstalledPlugins: async () => linkInstalled })
+    const res = await listInstalledWithMeta(cfg, {}, deps)
+    assert.equal(res.items[0].probedAt, undefined, 'link 项（白名单外）不探测、无 probedAt')
+    const { deps: depsUnavailable } = fakeDeps({
+      loadRegistry: async () => unavailableLoaded(),
+      listInstalledPlugins: async () => installed,
+    })
+    const resUnavailable = await listInstalledWithMeta(cfg, {}, depsUnavailable)
+    for (const it of resUnavailable.items) {
+      assert.equal('probedAt' in it, false, `unavailable 早退臂无 probedAt 键：${it.pkg}`)
+    }
+  })
 })
 
 describe('dshm_* Agent tools：host namespace 与 metadata-only search', () => {

@@ -131,10 +131,24 @@ function goldDeps() {
 
 const cfg = { timeoutMs: 500 }
 
+/** D13（ADR-0039 spec）：probedAt 为活时间戳，不入 golden 基线——镜像「禁活数字烙入基线」纪律。 */
+function stripProbedAt(value) {
+  if (Array.isArray(value)) return value.map(stripProbedAt)
+  if (value && typeof value === 'object') {
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      if (k === 'probedAt') continue
+      out[k] = stripProbedAt(v)
+    }
+    return out
+  }
+  return value
+}
+
 /** 每次捕获前重置 latest cache，保证探测段与缓存段行为确定。 */
 async function capture(label, fn) {
   resetLatestCacheForTest()
-  return [label, JSON.parse(JSON.stringify(await fn()))]
+  return [label, stripProbedAt(JSON.parse(JSON.stringify(await fn())))]
 }
 
 // ---------- 断言 / 重生成 ----------
