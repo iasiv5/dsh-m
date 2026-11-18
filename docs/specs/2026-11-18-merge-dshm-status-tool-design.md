@@ -45,6 +45,9 @@
 | D10 | GUI 卡片 | `dshm_list` 的卡片改为三态市场标签加更新徽标；`dshm_outdated` 的卡片槽位移除。卡片只保留一张列表卡。 | 前提 B；解决「双层」本身。 |
 | D11 | GitHub 非收录安装 | 本次不扩大探测范围。以「未检查（未探测）」如实呈现。 | 扩大探测会增加 GitHub 被动预算的消耗，属于独立决策（前提 D）。 |
 | D12 | 发布与执行边界 | 本次不发版、不改版本号、不写 CHANGELOG（随发版写入）、不重启宿主、不热部署到活宿主、不合并到 main。改动在 `feat/merge-dshm-status-tool` 分支。 | 会话已禁用批准；这些动作都需要明确批准（dsh-m AGENTS.md）。 |
+| D13 | 检查时刻透出 | 已装探测逐项盖 `probedAt`（缓存命中=缓存写入时刻，新探=完成时刻，未探测项缺席）；`renderList` 以最旧时刻聚合，更新摘要行追加「 · 检查结果截至 HH:MM」，全部最新句带「（截至 HH:MM）」；只做 agent 文字（卡片与 CLI 不透出）。golden 基线经 capture 管线 sanitize 豁免活时间戳。 | 主人 2026-11-18 grill 第一轮按推荐批准（Q1-Q3）。 |
+| D14 | refresh 参数 | `dshm_list` 新增 `refresh`（boolean，缺省 false，不用 force——该名已被安装/升级的兼容预检占用），透传 core force；已装 `'full'` 路径开放（缓存层 peek 纪律同源，item 展示层失败如实标检查未完成）；不加用户确认步骤；描述注明预算与失败语义。 | 主人 2026-11-18 grill 第一轮按推荐批准（Q4）。 |
+| D15 | npm single-flight | `npmLatest` in-flight 合并：单一 Map、键=显式 registry 原样或 `implicit` 字面 + pkg、flight 内部 AbortController、30s 硬上限、waiter-scoped 超时/signal + ctrl 臂、全部离开才中止、不分 passive/active 池。 | 主人 2026-11-18 grill 第一轮按推荐批准（Q5）；决策全文见 [ADR-0040](./adr/0040-npm-latest-single-flight.md)。 |
 
 ## 3. 数据契约（`dshm_list` 输出，逐字段标注来源作用域）
 
@@ -55,12 +58,15 @@
 | `market` | `market` / `non-market` / `unknown` | **工具层派生**：`registry.status === 'unavailable'` → `unknown`；否则 `registryId` 有值 → `market`，否则 `non-market` |
 | `latestVersion` | 线上最新版本（npm） | 探测段 |
 | `latestTag` | 线上最新 tag（GitHub）。**新增到 dshm_list** | 探测段 |
+| `probedAt` | 探测时刻（ms）：缓存命中=缓存写入时刻，新探=完成时刻；未探测/失败/跳过项缺席 | 探测段盖戳（`readLatestCacheStamped` / `probeLatest` 两分支） |
 | `outdated` | 是否有更新 | 探测段 |
 | `latestError` `latestErrorCode` | 探测失败的文字与结构化原因码 | 探测段（`classifyLatestError`，[market.ts:434-439](../../src/core/market.ts#L434-L439)） |
 | `userDisabled` | 意图停用 | enablement（profile bundles 与行覆盖），[enablement.ts:150](../../src/core/enablement.ts#L150) |
 | `upgradePath` `upgradePathReason` `localUpgradeAllowed` | 升级通路投影 | upgrade-target 单源（ADR-0026） |
 | `update` | `upgradable` / `latest` / `unchecked` / `incomplete` | **工具层派生**，优先级见下 |
 | `uncheckedReason` | `registry-unavailable` / `local-install` / `not-probed` / `null` | **工具层派生**，仅 `update === 'unchecked'` 时非空 |
+
+工具参数（D14）：`refresh`（boolean，缺省 false）→ core `force`；描述注明绕过缓存全量重探、失败保留旧值并如实标注检查未完成、GitHub 源消耗被动预算（25/req、50/h 滚动）。
 
 `update` 的派生顺序（先命中先返回）：
 1. 注册表不可用 → `unchecked`，原因 `registry-unavailable`。
@@ -78,7 +84,7 @@
 
 ```
 已装 20 个插件 · 市场 19 · 非市场 1 · 未知 0
-更新：可升级 1 · 已最新 16 · 未检查 2 · 检查未完成 1
+更新：可升级 1 · 已最新 16 · 未检查 2 · 检查未完成 1 · 检查结果截至 HH:MM
 可升级（1）：
 · p-up (p-up) v1.0.0 → v2.0.0
 未检查（2）——不代表已是最新：
@@ -102,7 +108,7 @@
 对用户：……（同上）
 ```
 
-全部已检查且全部最新：`全部 2 个插件已检查，均已是最新版本。`，之后只留清单与指引语。这是唯一允许出现「全部…最新」的情形。
+全部已检查且全部最新：`全部 2 个插件已检查（截至 HH:MM），均已是最新版本。`，之后只留清单与指引语。这是唯一允许出现「全部…最新」的情形。
 
 有未检查或未完成项时，任何位置都不得出现「全部…最新」（测试钉住）。
 
@@ -132,10 +138,7 @@ GitHub 可升级项的目标写 tag（`latestTag`），npm 写 `v` + `latestVers
 ## 7. 已知缺口与残留风险（本次不解决，如实记录）
 
 - 没有收录条目的 GitHub 安装不探测（[market.ts:1138-1142](../../src/core/market.ts#L1138-L1142)）。本次以「未检查」呈现。扩大探测需要单独决定 GitHub 被动预算的消耗（ADR-0008、ADR-0026）。
-- **并发探测会重复请求 npm（效率问题，结果不受影响）。** `npmLatest` 直接请求每个包的 `/latest`，没有 in-flight 合并（[packument.ts:386-418](../../src/core/packument.ts#L386-L418)）；GitHub 侧有同仓库合并（[versions.ts:125](../../src/core/versions.ts#L125)）。合并后 agent 侧只剩一个状态工具，但仍可能重叠：agent 的 `dshm_list`（TTL 60 分钟，[market.ts:1099](../../src/core/market.ts#L1099)）与 GUI 已装页的第二段探测（TTL 30 分钟，[market.ts:289](../../src/core/market.ts#L289)）在缓存过期时同时进行，或同一工具被并行调用两次。两路探测在缓存写入前都读到未命中，于是各自把全部 npm 包请求一遍（当前 profile 为 18 个）；失败条目不写缓存，第二次调用还会重新等待超时。修复方向：为 npm `/latest` 增加按 (registry, pkg) 的 single-flight，waiter 的取消与 deadline 与共享请求分离（参照 [community.ts:496](../../src/core/community.ts#L496) 的 waiter-scoped signal）。
-- **缓存的是线上最新版本快照，不是已装版本。** 缓存只在进程内存中，默认 TTL 60 分钟（[market.ts:1099](../../src/core/market.ts#L1099)），重启即清空。已装版本每次都从 profile 实时读取，`outdated` 按实时版本与缓存的最新版本比较（[market.ts:1181](../../src/core/market.ts#L1181)）。因此外部升级（CLI、官方 Settings）之后，「可升级」不会因为缓存而残留；本段此前「最长 60 分钟仍显示可升级」的说法有误，已更正。真正的滞后在「最新版本」一侧：TTL 窗口内发布的新版本看不到，「已最新」与「可升级 → vX」可能滞后最多 60 分钟。
-- **「已检查」措辞会高估新鲜度。** 缓存条目写入时带有时间（[latest-cache.ts:69](../../src/core/latest-cache.ts#L69)），但文字与卡片都没有透出。修复方向：标注检查时间（例如「检查于 HH:MM，缓存 60 分钟」），或把措辞收窄为「截至 HH:MM 的检查结果」。
-- **agent 无法强制刷新。** `dshm_list` 没有参数绕过缓存；`force` 只在已装页的 `probeMode: 'only'` 路径生效（[market.ts:1099](../../src/core/market.ts#L1099)）。用户说「重新检查一下」时，agent 只能等 TTL 过期或重启宿主。修复方向：为 `dshm_list` 增加 `refresh` 参数，映射到现有 `force` 语义（失败时保留旧值，符合 ADR-0006 的 peek 约束）。
+- **「最新版本」缓存最长滞后 60 分钟。** 缓存只在进程内存中，默认 TTL 60 分钟（[market.ts:1099](../../src/core/market.ts#L1099)），重启即清空；已装版本每次从 profile 实时读取，外部升级后「可升级」不会残留（本段初版「最长 60 分钟仍显示可升级」的说法有误，已更正）。真正的滞后在「最新版本」一侧：TTL 窗口内发布的新版本看不到——D14 的 `refresh` 参数可主动穿透（重探失败保留旧值并如实标注检查未完成）。
 - CLI list 没有显示 GitHub 源的目标版本（[cli.ts:338](../../src/cli.ts#L338)），与 agent 文字层的缺口同源，本次只修未知态标签。
 
 ## 8. 测试计划（先红后绿）
