@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 当前 36 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills（self-dev），30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；2026-11-04 收录 qiaomu-rss-dsh（watchlist，github 源），32→33；2026-11-07 收录 dsh-send-later（essentials 主桶＋self-dev 次桶，coupled），33→34；2026-11-07 收录 dsh-media-desk（cui-picks，三方），34→35；2026-11-07 dsh-guizang-design 主桶改 cui-picks（歸藏专区转次桶 alsoCategories），35 条不变；2026-11-07 收录 agentero-dsh（cui-picks，三方），35→36；2026-11-10 收录 dsh-stock-kanban（self-dev，coupled），36→37；2026-11-15 baoyu 5 条纯 npm 化（上游 repo 消失，github/homepage 双删，条目保留）+ 下架 browser-skill-dsh-plugin（tencent-lighthouse，上游退役插件形态），37→36；2026-11-18 收录 dsh-open-artifact（baoyu，npm+github 双源），36→37；2026-11-19 下架 dsh-chat-manager（watchlist，上游 GitHub 仓库 404），37→36；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
+> 管辖范围：`registry.json` 当前 36 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills（self-dev），30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；2026-11-04 收录 qiaomu-rss-dsh（watchlist，github 源），32→33；2026-11-07 收录 dsh-send-later（essentials 主桶＋self-dev 次桶，coupled），33→34；2026-11-07 收录 dsh-media-desk（cui-picks，三方），34→35；2026-11-07 dsh-guizang-design 主桶改 cui-picks（歸藏专区转次桶 alsoCategories），35 条不变；2026-11-07 收录 agentero-dsh（cui-picks，三方），35→36；2026-11-10 收录 dsh-stock-kanban（self-dev，coupled），36→37；2026-11-15 baoyu 5 条纯 npm 化（上游 repo 消失，github/homepage 双删，条目保留）+ 下架 browser-skill-dsh-plugin（tencent-lighthouse，上游退役插件形态），37→36；2026-11-18 收录 dsh-open-artifact（baoyu，npm+github 双源），36→37；2026-11-19 下架 dsh-chat-manager（watchlist，上游 GitHub 仓库 404），37→36；2026-11-19 自研 11 条 description 刷新：DSH 版本句退役（兼容事实归 verified 与 README，见 §4）、品牌词不进描述、自研 icon 钉版改浮动 @major，36 条不变；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。
@@ -13,9 +13,9 @@
 ## 2. 长度预算（硬性）
 
 - **全条 ≤60 全角当量**。当量定义：全角字符 = 1，ASCII 字符 = 0.5（与卡片实际渲染宽度对齐）。
-- 句式模板：〔定位一句〕＋〔1–2 个关键能力〕＋〔前置/集成/兼容关系（如有）〕。
+- 句式模板：〔定位一句〕＋〔1–2 个关键能力〕＋〔前置/集成/解耦关系（如有）〕。
 - 细节装不下就归 homepage（仓库 README），不硬塞。
-- **无保鲜机制的精确数字不进文案**（如「7 个工具」「N 套皮肤」）；版本号只允许出现在兼容声明里（见 §4），由升级必查清单保鲜。
+- **无保鲜机制的精确数字不进文案**（如「7 个工具」「N 套皮肤」）；**描述不携带 DSH 版本号**——「已适配」兼容句与「需 DSH ≥x」地板句已退役（2026-11-19，见 §4），兼容事实归 `verified` 数组与各仓 README/COMPATIBILITY，升级必查清单只保鲜数据面。
 
 ## 3. 语气与用词
 
@@ -23,18 +23,20 @@
 - 统一中文标点；枚举用顿号；品牌中文名可保留在句首（如「流镜：」），兼作中文检索入口。
 - 描述一律中文；专有名词（Copilot、Selkies、xterm…）保留原文。
 
-## 4. 前置 / 依赖 / 兼容声明
+## 4. 前置 / 依赖 / 集成 / 解耦声明
 
-统一四种句式，写在描述末句，不进 tags：
+统一三种句式，写在描述末句，不进 tags；**DSH 版本号一律不进描述**（2026-11-19）：
 
 | 关系 | 句式 | 示例 |
 |---|---|---|
-| 硬依赖 | `需 <对象> <版本/形态>` | `需 better-sidebar ≥0.4.0` |
-| 可选集成 | `可选集成 <对象>` | `可选集成 better-sidebar` |
-| 兼容声明 | `已适配 <版本代际>，详见仓库` | `已适配 0.1.2-rc.1 与 0.1.5-rc.1/rc.2，详见仓库` |
+| 部署前置（非版本形态） | `需 <对象/形态>` | `需自建容器与认证反代` |
+| 可选集成 | `可选集成 <对象>` | `可选集成 quota-watch` |
 | 版本无关（解耦条目） | `版本无关，详见仓库` | `…需自建容器与认证反代。版本无关，详见仓库。` |
 
-- 兼容声明口径：写**验证代际 + 一句话结论**，不承诺穷举所有未来版本；穷举矩阵放仓库（如 COMPATIBILITY.md），描述只留指针。
+- **「已适配 <版本代际>，详见仓库」兼容句退役**（2026-11-19 主人裁决）：描述里的版本句每轮 DSH 升级必腐（008 §1 实证），兼容事实的唯一载体收敛为 coupled 条目的 `verified` 数组（市场详情页展示）与各仓 README 徽章/COMPATIBILITY；文案零维护，升级必查清单只保鲜数据面。
+- **「需 DSH ≥x」地板句一并退役**：安装地板由包元数据 engines 机器强制（装不上会结构化报错），文案地板不强制任何东西，且随插件自提门槛无声腐烂；地板事实归 README/包元数据。
+- `需 <对象> <版本>` 仍可用于**非 DSH 依赖**（如 `需 better-sidebar ≥0.4.0`）——插件间依赖不随 DSH 升级腐烂。
+- 「版本无关」指解耦策展语义（DSH 升级无需为该插件发适配版），不否认包元数据声明的安装地板（如 quota-watch 包元数据 `>=0.2.0-rc.1`）。
 - 解耦条目空间不足时允许紧凑形 `版本无关。`（两级均合法，以 validate-registry 的 widthUnits 实测当量为准）。
 - **decoupled 条目禁用**「已适配」句式、不填 `verified`（GLOSSARY「解耦条目」：实测数组与解耦语义互斥）；缺失版本号不构成负面信号。
 - 部署前置压成短语（如 `需自建容器并挂认证反代`），细节归仓库 deploy/ 文档。
@@ -63,8 +65,11 @@
 
 `scripts/validate-registry.mjs` 对以下情形打 **warn**（不阻断 CI）：description 超 60 当量、
 tags 带 `需/推荐` 前缀、描述内出现全角括号包裹的兼容/前置尾巴（应改写为 §4 句式）、
-decoupled 条目 description 含「已适配」句式（应改写为第四句式）。
+decoupled 条目 description 含「已适配」句式（版本句已退役，应删除，见 §4）。
 软警告是提醒不是门禁——三方插件未来需要更长描述时不被机器挡门，但每次 warn 都应在合并前给出理由。
+2026-11-19 起「已适配」句式与描述内 DSH 版本号整体退役为**口径禁用**（§4）；validate 侧既有
+warn 保留为遗留防线（其提示文案中的「§4 第四句式」字样沿用旧称，未改代码），回潮由 008
+升级必查清单的回归项拦截。
 
 ## 8. 与 package.json 的边界（解耦裁决，2026-09-14）
 

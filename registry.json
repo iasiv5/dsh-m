@@ -4,11 +4,11 @@
     {
       "id": "dsh-m",
       "name": "DSH Marketplace",
-      "description": "自定义清单的 DSH 插件市场，收录/安装/卸载/升级；已适配 DSH 0.2.2-rc.1，支持 web 与 desktop 双 profile，详见仓库。",
+      "description": "自定义清单的 DSH 插件市场：社区与精选双目录，收录/安装/卸载/升级，agent 工具与 dshm CLI，支持 web 与 desktop。",
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["市场","插件管理"],
-      "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1"],
+      "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1","0.2.2-rc.5"],
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
@@ -19,7 +19,7 @@
     {
       "id": "dsh-skins",
       "name": "DSH Skins",
-      "description": "DSH 侧栏多皮肤热切换，一键回官方；需 DSH ≥0.2.0-rc.1；Web 已测 0.2.2-rc.1；Desktop 已测 0.2.1-rc.5。",
+      "description": "侧栏多皮肤热切换，一键回官方；壁纸、标语、通透度个性化，明暗随外观自适应，Web 与 Desktop 均可用。",
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["皮肤","主题","美化","界面"],
@@ -130,7 +130,7 @@
     {
       "id": "dsh-send-later",
       "name": "DSH Send Later",
-      "description": "输入框旁定时或延时发送（默认「继续」），到点自动发进会话，投递失败静默补投；可集成 quota-watch，已适配 0.2.2-rc.1。",
+      "description": "输入框旁定时或延时发送（默认「继续」），到点自动发进会话，任务持久化、在线自动补投；可选集成 quota-watch。",
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["定时消息","排程","额度恢复","延时发送"],
@@ -145,7 +145,7 @@
     {
       "id": "dsh-skip-browser-auth",
       "name": "DSH Skip Browser Auth",
-      "description": "跳过 BrowserAuth，替换官方 Connection，免 Token；已测 Web 0.2.2-rc.5。Desktop 自动休眠。",
+      "description": "跳过 BrowserAuth 免输 Token，仅白名单版本激活（desktop 一律休眠），卸载即恢复官方行为。",
       "category": "self-dev",
       "tags": ["BrowserAuth","连接","安全","工具"],
       "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1","0.2.2-rc.2","0.2.2-rc.3","0.2.2-rc.4","0.2.2-rc.5"],
@@ -158,7 +158,7 @@
     {
       "id": "dsh-copilot-auth",
       "name": "DSH Copilot Auth",
-      "description": "Copilot 登录注销页与开箱路由；桌面不支持目录刷新。需 DSH ≥0.1.7-rc.2；Web 已测 0.2.2-rc.1。",
+      "description": "Copilot 设备码登录注销与模型列表管理，免 API Token，目录兜底不覆盖定制，凭据入内置凭据库。",
       "category": "self-dev",
       "tags": ["Copilot","认证","模型接入","工具"],
       "verified": ["0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1"],
@@ -172,7 +172,7 @@
     {
       "id": "dsh-quota-watch",
       "name": "DSH Quota Watch",
-      "description": "GLM/Copilot 额度胶囊、详情与侧栏卡；宿主解析凭据。版本无关，详见仓库。",
+      "description": "GLM/Copilot 额度快照胶囊、详情面板与可选侧栏卡，含额度窗口与重置时间，凭据由宿主解析。版本无关，详见仓库。",
       "category": "self-dev",
       "tags": ["配额","悬浮球","GLM","Copilot"],
       "decoupled": true,
@@ -180,13 +180,13 @@
       "npm": "@iasiv5/dsh-quota-watch",
       "github": "iasiv5/dsh-quota-watch",
       "screenshots": ["docs/assets/panel-overview.webp","docs/assets/panel-glm-detail.webp","docs/assets/panel-copilot-detail.webp","docs/assets/sidebar-card.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0.1.36/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-quota-watch"
     },
     {
       "id": "dsh-stock-kanban",
       "name": "DSH Stock Kanban",
-      "description": "盯盘胶囊：A股/港股/美股/加密货币自选、拖拽排序、持仓盈亏与目标价，分时/K 线与指数看盘；可选集成 quota-watch。已适配 0.2.2-rc.2，详见仓库。",
+      "description": "盯盘胶囊：A股/港股/美股/加密货币自选、拖拽排序、持仓盈亏与目标价，分时/K 线与指数看盘；可选集成 quota-watch。",
       "category": "self-dev",
       "tags": ["股票","行情","ETF","投资"],
       "verified": ["0.2.2-rc.1", "0.2.2-rc.2"],
@@ -208,13 +208,13 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-surf",
       "github": "iasiv5/dsh-surf",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-surf@0.1.6/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-surf@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-surf"
     },
     {
       "id": "dsh-obmc-web",
       "name": "OBMC Web",
-      "description": "OpenBMC 控制台：SSH 隧道代理，一键开启；需 SSH 跳板连 BMC。版本无关，详见仓库。",
+      "description": "OpenBMC 控制台：SSH 隧道一键开启，BMC IP 变化自动重定向；需 SSH 跳板连 BMC。版本无关，详见仓库。",
       "category": "self-dev",
       "tags": ["OpenBMC","远程管理","SSH 隧道","KVM"],
       "decoupled": true,
@@ -222,7 +222,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-obmc-web",
       "github": "iasiv5/dsh-obmc-web",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-obmc-web@0.1.7/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-obmc-web@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-obmc-web"
     },
     {
@@ -236,7 +236,7 @@
       "source": "npm",
       "npm": "@inventec/dsh-onetree-log",
       "github": "iasiv5/dsh-onetree-log",
-      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-onetree-log@0.1.7/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-onetree-log@0/icon.svg",
       "homepage": "https://github.com/iasiv5/dsh-onetree-log"
     },
     {
@@ -429,7 +429,7 @@
     {
       "id": "dsh-skills",
       "name": "DSH Skills",
-      "description": "iasiv5 skill 合集，以 DSH 插件 bundled skill 分发，版本无关。作者自用，不推广。详见仓库。",
+      "description": "Agent skill 合集，装插件即用、免拷贝 skills 目录；作者自用，不推广。版本无关，详见仓库。",
       "category": "self-dev",
       "tags": ["skills","合集","bundled"],
       "decoupled": true,
@@ -437,7 +437,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skills",
       "github": "iasiv5/skills",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1.0.0/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1/icon.svg",
       "homepage": "https://github.com/iasiv5/skills"
     }
   ]
