@@ -8,6 +8,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.24 收录文案与元数据统一战役：DSH 版本句退役、verified/homepage 收敛、icon 全量浮动化 + 自研包元数据家族统一
+
+- **收录文案（registry）**：自研 11 条 description 全面刷新——DSH 版本句（「已适配 …」「需 DSH ≥x」）退役，兼容事实收敛至 `verified` 数组与各仓 README/COMPATIBILITY（copy-guide §4 同日改版）；下架 dsh-chat-manager（上游 GitHub 仓库 404）。
+- **栏位收敛**：自研条目 `verified` 原则不填（floor-only peer/engines 已机器保证向前兼容），唯一例外 `dsh-skip-browser-auth`（白名单激活表即产品契约）；移除 11 条 `homepage` 死栏位（github+npm 在场时 officialLinks 永不渲染 homepage，registry 侧零渲染消费）。
+- **icon 浮动化**：jsdelivr 钉版迁移 `@<major>` 11 条（自研 5 + 三方 6），`tests/registry-icon-url.test.mjs` 的 ratchet 存量名单同步清空退役——此后任何全钉（含三方）直接红。
+- **门禁**：validate-registry 新增软警告——自研条目 description 含 DSH 版本号或版本句式即 warn（版本句退役口径的机器防线，三方条目不 scope）；本条目自身 `verified` 补 `0.2.2-rc.5`（2026-11-19 无头浏览器实测）。
+- **包元数据（家族统一）**：package.json description 与 registry 文案对齐（locale/zh.json 单源同步）；新增 `dsh.engines.dsh >=0.2.0-rc.1`（无上盖，声明位迁移至 engines 唯一强制点）；cordis peer 收敛 floor-only `>=4.0.2`。
+- **文档**：README 中英徽章行统一四槽序（Registry Check / npm / License / DSH）。
+- **兼容性**：agent 工具与 `dshm` CLI 接口零变化；市场页文案与图标刷新随本包发布生效（raw 源即刻可见，bundled 回退源随发版）。回退面：revert registry/manifest 相应提交 + 版本递增。
+
 ### 0.12.23 修复：Agent 集成卡座位闩锁，消除 keyed slot 重复注册报错（issue #79）+ 发版门禁顶条区间留痕
 
 - **修复（issue #79）**：设置页「AI 会话集成」座位回调（`plugins.bundle.config` 槽位）此前写成花括号形态，丢掉了 `ctx.slots.inject` 的返回值。宿主 `configForms.whileServed` 以回调返回值作边缘触发闩锁（`off = register(served)`），返回值为空则闩锁永不生效：`dshm` 被 serve 期间每次 settings 镜像通知都会重新注册座位，同 key `dsh-m` 同优先级撞宿主 keyed 槽位去重即抛错，被 `[client-store] subscriber failed` 包装为控制台 error。现在座位回调改为表达式形态，返回 `inject` 的幂等 disposer：重复通知不再重注册，也就不再产生该报错。
@@ -1128,6 +1138,16 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.24 Registry copy & metadata unification: DSH version phrases retired, verified/homepage converged, icons fully floating + self-dev manifest family unification
+
+- **Registry copy**: all 11 self-dev descriptions refreshed — DSH version phrases ("已适配 …" / "需 DSH ≥x") retired; compatibility facts now live solely in `verified` arrays and per-repo README/COMPATIBILITY (copy-guide §4 revised the same day); dsh-chat-manager delisted (upstream repo 404).
+- **Field convergence**: self-dev `verified` not filled by principle (floor-only peer/engines already machine-guarantee forward compatibility), sole exception `dsh-skip-browser-auth` (its whitelist activation table is the product contract); removed 11 dead `homepage` fields (never rendered when github+npm are present).
+- **Floating icons**: jsdelivr pins migrated to `@<major>` for 11 entries (5 self-dev + 6 third-party); the ratchet exemption list in `tests/registry-icon-url.test.mjs` is emptied and retired — any full pin now fails outright.
+- **Gate**: validate-registry warns when a self-dev description carries a DSH version number or version phrase (machine guard for the retirement policy; third-party entries out of scope); this entry's own `verified` gains `0.2.2-rc.5` (headless-browser verified 2026-11-19).
+- **Manifest (family unification)**: package.json description aligned with the registry copy (locale/zh.json single-source sync); added `dsh.engines.dsh >=0.2.0-rc.1` (no upper bound); cordis peer converged to floor-only `>=4.0.2`.
+- **Docs**: README badges unified to the four-slot order (Registry Check / npm / License / DSH) in both languages.
+- **Compatibility**: agent tools and the `dshm` CLI are unchanged; the market-page copy/icon refresh ships with this package (raw source immediate, bundled fallback via this release). Rollback: revert the corresponding registry/manifest commits + version bump.
 
 ### 0.12.23 Fix: agent-card seat latch — eliminate the keyed-slot duplicate-registration error (issue #79) + release-gate range coverage on the top entry
 
