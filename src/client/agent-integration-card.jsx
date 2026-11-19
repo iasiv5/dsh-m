@@ -82,6 +82,12 @@ export function AgentCard({ store }) {
  * 座位注册入口（main.jsx apply 调用）：
  * 守卫 configForms 可用性 → 附着 store（ns="dshm"）→ whileServed(["dshm"]) 期间注册座位。
  * 座位 key 用 npm 包名 "dsh-m"（ledger/pkg.name 比对），附着 ns 用 entry id "dshm"——两 id 不同。
+ *
+ * 闩锁契约（issue #79）：whileServed 以 `off = register(served)` 作边缘触发闩锁——回调的
+ * 返回值必须是非空 disposer，否则 serve 期间每次 settings 镜像通知都会重跑注册，同 key
+ * "dsh-m" 同优先级撞宿主 keyed 槽位去重即 throw（`[client-store] subscriber failed` 噪音，
+ * 0.12.15-0.12.22 花括号形态实录）。故座位回调必须写成表达式形态，返回 `ctx.slots.inject`
+ * 的幂等 disposer（摘 serve 时撤销座位、重 serve 时重挂）。
  */
 export function registerAgentIntegrationCard(ctx) {
   ctx.inject(["configForms"], (c) => {
@@ -90,11 +96,9 @@ export function registerAgentIntegrationCard(ctx) {
     const store = createSessionGateStore();
     ctx.effect(() => store.attach(forms.get("dshm")), "dshm-agent-card: attach");
     const card = (el) => h(AgentCard, { ...el, store });
-    ctx.effect(() => forms.whileServed(["dshm"], () => {
-      ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register(
-        { name: "plugins.bundle.config", key: "dsh-m", locale: "dshm" },
-        (el) => h(card, el),
-      ));
-    }), "dshm-agent-card: seat");
+    ctx.effect(() => forms.whileServed(["dshm"], () => ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register(
+      { name: "plugins.bundle.config", key: "dsh-m", locale: "dshm" },
+      (el) => h(card, el),
+    ))), "dshm-agent-card: seat");
   });
 }
