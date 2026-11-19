@@ -60,12 +60,21 @@ for (const entry of parsed.registry?.plugins || []) {
   }
   if (entry.decoupled === true && /已适配/.test(desc)) {
     warned = true
-    console.warn(`⚠ ${where} 解耦条目 description 含「已适配」句式——应为「版本无关，详见仓库」（registry-copy-guide §4 第四句式）`)
+    console.warn(`⚠ ${where} 解耦条目 description 含「已适配」句式——应为「版本无关，详见仓库」（registry-copy-guide §4）`)
   }
   const tail = desc.match(/（[^（）]*(?:适配|需|依赖|推荐)[^（）]*）/)
   if (tail) {
     warned = true
     console.warn(`⚠ ${where} description 含全角括号尾巴「${tail[0]}」——兼容/前置应改写为末句句式（已适配 …，详见仓库 / 需 …），见 registry-copy-guide §4`)
+  }
+  // 2026-11-19 版本句退役口径（copy-guide §4）：自研条目 description 不再携带
+  // DSH 版本号与「已适配 / 需 DSH」句式——兼容事实归 verified（数据面）与各仓
+  // README/COMPATIBILITY。三方条目不 scope（浅整原则；如 dsh-media-desk 的
+  // 「需 DSH 0.2.x」为其自身声明，保持豁免）。
+  const selfDev = (entry.github || '').startsWith('iasiv5/') || (entry.npm || '').startsWith('@iasiv5/') || (entry.npm || '').startsWith('@inventec/')
+  if (selfDev && (/\b0\.\d+\.\d+(?:-(?:rc|alpha)\.\d+)?\b/.test(desc) || /已适配|需 DSH/.test(desc))) {
+    warned = true
+    console.warn(`⚠ ${where} 自研条目 description 含 DSH 版本号/版本句——版本句已退役（2026-11-19，copy-guide §4），兼容事实归 verified 与各仓 README`)
   }
   // 008 升级必查的门禁化（只 warn 不 fail）：
   // a) description 里的版本号必须 ⊆ verified——兼容句与实测清单的最低一致性。
