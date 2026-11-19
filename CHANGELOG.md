@@ -8,6 +8,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.23 修复：Agent 集成卡座位闩锁，消除 keyed slot 重复注册报错（issue #79）+ 发版门禁顶条区间留痕
+
+- **修复（issue #79）**：设置页「AI 会话集成」座位回调（`plugins.bundle.config` 槽位）此前写成花括号形态，丢掉了 `ctx.slots.inject` 的返回值。宿主 `configForms.whileServed` 以回调返回值作边缘触发闩锁（`off = register(served)`），返回值为空则闩锁永不生效：`dshm` 被 serve 期间每次 settings 镜像通知都会重新注册座位，同 key `dsh-m` 同优先级撞宿主 keyed 槽位去重即抛错，被 `[client-store] subscriber failed` 包装为控制台 error。现在座位回调改为表达式形态，返回 `inject` 的幂等 disposer：重复通知不再重注册，也就不再产生该报错。
+- **行为变化须知**：常态（`dshm` 常驻 serve）下卡片、开关与渲染路径零变化。唯一的生命周期差异在 serve 状态切换时：`dshm` 不再 serve 时座位随之撤挂，重新 serve 时重挂。旧代码此路径座位残留，重新 serve 时还会再次撞槽位报错（节点级探针，镜像 rc.5 宿主语义：旧版摘 serve 后座位仍在、重新 serve 后报错累计 2 次；修后摘 serve 后座位撤挂、全程 0 报错）。
+- **工程**：`check-release` 新增顶条 × tag 区间覆盖门禁（`check-release` 调用 `scripts/release-range-coverage.mjs`；行为承载提交须在顶条留痕，纯中文无标识符的提交仅警告）。
+- **文档与收录**：文档标准补充 grep 计数主张「pattern 逐字随账」与集合运算分述（retro 2026-11-18）；`skip-browser-auth` 的 verified 更新至 rc.3 / rc.4 / rc.5（已测 rc.5）；0.12.22 条目补全 tag 区间留痕（审计补正）；README 中英 DSH 兼容徽章与兼容表补 `0.2.2-rc.5`（2026-11-19 无头浏览器实测）。
+- **测试**：新增 `tests/agent-card-seat.test.mjs`（3 例：闩锁下重复镜像通知不重注册 / 注册参数钉死 / 摘 serve 撤挂与重挂）。
+- **兼容性**：`dshm` CLI 接口零变化。回退面：revert 修复提交（issue #79 座位闩锁）+ 版本递增。
+
 ### 0.12.22 修复：win32 回滚阶梯与 npmmirror 缺失依赖（issue #77/#78）+ agent 工具合并与探测透明度（ADR-0039/0040）
 
 - **修复（issue #77）**：Windows 上安装/升级失败后的回滚收敛阶梯（`frozenInstall`/`rebuildInstall`）裸 spawn `pnpm` 必 ENOENT——npm 全局装的 pnpm 是 `.cmd` shim，Node `spawn` 在 `shell:false` 下不走 PATHEXT 解析——回滚恒败、profile 被误报「可能需要人工修复」（实际字节还原成功、账实一致）。现在：新增 spawn 计划纯函数 `pnpmInstallSpawnPlan`（win32 `viaShell` + `--dir` 双引号包裹；与 launch 路径 path-fallback 同判据），POSIX 全字段零漂移；`makeDshRunner` 增 `deps.runCommand` 注入缝（测试可注入，缺省语义不变）。
@@ -1119,6 +1128,15 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.23 Fix: agent-card seat latch — eliminate the keyed-slot duplicate-registration error (issue #79) + release-gate range coverage on the top entry
+
+- **Fix (issue #79)**: The "AI session integration" seat callback on the settings page (`plugins.bundle.config` slot) was written in braced form and dropped the return value of `ctx.slots.inject`. The host's `configForms.whileServed` uses the callback's return value as an edge-triggered latch (`off = register(served)`); with an empty return the latch never engaged: while `dshm` was served, every settings mirror notification re-registered the seat, the same key `dsh-m` at the same priority collided with the host's keyed-slot dedup and threw, and the `[client-store] subscriber failed` wrapper surfaced it as a console error. The seat callback is now an expression returning the idempotent disposer of `inject`: repeated notifications no longer re-register, so the error no longer occurs.
+- **Behavior note**: In the steady state (`dshm` served continuously) the card, the switch and the render path are unchanged. The only lifecycle difference is on serve-state transitions: when `dshm` stops being served the seat is retracted, and it is re-mounted when served again. The old code left the seat in place and, on re-serve, collided with the slot again (node-level probe mirroring the rc.5 host semantics: old — seat still present after unserve and 2 console errors after a re-serve; fixed — seat retracted on unserve, re-mounted on re-serve, 0 errors).
+- **Engineering**: `check-release` adds a top-entry × tag-range coverage gate (it calls `scripts/release-range-coverage.mjs`; behavior-bearing commits must be recorded in the top entry; pure-Chinese commits with no identifiers only warn).
+- **Docs & registry**: the coding standards gain the "pattern verbatim with the count" rule for grep-count claims and split set-operation claims (retro 2026-11-18); `skip-browser-auth` verified updated to rc.3 / rc.4 / rc.5 (rc.5 verified); the 0.12.22 entry gains its tag-range records (audit correction); README zh/en DSH compatibility badge and table gain `0.2.2-rc.5` (2026-11-19 headless-browser check).
+- **Tests**: new `tests/agent-card-seat.test.mjs` (3 cases: no re-registration under repeated mirror notifications with the latch / registration parameters pinned / retract and re-mount on unserve).
+- **Compatibility**: `dshm` CLI interface unchanged. Rollback: revert the fix commit (issue #79 seat latch) plus a version bump.
 
 ### 0.12.22 Fixes: win32 rollback ladder & npmmirror missing-dependency spin (issue #77/#78) + agent tool merge & probe transparency (ADR-0039/0040)
 

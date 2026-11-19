@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-m?label=npm)](https://www.npmjs.com/package/dsh-m)
 [![Registry Check](https://img.shields.io/github/actions/workflow/status/iasiv5/dsh-m/registry.yml?branch=main&label=Registry%20Check)](https://github.com/iasiv5/dsh-m/actions/workflows/registry.yml)
 [![License](https://img.shields.io/github/license/iasiv5/dsh-m?label=License)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3%20verified-2563eb)](#compatibility--faq)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.5%20verified-2563eb)](#compatibility--faq)
 
 English · [中文](./README.md)
 
@@ -120,8 +120,9 @@ Notes: while the tools are off, asking the AI to install or upgrade plugins in c
 | `0.2.1-rc.5` | Same as 0.2.0 | Contract-surface equivalent re-release (host web-app patch zero-diff against rc.4); rc.4 verification carries over by equivalence; the 0.11.x dogfood web profile now runs rc.5 with the host upgrade |
 | `0.2.2-rc.1` | Same as 0.2.0 | First release of a new minor line (host web-app patch carries UI bundle row changes — not an equivalent re-release); the 0.12.x dogfood web profile now runs rc.1 with the host upgrade (2026-11-04 live acceptance: marketplace panel, settings path, and full client-bundle delivery all healthy) |
 | `0.2.2-rc.2 / rc.3` | Same as 0.2.0 | The 0.12.x dogfood host now runs rc.3 after upgrading with the host (dsh-m 0.12.17 resident; live-verified in the 2026-11-14 release round with all gates green) |
+| `0.2.2-rc.5` | `configForms.whileServed` / `slots.inject` (checked against rc.5 source) | The 0.12.x dogfood host (local web profile) now runs rc.5 with the host upgrade; 2026-11-19 headless-browser check: dsh-m 0.12.22 client loads on the rc.5 host page and the settings-page seat registration path runs |
 
-> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3, the 0.11.x line against 0.2.1-rc.4 (rc.5 is a contract-surface equivalent re-release; conclusions carry over by equivalence), and the 0.12.x line against 0.2.2-rc.1 (since 2026-11-04) plus rc.2/rc.3 (with the host upgrade, live-verified 2026-11-14). Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
+> Each generation's verification reflects the dsh-m of its era: the 0.10.x line is fully verified only against DSH 0.2.1-rc.2 / rc.3, the 0.11.x line against 0.2.1-rc.4 (rc.5 is a contract-surface equivalent re-release; conclusions carry over by equivalence), and the 0.12.x line against 0.2.2-rc.1 (since 2026-11-04) plus rc.2/rc.3 (with the host upgrade, live-verified 2026-11-14) and rc.5 (headless-browser check 2026-11-19). Older generations have not been re-tested with the current version and are not a claim that current dsh-m runs on them.
 
 **Is Desktop identical to Web?** No. Desktop browsing, new-package installation, and toggles act on the desktop profile. Upgrades and uninstalls require capabilities from the official host `pluginManager`; if absent, dsh-m returns a structured refusal and guidance. Desktop uses the official app lifecycle rather than Web's one-click restart; quit and reopen as instructed. Favorites, operations, and installed states are separate between profiles.
 
