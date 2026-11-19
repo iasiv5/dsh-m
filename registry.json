@@ -36,7 +36,7 @@
       "source": "npm",
       "npm": "@deepseek-harness-tui/dsh-tui",
       "github": "ccch1mneyyy/dsh-TUI",
-      "icon": "https://cdn.jsdelivr.net/npm/@deepseek-harness-tui/dsh-tui@0.17.0/assets/plugin-icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/@deepseek-harness-tui/dsh-tui@0/assets/plugin-icon.svg",
       "homepage": "https://github.com/ccch1mneyyy/dsh-TUI"
     },
     {
@@ -71,7 +71,7 @@
       "source": "npm",
       "npm": "dsh-better-sidebar",
       "github": "omdsh-dev/DSH-better-sidebar",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-better-sidebar@0.28.1/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-better-sidebar@0/icon.svg",
       "homepage": "https://github.com/omdsh-dev/DSH-better-sidebar"
     },
     {
@@ -84,7 +84,7 @@
       "source": "npm",
       "npm": "dshmarket",
       "github": "dsh-market/dsh-market",
-      "icon": "https://cdn.jsdelivr.net/npm/dshmarket@1.70.2/assets/logo.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dshmarket@1/assets/logo.svg",
       "homepage": "https://github.com/dsh-market/dsh-market"
     },
     {
@@ -97,7 +97,7 @@
       "source": "npm",
       "npm": "dsh-context",
       "github": "bowenliang123/dsh-context",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-context@0.77.0/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-context@0/icon.svg",
       "homepage": "https://github.com/bowenliang123/dsh-context"
     },
     {
@@ -120,7 +120,7 @@
       "source": "npm",
       "npm": "dsh-ops",
       "github": "T-Auto/dsh-ops",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-ops@0.4.1/docs/assets/icon.png",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-ops@0/docs/assets/icon.png",
       "homepage": "https://github.com/T-Auto/dsh-ops"
     },
     {
@@ -289,7 +289,7 @@
       "source": "npm",
       "npm": "dsh-mcp-tools",
       "github": "hxlog/dsh-mcp-tools",
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-mcp-tools@1.0.2/icon.svg",
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-mcp-tools@1/icon.svg",
       "homepage": "https://github.com/hxlog/dsh-mcp-tools"
     },
     {

@@ -22,11 +22,10 @@ const registry = JSON.parse(readFileSync(join(root, 'registry.json'), 'utf8'))
 // 版本段紧贴包名无斜杠；包名段不含 @，否则 [^/]* 会吞掉版本段。
 const isMajorPinned = (icon) => /^https:\/\/cdn\.jsdelivr\.net\/npm\/(?:@[^/]+\/[^/@]+|[^/@]+)@\d+\//.test(icon)
 
-// 存量豁免（ratchet）：2026-11-09 立守卫时 icon 仍全钉具体版本的 12 条。只减不增。
-// 2026-11-19：自研 5 条（quota-watch/surf/obmc-web/onetree-log/skills）随文案刷新轮修为 @<major> 移出；余 6 条三方待迁移。
-const GRANDFATHERED_PINNED = new Set([
-  'dsh-tui', 'dsh-better-sidebar', 'dsh-market', 'dsh-context', 'dsh-ops', 'dsh-mcp-tools',
-])
+// 存量豁免（ratchet）：2026-11-09 立守卫时 icon 仍全钉具体版本的条目名单。只减不增。
+// 2026-11-19：迁移战役完成——自研 5 条 + 三方 6 条全部改浮动 @<major>，名单清空退役；
+// 此后任何全钉（含三方）直接红，无豁免通道。
+const GRANDFATHERED_PINNED = new Set([])
 
 describe('registry.json icon 字段 https 守卫（ADR-0025）', () => {
   it('凡带 icon 的条目必须是可解析的 https URL', () => {
