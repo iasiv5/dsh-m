@@ -1,7 +1,7 @@
 {
   "name": "dsh-m",
   "version": "0.12.23",
-  "description": "可自定义收录清单的 DSH 插件市场：收录、安装、卸载、升级一站完成，附 agent 工具与 dshm CLI。",
+  "description": "自定义清单的 DSH 插件市场：社区与精选双目录，收录/安装/卸载/升级，agent 工具与 dshm CLI，支持 web 与 desktop。",
   "icon": "./icon.svg",
   "license": "MIT",
   "type": "module",
