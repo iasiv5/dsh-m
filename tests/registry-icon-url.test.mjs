@@ -25,7 +25,7 @@ const isMajorPinned = (icon) => /^https:\/\/cdn\.jsdelivr\.net\/npm\/(?:@[^/]+\/
 // 存量豁免（ratchet）：2026-11-09 立守卫时 icon 仍全钉具体版本的 12 条。只减不增。
 const GRANDFATHERED_PINNED = new Set([
   'dsh-tui', 'dsh-better-sidebar', 'dsh-market', 'dsh-context', 'dsh-ops', 'dsh-quota-watch',
-  'dsh-surf', 'dsh-obmc-web', 'dsh-onetree-log', 'dsh-chat-manager', 'dsh-mcp-tools', 'dsh-skills',
+  'dsh-surf', 'dsh-obmc-web', 'dsh-onetree-log', 'dsh-mcp-tools', 'dsh-skills',
 ])
 
 describe('registry.json icon 字段 https 守卫（ADR-0025）', () => {
