@@ -8,13 +8,11 @@
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["市场","插件管理"],
-      "verified": ["0.1.2-rc.1","0.1.5-rc.1","0.1.5-rc.2","0.1.7-rc.1","0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1","0.2.2-rc.5"],
       "source": "npm",
       "npm": "dsh-m",
       "github": "iasiv5/dsh-m",
       "screenshots": ["docs/images/marketplace.webp","docs/images/official-plugin-install.webp","docs/images/community-catalog.webp","docs/images/curated-registry.webp","docs/images/search-results.webp","docs/images/plugin-detail.webp","docs/images/installed.webp","docs/images/settings.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-m"
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-m@0/icon.svg"
     },
     {
       "id": "dsh-skins",
@@ -23,13 +21,11 @@
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["皮肤","主题","美化","界面"],
-      "verified": ["0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1"],
       "source": "npm",
       "npm": "@iasiv5/dsh-skins",
       "github": "iasiv5/dsh-skins",
       "screenshots": ["docs/assets/preview-meirenzhi-1.webp","docs/assets/preview-switcher.webp","docs/assets/preview-openbmc-1.webp","docs/assets/preview-uefi-1.webp","docs/assets/preview-personalization.webp","docs/assets/preview-desktop-1.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-skins"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skins@1/icon.svg"
     },
     {
       "id": "dsh-tui",
@@ -134,13 +130,11 @@
       "category": "essentials",
       "alsoCategories": ["self-dev"],
       "tags": ["定时消息","排程","额度恢复","延时发送"],
-      "verified": ["0.2.2-rc.1"],
       "source": "npm",
       "npm": "dsh-send-later",
       "github": "iasiv5/dsh-send-later",
       "screenshots": ["docs/images/panel.webp","docs/images/automation-task.webp","docs/images/official-plugin-install.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-send-later@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-send-later"
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-send-later@0/icon.svg"
     },
     {
       "id": "dsh-skip-browser-auth",
@@ -152,8 +146,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skip-browser-auth",
       "github": "iasiv5/dsh-skip-browser-auth",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skip-browser-auth@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-skip-browser-auth"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skip-browser-auth@0/icon.svg"
     },
     {
       "id": "dsh-copilot-auth",
@@ -161,13 +154,11 @@
       "description": "Copilot 设备码登录注销与模型列表管理，免 API Token，目录兜底不覆盖定制，凭据入内置凭据库。",
       "category": "self-dev",
       "tags": ["Copilot","认证","模型接入","工具"],
-      "verified": ["0.1.7-rc.2","0.2.0-rc.1","0.2.0-rc.2","0.2.1-rc.2","0.2.1-rc.3","0.2.1-rc.4","0.2.1-rc.5","0.2.2-rc.1"],
       "source": "npm",
       "npm": "@inventec/dsh-copilot-auth",
       "github": "iasiv5/dsh-copilot-auth",
       "screenshots": ["docs/assets/preview-settings-dark.webp","docs/assets/preview-settings-light.webp","docs/assets/preview-login-idle.webp","docs/assets/preview-device-code.webp","docs/assets/preview-github-authorize.webp","docs/assets/preview-manage-models.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-copilot-auth"
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-copilot-auth@1/icon.svg"
     },
     {
       "id": "dsh-quota-watch",
@@ -180,8 +171,7 @@
       "npm": "@iasiv5/dsh-quota-watch",
       "github": "iasiv5/dsh-quota-watch",
       "screenshots": ["docs/assets/panel-overview.webp","docs/assets/panel-glm-detail.webp","docs/assets/panel-copilot-detail.webp","docs/assets/sidebar-card.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-quota-watch"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-quota-watch@0/icon.svg"
     },
     {
       "id": "dsh-stock-kanban",
@@ -189,13 +179,11 @@
       "description": "盯盘胶囊：A股/港股/美股/加密货币自选、拖拽排序、持仓盈亏与目标价，分时/K 线与指数看盘；可选集成 quota-watch。",
       "category": "self-dev",
       "tags": ["股票","行情","ETF","投资"],
-      "verified": ["0.2.2-rc.1", "0.2.2-rc.2"],
       "source": "npm",
       "npm": "dsh-stock-kanban",
       "github": "iasiv5/dsh-stock-kanban",
       "screenshots": ["docs/images/capsule.webp","docs/images/panel.webp","docs/images/detail.webp","docs/images/mobile.webp","docs/images/settings.webp","docs/images/capsule-standalone.webp"],
-      "icon": "https://cdn.jsdelivr.net/npm/dsh-stock-kanban@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-stock-kanban"
+      "icon": "https://cdn.jsdelivr.net/npm/dsh-stock-kanban@0/icon.svg"
     },
     {
       "id": "dsh-surf",
@@ -208,8 +196,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-surf",
       "github": "iasiv5/dsh-surf",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-surf@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-surf"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-surf@0/icon.svg"
     },
     {
       "id": "dsh-obmc-web",
@@ -222,8 +209,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-obmc-web",
       "github": "iasiv5/dsh-obmc-web",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-obmc-web@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-obmc-web"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-obmc-web@0/icon.svg"
     },
     {
       "id": "dsh-onetree-log",
@@ -236,8 +222,7 @@
       "source": "npm",
       "npm": "@inventec/dsh-onetree-log",
       "github": "iasiv5/dsh-onetree-log",
-      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-onetree-log@0/icon.svg",
-      "homepage": "https://github.com/iasiv5/dsh-onetree-log"
+      "icon": "https://cdn.jsdelivr.net/npm/@inventec/dsh-onetree-log@0/icon.svg"
     },
     {
       "id": "dsh-weknora",
@@ -437,8 +422,7 @@
       "source": "npm",
       "npm": "@iasiv5/dsh-skills",
       "github": "iasiv5/skills",
-      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1/icon.svg",
-      "homepage": "https://github.com/iasiv5/skills"
+      "icon": "https://cdn.jsdelivr.net/npm/@iasiv5/dsh-skills@1/icon.svg"
     }
   ]
 }

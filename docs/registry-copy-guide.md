@@ -1,6 +1,6 @@
 # Registry 文案规范（registry-copy-guide）
 
-> 管辖范围：`registry.json` 当前 36 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills（self-dev），30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；2026-11-04 收录 qiaomu-rss-dsh（watchlist，github 源），32→33；2026-11-07 收录 dsh-send-later（essentials 主桶＋self-dev 次桶，coupled），33→34；2026-11-07 收录 dsh-media-desk（cui-picks，三方），34→35；2026-11-07 dsh-guizang-design 主桶改 cui-picks（歸藏专区转次桶 alsoCategories），35 条不变；2026-11-07 收录 agentero-dsh（cui-picks，三方），35→36；2026-11-10 收录 dsh-stock-kanban（self-dev，coupled），36→37；2026-11-15 baoyu 5 条纯 npm 化（上游 repo 消失，github/homepage 双删，条目保留）+ 下架 browser-skill-dsh-plugin（tencent-lighthouse，上游退役插件形态），37→36；2026-11-18 收录 dsh-open-artifact（baoyu，npm+github 双源），36→37；2026-11-19 下架 dsh-chat-manager（watchlist，上游 GitHub 仓库 404），37→36；2026-11-19 自研 11 条 description 刷新：DSH 版本句退役（兼容事实归 verified 与 README，见 §4）、品牌词不进描述、自研 icon 钉版改浮动 @major，36 条不变；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
+> 管辖范围：`registry.json` 当前 36 条收录条目的 `description` 与 `tags` 写法（0.9.16 严筛后 23→19；后续移除 DSH Docs Panel，19→18；收录 dsh-market，18→19；收录 dsh-mermaid，19→20；移除 dsh-flowglass，20→19；收录 ds-bot，19→20；收录 dsh-mcp-tools，20→21；收录 dsh-archive-trash，21→22；收录 dsh-ops，22→23；收录 dsh-chatlock，23→24；收录 dsh-provider-card，24→25；收录宝玉四件套（baoyu），25→29；收录 dsh-guizang-design（guizang），29→30；收录 dsh-skills（self-dev），30→31；2026-11-01 撤出 dsh-chatlock（安装不可用），dsh-pet 顶替入 watchlist（31 条不变）；2026-11-03 收录 dsh-claude-motion（baoyu），31→32；2026-11-04 收录 qiaomu-rss-dsh（watchlist，github 源），32→33；2026-11-07 收录 dsh-send-later（essentials 主桶＋self-dev 次桶，coupled），33→34；2026-11-07 收录 dsh-media-desk（cui-picks，三方），34→35；2026-11-07 dsh-guizang-design 主桶改 cui-picks（歸藏专区转次桶 alsoCategories），35 条不变；2026-11-07 收录 agentero-dsh（cui-picks，三方），35→36；2026-11-10 收录 dsh-stock-kanban（self-dev，coupled），36→37；2026-11-15 baoyu 5 条纯 npm 化（上游 repo 消失，github/homepage 双删，条目保留）+ 下架 browser-skill-dsh-plugin（tencent-lighthouse，上游退役插件形态），37→36；2026-11-18 收录 dsh-open-artifact（baoyu，npm+github 双源），36→37；2026-11-19 下架 dsh-chat-manager（watchlist，上游 GitHub 仓库 404），37→36；2026-11-19 自研 11 条 description 刷新：DSH 版本句退役（兼容事实归 verified 与 README，见 §4）、品牌词不进描述、自研 icon 钉版改浮动 @major；同日 verified 收敛（自研原则不填，唯一例外 skip-auth）与 homepage 死栏位移除（github+npm 在场时 officialLinks 永不渲染 homepage），36 条不变；策展七桶：essentials/cui-picks/baoyu/guizang/self-dev/tencent-lighthouse/watchlist）。
 > schema 硬约束见 `docs/DESIGN.md` §2.2（本规范只管文案，不改 schema）。
 > 保鲜机制：自研条目的兼容声明核对已纳入
 > `dsh-workspace/01_docs/dsh-intall-know-how/008`（DSH 升级后必查）。
@@ -60,6 +60,10 @@
 - **三方条目 `verified` 默认不填**（同裁决）：`verified` 带来逐宿主版本复测义务，而
   registry.json 修改权在仓库侧、三方作者无法持续维护该字段；作者实测记录写入
   PR 描述/合并信息即可，条目本体不做兼容声明（「缺失版本号不构成负面信号」继续适用）。
+- **自研条目 `verified` 同口径收敛**（2026-11-19 主人裁决）：原则不填，与三方一致——floor-only
+  peer/engines 已由包元数据机器保证向前兼容，逐 rc 复测数组是仪式不是信息；唯一例外
+  `dsh-skip-browser-auth`（白名单 fail-closed 机制使实测数组即产品契约——激活表本身）。
+  实测信息的产品内可见性由详情弹窗内嵌仓库 README（ReadmeBlock）承接。
 
 ## 7. CI 软警告
 
