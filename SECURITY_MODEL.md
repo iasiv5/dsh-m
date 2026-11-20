@@ -54,3 +54,6 @@ dsh-m is a DeepSeek Harness (DSH) plugin that adds a plugin marketplace. It runs
 ## Open questions
 - Does DSH's `requestRejection` require authentication on an internet-exposed Web host, or only check Host/Origin? This decides whether an unauthenticated remote request can reach `install`.
 - Whether `registry-config-apply` / `set-community` (changing catalog sources) should require extra confirmation.
+
+## Pending security fixes
+Known, not yet fixed security issues are tracked as private draft repository security advisories, never in public issues or PRs (see `SECURITY.md`). Before working on security fixes, check https://github.com/iasiv5/dsh-m/security/advisories (Security → Advisories, drafts), which needs maintainer access. Each advisory holds the details and the fix plan.
