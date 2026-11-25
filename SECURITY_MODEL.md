@@ -13,7 +13,7 @@ dsh-m is a DeepSeek Harness (DSH) plugin that adds a plugin marketplace. It runs
 |---|---|---|
 | Host API | `src/host.ts`, `src/core/host-api.ts` | Single `POST /dshm` route with a method dispatcher (ping, market, readme, install, uninstall, upgrade, self-upgrade, set-enabled, restart, registry-config-apply, set-community, doctor, …). |
 | Agent Tools | `src/tools.ts`, `src/core/session-gate.ts` | `dshm_search/list/install/toggle/uninstall/upgrade/restart` plus a system-prompt segment, gated by the sessionTools/sessionPrompt switches. |
-| Install & Profile Ops | `src/core/dsh-cli.ts`, `profile-ops.ts`, `profile-transaction.ts`, `market-mutation.ts`, `build-approval.ts`, `exec-route.ts`, `restart.ts`, `toggle.ts`, `patch-yaml.ts`, `atomic-write.ts`, `install-guard.ts`, `local-allow.ts` | Spawns processes, writes profile files, handles build approvals (`allowBuilds`, `dangerouslyAllowAllBuilds` fallback) and restarts. |
+| Install & Profile Ops | `src/core/dsh-cli.ts`, `profile-ops.ts`, `profile-transaction.ts`, `market-mutation.ts`, `build-approval.ts`, `exec-route.ts`, `restart.ts`, `toggle.ts`, `patch-yaml.ts`, `atomic-write.ts`, `install-guard.ts`, `local-allow.ts` | Spawns processes, writes profile files, handles build approvals (`allowBuilds`, per-item echo-gated; the `dangerouslyAllowAllBuilds` fallback was removed by the security fix, see ADR-0002 revision) and restarts. |
 | Supply-chain Verification | `src/core/npm-integrity.ts`, `lockfile.ts`, `packument.ts`, `ustar.ts`, `npm-route.ts`, `httpx.ts`, `versions.ts`, `release-age.ts` | Exact npm version + integrity pinning, GitHub commit SHA pinning, registry route selection, HTTPS-only fetch primitive. |
 | Catalog & Registry | `src/core/registry.ts`, `registry-controller.ts`, `community*.ts`, `market*.ts`, `merged-market.ts`, `registry.json`, `scripts/validate-registry.mjs` | Loads and merges untrusted catalog data. |
 | Web Panel | `src/client/**` | React panel that renders catalog entries, READMEs (`markdown.js` safeUrl + HTML allowlist), icons and screenshots. |
@@ -42,7 +42,8 @@ dsh-m is a DeepSeek Harness (DSH) plugin that adds a plugin marketplace. It runs
 - `/dshm` trust check delegated to DSH `connection.requestRejection`, fail-closed, before any body read. POST + JSON Content-Type only; body cap.
 - Spec and package-name allowlist regexes (`dsh-cli.ts`, `packument.ts`). Process-group timeout; output capped at 256 KB.
 - npm: exact version + `integrity` verification. GitHub: commit SHA pin. Peer-compat precheck requires explicit `force`.
-- Precise build approval (`approvedBuilds` echo) before falling back to `dangerouslyAllowAllBuilds`.
+- Precise build approval on both web and desktop paths: `allowBuilds.<name>: true` is written only for package names the caller echoes back in `approvedBuilds` (originally returned as `pendingBuilds`, after user confirmation); otherwise a structured `needsBuildApproval` result is returned with zero writes. The `dangerouslyAllowAllBuilds` fallback no longer exists — it was removed by the security fix (a blocked install fails closed instead; ADR-0002 revision).
+- Explicit install/upgrade `version` on desktop paths must be an exact semver, and the final spec is asserted to be `<pkg>@<exact semver>` before delegation (rejects `npm:`/`github:`/tarball/`file:` source-prefix smuggling).
 - `httpx.ts`: HTTPS only (loopback http allowed), at most 3 manual redirects with per-hop `assertSafeUrl`, size cap, timeout.
 - `markdown.js`: no raw HTML injection; tag/attribute allowlist; every URL goes through `safeUrl` (http(s)/mailto/anchor only).
 - Atomic writes for profile files; `install-guard` checks after install.
