@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.26 修复：操作泵同目标在途去重——连点升级/安装不再排队多任务（2026-11-25 用户实测）
+
+- **修复**：变更操作按钮的在途灰显依赖 enqueue → syncOps → React 重渲染的异步传播，慢设备上有百毫秒级窗口——连点落在窗口内即发出多个同目标请求，服务端事务 FIFO 照单排队（CDP 活体探针实证：桌面端灰显延迟 ~400ms，窗口真实存在；数据层无任何同目标去重闸）。现在操作泵 enqueue 对 install/upgrade/uninstall 三类（重复语义恒同一意图）做同 kind+target 在途去重：窗口内的重复点击同步拒绝（store 零副作用、泵零扰动），并以中性提示「{target} 已有进行中的操作，已忽略重复点击」即时反馈；toggle 不去重（方向相反的快翻是合法意图）；显式 id 的确认/重试通道（reuseId，审计 #12）不去重。
+- **谓词迁居**：isInflightStatus 权威产地移至 `src/client/operations.js`（enqueue 去重需要它，operations-view 反向 import 会成环），operations-view 转为 import + 再导出（operations-card/测试等消费面零变化）。
+- **测试**：`tests/client-operations.test.mjs` 五用例（红驱动：running/queued 双态去重缺失必红；负向锚：reuseId/toggle 白名单外通道畅通，现状即绿）；`tests/client-op-outcome.test.mjs` duplicateOp → warn 中性投影；client 全 24 套件 655/655 绿。
+- **兼容性**：`dshm` CLI 接口零变化；去重跨面同权生效（已装行 / 市场详情 Modal / 收藏 Modal / 批量升级循环）。回退面：revert 349cb52 + 版本递增。
+
 ### 0.12.25 安全修复：构建放行逐项同意闸门（web 对齐 desktop）+ desktop 安装/升级 version 位精确校验（安全审计 sfind-5dbc…/sfind-d4bd…）+ SECURITY_MODEL.md 威胁模型（PR#80）
 
 - **构建放行（sfind-5dbc…）**：pnpm 拦下依赖构建脚本时，web 事务路径此前不经用户确认即写 `allowBuilds`；pending 名单不可读（含 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 这类不留占位的拦截）时还会写入 `dangerouslyAllowAllBuilds: true` 且永不撤销——一次触发即永久关闭该 profile 的 pnpm 构建脚本闸门。现在 web 与 desktop 同语义：只对调用方确认后原样回显的 `approvedBuilds` 包名逐键放行（未知项不写）；未获确认或名单不可得 → 零写盘，返回结构化 `needsBuildApproval` 结果（面板 / agent 工具 / CLI 三入口同渲染，未遂不冒充成功）；`dangerouslyAllowAllBuilds` 全量兜底退役（ADR-0002 修订节，旧 profile 已存在的开关不自动清理）。
@@ -1149,6 +1156,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.26 Fix: ops-pump same-target in-flight dedupe — rapid double-clicks no longer queue duplicate tasks (2026-11-25 user-reported)
+
+- **Fix**: the in-flight graying of mutation buttons relied on async propagation (enqueue → syncOps → React re-render), leaving a sub-second window on slow devices where each rapid click fired a same-target request that the server-side transaction FIFO dutifully queued (verified live via a CDP probe: ~400ms graying latency on desktop; the window is real and no data-layer dedupe existed). The ops pump now dedupes enqueue for install/upgrade/uninstall (kinds whose repetition is always the same intent) when an in-flight record with the same kind+target exists: window-period duplicates are rejected synchronously with zero store/pump side effects and an immediate neutral toast "{target} already has an operation in progress — duplicate click ignored"; toggle is exempt (opposite-direction quick flips are legitimate); the explicit-id confirm/retry channel (reuseId) is exempt.
+- **Predicate relocation**: isInflightStatus's authoritative home moved to `src/client/operations.js` (enqueue dedupe needs it; operations-view importing back would be cyclic), operations-view now imports and re-exports (operations-card/test consumers unchanged).
+- **Tests**: `tests/client-operations.test.mjs` five cases (red drivers: dedupe missing in running/queued states must fail; negative anchors: reuseId/toggle exemptions stay open, green by design); `tests/client-op-outcome.test.mjs` duplicateOp → warn neutral projection; all 24 client suites 655/655 green.
+- **Compatibility**: `dshm` CLI unchanged; dedupe applies across all surfaces (installed rows / market detail modal / favorites modal / batch upgrade loop). Rollback: revert 349cb52 + version bump.
 
 ### 0.12.25 Security fixes: per-item build-approval gate on web (aligned with desktop) + exact-semver validation for desktop install/upgrade `version` (security audit sfind-5dbc…/sfind-d4bd…) + SECURITY_MODEL.md threat model (PR#80)
 
