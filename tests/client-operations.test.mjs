@@ -778,7 +778,6 @@ describe('enqueue 同目标在途去重（2026-11-25 连点多任务修复）', 
       (e) => e.duplicateOp === true,
       'queued 也算在途（isInflightStatus 闭集）',
     )
-    store.list().forEach((r) => { /* 全部排队中，无需收尾 */ })
   })
 
   it('③ 显式 id（reuseId 确认/重试通道）不去重——负向锚：现状即绿', async () => {
