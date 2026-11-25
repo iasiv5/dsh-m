@@ -57,4 +57,6 @@ dsh-m is a DeepSeek Harness (DSH) plugin that adds a plugin marketplace. It runs
 - Whether `registry-config-apply` / `set-community` (changing catalog sources) should require extra confirmation.
 
 ## Pending security fixes
-Known, not yet fixed security issues are tracked as private draft repository security advisories, never in public issues or PRs (see `SECURITY.md`). Before working on security fixes, check https://github.com/iasiv5/dsh-m/security/advisories (Security → Advisories, drafts), which needs maintainer access. Each advisory holds the details and the fix plan.
+Known, **not yet fixed** security issues are tracked as private draft repository security advisories, never in public issues or PRs (see `SECURITY.md`). Before working on security fixes, check https://github.com/iasiv5/dsh-m/security/advisories (Security → Advisories), which needs maintainer access.
+
+**Fixed issues are publicly recorded in the repo itself.** The two findings from the 2026-11 Devin security scan were fixed and shipped in 0.12.25: `sfind-5dbc…` (web install path auto-wrote build-script approvals, and permanently disabled pnpm's build gate via the `dangerouslyAllowAllBuilds` fallback) and `sfind-d4bd…` (desktop install/upgrade spliced an unvalidated `version` into the install spec). Public records: the CHANGELOG 0.12.25 entry, the ADR-0002 revision, and the DESIGN.md security baseline.
