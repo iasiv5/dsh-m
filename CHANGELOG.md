@@ -8,6 +8,17 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.25 安全修复：构建放行逐项同意闸门（web 对齐 desktop）+ desktop 安装/升级 version 位精确校验（安全审计 sfind-5dbc…/sfind-d4bd…）+ SECURITY_MODEL.md 威胁模型（PR#80）
+
+- **构建放行（sfind-5dbc…）**：pnpm 拦下依赖构建脚本时，web 事务路径此前不经用户确认即写 `allowBuilds`；pending 名单不可读（含 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED` 这类不留占位的拦截）时还会写入 `dangerouslyAllowAllBuilds: true` 且永不撤销——一次触发即永久关闭该 profile 的 pnpm 构建脚本闸门。现在 web 与 desktop 同语义：只对调用方确认后原样回显的 `approvedBuilds` 包名逐键放行（未知项不写）；未获确认或名单不可得 → 零写盘，返回结构化 `needsBuildApproval` 结果（面板 / agent 工具 / CLI 三入口同渲染，未遂不冒充成功）；`dangerouslyAllowAllBuilds` 全量兜底退役（ADR-0002 修订节，旧 profile 已存在的开关不自动清理）。
+- **version 位（sfind-d4bd…）**：desktop install/upgrade 请求侧 `version` 此前未校验即拼进安装 spec，`npm:`/`github:`/tarball/`file:` 等来源前缀可借 version 位改装他源包且 UI 仍显示目录插件已装。现在入口先 `isExactVersion` 白名单（`install-refused` 拒绝），最终 spec 再逐字断言 `<pkg>@<精确 semver>` 二道防线；web 路径本就经 `npmVersion` 精确校验，不受同型攻击。
+- **重试通道**：CLI 新增 `--approved-builds <包名,包名>`；web `/dshm` install/upgrade/self-upgrade 请求体与 `dshm_install`/`dshm_upgrade` 的 `approvedBuilds` 在 web/desktop 双路径均消费（此前仅 desktop 委派路径消费）。
+- **行为收敛备案**：守卫补偿的依赖恢复臂与卸载门不走放行语义——回装被构建拦截即 fail-closed 回滚（修复前会自动放行后「成功恢复」，属安全优先的有意收敛，ADR-0002 修订节）。
+- **威胁模型（PR#80）**：新增 `SECURITY_MODEL.md`（8 组件 / 信任边界 / 资产 / 攻击者画像 / 既有控制），并随本修复对齐措辞——逐项同意双路径、全量兜底退役、version 白名单入「既有控制」；已知未修问题仍只走私有 draft security advisories（Security → Advisories）。
+- **依赖例行升级**：undici 8.12.4→8.13.0（运行时）；eslint 10.14.0→10.15.0、playwright-core 1.65.0→1.65.1、@deepseek-ai/dsh-tools 0.2.2-rc.3→0.2.2-rc.5（devDeps，#82–#85）。
+- **测试**：ladder 真文件逐项同意五用例（无回显 → workspace 逐字节不变/无全量开关；回显部分/全部/无交集三态）与事务 `BUILD_APPROVAL_REQUIRED` 映射/工厂透传（`tests/pnpm-outcome.test.mjs`、`tests/profile-transaction.test.mjs`）；market-mutation 结构化映射与 approvedBuilds 贯通（`tests/market-mutation.test.mjs`）；host-api 五点透传与 CLI 未遂分支/`--approved-builds` 透传（`tests/host-api.test.mjs`、`tests/cli-custom-profile.test.mjs`）；desktop version 白名单五用例（七个非法值参数化，`tests/profile-ops.test.mjs`）；闸门绕过与白名单失效两处变异红证实证锚可红。
+- **兼容性**：`needsBuildApproval` 未遂结果新增于 web 路径（客户端/工具已有该结果型渲染臂，零特判）；`fallbackAllBuilds` 字段保留、生产恒 false；主要行为变化是「以前自动放行后成功」的安装现在可能返回未遂——安全修复的预期收敛。回退面：revert 安全修复提交（9501f85）+ 版本递增。
+
 ### 0.12.24 收录文案与元数据统一战役：DSH 版本句退役、verified/homepage 收敛、icon 全量浮动化 + 自研包元数据家族统一
 
 - **收录文案（registry）**：自研 11 条 description 全面刷新——DSH 版本句（「已适配 …」「需 DSH ≥x」）退役，兼容事实收敛至 `verified` 数组与各仓 README/COMPATIBILITY（copy-guide §4 同日改版）；下架 dsh-chat-manager（上游 GitHub 仓库 404）。
@@ -1138,6 +1149,17 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.25 Security fixes: per-item build-approval gate on web (aligned with desktop) + exact-semver validation for desktop install/upgrade `version` (security audit sfind-5dbc…/sfind-d4bd…) + SECURITY_MODEL.md threat model (PR#80)
+
+- **Build approvals (sfind-5dbc…)**: when pnpm blocked dependency lifecycle scripts, the web transaction path wrote `allowBuilds` without user confirmation; when the pending list was unreadable (including `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, which leaves no placeholders), it wrote `dangerouslyAllowAllBuilds: true` and never reverted it — one trigger permanently disabled the profile's pnpm build-script gate. Web and desktop now share the same semantics: only package names the caller echoes back in `approvedBuilds` (after user confirmation) get `allowBuilds.<name>: true` (unknown names are never written); without consent or an unreadable list, nothing is written and a structured `needsBuildApproval` result is returned (panel / agent tools / CLI render it identically, never faking success). The `dangerouslyAllowAllBuilds` fallback is retired (ADR-0002 revision; pre-existing switches in old profiles are not auto-cleaned).
+- **`version` field (sfind-d4bd…)**: desktop install/upgrade spliced the caller-controlled `version` into the install spec without validation — source prefixes like `npm:`/`github:`/tarball/`file:` could substitute a different package while the UI still showed the catalog plugin installed. The entry points now run an `isExactVersion` whitelist first (`install-refused`), and the final spec is asserted verbatim as `<pkg>@<exact semver>` as a second line of defense; the web path was already guarded by `npmVersion` exact validation.
+- **Retry channel**: CLI gains `--approved-builds <name,name>`; the web `/dshm` install/upgrade/self-upgrade request bodies and the `approvedBuilds` parameter of `dshm_install`/`dshm_upgrade` are now consumed on both web and desktop paths (previously desktop-delegation only).
+- **Documented behavior convergence**: the install-guard compensation restore arm and the uninstall gate do not use approval semantics — a blocked restore now fails closed and rolls back (previously it auto-allowed and reported success; intentional security-first convergence, ADR-0002 revision).
+- **Threat model (PR#80)**: new `SECURITY_MODEL.md` (8 components / trust boundaries / assets / attacker profiles / existing controls), wording aligned with this fix — per-item approval on both paths, fallback retired, version whitelist added to existing controls; known unfixed issues still live only in private draft security advisories (Security → Advisories).
+- **Routine dependency bumps**: undici 8.12.4→8.13.0 (runtime); eslint 10.14.0→10.15.0, playwright-core 1.65.0→1.65.1, @deepseek-ai/dsh-tools 0.2.2-rc.3→0.2.2-rc.5 (devDeps, #82–#85).
+- **Tests**: five real-file per-item-approval ladder cases (no echo → workspace byte-identical / no global switch; partial/full/disjoint echo states) and transaction `BUILD_APPROVAL_REQUIRED` mapping / factory threading (`tests/pnpm-outcome.test.mjs`, `tests/profile-transaction.test.mjs`); market-mutation structured mapping and `approvedBuilds` threading (`tests/market-mutation.test.mjs`); host-api five-point passthrough and the CLI unmet-result branch / `--approved-builds` threading (`tests/host-api.test.mjs`, `tests/cli-custom-profile.test.mjs`); desktop version whitelist (five cases, seven illegal values parameterized, `tests/profile-ops.test.mjs`); mutation red-proofs demonstrate the anchors can fail (gate bypass: 3 red; whitelist disabled: 1 red).
+- **Compatibility**: the `needsBuildApproval` unmet result is new on the web path (client/tools already have rendering arms for this result shape, zero special-casing); the `fallbackAllBuilds` field is retained, always false in production; the main behavioral change is that installs which previously auto-allowed and succeeded may now return unmet — the intended convergence of this security fix. Rollback: revert the security fix commit (9501f85) + version bump.
 
 ### 0.12.24 Registry copy & metadata unification: DSH version phrases retired, verified/homepage converged, icons fully floating + self-dev manifest family unification
 
