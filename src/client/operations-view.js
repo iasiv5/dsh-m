@@ -146,11 +146,11 @@ export function channelLabelKey(channel) {
 }
 
 // ---------- #36：ops 在途谓词单点（五处手写镜像收权；status 闭集变更从此单点） ----------
+// 2026-11-25 迁居：isInflightStatus 权威产地移至 operations.js（enqueue 同目标去重需要它，
+// 反向 import 会成环）；此处 import 供本模块谓词族调用 + 再导出保持消费面零变化。
 
-/** 在途状态闭集（排队/进行中/待决）；终态（done/warned/failed/superseded）不在内。 */
-export function isInflightStatus(status) {
-  return status === 'queued' || status === 'running' || status === 'input'
-}
+import { isInflightStatus } from './operations.js'
+export { isInflightStatus }
 
 /** 首个进行中的非 install 操作（installed-tab 逐行禁用busy 派生，0.7.0 Task 13）；无命中 null。 */
 export function activeMutateOp(records) {

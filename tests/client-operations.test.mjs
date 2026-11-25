@@ -726,3 +726,102 @@ describe('createOperationsStore × 外部记录 overlay（Task 5）', () => {
     assert.equal(store.listMerged().some((r) => r.id === 'ext-b'), true, '重置后不再拦截')
   })
 })
+
+// ---------- enqueue 同目标在途去重（2026-11-25 连点多任务修复） ----------
+// 用户实测（Android Chrome / 已停用插件卡）：升级按钮灰显依赖 enqueue → syncOps → React
+// 重渲染的异步传播，慢设备上有百毫秒级窗口——连点落在窗口内即发出多个同目标请求，
+// 服务端事务 FIFO 照单排队。修复 = 数据层单点闸：install/upgrade/uninstall（重复语义恒
+// 同一意图）同 kind+target 在途（queued/running/input）时，新入队同步抛 duplicateOp 良性
+// 错误（op-outcome mutationFailed 投影中性提示）；显式 id（reuseId 重试通道）与 toggle
+// （方向相反的快翻是合法意图）不去重。红驱动 = ①；③④⑤ 为负向锚（现状即绿——修复前
+// 本就不抛，机制理由：去重白名单边界由本组用例钉住防回归）。
+
+describe('enqueue 同目标在途去重（2026-11-25 连点多任务修复）', () => {
+  const gatedExec = () => {
+    let release
+    const promise = new Promise((resolve) => { release = resolve })
+    return { exec: async () => { await promise; return { ok: true } }, release: () => release({ ok: true }) }
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('① upgrade 在途 → 同 kind+target 二次入队同步抛 duplicateOp（e.duplicateOp===true），store 仅一条；首个完成后恢复可入队', async () => {
+    const store = createOperationsStore(memStorage())
+    const first = gatedExec()
+    const pump = createOpsPump(store, () => null)
+    const p1 = pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, first.exec)
+    await tick() // 泵同步拾取（ctx=null 跳过 stillApplies → running 落库先于首 await）
+    assert.equal(store.list().find((r) => r.target === 'pkg-a')?.status, 'running', '首条已拾取在途')
+    // 红驱动：修复前这里不抛，连点直接生成第二条记录进服务端 FIFO
+    assert.throws(
+      () => pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, async () => ({ ok: true })),
+      (e) => e.duplicateOp === true,
+      '同 kind+target 在途时二次入队必须同步抛 duplicateOp',
+    )
+    assert.equal(store.list().filter((r) => r.target === 'pkg-a' && r.kind === 'upgrade').length, 1, 'store 零副作用：仍只有一条')
+    first.release()
+    await p1
+    assert.equal(store.list().find((r) => r.target === 'pkg-a')?.status, 'done', '首个照常完成')
+    // 终态后允许再次入队（幂等重装场景不受影响）
+    await pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, async () => ({ ok: true }))
+  })
+
+  it('② queued 态（首条还在排队）同样去重——连点窗口与泵是否已拾取无关', async () => {
+    const store = createOperationsStore(memStorage())
+    const gate1 = gatedExec()
+    const pump = createOpsPump(store, () => null)
+    void pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, gate1.exec)
+    // 任意 target 占住泵，使 pkg-a 的新入队停留在 queued（未被拾取）
+    void pump.enqueue({ kind: 'upgrade', target: 'pkg-z', status: 'queued', meta: {} }, gatedExec().exec)
+    await tick()
+    assert.throws(
+      () => pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, async () => ({ ok: true })),
+      (e) => e.duplicateOp === true,
+      'queued 也算在途（isInflightStatus 闭集）',
+    )
+    store.list().forEach((r) => { /* 全部排队中，无需收尾 */ })
+  })
+
+  it('③ 显式 id（reuseId 确认/重试通道）不去重——负向锚：现状即绿', async () => {
+    const store = createOperationsStore(memStorage())
+    const first = gatedExec()
+    const pump = createOpsPump(store, () => null)
+    const p1 = pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, first.exec)
+    await tick()
+    // 显式 id 不触发去重（复用记录是既有确认/重试语义，审计 #12）
+    const p2 = pump.enqueue({ id: 'op-retry', kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, async () => ({ ok: true }))
+    first.release()
+    await p1
+    await p2
+    assert.equal(store.list().filter((r) => r.target === 'pkg-a').length >= 2, true, '显式 id 通道畅通')
+  })
+
+  it('④ toggle 不在去重白名单（方向相反的快翻是合法意图）——负向锚：现状即绿', async () => {
+    const store = createOperationsStore(memStorage())
+    const first = gatedExec()
+    const pump = createOpsPump(store, () => null)
+    const p1 = pump.enqueue({ kind: 'toggle', target: 'pkg-a', status: 'queued', meta: { on: false } }, first.exec)
+    await tick()
+    const p2 = pump.enqueue({ kind: 'toggle', target: 'pkg-a', status: 'queued', meta: { on: true } }, async () => ({ ok: true }))
+    first.release()
+    await p1
+    await p2
+    assert.ok('toggle 快翻不受去重影响')
+  })
+
+  it('⑤ 不同 target / 不同 kind 不去重（冲突域归 mutateStateForPkg 行内禁用，数据层不越权）——负向锚：现状即绿', async () => {
+    const store = createOperationsStore(memStorage())
+    const first = gatedExec()
+    const pump = createOpsPump(store, () => null)
+    const p1 = pump.enqueue({ kind: 'upgrade', target: 'pkg-a', status: 'queued', meta: {} }, first.exec)
+    await tick()
+    // 不同 target 同 kind
+    const p2 = pump.enqueue({ kind: 'upgrade', target: 'pkg-b', status: 'queued', meta: {} }, async () => ({ ok: true }))
+    // 同 target 不同 kind（卸载 vs 升级的并发冲突由既有行内禁用防线承担）
+    const p3 = pump.enqueue({ kind: 'uninstall', target: 'pkg-a', status: 'queued', meta: {} }, async () => ({ ok: true }))
+    first.release()
+    await p1
+    await p2
+    await p3
+    assert.ok('白名单外畅通')
+  })
+})

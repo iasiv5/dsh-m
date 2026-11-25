@@ -65,9 +65,12 @@ export function createOpOutcome(lookup) {
   const buildBlockedText = (res, verbKey) =>
     lookup("notify.buildApprovalPending", { verb: lookup(verbKey), pkg: res?.pkg || "" })
 
-  /** 变更失败描述：superseded → ok；guard → err（guardBlockedText）；其余 → err failed.<verb>。副作用（notify/setInstallNote）留守调用点。 */
+  /** 变更失败描述：superseded → ok；duplicateOp → warn（2026-11-25 连点多任务修复：泵
+   *  enqueue 同目标在途去重的良性拒绝，中性提示而非红错）；guard → err（guardBlockedText）；
+   *  其余 → err failed.<verb>。副作用（notify/setInstallNote）留守调用点。 */
   const mutationFailed = (e, { verb, target }) => {
     if (e && e.opSuperseded) return { kind: 'ok', text: lookup('op.superseded.note', { target }) }
+    if (e && e.duplicateOp) return { kind: 'warn', text: lookup('op.duplicate.note', { target }) }
     if (e && e.guard) return { kind: 'err', text: guardBlockedText(e.guard) }
     return { kind: 'err', text: lookup(PLAIN_FAIL_KEY[verb], { err: (e && e.message) || e }) }
   }

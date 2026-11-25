@@ -58,6 +58,16 @@ export function externalToRecord(er) {
  */
 
 /**
+ * 在途状态闭集（queued/running/input）；终态不在内。
+ * #36 谓词单点迁居本模块（2026-11-25）：enqueue 同目标去重（见 createOpsPump.enqueue）需要它，
+ * 而 operations-view 反向 import 本模块会成环——闭集语义的权威产地自此为 operations.js，
+ * operations-view 转为再导出（operations-card / 既有测试消费面零变化）。
+ */
+export function isInflightStatus(status) {
+  return status === 'queued' || status === 'running' || status === 'input'
+}
+
+/**
  * @typedef {Object} OperationRecord
  * @property {string} id
  * @property {'install'|'upgrade'|'uninstall'|'toggle'|'community-toggle'|'registry-url'} kind
@@ -88,6 +98,10 @@ export function upgradeNotify(activation) {
 // 一屏失败记录无声 no-op（Windows 实机反馈 2026-10-01）；单条 ✕ 仍是逐条出口。
 const TERMINAL_CLEARABLE = new Set(['done', 'warned', 'failed', 'superseded'])
 export { TERMINAL_CLEARABLE }
+
+/** 同目标在途去重白名单（2026-11-25 连点多任务修复）：重复语义恒同一意图的三类；
+ *  toggle 不在列（方向相反的快翻是合法意图），restore/reuseId 通道按 id 直录不受影响。 */
+const DEDUPE_KINDS = new Set(['install', 'upgrade', 'uninstall'])
 
 function safeParse(raw) {
   try {
@@ -512,8 +526,27 @@ export function createOpsPump(store, getCtx) {
     }
   }
   return {
-    /** 入队并返回该记录终态的 Promise（waiters 持原始错误）。 */
+    /** 入队并返回该记录终态的 Promise（waiters 持原始错误）。
+     *  同目标在途去重（2026-11-25 连点多任务修复）：升级/安装按钮的在途灰显依赖
+     *  enqueue → syncOps → React 重渲染的异步传播，慢设备上有百毫秒级窗口——连点落在
+     *  窗口内即发出多个同目标请求，服务端事务 FIFO 照单排队。数据层单点闸收口：
+     *  新入队（无显式 id）时若存在同 kind+target 的在途记录 → 同步抛 duplicateOp 良性
+     *  错误（op-outcome.mutationFailed 投影中性提示），store 零副作用、泵零扰动。
+     *  白名单 = 重复语义恒同一意图的三类（install/upgrade/uninstall）；toggle 不去重
+     *  （方向相反的快翻是合法意图，且开关已有乐观态 + 同包禁用双防线）；显式 id 不去重
+     *  （reuseId 确认/重试复用既有记录，审计 #12）。 */
     enqueue(record, exec) {
+      if (!record.id && DEDUPE_KINDS.has(record.kind) && typeof record.target === 'string') {
+        const dup = store
+          .list()
+          .find((r) => r.kind === record.kind && r.target === record.target && isInflightStatus(r.status))
+        if (dup) {
+          throw Object.assign(new Error(`duplicate op: ${record.kind} ${record.target} already ${dup.status}`), {
+            duplicateOp: true,
+            opId: dup.id,
+          })
+        }
+      }
       const stored = store.upsert(record)
       const ctx = getCtx()
       if (ctx && ctx.syncOps) ctx.syncOps()
