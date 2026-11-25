@@ -19,10 +19,12 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - **Installed-package enumeration and manifest metadata**: `src/core/installed.ts`; tests: `tests/installed.test.mjs`.
 - **dshm_search 输出（含注册表状态行）**: `src/tools.ts`（`renderSearch` / `registryNoteOf`）；tests: `tests/tools-search.test.mjs`.
 - **dshm_* 工具注册与 schema 断言**: `src/tools.ts`（`registerTools` 第四参可注入 profile）；`defineTool` 把 parameters 规范化为 JSON Schema `{type, properties, required}`——测试断言打 `parameters.properties.<字段>`，不是 `parameters.<字段>`（0.12.2 #41 实录：断言落空付一次探针）。
+- **客户端操作记录模型与泵（queued→running→终态 / 同目标在途去重 / 恢复对账）**: `src/client/operations.js`（store + `createOpsPump` + `isInflightStatus` 权威产地）、`operations-view.js`（视图模型/在途谓词族，import + 再导出）、`panel-ops.js`（面板装配/横幅判定单源）；main.jsx `runOp` 是唯一 `enqueue` 入口（所有 UI 面经它）。tests: `tests/client-operations.test.mjs` / `tests/client-operations-view.test.mjs` / `tests/client-panel-ops.test.mjs`。
 
 ## Verification entry points
 
 `package.json` scripts are authoritative. `npm test` builds via `pretest` and runs the import guard plus `tests/*.test.mjs`; `npm run typecheck` runs TypeScript checks. Before either gate, follow the workspace AGENTS.md dependency preflight (`test -d node_modules`; recovery details in `01_docs/agent-ops/README.md`「仓内构建与依赖恢复」); preserve the original process exit code when filtering test output.
+- **定向跑测试 ≠ 门禁**：`node --test tests/<某套件>` 不含 `npm test` 的 lint（`eslint tests src`）与 check-client-imports 前置——改 tests/ 或 src/ 后、主张完成前必须 `npm run lint` 过一遍（0.12.26 实录：新测试的 no-unused-vars 逃过定向跑、被 publish workflow Gate 拦下一轮 CI）。`npm run release` 已内置 lint 步兜底。
 
 - **测试导入约定**：`src/core/*.ts` 没有可直接 import 的 JS，相关测试从 `lib/core/*.js`（构建产物）引入；单文件跑测试前先 `npm run build`，否则测到的是旧产物。`src/client/*.js` 的测试直接引 `src/client/`。
 - **大 fixture**：`tests/fixtures/search-normalize-corpus.json` 为每行一条用例的 JSON；全文搜索 tests 时排除 `tests/fixtures/**`，需要用例时按行检索。
@@ -35,10 +37,11 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 - 发版走 `npm run release`（脚本头部列出前置条件与步骤，含 lock 三处同步）；门禁 `npm run check-release`。不要手动打 tag：2026-11-01 实录，tag 落在未包含 registry.json 的提交上、lock 未同步，CI 门禁两次失败并两次重打 tag。
 - **发版动作需当轮明确批准**：`npm run release`（push/tag/publish）与 issue 关闭属不可逆公开动作——「批准开工」不默认涵盖发版与关闭步骤，执行到二者前停下等主人确认。（2026-11-02 #42 战役实录：批准开工后被中途叫停一次、回帖草案另送审一次。）
 - lock 三处一致判定见 `scripts/release-lock.mjs`；`scripts/release.mjs` 发现不一致时自动同步，同步后的 `package-lock.json` 需纳入发版提交。
+- CHANGELOG 顶条（中英都要）必须引用至少一个 `tests/*.test.mjs` 文件（`check-release` 门禁「测试引用可核对」；0.12.25 实录：无文件引用即红一轮）。
 - 新增 registry 分类的顺序（先发版 → 宿主升级 → 再推 registry）由 `scripts/validate-registry.mjs` 的分类门禁机械检查（判定逻辑在 `scripts/registry-categories.mjs`）；CHANGELOG 的兼容性说明同步记录。
 - 发版前人工核验的热部署一律 `node scripts/hot-deploy.mjs`（client 面，原子替换断硬链接）；宿主面（`lib/core`、host.js）变更的预览 = 发版后正规升级，或 know-how 050 §3 手工原子替换（明确接受盘上/内存混合态）；**禁 tar/cp 原地覆盖**——profile 文件与 pnpm store 硬链接，原地截断连坐改写 store blob（2026-11-14 发版轮实录：手搓 tar 覆盖后才在 retro 发现本工具）。
 
 ## Repository references
 
-- Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome). Anonymous API hits rate-limit 403 fast — use the authenticated local `gh api repos/iasiv5/dsh-m/issues/<n>` instead.
+- Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome). Anonymous API hits rate-limit 403 fast — authenticate instead: read the token from `~/.config/gh/hosts.yml` (`github.com.oauth_token`) and `curl -s -H "Authorization: Bearer $TOKEN" <url>`（本机无 gh CLI；curl+token 即 gh api 等价通道，2026-11-25 实录）。
 - 收录 PR 的评审与回复 playbook：`../01_docs/dsh-m-registry-playbook.md`（私有 01_docs，不进入本仓库）。

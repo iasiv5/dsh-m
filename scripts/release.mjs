@@ -49,6 +49,11 @@ const run = (cmd, tries = 1) => {
 const status = run('git status --porcelain')
 if (status !== '') throw new Error(`工作树不干净，先提交或清理：\n${status}`)
 
+// [lint] 快速门禁（0.12.26 实录：publish workflow Gate 的 eslint 在本地逃逸——定向
+// `node --test tests/...` 不含 npm test 的 lint 前置；本地先红省一轮 CI + tag 重钉重发）
+console.log('[lint] npm run lint（eslint tests src，~2s）……')
+run('npm run lint')
+
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
 console.log('[0] push 预检：fetch + 快进判定（retro 2026-10-31：远端漂移此前要烧完整 tag 舞步才失败）……')
 run('git fetch origin main')
