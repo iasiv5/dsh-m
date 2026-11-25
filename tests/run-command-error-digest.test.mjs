@@ -92,7 +92,7 @@ describe('runCommand：失败异常必须能被 isPrepareBlocked 接住（端到
         assert.ok(text.startsWith('命令失败 (exit 1)'), `应保留退出码前缀：${text.slice(0, 80)}`)
         assert.ok(text.includes('ERR_PNPM_IGNORED_BUILDS'), `错误码必须存活（旧实现被尾截丢弃）：${text.slice(0, 200)}`)
         assert.ok(text.includes('node-pty@1.1.0'), '包名必须存活')
-        assert.equal(isPrepareBlocked(text), true, 'isPrepareBlocked 必须命中，否则 dangerouslyAllowAllBuilds 重试不会触发')
+        assert.equal(isPrepareBlocked(text), true, 'isPrepareBlocked 必须命中，否则构建拦截分类（needs-builds → 结构化请示）不会触发（全量兜底已退役，ADR-0002 修订节）')
         return true
       },
     )

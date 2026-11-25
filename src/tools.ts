@@ -332,7 +332,7 @@ export function registerTools(
       id: { type: 'string', required: true, description: '收录 id from dshm_search, e.g. dsh-skins' },
       version: { type: 'string', description: 'Optional exact semver (npm 源). Default latest.' },
       force: { type: 'boolean', description: '用户已确认兼容风险后重试时置 true（跳过 peer 预检拦截）。' },
-      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' },
+      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；web/desktop 路径均消费，须用户确认后重试用。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -368,7 +368,8 @@ export function registerTools(
       if (route.route === 'delegate') return desktopInstallArm()
       try {
         // ADR-0030：web 分支补 profileDir/profileName（此前缺省落 webProfileDir()——issue #39 写路径错配）
-        return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
+        // 安全修订 sfind-5dbc…：web 路径同样消费 approvedBuilds 回显（needsBuildApproval 未遂后的重试通道）
+        return cloneJson(await m.installFromRegistry(id, cfg, { version, forceIncompatible: force, namespace: 'host', channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { profileDir: profile.dir, profileName: profile.name }))
       } catch (err) {
         if (err instanceof InstallGuardError) {
           // 结构化 error result（M2 Task 3 ㉑-㉜）：不渲染「已安装」，无 force 通道；restartSafe 随结果携带
@@ -459,7 +460,7 @@ export function registerTools(
     parameters: {
       pkg: { type: 'string', required: true, description: '包名 from dshm_list' },
       force: { type: 'boolean', description: 'peer 兼容预检不通过且用户已确认风险后置 true（等价 forceIncompatible，跳过 @deepseek-ai/dsh(-*) peer 拦截）；守卫拦截（guard）无 force 通道，不受此参数影响。' },
-      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；仅 desktop 委派路径消费，须用户确认后重试用。' },
+      approvedBuilds: { type: 'array', items: { type: 'string' }, description: '上次 needsBuildApproval 返回的 pendingBuilds 原样回传；web/desktop 路径均消费，须用户确认后重试用。' },
     },
     output: {
       schema: { type: 'object', additionalProperties: true },
@@ -492,7 +493,8 @@ export function registerTools(
       if (route.route === 'refuse') throw route.error
       if (route.route === 'delegate') return desktopUpgradeArm()
       try {
-        return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool' }, { profileDir: profile.dir, profileName: profile.name }))
+        // 安全修订 sfind-5dbc…：web 路径同样消费 approvedBuilds 回显（needsBuildApproval 未遂后的重试通道）
+        return cloneJson(await m.upgradePlugin(target, cfg, { forceIncompatible: force, namespace: 'host', channel: 'host-tool', ...(Array.isArray(args.approvedBuilds) && args.approvedBuilds.length > 0 ? { approvedBuilds: args.approvedBuilds.map(String) } : {}) }, { profileDir: profile.dir, profileName: profile.name }))
       } catch (err) {
         if (err instanceof InstallGuardError) {
           return { ok: false, guard: true, message: err.message, ...err.toWire() }

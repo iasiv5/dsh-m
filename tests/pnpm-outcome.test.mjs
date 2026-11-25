@@ -5,7 +5,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -102,7 +102,7 @@ function fakeRunner(script) {
  *  ADR-0009：govern/register 缺省注入 no-op 替身——既有用例零改动且不被动出网
  *  （缺省绑定会走 exclude-governance 的真实读盘/registry 探测）。 */
 function ladderOf(run, resolveBuilds, overrides = {}) {
-  const decision = resolveBuilds ?? (() => ({ approvals: ['node-sass'], fallbackAll: false }))
+  const decision = resolveBuilds ?? (() => ({ approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }))
   return makeAddViaLadder({
     runDshPlugin: run,
     resolveBuilds: decision,
@@ -120,12 +120,15 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     assert.equal(out.output.includes('写盘失败'), true)
   })
 
-  it('resolveBuilds 返回兜底决策 → fallbackAllBuilds:true 且 approvals 空', async () => {
-    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'ok fallback'])
-    const out = await ladderOf(run, () => ({ approvals: [], fallbackAll: true }))('pkg-a@1.2.3', '/tmp/profile')
-    assert.equal(out.class, 'ok')
-    assert.deepEqual(out.buildApprovals, [])
-    assert.equal(out.fallbackAllBuilds, true)
+  it('resolveBuilds 未获同意（needsApproval）→ 零写盘结构化请示：needs-builds + buildApprovalNeeded + pendingBuilds，不重试', async () => {
+    const { run, calls } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT)])
+    const out = await ladderOf(run, () => ({ approvals: [], needsApproval: true, pendingBuilds: ['node-pty'] }))('pkg-a@1.2.3', '/tmp/profile')
+    assert.equal(out.class, 'needs-builds')
+    assert.equal(out.buildApprovalNeeded, true)
+    assert.deepEqual(out.pendingBuilds, ['node-pty'])
+    assert.ok(!('fallbackAllBuilds' in out), '全量兜底已退役：请示结果不带 fallbackAllBuilds')
+    assert.equal(calls.length, 1, '未获同意不重试')
+    assert.ok(out.output.includes('node-pty'), '请示文案携带待决名单')
   })
 
   it('一次成功 → ok + output + buildApprovals:[]', async () => {
@@ -143,7 +146,7 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     const allowCalls = []
     const out = await ladderOf(run, (dir) => {
       allowCalls.push(dir)
-      return { approvals: ['node-sass'], fallbackAll: false }
+      return { approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }
     })('pkg-a@1.2.3', '/tmp/profile-x')
     assert.equal(out.class, 'ok')
     assert.deepEqual(out.buildApprovals, ['node-sass'])
@@ -174,7 +177,7 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
       new Error(PREPARE_BLOCKED_TEXT),
       'ok finally',
     ])
-    const out = await ladderOf(run, () => ({ approvals: ['node-sass'], fallbackAll: false }))('pkg-a@1.2.3', '/tmp/profile')
+    const out = await ladderOf(run, () => ({ approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }))('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out.class, 'ok')
     assert.deepEqual(out.buildApprovals, ['node-sass'])
       assert.equal(out.fallbackAllBuilds, false)
@@ -184,7 +187,7 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
   it('重试全部耗尽 → hard-fail/needs-builds 分类结果，永不 throw', async () => {
     // prepare 重试后仍被拦：needs-builds（在途放行重试已耗尽）
     const exhausted = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), new Error(PREPARE_BLOCKED_TEXT)])
-    const out1 = await ladderOf(exhausted.run, () => ({ approvals: ['node-sass'], fallbackAll: false }))('pkg-a@1.2.3', '/tmp/profile')
+    const out1 = await ladderOf(exhausted.run, () => ({ approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }))('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out1.class, 'needs-builds')
     assert.ok(out1.output.includes('ERR_PNPM_IGNORED_BUILDS'))
 
@@ -234,6 +237,99 @@ describe('makeAddViaLadder：加装阶梯工厂', () => {
     assert.ok(out.output.includes('workspace read-only'))
     assert.ok(out.output.length <= 800)
     assert.equal(calls.length, 1, 'allowAll 写失败后不再重试 add')
+  })
+})
+
+// ---------- 缺省 writePreciseBuilds：逐项同意闸门（安全修订 sfind-5dbc…，真文件读写） ----------
+
+/** pnpm 11 写下的待决占位值（build-approval.ts PENDING_PLACEHOLDER 同款逐字）。 */
+const PENDING_PLACEHOLDER = 'set this to true or false'
+
+/** 临时 profile + 带 pending 占位的 pnpm-workspace.yaml；测试结束自清理。 */
+function profileWithPendingBuilds(names) {
+  const dir = mkdtempSync(join(tmpdir(), 'dshm-builds-'))
+  const yaml = names.length > 0
+    ? `allowBuilds:\n${names.map((n) => `  ${n}: "${PENDING_PLACEHOLDER}"`).join('\n')}\n`
+    : ''
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), yaml, 'utf8')
+  return { dir, file: join(dir, 'pnpm-workspace.yaml') }
+}
+
+/** 不注入 resolveBuilds 的阶梯（走缺省 writePreciseBuilds 真读盘）；govern/register 静音。 */
+function defaultLadderOf(run, approvedBuilds) {
+  return makeAddViaLadder({
+    runDshPlugin: run,
+    ...(approvedBuilds !== undefined ? { approvedBuilds } : {}),
+    govern: async () => ({ ok: true, changed: false }),
+    register: async () => ({ applied: false }),
+    installedVersion: async () => undefined,
+  })
+}
+
+describe('缺省 writePreciseBuilds：逐项同意闸门（安全修订 sfind-5dbc…）', () => {
+  it('首次被拦（ERR_PNPM_IGNORED_BUILDS）且无 approvedBuilds → 文件逐字节不变，无 allowBuilds 写入、无全量开关（红驱动主用例）', async () => {
+    const { dir, file } = profileWithPendingBuilds(['node-pty', 'node-sass'])
+    const before = readFileSync(file, 'utf8')
+    const { run, calls } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT)])
+    const out = await defaultLadderOf(run)('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'needs-builds')
+    assert.equal(out.buildApprovalNeeded, true)
+    assert.deepEqual(out.pendingBuilds, ['node-pty', 'node-sass'], 'pending 名单来自 workspace 占位，与报错文本无关')
+    assert.equal(readFileSync(file, 'utf8'), before, 'pnpm-workspace.yaml 必须逐字节保持不变')
+    assert.ok(!readFileSync(file, 'utf8').includes('dangerouslyAllowAllBuilds'), '绝不自动写全量开关')
+    assert.equal(calls.length, 1, '未获同意不重试')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('pending 名单不可得（无占位）→ 结构化请示（pendingBuilds 空），同样零写盘', async () => {
+    const { dir, file } = profileWithPendingBuilds([])
+    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT)])
+    const out = await defaultLadderOf(run)('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'needs-builds')
+    assert.equal(out.buildApprovalNeeded, true)
+    assert.ok(!('pendingBuilds' in out), '名单不可得 → 字段缺席（事务层归一为 []）')
+    assert.ok(out.output.includes('未留下待决名单'))
+    assert.equal(existsSync(file), true)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('approvedBuilds 回显（部分）→ 只对回显项写 allowBuilds:true 并重试；未确认项保持占位、全量开关永不出现', async () => {
+    const { dir, file } = profileWithPendingBuilds(['node-pty', 'node-sass'])
+    const { run, calls } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'ok after allow'])
+    const out = await defaultLadderOf(run, ['node-pty'])('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'ok')
+    assert.deepEqual(out.buildApprovals, ['node-pty'])
+    assert.equal(out.fallbackAllBuilds, false)
+    const after = readFileSync(file, 'utf8')
+    assert.ok(after.includes('node-pty: true'), '获准项写 true')
+    assert.ok(after.includes(`node-sass: "${PENDING_PLACEHOLDER}"`), '未确认项保持占位')
+    assert.ok(!after.includes('dangerouslyAllowAllBuilds'), '全量开关永不出现')
+    assert.equal(calls.length, 2, '获准后重试一次')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('approvedBuilds 回显（全部）→ 两键均写 true 且重试成功', async () => {
+    const { dir, file } = profileWithPendingBuilds(['node-pty', 'node-sass'])
+    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT), 'ok after allow'])
+    const out = await defaultLadderOf(run, ['node-pty', 'node-sass'])('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'ok')
+    assert.deepEqual(out.buildApprovals, ['node-pty', 'node-sass'])
+    const after = readFileSync(file, 'utf8')
+    assert.ok(after.includes('node-pty: true'))
+    assert.ok(after.includes('node-sass: true'))
+    assert.ok(!after.includes('dangerouslyAllowAllBuilds'))
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('approvedBuilds 与 pending 无交集 → 零写盘请示（不写未知项）', async () => {
+    const { dir, file } = profileWithPendingBuilds(['node-pty'])
+    const before = readFileSync(file, 'utf8')
+    const { run } = fakeRunner([new Error(PREPARE_BLOCKED_TEXT)])
+    const out = await defaultLadderOf(run, ['totally-other-pkg'])('pkg-a@1.2.3', dir)
+    assert.equal(out.class, 'needs-builds')
+    assert.equal(out.buildApprovalNeeded, true)
+    assert.equal(readFileSync(file, 'utf8'), before, '无获准项 = 文件不变')
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

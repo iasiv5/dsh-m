@@ -5,7 +5,7 @@
  *
  * - readPendingBuilds：解析待决名单（键不含通配符、值精确等于占位串）——官方
  *   `readPendingBuilds`（dsh-plugin-manager L941）同款判定；官方对坏结构 throw，
- *   此处收窄为返回 []（调用方据此走全量兜底，ADR-0002 的保守回退）；
+ *   此处收窄为返回 []（安全修订 sfind-5dbc… 后：空名单 = 零写盘请示，不再全量兜底）；
  * - applyPreciseBuilds：为名单逐键写 `allowBuilds.<name>: true`（保注释 YAML 编辑）。
  *
  * 官方 `approveBuilds` 的调用前提是「caller 持 profile manifest 锁」；dsh-m 事务
@@ -25,7 +25,8 @@ function isPlainKey(key: string): boolean {
 /**
  * 读 pnpm-workspace.yaml 文本的待决构建名单。
  * 保守口径：坏 YAML / 根非映射 / allowBuilds 非映射 / 条目含锚点或别名 / 值非标量
- * 一律返回 []——调用方走 `withDangerouslyAllowAllBuilds` 全量兜底并如实标注。
+ * 一律返回 []——调用方据此零写盘请示（needsBuildApproval），全量兜底已退役
+ * （安全修订 sfind-5dbc…）。
  */
 export function readPendingBuilds(text: string): string[] {
   let document

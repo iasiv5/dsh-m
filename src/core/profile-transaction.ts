@@ -119,13 +119,20 @@ export const TX_FAILURE_CODES = [
   'COMPENSATE_EVIDENCE_MISMATCH', 'COMPENSATE_RESTORE_FAILED',
   'ROLLBACK_FAILED', 'SNAPSHOT_FAILED', 'ABORTED', 'INTERNAL_ERROR',
   'PROFILE_MANIFEST_UNREADABLE', 'PROFILE_MANIFEST_INVALID', 'PLUGIN_METADATA_UNREADABLE',
+  'BUILD_APPROVAL_REQUIRED',
 ] as const
 
-export interface TransactionFailure { code: (typeof TX_FAILURE_CODES)[number]; note: string }
+export interface TransactionFailure {
+  code: (typeof TX_FAILURE_CODES)[number]
+  note: string
+  /** 仅 BUILD_APPROVAL_REQUIRED：pnpm 留下的待决名单（结构化 needsBuildApproval 结果的回显来源） */
+  pendingBuilds?: string[]
+}
 
 export interface TransactionDeps {
   /** ADR-0030：工厂第二参 profileName（dsh CLI 子进程 --profile 用；缺省由 makeDshRunner 取 web）。旧单参注入兼容：多传实参被 JS 忽略 */
-  runner?: (profileDir: string, profileName?: string) => PnpmRunner   // 缺省 = makeDshRunner
+  /** 安全修订 sfind-5dbc…：工厂第三参携带已获用户确认的构建包名回显（透传 makeDshRunner ladder） */
+  runner?: (profileDir: string, profileName?: string, opts?: { approvedBuilds?: readonly string[] }) => PnpmRunner   // 缺省 = makeDshRunner
   warmPackument?: (pkg: string, signal?: AbortSignal) => Promise<void>
   /** L2②（ADR-0012）：NO_MATCHING_VERSION 来自 npmmirror 时的按需同步（缺省 = npm-route syncNpmmirrorPackage；注入仅为可测试性） */
   syncNpmmirror?: (pkg: string) => Promise<boolean>
@@ -138,6 +145,8 @@ export interface TransactionDeps {
   profileDir?: string                           // 缺省 webProfileDir()；测试 tmpdir
   /** ADR-0030（issue #39）：目标 profile 名——只用于 `dsh plugin --profile <名>` 子进程；文件路径一律只认 profileDir */
   profileName?: string
+  /** 安全修订 sfind-5dbc…：needsBuildApproval 后用户确认、原样回显的 pending 包名（ladder 只对回显项写 allowBuilds） */
+  approvedBuilds?: readonly string[]
 }
 
 // ---------- 四分支判别联合 ----------
@@ -806,6 +815,23 @@ function abortedFailure(note: string): TransactionFailure {
   return { code: 'ABORTED', note }
 }
 
+/**
+ * add 失败 → 事务失败映射（安全修订 sfind-5dbc…）：构建审批未遂（零写盘请示）单列
+ * BUILD_APPROVAL_REQUIRED 并携带 pnpm 待决名单；npm 门保留 retryable-lag 退避耗尽臂。
+ */
+function addFailureOf(addOut: RunnerOutcome, opts: { withRetryableLag: boolean; signal?: AbortSignal }): TransactionFailure {
+  if (opts.signal?.aborted) return { code: 'ABORTED', note: addOut.output }
+  if (addOut.buildApprovalNeeded === true) {
+    return {
+      code: 'BUILD_APPROVAL_REQUIRED',
+      note: addOut.output,
+      ...(addOut.pendingBuilds !== undefined ? { pendingBuilds: addOut.pendingBuilds } : {}),
+    }
+  }
+  if (opts.withRetryableLag && addOut.class === 'retryable-lag') return { code: 'ADD_RETRY_EXHAUSTED', note: addOut.output }
+  return { code: 'ADD_FAILED', note: addOut.output }
+}
+
 async function installNpm(
   req: Extract<TransactionRequest, { kind: 'install-npm' }>,
   d: ResolvedDeps,
@@ -819,11 +845,7 @@ async function installNpm(
       return await rollbackAndConverge(d, req.kind, abortedFailure('安装过程中已取消'), heal, snapshots, req.pkg)
     }
     if (addOut.class !== 'ok') {
-      const failure: TransactionFailure = req.signal?.aborted
-        ? { code: 'ABORTED', note: addOut.output }
-        : addOut.class === 'retryable-lag'
-          ? { code: 'ADD_RETRY_EXHAUSTED', note: addOut.output }
-          : { code: 'ADD_FAILED', note: addOut.output }
+      const failure = addFailureOf(addOut, { withRetryableLag: true, signal: req.signal })
       return await rollbackAndConverge(d, req.kind, failure, heal, snapshots, req.pkg)
     }
 
@@ -899,9 +921,7 @@ async function installGithub(
       return await rollbackAndConverge(d, req.kind, abortedFailure('安装过程中已取消'), heal, snapshots)
     }
     if (addOut.class !== 'ok') {
-      const failure: TransactionFailure = req.signal?.aborted
-        ? { code: 'ABORTED', note: addOut.output }
-        : { code: 'ADD_FAILED', note: addOut.output }
+      const failure = addFailureOf(addOut, { withRetryableLag: false, signal: req.signal })
       return await rollbackAndConverge(d, req.kind, failure, heal, snapshots)
     }
     // verify（契约 8）：存在键 k 使 depsNow[k] === spec 且 snapshotDeps[k] !== spec（相对前态变化）
@@ -1327,7 +1347,7 @@ async function executeTransaction(
   // runner factory（畸形校验已过；factory 异常 = 快照前 → rejected）
   let runner: PnpmRunner
   try {
-    runner = (deps?.runner ?? makeDshRunner)(base.profileDir, base.profileName)
+    runner = (deps?.runner ?? makeDshRunner)(base.profileDir, base.profileName, deps?.approvedBuilds !== undefined ? { approvedBuilds: deps.approvedBuilds } : undefined)
   } catch (err) {
     return rejected({ code: 'INTERNAL_ERROR', note: `runner 构造失败：${errText(err)}` }, req.kind)
   }

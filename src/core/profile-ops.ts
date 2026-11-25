@@ -28,6 +28,7 @@ import { fetchCommunityCatalog as defaultFetchCommunityCatalog } from './communi
 import { listInstalledPlugins as defaultListInstalled } from './installed.js'
 import { precheckNpmCompat, IncompatibleError, type CompatIssue } from './compat-check.js'
 import { npmLatest as defaultNpmLatest, npmTarballUrl as defaultNpmTarballUrl, githubLatestTag as defaultGithubLatestTag } from './versions.js'
+import { isExactVersion } from './packument.js'
 import { writeUpgradeIntent as defaultWriteUpgradeIntent, resolveUpgradeIntent as defaultResolveUpgradeIntent } from './upgrade-intent.js'
 import { resolveUpgradeActivation, type ActivationClassification } from './activation.js'
 import { togglePlugin, ToggleError, type PluginManagerRow } from './toggle.js'
@@ -81,13 +82,27 @@ export class DesktopOpsError extends Error {
   }
 }
 
-/** 结构化信号：build-blocked + pendingBuilds（desktopInstall/Upgrade 共享，调用方映射各自返回形态）。 */
+/**
+ * 结构化信号：build-blocked + pendingBuilds（desktopInstall/Upgrade 共享，调用方映射各自返回形态）。
+ */
 export class DesktopBuildApprovalNeeded extends Error {
   readonly pendingBuilds: string[]
   constructor(pending: string[]) {
     super(`该插件需要执行构建脚本（${pending.join('、')}）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）`)
     this.name = 'DesktopBuildApprovalNeeded'
     this.pendingBuilds = pending
+  }
+}
+
+/**
+ * 显式 version 位白名单（安全修订 sfind-d4bd…）：请求侧可控的 `version` 必须是精确 semver
+ * 才允许拼进安装 spec——否则 `npm:other-pkg@1.0.0`、`github:owner/repo`、tarball URL、`file:`
+ * 等来源前缀可借 version 位改装他源包（pnpm 会照单全收，目录身份与版本锁定全被绕过）。
+ * 二道防线：最终 spec 必须逐字等于 `${pkg}@<精确 semver>`（构造被改坏即拒，零委派）。
+ */
+function assertExactInstallSpec(pkg: string, version: string, spec: string): void {
+  if (!isExactVersion(version) || spec !== `${pkg}@${version}`) {
+    throw new DesktopOpsError('install-refused', `安装 spec 校验失败（version 必须是精确 semver，spec 须为 ${pkg}@<精确 semver>）: ${spec}`)
   }
 }
 
@@ -243,6 +258,10 @@ async function desktopInstallLocked(
 
   if (entry.source === 'npm' && entry.npm) {
     pkg = entry.npm
+    // 安全修订 sfind-d4bd…：显式 version 先过精确 semver 白名单，再进 spec（来源前缀改装在入口即拒）
+    if (opts.version !== undefined && !isExactVersion(opts.version)) {
+      throw new DesktopOpsError('install-refused', `version 必须是精确 semver（拒绝 range/tag/来源前缀）: ${opts.version}`)
+    }
     if (opts.version) {
       version = opts.version
     } else {
@@ -250,6 +269,8 @@ async function desktopInstallLocked(
       version = latest.version
     }
     spec = `${pkg}@${version}`
+    // 第二道防线：最终 spec 逐字断言（篡改即拒，零委派）
+    assertExactInstallSpec(pkg, version, spec)
     // peer 兼容预检（web 同语义）：预检自身失败视为未检，不拦安装
     try {
       compat = await (deps.precheck ?? precheckNpmCompat)(pkg, version, { timeoutMs, signal: opts.signal })
@@ -1118,6 +1139,10 @@ async function desktopUpgradeLocked(
   let compat: CompatIssue | null = null
   let compatSkipped: 'github-source' | undefined
   if (entry.source === 'npm' && entry.npm) {
+    // 安全修订 sfind-d4bd…：显式 version 先过精确 semver 白名单（升级臂同 install 臂，入口即拒）
+    if (opts.version !== undefined && !isExactVersion(opts.version)) {
+      throw new DesktopOpsError('install-refused', `version 必须是精确 semver（拒绝 range/tag/来源前缀）: ${opts.version}`)
+    }
     if (opts.version) {
       version = opts.version
     } else {
@@ -1125,6 +1150,8 @@ async function desktopUpgradeLocked(
       version = latest.version
     }
     spec = `${entry.npm}@${version}`
+    // 第二道防线：最终 spec 逐字断言（篡改即拒，零委派）
+    assertExactInstallSpec(entry.npm, version, spec)
     if (version !== undefined) {
       try {
         compat = await (deps.precheck ?? precheckNpmCompat)(entry.npm, version, { timeoutMs, signal: opts.signal })

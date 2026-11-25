@@ -3,7 +3,8 @@
  * - 不经 agent 的沙箱 shell（它写不了 profile 目录）；
  * - 在 dsh web 宿主进程内时，用 `node <自身 entry> plugin ...` 重入自身；
  * - 目标串白名单校验；超时对进程组发 SIGTERM；只保留末 256KB 输出；
- * - prepare 被拦 → 写 dangerouslyAllowAllBuilds 重试（明确报告，DESIGN.md §3 基线 4）。
+ * - prepare 被拦 → 按 approvedBuilds 逐项放行重试（未获同意 → 结构化请示；安全修订
+ *   sfind-5dbc… 后全量兜底 dangerouslyAllowAllBuilds 已退役）。
  */
 
 import { spawn, type SpawnOptions } from 'node:child_process'
@@ -270,14 +271,24 @@ export interface RunnerOutcome {
   readonly output: string
   /** 仅 add·ok：精确放行的包名（未走放行 = []；ADR-0002） */
   readonly buildApprovals?: string[]
-  /** 仅 add·ok：pending 名单读不出时的全量兜底标记 */
+  /** 遗留兼容标记（全量兜底已退役，安全修订 sfind-5dbc…）：生产恒 false（okOutcome 不产 true）；真值仅可能来自测试注入 runner 的透传 */
   readonly fallbackAllBuilds?: boolean
+  /** 仅 needs-builds：构建被拦且未获逐项同意——零写盘，调用方须回结构化 needsBuildApproval 结果 */
+  readonly buildApprovalNeeded?: boolean
+  /** 仅 buildApprovalNeeded：pnpm 留下的待决名单（回显给用户确认后经 approvedBuilds 原样重试） */
+  readonly pendingBuilds?: string[]
 }
 
-/** 构建放行决策（ladder 注入点，Task 9 / ADR-0002）：approvals = 精确放行的包名。 */
+/**
+ * 构建放行决策（ladder 注入点；安全修订 sfind-5dbc… 后的三态）：
+ * - needsApproval=false：approvals = 本次实际写入 allowBuilds 的包名（调用方 approvedBuilds ∩ pnpm pending）；
+ * - needsApproval=true：零写盘，pendingBuilds = pnpm 待决名单（可空 = 名单不可得），
+ *   调用方以结构化 needsBuildApproval 结果收场；全量兜底（dangerouslyAllowAllBuilds）已退役。
+ */
 export interface BuildApprovalDecision {
   approvals: string[]
-  fallbackAll: boolean
+  needsApproval: boolean
+  pendingBuilds: string[]
 }
 
 /** npm 包名白名单（与 packument.ts PKG_RE 同形；本地副本——packument 未导出该常量且 dsh-cli 不依赖其模块图，防 import 图扩大）。 */
@@ -475,62 +486,42 @@ export function isPrepareBlocked(text: string): boolean {
   return /needs to execute build scripts|allowBuilds|ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED|ERR_PNPM_IGNORED_BUILDS/i.test(text)
 }
 
-export function withDangerouslyAllowAllBuilds(yaml: string): string {
-  if (/(?:^|\n)dangerouslyAllowAllBuilds:\s*true\s*(?:\n|$)/.test(yaml)) return yaml
-  if (/(?:^|\n)dangerouslyAllowAllBuilds:\s*/m.test(yaml)) {
-    return yaml.replace(/^dangerouslyAllowAllBuilds:\s*.*$/m, 'dangerouslyAllowAllBuilds: true')
-  }
-  if (yaml.trim() === '') return 'dangerouslyAllowAllBuilds: true\n'
-  return `${yaml.replace(/\s*$/u, '\n')}\ndangerouslyAllowAllBuilds: true\n`
-}
-
-/** 基线 §17.4：放行构建脚本前必须能被明确报告（结果带 buildApprovals）。 */
-function writeDangerouslyAllowAllBuilds(profileDirectory: string): boolean {
-  const file = join(profileDirectory, 'pnpm-workspace.yaml')
-  let yaml = ''
-  try {
-    yaml = readFileSync(file, 'utf8')
-  } catch {
-    /* created below */
-  }
-  const next = withDangerouslyAllowAllBuilds(yaml)
-  if (next === yaml) return false
-  mkdirSync(profileDirectory, { recursive: true })
-  writeFileSync(file, next)
-  return true
-}
-
 /**
- * 精确放行默认实现（ADR-0002）：needs-builds 拦截后先读 pending 名单，
- * 非空 → 逐键写 allowBuilds（approvals 携带包名）；空/不可读 → 全量兜底。
+ * 精确放行默认实现（ADR-0002；安全修订 sfind-5dbc…）：needs-builds 拦截后先读 pending 名单，
+ * 只对调用方回显在 `approvedBuilds` 里的包名写 `allowBuilds.<name>: true`（逐项同意）；
+ * 名单为空/不可读、或无任何获准项 → 零写盘返回 needsApproval（调用方以结构化
+ * needsBuildApproval 结果收场）。**全量兜底 `dangerouslyAllowAllBuilds` 已退役**：不再自动写
+ * 全局开关（旧行为会在 pending 不可读时永久关闭 pnpm 构建脚本闸门）。
  * 写入失败 throw（ladder 的 Y2 契约转换为 hard-fail 结果）。
  * 已知风险（不加锁）：官方 approveBuilds 前提是 caller 持 manifest 锁；dsh-m 只有
  * 进程内 FIFO，与官方 UI 并发安装时有低概率写竞态，相关整单失败走既有回滚语义。
  */
-function writePreciseBuilds(profileDirectory: string): BuildApprovalDecision {
+function writePreciseBuilds(profileDirectory: string, approvedBuilds?: readonly string[]): BuildApprovalDecision {
   const file = join(profileDirectory, 'pnpm-workspace.yaml')
   let yaml = ''
   try {
     yaml = readFileSync(file, 'utf8')
   } catch {
-    /* 文件缺失 → pending 名单为空 → 走兜底创建 */
+    /* 文件缺失 → pending 名单为空 → 走请示 */
   }
   const pending = readPendingBuilds(yaml)
-  if (pending.length > 0) {
+  const approved = Array.isArray(approvedBuilds) ? approvedBuilds.filter((n): n is string => typeof n === 'string') : []
+  const toWrite = pending.filter((name) => approved.includes(name))
+  if (toWrite.length > 0) {
     mkdirSync(profileDirectory, { recursive: true })
-    writeFileSync(file, applyPreciseBuilds(yaml, pending))
-    return { approvals: pending, fallbackAll: false }
+    writeFileSync(file, applyPreciseBuilds(yaml, toWrite))
+    return { approvals: toWrite, needsApproval: false, pendingBuilds: [] }
   }
-  writeDangerouslyAllowAllBuilds(profileDirectory)
-  return { approvals: [], fallbackAll: true }
+  return { approvals: [], needsApproval: true, pendingBuilds: pending }
 }
 
 /**
  * 失败摘要：命令失败时从完整输出里提取可诊断的行，而不是盲取末尾。
  * 2026-09-05 实证（dsh-better-sidebar 安装失败）：pnpm ndjson 错误行 ~1.2KB，
  * 错误码/信息/hint 在行首，尾截 800 只剩纯栈帧——`ERR_PNPM_IGNORED_BUILDS`
- * 与 `node-pty` 关键字全部丢失，isPrepareBlocked 匹配不到，
- * dangerouslyAllowAllBuilds 自愈重试从未触发，用户只看到一屏栈。
+ * 与 `node-pty` 关键字全部丢失，isPrepareBlocked 匹配不到，当时的
+ * dangerouslyAllowAllBuilds 自愈重试（该兜底已退役，见 ADR-0002 修订节）从未触发，
+ * 用户只看到一屏栈。
  * 优先级：ndjson 错误行（code — message — hint）→ 含 ERR_ 码的行 + 尾部 → 纯尾部。
  */
 export function errorDigest(out: string, maxChars = 800): string {
@@ -769,7 +760,8 @@ export async function runDshPlugin(
 
 /**
  * 加装阶梯工厂（导出、可注入、可测试；生产与测试共用同一实现）。
- * 阶梯：add → prepare 被拦时写 dangerouslyAllowAllBuilds 重试 →
+ * 阶梯：add → prepare 被拦时按 approvedBuilds 逐项放行重试（未获同意 → 结构化请示，零写盘；
+ * 安全修订 sfind-5dbc… 后全量兜底 dangerouslyAllowAllBuilds 退役）→
  * PUBLIC_HOIST_PATTERN_DIFF 时 `install --no-frozen-lockfile` 重建后重试 →
  * 耗尽归类返回。对**原始错误文本**分类；永不 throw，一律返回 RunnerOutcome。
  */
@@ -777,7 +769,9 @@ export function makeAddViaLadder(deps: {
   runDshPlugin: PluginRunner
   /** ADR-0030：传给 dsh CLI 的 profile 名（缺省 web；生产由 makeDshRunner 绑定真实名） */
   profile?: string
-  resolveBuilds?: (profileDirectory: string) => BuildApprovalDecision
+  resolveBuilds?: (profileDirectory: string, approvedBuilds?: readonly string[]) => BuildApprovalDecision
+  /** 安全修订 sfind-5dbc…：调用方已获用户确认的构建包名回显（原样回传 needsBuildApproval.pendingBuilds）；缺席 = 零写盘请示 */
+  approvedBuilds?: readonly string[]
   /** ADR-0009：委派前治理（排除块规范形态）；缺省绑 exclude-governance 落盘封装 */
   govern?: (profileDirectory: string) => Promise<{ changed: boolean; mergedNames?: string[] }>
   /** ADR-0009：成功后登记（仅 npm 精确 spec 的窗口内目标）；缺省绑 exclude-governance 落盘封装 */
@@ -857,13 +851,26 @@ export function makeAddViaLadder(deps: {
       // Y2（终审复审）：放行写入本身失败也必须转换为结果，维持「永不 throw」契约
       let decision: BuildApprovalDecision
       try {
-        decision = resolveBuilds(profileDir)
+        decision = resolveBuilds(profileDir, deps.approvedBuilds)
       } catch (err) {
         const text = errText(err)
         return { class: 'hard-fail', output: truncateOutput(text + governNote + governRetryNote) }
       }
+      // 安全修订（sfind-5dbc…）：未获逐项同意 → 零写盘 + 结构化请示，不再自动放行、
+      // 更不落 dangerouslyAllowAllBuilds 全局开关；重试语义留给调用方确认后的下一轮。
+      if (decision.needsApproval) {
+        const listed = decision.pendingBuilds.length > 0
+          ? `构建脚本被拦，等待逐项确认后重试：${decision.pendingBuilds.join('、')}`
+          : '构建脚本被拦，且 pnpm 未留下待决名单（无法逐项放行；dsh-m 不做全量放行）'
+        return {
+          class: 'needs-builds',
+          output: truncateOutput(listed + governNote + governRetryNote),
+          buildApprovalNeeded: true,
+          ...(decision.pendingBuilds.length > 0 ? { pendingBuilds: decision.pendingBuilds } : {}),
+        }
+      }
       const retried = await attemptAdd(['add', source])
-      if (retried.ok) return okOutcome(retried.output, decision.approvals, decision.fallbackAll)
+      if (retried.ok) return okOutcome(retried.output, decision.approvals)
       return { ...classifyPnpmError(retried.text), output: truncateOutput(retried.text + governNote + governRetryNote) }
     }
     const first = await attemptAdd(['add', source])
@@ -931,10 +938,10 @@ function rawOutcome(text: string): RunnerOutcome {
 export function makeDshRunner(
   profileDir: string,
   profileName: string = WEB_PROFILE,
-  deps: { runDshPlugin?: PluginRunner; runCommand?: typeof runCommand } = {},
+  deps: { runDshPlugin?: PluginRunner; runCommand?: typeof runCommand; approvedBuilds?: readonly string[] } = {},
 ): PnpmRunner {
   const runPlugin = deps.runDshPlugin ?? runDshPlugin
-  const ladder = makeAddViaLadder({ runDshPlugin: runPlugin, profile: profileName })
+  const ladder = makeAddViaLadder({ runDshPlugin: runPlugin, profile: profileName, ...(deps.approvedBuilds !== undefined ? { approvedBuilds: deps.approvedBuilds } : {}) })
   return {
     async add(spec: string, signal?: AbortSignal): Promise<RunnerOutcome> {
       return ladder(spec, profileDir, signal)

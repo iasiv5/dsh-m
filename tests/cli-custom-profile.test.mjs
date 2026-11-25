@@ -189,3 +189,58 @@ describe('dshm restart --yes 上次重启终态行（issue #51 / ADR-0032）', (
     assert.ok(r.text.includes('✅ 已请求重启（via helper）。服务恢复后刷新页面即可。'), r.text)
   })
 })
+
+// ---------- 构建审批未遂与 --approved-builds 通道（安全修订 sfind-5dbc…） ----------
+
+const approvalPendingResult = {
+  ok: false, needsBuildApproval: true, id: 'p', pkg: 'p', spec: 'p@1.0.0',
+  pendingBuilds: ['node-pty'],
+  message: '该插件需要执行构建脚本（node-pty）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）',
+}
+
+describe('CLI 构建审批未遂分支与 --approved-builds（安全修订 sfind-5dbc…）', () => {
+  it('install 未遂 → exit 1 + stderr 指引（名单 + 回显重试语法），stdout 不出现「✅ 已安装」', async () => {
+    const { code, text, errText } = await runCapture(['install', '--id', 'p', '--profile', 'aqua'], {
+      installFromRegistry: async () => approvalPendingResult,
+    })
+    assert.equal(code, 1)
+    assert.match(errText, /构建脚本待批准/)
+    assert.match(errText, /node-pty/)
+    assert.match(errText, /--approved-builds/)
+    assert.ok(!text.includes('✅ 已安装'), '未遂绝不冒充成功')
+  })
+
+  it('install --approved-builds a,b → opts.approvedBuilds 原样透传（逗号分隔，去空白）', async () => {
+    const captured = []
+    const { code } = await runCapture(['install', '--id', 'p', '--approved-builds', 'node-pty, node-sass', '--profile', 'aqua'], {
+      installFromRegistry: async (id, cfg, opts) => { captured.push(opts); return installResult },
+    })
+    assert.equal(code, 0)
+    assert.deepEqual(captured[0].approvedBuilds, ['node-pty', 'node-sass'])
+  })
+
+  it('install 无 --approved-builds → opts 无显式键（零漂移）', async () => {
+    const captured = []
+    const { code } = await runCapture(['install', '--id', 'p', '--profile', 'aqua'], {
+      installFromRegistry: async (id, cfg, opts) => { captured.push(opts); return installResult },
+    })
+    assert.equal(code, 0)
+    assert.ok(!('approvedBuilds' in captured[0]))
+  })
+
+  it('upgrade 未遂 → exit 1 + stderr 指引；--approved-builds 同款透传', async () => {
+    const captured = []
+    const blocked = await runCapture(['upgrade', '--pkg', 'p', '--yes', '--profile', 'aqua'], {
+      upgradePlugin: async () => approvalPendingResult,
+    })
+    assert.equal(blocked.code, 1)
+    assert.match(blocked.errText, /构建脚本待批准/)
+    assert.ok(!blocked.text.includes('✅ 已升级'), '未遂绝不冒充成功')
+
+    const echoed = await runCapture(['upgrade', '--pkg', 'p', '--yes', '--approved-builds', 'node-pty', '--profile', 'aqua'], {
+      upgradePlugin: async (pkg, cfg, opts) => { captured.push(opts); return upgradeResult },
+    })
+    assert.equal(echoed.code, 0)
+    assert.deepEqual(captured[0].approvedBuilds, ['node-pty'])
+  })
+})

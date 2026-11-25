@@ -123,7 +123,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
 - **两阶段不变量（失败保证）**：变更失败时，①先把三个关键文件（package.json / pnpm-lock.yaml / pnpm-workspace.yaml）**逐字节还原到变更前快照**，还原后立即重读比对验证（`snapshotRestoreVerified` 报告此历史事实）；②再跑 frozen 收敛阶梯处理依赖一致性——阶梯中的 overrides 对齐 / `--no-frozen-lockfile` 重建允许对 manifest/lockfile 做**有记录的**受控改写（`healActions`）。失败终态承诺「**一致**」（`status='rolled-back'`）不必然「等同」；收敛耗尽则 `status='manual-repair'`（还原事实独立如实报告）。不声称 node_modules 字节级回滚。
 - **结果为四分支判别联合**：`committed` / `rejected`（快照失败、前置校验失败、排队期 abort——零写入）/ `rolled-back` / `manual-repair`；`healActions[{code, note}]` + `failure{code, note}`（英文稳定 code，机器可断言）；中文散文只在展示层由 `renderFailure` 生成（唯一产地）。消费方拿结构化结果自行渲染；host-api 失败体附 `detail` 白名单投影（不含 raw output，GUI 零改动只读 `error`）。
 - **pnpm 结果只以六类分类穿过接缝**（`dsh-cli.ts` 是分类器唯一产地）：ok / retryable-lag（CDN 滞后）/ config-drift（配置漂移）/ unused-patch / needs-builds / hard-fail；**分类发生在任何文案改写之前**，事务与 market 永不 regex pnpm 原始输出、只消费 `PNPM_OUTCOME_CODES` 常量。分类消费矩阵（add/remove/frozen/rebuild × 六类）由参数化测试全枚举钉死。
-- **自愈阶梯**（全部以 healActions 记录）：B1 安装链丢 manifest 顶层键 → 快照找回 + frozen 复验（复验失败 fail-closed 进回滚）；B2 frozen 收敛：CONFIG_MISMATCH → 把 lockfile 记录的 overrides 对齐回 `package.json#pnpm.overrides` 再复验 → 顽固失配（含 OUTDATED_LOCKFILE specifier 漂移）降级 `--no-frozen-lockfile` 重建；B3 刚发布 `ERR_PNPM_NO_MATCHING_VERSION` 退避重试 2 次（5s/15s，abort-aware），每次重试前预热完整 packument（生产绑定 `makeNpmWarmPackument`，失败吞错）；构建脚本被拦 → `dangerouslyAllowAllBuilds` 放行并**必须明确报告**（在途重试在 adapter 的 `makeAddViaLadder` 内耗尽）。
+- **自愈阶梯**（全部以 healActions 记录）：B1 安装链丢 manifest 顶层键 → 快照找回 + frozen 复验（复验失败 fail-closed 进回滚）；B2 frozen 收敛：CONFIG_MISMATCH → 把 lockfile 记录的 overrides 对齐回 `package.json#pnpm.overrides` 再复验 → 顽固失配（含 OUTDATED_LOCKFILE specifier 漂移）降级 `--no-frozen-lockfile` 重建；B3 刚发布 `ERR_PNPM_NO_MATCHING_VERSION` 退避重试 2 次（5s/15s，abort-aware），每次重试前预热完整 packument（生产绑定 `makeNpmWarmPackument`，失败吞错）；构建脚本被拦 → 只对调用方回显的 `approvedBuilds` 逐键放行并**必须明确报告**，未获同意 → 零写盘结构化 `needsBuildApproval` 请示（安全修订 sfind-5dbc…：`dangerouslyAllowAllBuilds` 全量兜底已退役，ADR-0002 修订节；在途重试在 adapter 的 `makeAddViaLadder` 内耗尽）。
 - **signal 语义**：request 可带 AbortSignal，贯通 runner 四操作、预热与退避 sleep（abort 即醒）；mutate 前 abort → `rejected`；mutate 后 abort → 中止在途调用并执行**不可取消的**回滚（不变量优先于取消）；mutation 返回与提交前复查 signal——runner 返回 ok 但已取消的事务同样进 ABORTED 回滚，不提交。
 - **互斥边界（已知限制）**：FIFO 锁为**进程内**互斥——Web Host / GUI / Agent tools 与独立 `dshm` CLI 可能运行在不同进程、操作同一 web profile，跨进程并发不在覆盖范围。变更执行期间避免同时从 GUI/Agent/CLI 发起另一次变更；跨进程锁（lockfile + stale 恢复）留作后续演进。
 - **快照/原子写原语**（`npm-integrity.ts`）：快照仅吞 ENOENT（其他读取异常 fail closed 零写入）；原子写 POSIX 直接 rename（无「先删后改名」窗口），Windows EPERM/EEXIST 走备份协议；**任何失败路径（含 write/sync/close）都清理 tmp**，备份恢复自身失败时报告 backup 路径与双重错误。
@@ -153,7 +153,7 @@ npm 安装 / GitHub 安装 / 升级 / 自升级 / 卸载是**同一个事务模�
   1. 所有拉取仅 HTTPS + 响应大小上限 + 超时；
   2. npm 安装校验 integrity；
   3. GitHub 安装强制 pinned SHA；
-  4. pnpm 构建脚本被拦时，先按 pnpm 待决名单**逐键精确放行**（ADR-0002），名单不可读才 `dangerouslyAllowAllBuilds` 全量兜底，且**必须明确报告**放行了哪些包/是否兜底；
+  4. pnpm 构建脚本被拦时，只对用户确认回显的 `approvedBuilds` 名单**逐键精确放行**（ADR-0002 及其修订节；安全修订 sfind-5dbc… 后全量兜底 `dangerouslyAllowAllBuilds` 已退役——名单不可得即零写盘结构化请示，绝不关闸门），且**必须明确报告**放行了哪些包；desktop 安装/升级的显式 `version` 必须是精确 semver，最终 spec 断言为 `<pkg>@<精确 semver>`（安全修订 sfind-d4bd…）；
   5. 不做签名/验签体系（自用，明确不做）。
 
 ### 3.3 生效判定三态分流（0.9.22，[ADR-0007](./adr/0007-activation-classification.md)）

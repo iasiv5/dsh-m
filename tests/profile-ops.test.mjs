@@ -256,6 +256,73 @@ describe('desktopInstallFromRegistry：守门与委派', () => {
   })
 })
 
+// ---------- version 位精确校验（安全修订 sfind-d4bd…）----------
+
+describe('desktopInstall/Upgrade：version 位精确 semver 白名单（安全修订 sfind-d4bd…）', () => {
+  /** 自带升级夹具（不引用兄弟 describe 闭包）：同 desktopUpgradeFromRegistry describe 形态 */
+  function upgradeDepsLocal(service, overrides = {}) {
+    return {
+      getService: () => service,
+      loadRegistry: async () => registryWith(overrides.entries ?? [ENTRY]),
+      listInstalled: async () => ({ items: [{ pkg: 'pkg-a', name: 'Plug A', version: '1.0.0' }] }),
+      npmLatest: async () => ({ version: '1.2.3', integrity: 'sha512-x' }),
+      precheck: async () => null,
+      packumentTimes: async () => null,
+      classifyActivation: async () => 'unknown',
+    }
+  }
+
+  it('install：version = npm 来源前缀改装 → install-refused，installBundle 零调用（红驱动主用例）', async () => {
+    const { service, calls } = managerStub()
+    await assert.rejects(
+      () => desktopInstallFromRegistry('plug-a', {}, { version: 'npm:other-pkg@1.0.0' }, depsFor(service)),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused'
+        && err.message.startsWith('version 必须是精确 semver'),
+    )
+    assert.equal(calls.installBundle.length, 0, '改装 spec 绝不委派官方管理器')
+  })
+
+  it('install：github 前缀 / tarball URL / file: / range / tag → 全数 install-refused 零委派', async () => {
+    const { service, calls } = managerStub()
+    for (const bad of ['github:owner/repo', 'https://evil.example.com/x.tgz', 'file:../local-pkg', '1.x', '^1.2.3', 'latest']) {
+      await assert.rejects(
+        () => desktopInstallFromRegistry('plug-a', {}, { version: bad }, depsFor(service)),
+        (err) => err.code === 'install-refused',
+        `version=${bad} 必须被拒`,
+      )
+    }
+    assert.equal(calls.installBundle.length, 0)
+  })
+
+  it('install：精确 version 正常委派（白名单不误伤）；npmLatest 路径零漂移', async () => {
+    const { service, calls } = managerStub()
+    const res = await desktopInstallFromRegistry('plug-a', {}, { version: '1.2.3' }, depsFor(service))
+    assert.equal(res.spec, 'pkg-a@1.2.3')
+    assert.equal(calls.installBundle.length, 1)
+    const res2 = await desktopInstallFromRegistry('plug-a', {}, {}, depsFor(service))
+    assert.equal(res2.spec, 'pkg-a@1.2.3')
+    assert.equal(calls.installBundle.length, 2)
+  })
+
+  it('upgrade：version = npm 来源前缀改装 → install-refused，installBundle 零调用', async () => {
+    const { service, calls } = managerStub()
+    await assert.rejects(
+      () => desktopUpgradeFromRegistry('pkg-a', {}, { version: 'npm:other-pkg@9.9.9' }, upgradeDepsLocal(service)),
+      (err) => err instanceof DesktopOpsError && err.code === 'install-refused'
+        && err.message.startsWith('version 必须是精确 semver'),
+    )
+    assert.equal(calls.installBundle.length, 0)
+  })
+
+  it('upgrade：精确 version 正常覆盖安装（零漂移）', async () => {
+    const { service, calls } = managerStub()
+    const res = await desktopUpgradeFromRegistry('pkg-a', {}, { version: '1.2.4' }, upgradeDepsLocal(service))
+    assert.equal(calls.installBundle.length, 1)
+    assert.equal(calls.installBundle[0].spec, 'pkg-a@1.2.4')
+    assert.ok(res.version !== undefined || res.pkg === 'pkg-a')
+  })
+})
+
 describe('desktopInstallFromRegistry：compat 预检与 github 源', () => {
   it('npm 源 peer 不兼容且未 force → IncompatibleError；force → 放行且 compat 随结果携带', async () => {
     const issue = { pkg: 'pkg-a', version: '1.2.3', runtimeVersion: '0.2.0-rc.2', peers: { '@deepseek-ai/dsh-tools': '^0.1.0' } }

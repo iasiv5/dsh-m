@@ -467,7 +467,12 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           }
           // M2 Task 3：self-upgrade 收编 market.selfUpgrade（统一 mutation session + 守卫，直调事务旁路封死）
           // ADR-0030：web 分支补 profileDir/profileName（自定义 profile 与 web 名同权，读写同一 dir 权威）
-          const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal, channel: 'panel' }, { profileDir: profile.dir, profileName: profile.name })
+          const result = await d.selfUpgrade(ctx.pkg.name, ctx.pkg.version, cfg(), { signal, channel: 'panel', ...(Array.isArray(body.approvedBuilds) && body.approvedBuilds.length > 0 ? { approvedBuilds: body.approvedBuilds.map(String) } : {}) }, { profileDir: profile.dir, profileName: profile.name })
+          if ('needsBuildApproval' in result) {
+            // 构建审批未遂（自升级同样可能被拦）：结构化透出，不冒充成功
+            payload = { ...result }
+            break
+          }
           payload = {
             pkg: result.pkg,
             version: result.version,
@@ -710,6 +715,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
             payload = { ...(await d.desktopInstall(id, cfg(), {
               version: typeof body.version === 'string' ? body.version : undefined,
               forceIncompatible: boolArg(body.forceIncompatible),
+              ...(Array.isArray(body.approvedBuilds) && body.approvedBuilds.length > 0 ? { approvedBuilds: body.approvedBuilds.map(String) } : {}),
               namespace: 'host',
               profile: profile.name,
               profileDir: profile.dir,
@@ -732,6 +738,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           const result = await d.installFromRegistry(id, cfg(), {
             version,
             forceIncompatible: boolArg(body.forceIncompatible),
+            // 安全修订 sfind-5dbc…：web 路径构建审批回显（needsBuildApproval 未遂后的重试通道）
+            ...(Array.isArray(body.approvedBuilds) && body.approvedBuilds.length > 0 ? { approvedBuilds: body.approvedBuilds.map(String) } : {}),
             namespace: 'host',
             signal,
             channel: 'panel',
@@ -787,6 +795,7 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           if (profile.kind !== 'web' || route.route === 'delegate') {
             payload = { ...(await d.desktopUpgrade(target, cfg(), {
               forceIncompatible: boolArg(body.forceIncompatible),
+              ...(Array.isArray(body.approvedBuilds) && body.approvedBuilds.length > 0 ? { approvedBuilds: body.approvedBuilds.map(String) } : {}),
               namespace: 'host',
               profile: profile.name,
               profileDir: profile.dir,
@@ -806,6 +815,8 @@ export function createApiDispatcher(ctx: HostApiContext): (req: IncomingMessage,
           }
           const result = await d.upgradePlugin(target, cfg(), {
             forceIncompatible: boolArg(body.forceIncompatible),
+            // 安全修订 sfind-5dbc…：web 路径构建审批回显（needsBuildApproval 未遂后的重试通道）
+            ...(Array.isArray(body.approvedBuilds) && body.approvedBuilds.length > 0 ? { approvedBuilds: body.approvedBuilds.map(String) } : {}),
             namespace: 'host',
             signal,
             channel: 'panel',

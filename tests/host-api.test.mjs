@@ -1260,3 +1260,74 @@ describe('ADR-0034：panel web 执行能力门（install/uninstall/upgrade/self-
     assert.deepEqual(ops, ['install'])
   })
 })
+
+// ---------- approvedBuilds 透传（安全修订 sfind-5dbc…）：needsBuildApproval 未遂后的重试通道 ----------
+
+const APPROVAL_OK_RESULT = { ok: true, pkg: 'p', spec: 'p@1.0.0', version: '1.0.0', buildApprovals: [], fallbackAllBuilds: false, needsRestart: true, output: '' }
+
+describe('approvedBuilds 五点透传（安全修订 sfind-5dbc…）', () => {
+  it('install web/desktop 两臂：body.approvedBuilds 原样进 opts；缺席不出现显式键（零漂移）', async () => {
+    const seenWeb = []
+    const webDispatcher = createApiDispatcher({
+      controller: createRegistryController({}),
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      profile: { name: 'web', kind: 'web', dir: '/tmp/profile', source: 'fallback' },
+      deps: {
+        rejectRequest: () => undefined,
+        routeWebMutation: spawnRouteStub,
+        installFromRegistry: async (id, cfg, opts) => { seenWeb.push(opts); return { ...APPROVAL_OK_RESULT } },
+      },
+    })
+    await callApi(webDispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a', approvedBuilds: ['node-pty'] } })
+    assert.deepEqual(seenWeb[0].approvedBuilds, ['node-pty'])
+    await callApi(webDispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a' } })
+    assert.ok(!('approvedBuilds' in seenWeb[1]), '不传不得出现显式键')
+
+    const seenDesktop = []
+    const desktopDispatcher = createApiDispatcher({
+      controller: createRegistryController({}),
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      profile: { name: 'desktop', kind: 'desktop', dir: '/tmp/profile', source: 'fallback' },
+      deps: {
+        rejectRequest: () => undefined,
+        desktopInstall: async (id, cfg, opts) => { seenDesktop.push(opts); return { ...APPROVAL_OK_RESULT, via: 'desktop-manager' } },
+      },
+    })
+    await callApi(desktopDispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a', approvedBuilds: ['node-pty'] } })
+    assert.deepEqual(seenDesktop[0].approvedBuilds, ['node-pty'])
+    await callApi(desktopDispatcher, { headers: JSON_HEADERS, body: { method: 'install', id: 'pkg-a' } })
+    assert.ok(!('approvedBuilds' in seenDesktop[1]), '不传不得出现显式键')
+  })
+
+  it('upgrade web/desktop 两臂与 self-upgrade web 臂：同一透传语义', async () => {
+    const seenUpgradeWeb = []
+    const webDispatcher = createApiDispatcher({
+      controller: createRegistryController({}),
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      profile: { name: 'web', kind: 'web', dir: '/tmp/profile', source: 'fallback' },
+      deps: {
+        rejectRequest: () => undefined,
+        routeWebMutation: spawnRouteStub,
+        upgradePlugin: async (pkg, cfg, opts) => { seenUpgradeWeb.push(opts); return { ...APPROVAL_OK_RESULT, fromVersion: '0.9.9' } },
+        selfUpgrade: async (name, cur, cfg, opts) => { seenUpgradeWeb.push({ selfUpgrade: opts }); return { ...APPROVAL_OK_RESULT } },
+      },
+    })
+    await callApi(webDispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'p', approvedBuilds: ['node-pty'] } })
+    await callApi(webDispatcher, { headers: JSON_HEADERS, body: { method: 'self-upgrade', pkg: { name: 'dsh-m', version: '0.9.9' }, approvedBuilds: ['node-pty'] } })
+    assert.deepEqual(seenUpgradeWeb[0].approvedBuilds, ['node-pty'])
+    assert.deepEqual(seenUpgradeWeb[1].selfUpgrade.approvedBuilds, ['node-pty'])
+
+    const seenDesktop = []
+    const desktopDispatcher = createApiDispatcher({
+      controller: createRegistryController({}),
+      pkg: { name: 'dsh-m', version: '0.0.0-test' },
+      profile: { name: 'desktop', kind: 'desktop', dir: '/tmp/profile', source: 'fallback' },
+      deps: {
+        rejectRequest: () => undefined,
+        desktopUpgrade: async (pkg, cfg, opts) => { seenDesktop.push(opts); return { ...APPROVAL_OK_RESULT, via: 'desktop-manager' } },
+      },
+    })
+    await callApi(desktopDispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'p', approvedBuilds: ['node-pty'] } })
+    assert.deepEqual(seenDesktop[0].approvedBuilds, ['node-pty'])
+  })
+})

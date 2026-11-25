@@ -186,8 +186,8 @@ const HELP = `dshm — DSH Marketplace（DSH 插件市场：精选策展 + 社�
   dshm doctor [--json] [--profile web|desktop]  profile 体检（只读：农场测活 / 残留物清点 / 账实一致；error 级发现 exit 1；--profile desktop 为 doctor 专属例外）
 
 变更命令（除 install 外必须 --yes）：
-  dshm install --id <收录id> [--version 1.2.3] [--force]   （无需 --yes；--force：确认兼容风险后跳过预检拦截）
-  dshm upgrade --pkg <包名> --yes [--force]
+  dshm install --id <收录id> [--version 1.2.3] [--force] [--approved-builds <包名,包名>]   （无需 --yes；--force：确认兼容风险后跳过预检拦截；--approved-builds：构建审批未遂后回显名单重试）
+  dshm upgrade --pkg <包名> --yes [--force] [--approved-builds <包名,包名>]
   dshm uninstall --pkg <包名> --yes
   dshm toggle --pkg <包名> --on|--off --yes   （切换运行状态；文件级编辑，重启生效）
   dshm restart --yes
@@ -396,11 +396,16 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'install': {
       const id = needFlag(flags, 'id')
       const version = typeof flags.version === 'string' ? flags.version : undefined
+      // 安全修订 sfind-5dbc…：needsBuildApproval 未遂后的重试通道（逗号分隔回显名单）
+      const approvedBuilds = typeof flags['approved-builds'] === 'string'
+        ? flags['approved-builds'].split(',').map((s) => s.trim()).filter((s) => s !== '')
+        : undefined
       let res
       try {
         res = await d.installFromRegistry(id, cfg, {
           version,
           forceIncompatible: flags.force === true,
+          ...(approvedBuilds !== undefined && approvedBuilds.length > 0 ? { approvedBuilds } : {}),
           namespace: 'cli',
           channel: 'cli',
         }, { profileDir: cliProfileDir, profileName: cliProfileName })
@@ -413,6 +418,12 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
         }
         throw e
       }
+      if ('needsBuildApproval' in res) {
+        err('[⛔ 构建脚本待批准]' + (res.pendingBuilds.length > 0 ? ` ${res.pendingBuilds.join('、')}` : '（pnpm 未留下待决名单）'))
+        err(res.message)
+        err(res.pendingBuilds.length > 0 ? '征得用户确认后，以 --approved-builds <包名,包名> 原样回显名单重试；dsh-m 不做全量放行。' : 'dsh-m 不做全量放行；请到官方 Settings → Plugins 处理后重试。')
+        return 1
+      }
       out(`✅ 已安装 ${res.pkg}（${res.spec}）`)
       outBuildsNote(res, out)
       out('需要重启 DSH Web 生效：dshm restart --yes')
@@ -422,10 +433,15 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
     case 'upgrade': {
       const target = needFlag(flags, 'pkg')
       requireYes(flags, '升级')
+      // 安全修订 sfind-5dbc…：needsBuildApproval 未遂后的重试通道（逗号分隔回显名单）
+      const approvedBuilds = typeof flags['approved-builds'] === 'string'
+        ? flags['approved-builds'].split(',').map((s) => s.trim()).filter((s) => s !== '')
+        : undefined
       let res
       try {
         res = await d.upgradePlugin(target, cfg, {
           forceIncompatible: flags.force === true,
+          ...(approvedBuilds !== undefined && approvedBuilds.length > 0 ? { approvedBuilds } : {}),
           namespace: 'cli',
           channel: 'cli',
         }, { profileDir: cliProfileDir, profileName: cliProfileName })
@@ -437,6 +453,12 @@ async function runCliDispatch(argv: string[], deps: CliDeps, io: Required<CliIo>
           return 1
         }
         throw e
+      }
+      if ('needsBuildApproval' in res) {
+        err('[⛔ 构建脚本待批准]' + (res.pendingBuilds.length > 0 ? ` ${res.pendingBuilds.join('、')}` : '（pnpm 未留下待决名单）'))
+        err(res.message)
+        err(res.pendingBuilds.length > 0 ? '征得用户确认后，以 --approved-builds <包名,包名> 原样回显名单重试；dsh-m 不做全量放行。' : 'dsh-m 不做全量放行；请到官方 Settings → Plugins 处理后重试。')
+        return 1
       }
       const from = res.fromVersion ? `v${res.fromVersion} → ` : ''
       const to = res.version ? `v${res.version}` : res.sha ? res.sha.slice(0, 7) : '最新'

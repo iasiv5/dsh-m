@@ -586,6 +586,76 @@ describe('install-npm：两阶段不变量', () => {
   })
 })
 
+describe('install-npm：构建审批未遂（安全修订 sfind-5dbc…）', () => {
+  it('add 返回 buildApprovalNeeded → BUILD_APPROVAL_REQUIRED + pendingBuilds 透出，回滚字节还原', async () => {
+    const dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const before = bytesOf(dir)
+      const { runner } = mockRunner({
+        add: [async () => ({ class: 'needs-builds', output: '构建脚本被拦，等待逐项确认后重试：node-pty', buildApprovalNeeded: true, pendingBuilds: ['node-pty'] })],
+        frozen: [ok('frozen-ok')],
+      })
+      const r = await runProfileTransaction(
+        { kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') },
+        baseTx(dir, runner),
+      )
+      assert.equal(r.status, 'rolled-back')
+      assert.equal(r.failure.code, 'BUILD_APPROVAL_REQUIRED')
+      assert.deepEqual(r.failure.pendingBuilds, ['node-pty'])
+      assert.ok(r.failure.note.includes('node-pty'))
+      assert.deepEqual(bytesOf(dir), before)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('deps.approvedBuilds → runner 工厂第三参透传（回显重试通道）', async () => {
+    const dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const seen = []
+      const deps = {
+        runner: (profileDir, profileName, opts) => { seen.push(opts); return mockRunner().runner },
+        profileDir: dir,
+        retryDelaysMs: [0, 0],
+        approvedBuilds: ['node-pty'],
+      }
+      await runProfileTransaction({ kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }, deps)
+      assert.equal(seen.length, 1)
+      assert.deepEqual(seen[0], { approvedBuilds: ['node-pty'] })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('deps 无 approvedBuilds → 工厂第三参为 undefined（零漂移锚）', async () => {
+    const dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    try {
+      const seen = []
+      const deps = {
+        runner: (profileDir, profileName, opts) => { seen.push(opts); return mockRunner().runner },
+        profileDir: dir,
+        retryDelaysMs: [0, 0],
+      }
+      await runProfileTransaction({ kind: 'install-npm', pkg: 'pkg-a', version: '1.2.3', integrity: sha512('good') }, deps)
+      assert.equal(seen[0], undefined)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('renderFailure 契约（legacy 文案逐字）', () => {
   const base = {
     kind: 'install-npm',
@@ -1020,6 +1090,27 @@ describe('install-github 门', () => {
       assert.equal(r.failure.code, 'ADD_FAILED', `class=${maker[0]}`)
       assert.equal(r.status, 'rolled-back', `class=${maker[0]}`)
     }
+  })
+
+  it('构建审批未遂（buildApprovalNeeded）→ BUILD_APPROVAL_REQUIRED + pendingBuilds 透出（github prepare 拦截同语义；sfind-5dbc…）', async () => {
+    dir = makeProfile({
+      'package.json': manifest({ dependencies: { existing: '^1.0.0' } }),
+      'pnpm-lock.yaml': lockFile(),
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const before = bytesOf(dir)
+    const { runner } = mockRunner({
+      add: [async () => ({ class: 'needs-builds', output: '构建脚本被拦，等待逐项确认后重试：node-pty', buildApprovalNeeded: true, pendingBuilds: ['node-pty'] })],
+      frozen: [ok('frozen-ok')],
+    })
+    const r = await runProfileTransaction(
+      { kind: 'install-github', repo: 'owner/repo', sha: SHA2 },
+      baseTx(dir, runner),
+    )
+    assert.equal(r.status, 'rolled-back')
+    assert.equal(r.failure.code, 'BUILD_APPROVAL_REQUIRED')
+    assert.deepEqual(r.failure.pendingBuilds, ['node-pty'])
+    assert.deepEqual(bytesOf(dir), before)
   })
 
   it('畸形 request：unsafe repo / 非 owner/repo 形状 / 非 40 位 hex SHA → TypeError 零调用', async () => {

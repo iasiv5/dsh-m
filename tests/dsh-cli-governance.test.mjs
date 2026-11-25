@@ -64,7 +64,7 @@ describe('web ladder 三挂点（ADR-0009）：登记覆盖全部成功出口', 
     const { run } = fakeRunner([new Error(PREPARE), 'ok after allow'])
     const seen = []
     const out = await ladderOf(run, {
-      resolveBuilds: () => ({ approvals: ['node-sass'], fallbackAll: false }),
+      resolveBuilds: () => ({ approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }),
       register: async (_dir, target) => {
         seen.push(target)
         return { applied: true }
@@ -156,7 +156,7 @@ describe('web ladder 三挂点（ADR-0009）：双码治理+重试覆盖全部�
   it('出口④ prepare 放行重试 add 双码 → 治理后重试一次', async () => {
     const { run, calls } = fakeRunner([new Error(PREPARE), new Error(DUAL), 'ok finally'])
     const out = await ladderOf(run, {
-      resolveBuilds: () => ({ approvals: ['node-sass'], fallbackAll: false }),
+      resolveBuilds: () => ({ approvals: ['node-sass'], needsApproval: false, pendingBuilds: [] }),
       govern: async () => ({ ok: true, changed: true, mergedNames: ['dsh-m'] }),
     })('pkg-a@1.2.3', '/tmp/profile')
     assert.equal(out.class, 'ok')

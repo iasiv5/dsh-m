@@ -241,6 +241,53 @@ describe('installEntry npm 分支：事务注入（Task 9 起生产原生形态�
     assert.equal(tx.calls.remove.length, 0)
   })
 
+  it('构建审批未遂（安全修订 sfind-5dbc…）：事务 BUILD_APPROVAL_REQUIRED → installFromRegistry 回 needsBuildApproval 结构化结果', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const tx = mockTxRunner({
+      add: [async () => ({ class: 'needs-builds', output: '构建脚本被拦，等待逐项确认后重试：node-pty', buildApprovalNeeded: true, pendingBuilds: ['node-pty'] })],
+    }, dir)
+    const res = await installFromRegistry('p', {}, {}, {
+      ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+      transaction: { runner: () => tx.runner, profileDir: dir },
+    })
+    assert.equal(res.ok, false)
+    assert.equal(res.needsBuildApproval, true)
+    assert.equal(res.id, 'p')
+    assert.equal(res.pkg, 'pkg-a')
+    assert.equal(res.spec, 'pkg-a@1.2.3')
+    assert.deepEqual(res.pendingBuilds, ['node-pty'])
+    assert.match(res.message, /approvedBuilds/)
+    assert.match(res.message, /不做全量放行/)
+    assert.equal(tx.calls.add.length, 1, '请示不重试（零写盘）')
+  })
+
+  it('opts.approvedBuilds → 事务 deps → runner 工具第三参贯通（安全修订 sfind-5dbc… 重试通道）', async () => {
+    dir = txProfile({
+      'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',
+      'pnpm-lock.yaml': "lockfileVersion: '9.0'\n",
+      'pnpm-workspace.yaml': 'packages:\n  - .\n',
+    })
+    const seen = []
+    const tx = mockTxRunner({
+      add: [async () => {
+        writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { existing: '^1.0.0', 'pkg-a': '1.2.3' } }, null, 2) + '\n')
+        writeFileSync(join(dir, 'pnpm-lock.yaml'), LOCK_GOOD)
+        return { class: 'ok', output: 'added', buildApprovals: [], fallbackAllBuilds: false }
+      }],
+    }, dir)
+    const res = await installFromRegistry('p', {}, { approvedBuilds: ['node-pty'] }, {
+      ...txRegistryDeps(TX_ENTRY, { version: '1.2.3', integrity: sha512('good') }),
+      transaction: { runner: (profileDir, profileName, opts) => { seen.push(opts); return tx.runner }, profileDir: dir },
+    })
+    assert.equal(res.version, '1.2.3')
+    assert.equal(seen.length, 1)
+    assert.deepEqual(seen[0], { approvedBuilds: ['node-pty'] })
+  })
+
   it('事务注入②：github 分支同样委派 transaction.runner', async () => {
     dir = txProfile({
       'package.json': JSON.stringify({ dependencies: { existing: '^1.0.0' } }, null, 2) + '\n',

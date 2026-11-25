@@ -40,7 +40,7 @@ import { invalidateLatestCache } from './latest-cache.js'
 import { verifyInstalledAdditions, type GuardViolation } from './install-guard.js'
 import { journalExternalOperation, type OperationChannel, type AppendExternalOperation } from './external-journal.js'
 import { isGenerationProjectionPkg } from './generation-projection.js'
-import type { CompensateEvidence, PriorUnion, TransactionResult } from './profile-transaction.js'
+import type { CompensateEvidence, PriorUnion, TransactionResult, FailedTransactionResult } from './profile-transaction.js'
 import { fetchTextLimited } from './httpx.js'
 import {
   githubLatestTag as defaultGithubLatestTag,
@@ -97,6 +97,33 @@ export interface InstallResult {
   healActions?: HealAction[]
 }
 
+/**
+ * 结构化 needsBuildApproval 未遂结果（web 事务路径；安全修订 sfind-5dbc…）：与 desktop
+ * profile-ops DesktopInstallResult 未遂臂同形——客户端（market-tab/upgrade-flow）与工具
+ * 渲染（tools renderInstall/renderUpgrade）零特判。ok:false + needsBuildApproval:true 双键，
+ * 消费方按 needsBuildApproval === true 分流（未遂永不冒充成功）。
+ */
+export interface BuildApprovalPending {
+  ok: false
+  needsBuildApproval: true
+  id: string
+  pkg: string
+  spec: string
+  /** pnpm 留下的待决名单（回显确认后经 approvedBuilds 原样重试；可空 = 名单不可得） */
+  pendingBuilds: string[]
+  message: string
+}
+
+/** BUILD_APPROVAL_REQUIRED 事务失败 → 结构化未遂结果（单点映射，desktop 同语义文案）。 */
+function buildApprovalPendingOf(result: FailedTransactionResult, id: string, pkg: string, spec: string): BuildApprovalPending | null {
+  if (result.failure.code !== 'BUILD_APPROVAL_REQUIRED') return null
+  const pending = result.failure.pendingBuilds ?? []
+  const message = pending.length > 0
+    ? `该插件需要执行构建脚本（${pending.join('、')}）。确认后带同样的包名名单重试（approvedBuilds）；dsh-m 不做全量放行（ADR-0002 同语义）`
+    : '该插件的依赖构建脚本被拦截，且未获得逐项待决名单（pnpm 未留下占位或 pnpm-workspace.yaml 不可读）；dsh-m 不做全量放行，无法自动继续'
+  return { ok: false, needsBuildApproval: true, id, pkg, spec, pendingBuilds: pending, message }
+}
+
 /** 从 registry 收录条目安装（npm → 精确锁定最新版；github → 锁 HEAD SHA）。
  *  0.7.1 修复：合并市场展示的社区条目 id 不在主清单（loadRegistry 只装载主清单，
  *  社区层只合入 listMarket 展示）——主清单 miss 时按收录 id 查社区目录再装，
@@ -142,13 +169,23 @@ export async function resolveRegistryEntry(
 export async function installFromRegistry(
   id: string,
   cfg: RegistryConfig = {},
-  opts: { version?: string; forceIncompatible?: boolean; channel?: OperationChannel } & RegistryRuntimeOptions = {},
+  opts: { version?: string; forceIncompatible?: boolean; approvedBuilds?: string[]; channel?: OperationChannel } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<InstallResult> {
+): Promise<InstallResult | BuildApprovalPending> {
   // 0.9.79 外部操作直落（ADR-0018）：终态后挂钩，成功与失败都记；append 失败被钩子吞（R1-1）
   try {
     const entry = await resolveRegistryEntry(id, cfg, opts, deps)
     const result = await installEntry(entry, cfg, opts, deps)
+    if ('needsBuildApproval' in result) {
+      // 构建审批未遂：journal 记 failed（与 desktop profile-ops 同语义），不冒充成功
+      await journalExternalOperation(
+        opts.channel,
+        { kind: 'install', target: id },
+        'failed',
+        { reason: result.message, appendExternalOperation: deps?.appendExternalOperation },
+      )
+      return result
+    }
     await journalExternalOperation(
       opts.channel,
       { kind: 'install', target: id, ...(result.version ? { toVersion: result.version } : {}) },
@@ -535,9 +572,9 @@ function guardManualRequired(message: string, violations: GuardViolation[]): Ins
 export async function installEntry(
   entry: InstallableEntry,
   cfg: RegistryConfig = {},
-  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  opts: { version?: string; forceIncompatible?: boolean; approvedBuilds?: string[] } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<InstallResult> {
+): Promise<InstallResult | BuildApprovalPending> {
   return withMutationSession(() => installEntryLocked(entry, cfg, opts, deps))
 }
 
@@ -546,9 +583,9 @@ export async function installEntry(
 async function installEntryLocked(
   entry: InstallableEntry,
   cfg: RegistryConfig = {},
-  opts: { version?: string; forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  opts: { version?: string; forceIncompatible?: boolean; approvedBuilds?: string[] } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<InstallResult> {
+): Promise<InstallResult | BuildApprovalPending> {
   const timeoutMs = cfg.timeoutMs ?? 20_000
   const profileDir = deps?.transaction?.profileDir ?? deps?.profileDir ?? webProfileDir()
   // ADR-0030：profile 名与 dir 同优先级（transaction 显式值 > 顶层字段）；只进子进程 argv，不进文件路径
@@ -611,9 +648,15 @@ async function installEntryLocked(
         profileDir,
         profileName,
         warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
+        // 安全修订 sfind-5dbc…：已获用户确认的构建包名回显（ladder 只对回显项写 allowBuilds）
+        ...(opts.approvedBuilds !== undefined ? { approvedBuilds: opts.approvedBuilds } : {}),
       },
     )
-    if (!result.ok) throw new TransactionError(result)
+    if (!result.ok) {
+      const pending = buildApprovalPendingOf(result, entry.id, pkg, `${pkg}@${version}`)
+      if (pending !== null) return pending
+      throw new TransactionError(result)
+    }
     // 装后守卫（session 区间内；fail-open 仅限结论不可定）
     const guard = await verifyInstalledAdditions({
       profileDir,
@@ -701,9 +744,19 @@ async function installEntryLocked(
     }
     const result = await runProfileTransaction(
       { kind: 'install-github', repo: entry.github, sha, tag, signal: opts.signal },
-      { ...deps?.transaction, profileDir, profileName },
+      {
+        ...deps?.transaction,
+        profileDir,
+        profileName,
+        // 安全修订 sfind-5dbc…：github 源的 prepare 拦截（ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED）同样走逐项同意
+        ...(opts.approvedBuilds !== undefined ? { approvedBuilds: opts.approvedBuilds } : {}),
+      },
     )
-    if (!result.ok) throw new TransactionError(result)
+    if (!result.ok) {
+      const pending = buildApprovalPendingOf(result, entry.id, candidate, `github:${entry.github}#${sha}`)
+      if (pending !== null) return pending
+      throw new TransactionError(result)
+    }
     const realKey = result.pkg ?? candidate
     // post-add derivePrior 复核（兜底网）：真实 key 与 candidate 不符且发现不可自动恢复 prior
     // → manual-repair 非成功状态（不冒充 pre-mutation 拒绝、不承诺 prior 无损）
@@ -877,13 +930,21 @@ export interface UpgradeResult extends InstallResult {
 export function upgradePlugin(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean; channel?: OperationChannel } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean; approvedBuilds?: string[]; channel?: OperationChannel } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<UpgradeResult> {
+): Promise<UpgradeResult | (BuildApprovalPending & { fromVersion?: string })> {
   // 0.9.79 外部操作直落（ADR-0018）：终态后挂钩，session 区间内保持单写者
   return withMutationSession(async () => {
     try {
       const result = await upgradePluginLocked(pkg, cfg, opts, deps)
+      if ('needsBuildApproval' in result) {
+        // 构建审批未遂：journal 记 failed（与 desktop profile-ops 同语义），不冒充成功
+        await journalExternalOperation(opts.channel, { kind: 'upgrade', target: pkg }, 'failed', {
+          reason: result.message,
+          appendExternalOperation: deps?.appendExternalOperation,
+        })
+        return result
+      }
       await journalExternalOperation(
         opts.channel,
         {
@@ -909,9 +970,9 @@ export function upgradePlugin(
 async function upgradePluginLocked(
   pkg: string,
   cfg: RegistryConfig = {},
-  opts: { forceIncompatible?: boolean } & RegistryRuntimeOptions = {},
+  opts: { forceIncompatible?: boolean; approvedBuilds?: string[] } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<UpgradeResult> {
+): Promise<UpgradeResult | (BuildApprovalPending & { fromVersion?: string })> {
   const loaded = await (deps?.loadRegistry ?? defaultLoadRegistry)(cfg, { namespace: opts.namespace ?? 'host', profile: opts.profile })
   // ADR-0030 读侧接线（issue #42）：已装枚举与同文件三兄弟（installEntryLocked/uninstall/selfUpgrade）
   // 同形态——实参恒走 deps 接线（transaction 优先），不读 opts；未接线时保持 undefined 落
@@ -935,6 +996,10 @@ async function upgradePluginLocked(
   // 0.5.1 修复：直调 installEntryLocked——upgradePlugin 已在 mutation session 区间内，
   // 再经 installEntry 二次获取 session 会自死锁（session 非重入，见 withMutationSession 契约）。
   const result = await installEntryLocked(entry, cfg, opts, deps)
+  if ('needsBuildApproval' in result) {
+    // 构建审批未遂：原样透传（附 fromVersion），跳过生效判定（未遂无重启语义）
+    return { ...result, fromVersion: target.version }
+  }
   // 0.9.22 生效判定：npm 源升级在成功点分类；任何异常 fail-open 到 unknown，绝不影响升级成功态。
   // #34：判定块收编 resolveUpgradeActivation（activation.ts 单点）；初值/toVersion 为 backend 边缘事实。
   const { activation, needsRestart } = await resolveUpgradeActivation(entry, target.version, result.version, result.needsRestart, deps?.classifyActivation)
@@ -951,9 +1016,9 @@ export async function selfUpgrade(
   pkgName: string,
   currentVersion: string,
   cfg: RegistryConfig = {},
-  opts: { channel?: OperationChannel } & RegistryRuntimeOptions = {},
+  opts: { approvedBuilds?: string[]; channel?: OperationChannel } & RegistryRuntimeOptions = {},
   deps?: InstallDeps,
-): Promise<InstallResult> {
+): Promise<InstallResult | BuildApprovalPending> {
   return withMutationSession(async () => {
     try {
       const timeoutMs = cfg.timeoutMs ?? 20_000
@@ -969,9 +1034,23 @@ export async function selfUpgrade(
           profileDir: deps?.transaction?.profileDir ?? deps?.profileDir,
           profileName: deps?.transaction?.profileName ?? deps?.profileName,
           warmPackument: deps?.transaction?.warmPackument ?? makeNpmWarmPackument(timeoutMs),
+          // 安全修订 sfind-5dbc…：自升级被拦同样零写盘请示（回显经 approvedBuilds 重试）
+          ...(opts.approvedBuilds !== undefined ? { approvedBuilds: opts.approvedBuilds } : {}),
         },
       )
-      if (!result.ok) throw new TransactionError(result)
+      if (!result.ok) {
+        const pending = buildApprovalPendingOf(result, pkgName, pkgName, `${pkgName}@${latest.version}`)
+        if (pending !== null) {
+          await journalExternalOperation(
+            opts.channel,
+            { kind: 'self-upgrade', target: pkgName, ...(currentVersion ? { fromVersion: currentVersion } : {}) },
+            'failed',
+            { reason: pending.message, appendExternalOperation: deps?.appendExternalOperation },
+          )
+          return pending
+        }
+        throw new TransactionError(result)
+      }
       const payload: InstallResult = {
         id: pkgName,
         pkg: result.pkg ?? pkgName,
