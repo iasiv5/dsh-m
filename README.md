@@ -124,6 +124,8 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 
 > 表中各代核验对应其时点的 dsh-m 版本：0.10.x 线的完整实测仅覆盖 DSH 0.2.1-rc.2 / rc.3，0.11.x 线覆盖 0.2.1-rc.4（rc.5 为契约面等价重发布，核验结论按等价口径外推），0.12.x 线覆盖 0.2.2-rc.1（2026-11-04 起）与 rc.2/rc.3（随宿主升级，2026-11-14 实机核验）及 rc.5（2026-11-19 无头浏览器实测）；更老代际未经当前版本复测，不代表当前 dsh-m 可在其上运行。
 
+> **alpha 代际未适配**：兼容表只覆盖 rc 代际（verified 截至 `0.2.2-rc.5`）。`dsh.engines.dsh` 为 floor-only 声明（`>=0.2.0-rc.1` 无上盖），alpha 宿主能通过安装门禁常驻运行，但 dsh-m 从未在 alpha 代实测、不声明支持；alpha 宿主上的异常请随 issue 注明宿主完整版本号。
+
 **Desktop 与 Web 完全一样吗？** 不是。Desktop 的浏览、安装新包和开关作用于 desktop profile；升级/卸载等操作需宿主官方 `pluginManager` 提供相应能力，缺失时返回结构化拒绝和指引。Desktop 不提供 Web 的一键重启；变更需按应用提示退出并重新打开。两边的收藏、操作记录和已装状态互不串联。
 
 **安装、更新后何时生效？** Web 按操作返回的激活要求处理：仅客户端更新可刷新页面；需要重启时先征得同意，再由宿主完成重启与后台重连。重启优先交还服务管理器按其 Restart 策略自动拉起；systemd 部署建议配置 `Restart=on-failure` 或 `Restart=always`，其余部署按各自方式重启。
@@ -131,6 +133,14 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 **为什么 GitHub 插件的更新不跟踪 `main`？** 中间提交可能不稳定，dsh-m 跟踪 release / tag，并锁定其 commit SHA。匿名 GitHub 配额有限，未完成的检查会如实显示，不冒充「全部最新」。
 
 **自定义清单不可用怎么办？** 优先使用该源上次成功的缓存；没有缓存时会提示清单不可用，已装管理仍能工作。修正地址或在设置页恢复默认即可。
+
+**插件面板报「请求未通过宿主信任检查（不可信 Host/Origin 或跨站）」？** 这是 DSH 宿主的浏览器信任栅栏拒绝了该插件的 API 请求（dsh-m 自 0.9.0 起把入口信任检查委派宿主官方实现）。栅栏三条腿：① `Host` 头须是 loopback、`dsh web --host` 绑定的 IP 字面量、或 `--trusted-host` 声明的 authority（默认只信前两者）；② 不得带 `Sec-Fetch-Site: cross-site`；③ 带 `Origin` 时须与 `Host` 同 authority。远程域名/IP 访问时，按浏览器地址栏实际使用的 authority 补声明并重启：
+
+```bash
+dsh web --trusted-host <你的域名或IP>   # 可重复传多个；不带端口 = 该主机任意端口
+```
+
+`--public-url` 只做地址播报、不授予信任，需与 `--trusted-host` 配对。反向代理改写了 `Host` 时，须保证 `Origin` 与改写后的 `Host` 一致（nginx：`proxy_set_header Host 127.0.0.1:3080; proxy_set_header Origin http://127.0.0.1:3080;`），或代理透传真实 `Host` 并把该 authority 加进 `--trusted-host`。若同会话聊天等其他功能正常而仅插件面板 403，属另一分支（插件侧委派 fail-closed）：在服务日志 grep `requestRejection`，随 issue 附宿主版本号。
 
 完整沿革见 [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md)，设计与开发细节见 [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)、[ADR](https://github.com/iasiv5/dsh-m/tree/main/docs/adr)；编码与测试纪律（评审必读）见 [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md)；贡献与收录政策见 [CONTRIBUTING](./CONTRIBUTING.md)；收录面维护（条目降级与下架台账）见 [registry-maintenance](./docs/registry-maintenance.md)。截图取自 Web 实例；面板版本、条目数与安装状态会随时间和 profile 变化。在源码仓库运行 `npm install && npm run capture:readme` 可复现截图（需 Web 实例已装 dsh-m；此开发脚本不随 npm 插件包分发）。
 
