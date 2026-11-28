@@ -9,7 +9,7 @@ import { writeFileSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createApiDispatcher } from '../lib/core/host-api.js'
+import { createApiDispatcher, TrustDelegationUnavailableError, createDelegatedTrustCheck } from '../lib/core/host-api.js'
 import { createRegistryController } from '../lib/core/registry-controller.js'
 import { startLoopbackRegistry } from './loopback-registry.mjs'
 import { TransactionError } from '../lib/core/profile-transaction.js'
@@ -239,6 +239,37 @@ describe('host-api：协议防护', () => {
     assert.equal((await callApi(dispatcher, { headers: { 'content-type': 'application/json', origin: 'http://evil.example', host: '127.0.0.1:3080' }, body: { method: 'market' } })).status, 403)
     assert.equal((await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })).status, 200)
     assert.equal(calls.listMarket.length, 1, '被拒请求零业务调用')
+  })
+
+  it('trust 委派 fail-closed：委派服务不可用以专用文案+code 区分（ADR-0005 追记）', async () => {
+    const { dispatcher } = setup({
+      rejectRequest: () => { throw new TrustDelegationUnavailableError('delegation down') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(res.status, 403)
+    // 文案内容以字面量钉死（评审 R-2）：import 常量自身断言属恒真形态，措辞回退锚不住
+    assert.equal(res.body.error, '请求未通过宿主信任检查（宿主信任检查服务不可用，已按 fail-closed 全拒）')
+    assert.equal(res.body.code, 'trust-delegation-unavailable')
+  })
+
+  it('trust 委派普通异常仍不区分：TypeError → 旧文案，无 code 键（负向护栏）', async () => {
+    const { dispatcher } = setup({
+      rejectRequest: () => { throw new TypeError('boom') },
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(res.status, 403)
+    assert.equal(res.body.error, '请求未通过宿主信任检查（不可信 Host/Origin 或跨站）')
+    assert.equal('code' in res.body, false, '普通检查异常不得携带委派 code')
+  })
+
+  it('trust 委派真拒绝不变：403 旧文案 + 无 code 键（不变性护栏）', async () => {
+    const { dispatcher } = setup({
+      rejectRequest: () => 403,
+    })
+    const res = await callApi(dispatcher, { headers: JSON_HEADERS, body: { method: 'market' } })
+    assert.equal(res.status, 403)
+    assert.equal(res.body.error, '请求未通过宿主信任检查（不可信 Host/Origin 或跨站）')
+    assert.equal('code' in res.body, false, '真拒绝不得携带委派 code')
   })
 
   it('未知 method → 404', async () => {
@@ -1329,5 +1360,58 @@ describe('approvedBuilds 五点透传（安全修订 sfind-5dbc…）', () => {
     })
     await callApi(desktopDispatcher, { headers: JSON_HEADERS, body: { method: 'upgrade', pkg: 'p', approvedBuilds: ['node-pty'] } })
     assert.deepEqual(seenDesktop[0].approvedBuilds, ['node-pty'])
+  })
+})
+
+describe('createDelegatedTrustCheck：惰性委派工厂（缺席/抛错 → TrustDelegationUnavailableError，在位透传）', () => {
+  // 自带夹具：假 ctx 构造（不引兄弟 describe 闭包）。镜像生产调用点：host.ts 只传 apply ctx（get/logger 可选面）。
+  const fakeCtx = (connection, logCalls) => ({
+    get: (name) => (name === 'connection' ? connection : undefined),
+    logger: { warn: (...a) => { if (logCalls) logCalls.push(a) } },
+  })
+
+  it('服务缺席 → 抛 TrustDelegationUnavailableError，warn 恰 1', () => {
+    const logCalls = []
+    const check = createDelegatedTrustCheck(fakeCtx(undefined, logCalls))
+    assert.throws(() => check({ headers: { host: '127.0.0.1:3080' } }), TrustDelegationUnavailableError)
+    assert.equal(logCalls.length, 1, 'warnOnce：缺席路径恰告警一次')
+    assert.match(String(logCalls[0][0]), /requestRejection/)
+  })
+
+  it('服务在位但检查抛错 → 抛 TrustDelegationUnavailableError，warn 主消息+err 附件共 2 条（镜像生产 warnOnce 形态）', () => {
+    const logCalls = []
+    const check = createDelegatedTrustCheck(fakeCtx({ requestRejection: () => { throw new TypeError('host boom') } }, logCalls))
+    assert.throws(() => check({ headers: { host: '127.0.0.1:3080' } }), TrustDelegationUnavailableError)
+    assert.equal(logCalls.length, 2, '生产 warnOnce 形态：主消息 1 条 + err 附件 1 条')
+    assert.match(String(logCalls[0][0]), /requestRejection/)
+  })
+
+  it('服务在位 → 逐态透传（403/401/undefined），零告警', () => {
+    for (const verdict of [403, 401, undefined]) {
+      const logCalls = []
+      const check = createDelegatedTrustCheck(fakeCtx({ requestRejection: () => verdict }, logCalls))
+      assert.equal(check({ headers: { host: '127.0.0.1:3080' } }), verdict)
+      assert.equal(logCalls.length, 0, '透传路径零告警')
+    }
+  })
+
+  it('warnOnce 跨请求只告警一次（缺席 ctx 连调 3 次）', () => {
+    const logCalls = []
+    const check = createDelegatedTrustCheck(fakeCtx(undefined, logCalls))
+    for (let i = 0; i < 3; i++) assert.throws(() => check({ headers: {} }), TrustDelegationUnavailableError)
+    assert.equal(logCalls.length, 1, '重复请求不得刷日志')
+  })
+
+  it('惰性逐请求解析：服务后挂——第 1 次缺席抛错，第 2 次起透传（评审 R-1，防首请求后缓存变体）', () => {
+    const logCalls = []
+    let connection // 闭包可变：模拟 connection 服务晚于工厂构造/首次请求挂载
+    const check = createDelegatedTrustCheck({
+      get: (name) => (name === 'connection' ? connection : undefined),
+      logger: { warn: (...a) => logCalls.push(a) },
+    })
+    assert.throws(() => check({ headers: {} }), TrustDelegationUnavailableError)
+    connection = { requestRejection: () => undefined } // 服务挂载
+    assert.equal(check({ headers: { host: '127.0.0.1:3080' } }), undefined, '挂载后逐请求重解析应透传成功')
+    assert.equal(logCalls.length, 1, '迁移后 warn 总数仍 1（warnOnce 闭包存活）')
   })
 })

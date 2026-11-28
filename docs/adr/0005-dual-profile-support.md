@@ -14,6 +14,7 @@ dsh-m 作为同一 npm 包要同时装入 `web` 与官方 Desktop 的 `desktop` 
 ## Consequences
 
 - **行为变化**：`ping` 不再匿名豁免（与全部 method 一起过宿主信任检查）；无凭据健康探针从「一律 403」变为「按宿主信任判定」；宿主无 `connection.requestRejection` 时 `/dshm` 全拒（旧代宿主升级 dsh-m 前需确认该服务存在，0.1.2-rc.1 起类型可见、待逐代实测）。
+- **委派不可用与真拒绝的响应区分（0.12.27 追记，issue #86 沉淀）**：connection 服务缺席/检查调用抛错的 fail-closed **判定不变**（仍 403 全拒），响应 error 以专用文案「宿主信任检查服务不可用，已按 fail-closed 全拒」+ `code: trust-delegation-unavailable` 区分于宿主真拒绝——用户截图即可分流，免翻服务日志。原「异常细节不外泄」收窄为「检查异常细节不外泄，委派不可用状态除外」；安全评估：该状态可被探测，但栅栏仍全拒，无可利用信息增益。journal warn 文案不变（grep 口径不破）。委派逻辑收编 core 工厂 `createDelegatedTrustCheck`（host.ts 接线减重，工厂单测补上原零覆盖缺口）。
 - **能力矩阵如实降级**：Desktop 下不做 dsh-m 文件级装后守卫与 npm dist integrity 对照（app.asar 布局探测盲区，#676），改以官方 `ChangeResult` 判定（`application`/`stage`，不看 exitCode）+ `listBundles` 复读替代；成功标准 = 官方结果无 error 且复读见目标 bundle 在装。不能在同一文案下冒充与 Web 同等保证。
 - **Desktop 升级/卸载/自更新/重启整体缺席**：官方无独立 upgrade API（`installBundle` 对已装包的语义不等于有事务保证的升级）、`removeBundle` 有 in-use/stop-profile 约束、Desktop 子进程退出会被视为失败而非重启——这些动作在解决 offline handoff 与恢复链前一律结构化拒绝，不回落 Web runner。
 - **缓存按 profile 分段**：`cacheRoot(profile)`——web 恒走旧路径（不迁移不清空），desktop 落 `<root>/desktop` 段；registry/社区清单/accepted-source 全部带 profile；latest 探测缓存本就按进程隔离，无需改。共享 home 的 `cordis.patch.yml` 与 SettingsForms legacy 迁移是上游有意的配置层，dsh-m 只做来源展示不承诺跨 profile 隔离（报告 §4.1）。

@@ -48,15 +48,59 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 /** 宿主信任检查的统一签名（生产 = 官方 requestRejection 委派；测试可注入）。 */
 export type RequestTrustCheck = (req: Pick<IncomingMessage, 'headers'>) => 401 | 403 | undefined
 
+/** 委派 fail-closed 与宿主真拒绝的可区分信号：connection 服务缺席或检查调用抛错时由工厂抛出（ADR-0005 追记）。 */
+export class TrustDelegationUnavailableError extends Error {}
+
+/** D3 文案钉死：委派 fail-closed 的对外 error 文案（判定不变，仍 403 全拒）。 */
+export const TRUST_DELEGATION_UNAVAILABLE_MESSAGE = '请求未通过宿主信任检查（宿主信任检查服务不可用，已按 fail-closed 全拒）'
+
+/**
+ * 生产侧信任检查工厂（host.ts 接线用）。惰性解析 ctx.get('connection')——webServer 注入可能早于
+ * connection 挂载，不得在工厂期取服务。在位 → `reject.call(connection, { headers }) ?? undefined`
+ * 透传；缺席或检查调用抛错 → warnOnce（journal 文案保留，grep 口径不变）+ 抛
+ * TrustDelegationUnavailableError（0.12.27 起与宿主真拒绝在响应文案上可区分）。
+ */
+export function createDelegatedTrustCheck(ctx: {
+  get?: (name: string) => unknown
+  logger?: { warn?: (message: unknown, err?: unknown) => void }
+}): RequestTrustCheck {
+  let warned = false
+  const warnOnce = (err: unknown) => {
+    if (warned) return
+    warned = true
+    ctx.logger?.warn?.('dsh-m: 官方 connection.requestRejection 不可用，/dshm 全入口 fail-closed 403（ADR-0005）')
+    if (err) ctx.logger?.warn?.(err)
+  }
+  return (req) => {
+    try {
+      const connection = ctx.get?.('connection') as
+        | { requestRejection?: (r: { headers: IncomingMessage['headers'] }) => 401 | 403 | undefined }
+        | undefined
+      const reject = connection?.requestRejection
+      if (typeof reject !== 'function') {
+        warnOnce(undefined)
+        throw new TrustDelegationUnavailableError()
+      }
+      return reject.call(connection, { headers: req.headers }) ?? undefined
+    } catch (err) {
+      if (err instanceof TrustDelegationUnavailableError) throw err
+      warnOnce(err)
+      throw new TrustDelegationUnavailableError()
+    }
+  }
+}
+
 export class BadJsonError extends Error {}
 export class BodyTooLargeError extends Error {}
 export class UnsupportedMediaTypeError extends Error {}
 
 class ApiProtocolError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  readonly code?: string
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    if (code) this.code = code
   }
 }
 
@@ -172,8 +216,12 @@ async function parseRequest(req: IncomingMessage, rejectRequest: RequestTrustChe
   let rejection: 401 | 403 | undefined
   try {
     rejection = rejectRequest(req)
-  } catch {
-    // 宿主检查异常一律 fail-closed，异常细节不外泄（报告 §3.2）
+  } catch (err) {
+    // 委派不可用（connection 服务缺席/检查调用抛错）以专用文案区分（ADR-0005 追记），fail-closed 判定不变；
+    // 其余检查异常仍一律 fail-closed，异常细节不外泄（报告 §3.2）
+    if (err instanceof TrustDelegationUnavailableError) {
+      throw new ApiProtocolError(403, TRUST_DELEGATION_UNAVAILABLE_MESSAGE, 'trust-delegation-unavailable')
+    }
     rejection = 403
   }
   if (rejection !== undefined) {
@@ -245,7 +293,7 @@ function errorStatus(err: unknown): { status: number; payload: Record<string, un
   if (err instanceof RegistryConfigError) {
     return { status: 422, payload: { ok: false, error: err.message, errors: err.errors } }
   }
-  if (err instanceof ApiProtocolError) return { status: err.status, payload: { ok: false, error: err.message } }
+  if (err instanceof ApiProtocolError) return { status: err.status, payload: { ok: false, error: err.message, ...(err.code ? { code: err.code } : {}) } }
   if (err instanceof ProfileUnsupportedError) {
     // 0.9.0：Desktop/未知 profile 的能力表拒绝——结构化 code + 官方入口指引
     return { status: 409, payload: { ok: false, error: err.message, code: err.code, action: err.action, profile: err.profile, guidance: err.guidance } }

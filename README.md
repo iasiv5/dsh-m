@@ -140,7 +140,7 @@ GUI 与 Agent 工具始终跟随**当前宿主 profile**（Web / Desktop）；�
 dsh web --trusted-host <你的域名或IP>   # 可重复传多个；不带端口 = 该主机任意端口
 ```
 
-`--public-url` 只做地址播报、不授予信任，需与 `--trusted-host` 配对。反向代理改写了 `Host` 时，须保证 `Origin` 与改写后的 `Host` 一致（nginx：`proxy_set_header Host 127.0.0.1:3080; proxy_set_header Origin http://127.0.0.1:3080;`），或代理透传真实 `Host` 并把该 authority 加进 `--trusted-host`。若同会话聊天等其他功能正常而仅插件面板 403，属另一分支（插件侧委派 fail-closed）：在服务日志 grep `requestRejection`，随 issue 附宿主版本号。
+`--public-url` 只做地址播报、不授予信任，需与 `--trusted-host` 配对。反向代理改写了 `Host` 时，须保证 `Origin` 与改写后的 `Host` 一致（nginx：`proxy_set_header Host 127.0.0.1:3080; proxy_set_header Origin http://127.0.0.1:3080;`），或代理透传真实 `Host` 并把该 authority 加进 `--trusted-host`。若同会话聊天等其他功能正常而仅插件面板 403，属另一分支（插件侧委派 fail-closed）：0.12.27 起报错文案直接标注「宿主信任检查服务不可用」（旧版请在服务日志 grep `requestRejection`），随 issue 附宿主版本号。
 
 完整沿革见 [CHANGELOG](https://github.com/iasiv5/dsh-m/blob/main/CHANGELOG.md)，设计与开发细节见 [DESIGN](https://github.com/iasiv5/dsh-m/blob/main/docs/DESIGN.md)、[ADR](https://github.com/iasiv5/dsh-m/tree/main/docs/adr)；编码与测试纪律（评审必读）见 [CODING-STANDARDS](https://github.com/iasiv5/dsh-m/blob/main/docs/CODING-STANDARDS.md)；贡献与收录政策见 [CONTRIBUTING](./CONTRIBUTING.md)；收录面维护（条目降级与下架台账）见 [registry-maintenance](./docs/registry-maintenance.md)。截图取自 Web 实例；面板版本、条目数与安装状态会随时间和 profile 变化。在源码仓库运行 `npm install && npm run capture:readme` 可复现截图（需 Web 实例已装 dsh-m；此开发脚本不随 npm 插件包分发）。
 

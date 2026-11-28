@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
-import { createApiDispatcher, type RequestTrustCheck } from './core/host-api.js'
+import { createApiDispatcher, createDelegatedTrustCheck } from './core/host-api.js'
 import type { OperationChannel } from './core/external-journal.js'
 import { bindLoaderHost, type LoaderHost } from './core/live-plugin.js'
 import { createRegistryController, type RegistrySettingsStore } from './core/registry-controller.js'
@@ -153,7 +153,7 @@ export function apply(ctx: Context, config: Config): void {
       }
     ).webServer
     serviceCtx = c // 0.9.8：webServer 注入回调的 hostCtx 是 pluginManager 的可见上下文（dsh-market 同款）
-    const rejectRequest = createRequestRejection(ctx)
+    const rejectRequest = createDelegatedTrustCheck(ctx)
     const handleApi = createApiDispatcher({
       controller,
       pkg,
@@ -175,29 +175,5 @@ export function apply(ctx: Context, config: Config): void {
   })
 }
 
-/** 守卫式官方 requestRejection 委派：缺席/抛错 fail-closed 403（warn 一次，不刷日志）。 */
-function createRequestRejection(ctx: Context): RequestTrustCheck {
-  let warned = false
-  const warnOnce = (err: unknown) => {
-    if (warned) return
-    warned = true
-    ctx.logger?.warn?.('dsh-m: 官方 connection.requestRejection 不可用，/dshm 全入口 fail-closed 403（ADR-0005）')
-    if (err) ctx.logger?.warn?.(err)
-  }
-  return (req) => {
-    try {
-      const connection = (ctx as unknown as { get?: (name: string) => unknown }).get?.('connection') as
-        | { requestRejection?: (r: { headers: IncomingMessage['headers'] }) => 401 | 403 | undefined }
-        | undefined
-      const reject = connection?.requestRejection
-      if (typeof reject !== 'function') {
-        warnOnce(undefined)
-        return 403
-      }
-      return reject.call(connection, { headers: req.headers }) ?? undefined
-    } catch (err) {
-      warnOnce(err)
-      return 403
-    }
-  }
-}
+// 0.12.27 起守卫式官方 requestRejection 委派收编为 core 同名工厂
+// （缺席/抛错 → warnOnce + 专用错误类，响应以专用文案区分；ADR-0005 追记）。
