@@ -44,4 +44,4 @@ This file is a navigation index; repository scripts and [`docs/CODING-STANDARDS.
 ## Repository references
 
 - Read GitHub issue/PR bodies via `api.github.com/repos/iasiv5/dsh-m/issues/<n>` (the web page is a JS shell; a plain fetch returns only navigation chrome). Anonymous API hits rate-limit 403 fast — authenticate instead: read the token from `~/.config/gh/hosts.yml` (`github.com.oauth_token`) and `curl -s -H "Authorization: Bearer $TOKEN" <url>`（本机无 gh CLI；curl+token 即 gh api 等价通道，2026-11-25 实录）。
-- 收录 PR 的评审与回复 playbook：`../01_docs/dsh-m-registry-playbook.md`（私有 01_docs，不进入本仓库）。
+- 收录 PR 与 bug issue 的评审回复 playbook（收录七段式 / 更新类吸收 / bug issue 回帖定式）：`../01_docs/dsh-m-registry-playbook.md`（私有 01_docs，不进入本仓库）。
