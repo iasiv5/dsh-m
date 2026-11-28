@@ -8,6 +8,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 
 ## 中文
 
+### 0.12.27 修复：委派 fail-closed 与宿主真拒绝的报错区分——专用文案 + code（issue #86 沉淀）
+
+- **修复**：`/dshm` 入口的「委派 fail-closed」（connection 服务缺席或检查调用抛错）此前与宿主真拒绝共用同一 403 文案「请求未通过宿主信任检查（不可信 Host/Origin 或跨站）」，用户无法从报错分辨该修访问配置还是该查插件（issue #86 诊断沉淀：远程访问 authority 未声明是高频成因，fail-closed 分支则须翻服务日志才能分流）。现在委派不可用以专用文案「请求未通过宿主信任检查（宿主信任检查服务不可用，已按 fail-closed 全拒）」+ 结构化 `code: trust-delegation-unavailable` 区分。**fail-closed 判定不变**（仍 403 全拒；ADR-0005 追记：原「异常细节不外泄」收窄为「检查异常细节不外泄，委派不可用状态除外」，安全评估＝该状态可探测但栅栏仍全拒，无可利用信息增益；journal warn 文案不变，grep 口径不破）。
+- **委派收编**：host.ts 内部 `createRequestRejection` 收编为 core 工厂 `createDelegatedTrustCheck`（惰性逐请求解析 connection 的语义保持，且有专项差分用例锚住），工厂单测补上该路径的原零覆盖缺口。
+- **测试**：`tests/host-api.test.mjs` 八用例——dispatcher 面 3（专用文案+code 区分〔文案以字面量钉死〕/ TypeError 负向护栏〔旧文案、无 code〕/ 真拒绝不变性〔旧文案、无 code〕）+ 工厂面 5（服务缺席 / 检查抛错 / 403·401·undefined 逐态透传 / warnOnce 跨请求恰一次 / 服务后挂惰性迁移）；README 中英排查 FAQ 同步「0.12.27 起文案直接区分」。全量 2544 tests / 2543 pass / 0 fail（2026-11-28 发版轮当轮取数）。
+- **兼容性**：`dshm` CLI 接口零变化；客户端对 `payload.code` 零既有消费（新增键不破坏任何渲染臂）；真拒绝/401/405/400 各路径响应逐字段不变。回退面：revert 委派区分提交（2aecd3d）+ 版本递增。
+
 ### 0.12.26 修复：操作泵同目标在途去重——连点升级/安装不再排队多任务（2026-11-25 用户实测）
 
 - **修复**：变更操作按钮的在途灰显依赖 enqueue → syncOps → React 重渲染的异步传播，慢设备上有百毫秒级窗口——连点落在窗口内即发出多个同目标请求，服务端事务 FIFO 照单排队（CDP 活体探针实证：桌面端灰显延迟 ~400ms，窗口真实存在；数据层无任何同目标去重闸）。现在操作泵 enqueue 对 install/upgrade/uninstall 三类（重复语义恒同一意图）做同 kind+target 在途去重：窗口内的重复点击同步拒绝（store 零副作用、泵零扰动），并以中性提示「{target} 已有进行中的操作，已忽略重复点击」即时反馈；toggle 不去重（方向相反的快翻是合法意图）；显式 id 的确认/重试通道（reuseId，审计 #12）不去重。
@@ -1156,6 +1163,13 @@ The full release history of dsh-m, maintained bilingually: **Chinese first, Engl
 ---
 
 ## English
+
+### 0.12.27 Fix: delegated fail-closed vs host genuine rejection are now distinguishable — dedicated message + code (issue #86 follow-up)
+
+- **Fix**: the `/dshm` entry's "delegated fail-closed" (connection service absent, or the delegated check threw) shared the same 403 message as a host genuine rejection — "请求未通过宿主信任检查（不可信 Host/Origin 或跨站）" — leaving users unable to tell whether to fix their access configuration or investigate the plugin (issue #86 diagnosis: an undeclared remote-access authority is the common cause, while the fail-closed branch previously required digging through service logs). Delegation unavailability now returns a dedicated message "请求未通过宿主信任检查（宿主信任检查服务不可用，已按 fail-closed 全拒）" plus a structured `code: trust-delegation-unavailable`. **The fail-closed verdict is unchanged** (still 403 on everything; ADR-0005 addendum: the former "no error detail leaks" stance narrows to "check-error details don't leak, delegation-unavailable status does"; security assessment = the state is probeable but the fence still rejects everything, no exploitable gain; the journal warn text is unchanged, grep pattern intact).
+- **Delegation consolidation**: host.ts's internal `createRequestRejection` is consolidated into the core factory `createDelegatedTrustCheck` (lazy per-request connection resolution preserved, with a dedicated differential case pinning it), and factory unit tests close that path's previous zero-coverage gap.
+- **Tests**: eight cases in `tests/host-api.test.mjs` — dispatcher face 3 (dedicated message+code distinction〔message pinned as a literal〕/ TypeError negative guard〔old message, no code〕/ genuine-rejection invariance〔old message, no code〕) and factory face 5 (service absent / check throws / 403·401·undefined verdict threading / warnOnce exactly once across requests / lazy re-resolution after late-mounted service); README (zh/en) troubleshooting FAQ updated to "0.12.27+ distinguishes via the message itself". Full suite 2544 tests / 2543 pass / 0 fail (taken this release round, 2026-11-28).
+- **Compatibility**: `dshm` CLI unchanged; the client has zero existing consumers of `payload.code` (the new key breaks no rendering arm); genuine-rejection / 401 / 405 / 400 paths are field-for-field unchanged. Rollback: revert the delegation-distinction commit (2aecd3d) + version bump.
 
 ### 0.12.26 Fix: ops-pump same-target in-flight dedupe — rapid double-clicks no longer queue duplicate tasks (2026-11-25 user-reported)
 
